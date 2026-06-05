@@ -1,0 +1,117 @@
+"use client"
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import type { User, UserRole } from "@/lib/types"
+import { createClient } from "@/lib/supabase/client"
+
+interface AuthContextType {
+  user: User | null
+  login: (email: string, password: string) => Promise<boolean>
+  logout: () => Promise<void>
+  isAuthenticated: boolean
+  isLoading: boolean
+  hasRole: (roles: UserRole[]) => boolean
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const supabase = useMemo(() => createClient(), [])
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const refreshUser = useCallback(async () => {
+    const response = await fetch("/api/auth/me", { cache: "no-store" })
+    if (!response.ok) {
+      setUser(null)
+      return null
+    }
+
+    const payload = (await response.json()) as { user: User | null }
+    setUser(payload.user)
+    return payload.user
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadInitialUser() {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" })
+        if (!active) return
+
+        if (!response.ok) {
+          setUser(null)
+          return
+        }
+
+        const payload = (await response.json()) as { user: User | null }
+        setUser(payload.user)
+      } catch {
+        if (active) setUser(null)
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    void loadInitialUser()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setUser(null)
+        return
+      }
+
+      refreshUser().catch(() => setUser(null))
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [refreshUser, supabase])
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) return false
+
+      const profile = await refreshUser()
+      if (!profile) {
+        await supabase.auth.signOut()
+        return false
+      }
+
+      return true
+    },
+    [refreshUser, supabase]
+  )
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    window.location.href = "/login"
+  }, [supabase])
+
+  const hasRole = useCallback(
+    (roles: UserRole[]) => {
+      if (!user) return false
+      return roles.includes(user.role)
+    },
+    [user]
+  )
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user, isLoading, hasRole }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error("useAuth must be used within AuthProvider")
+  return context
+}

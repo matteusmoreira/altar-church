@@ -12,6 +12,11 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/docs/testing/*.local.md
+/artifacts-*.png
 
 # next.js
 /.next/
@@ -25,6 +30,7 @@
 *.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -32,9 +38,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+Supabase.txt
+*Supabase*.txt
 
 # vercel
 .vercel
+
+# local agent notes
+.claude/
 
 # typescript
 *.tsbuildinfo
