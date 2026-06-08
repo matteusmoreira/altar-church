@@ -14,6 +14,20 @@ for (const role of roles) {
   })
 }
 
+test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
+  test.setTimeout(90_000)
+  await loginAs(page, e2e.accounts.superadmin)
+  await page.goto("/admin", { waitUntil: "domcontentloaded" })
+  await expectNoDevError(page)
+  await expect(page).toHaveURL(/\/admin/)
+  await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
+
+  await resetSession(page)
+  await loginAs(page, e2e.accounts.admin)
+  await page.goto("/admin", { waitUntil: "domcontentloaded" })
+  await expect(page).toHaveURL(/\/dashboard/)
+})
+
 test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
   await page.goto("/members")
@@ -228,18 +242,4 @@ test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) =>
     expect(response.headers()["content-type"]).toContain("text/csv")
     expect(await response.text()).toMatch(/;|Seção|Tipo/)
   }
-})
-
-test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
-  test.setTimeout(90_000)
-  await loginAs(page, e2e.accounts.superadmin)
-  await page.goto("/admin", { waitUntil: "domcontentloaded" })
-  await expectNoDevError(page)
-  await expect(page).toHaveURL(/\/admin/)
-  await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
-
-  await resetSession(page)
-  await loginAs(page, e2e.accounts.admin)
-  await page.goto("/admin", { waitUntil: "domcontentloaded" })
-  await expect(page).toHaveURL(/\/dashboard/)
 })
