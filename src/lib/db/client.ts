@@ -17,6 +17,7 @@ export function getSql() {
       max: 5,
       idle_timeout: 20,
       connect_timeout: 10,
+      prepare: false,
     })
 
   if (process.env.NODE_ENV !== "production") {
