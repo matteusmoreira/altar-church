@@ -233,13 +233,13 @@ test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) =>
 test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
   test.setTimeout(90_000)
   await loginAs(page, e2e.accounts.superadmin)
-  await page.goto("/admin")
+  await page.goto("/admin", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page).toHaveURL(/\/admin/)
   await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
 
   await resetSession(page)
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/admin")
+  await page.goto("/admin", { waitUntil: "domcontentloaded" })
   await expect(page).toHaveURL(/\/dashboard/)
 })
