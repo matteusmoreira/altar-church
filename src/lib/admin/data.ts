@@ -116,19 +116,17 @@ export async function getAdminModules(): Promise<AdminModule[]> {
 
 export async function getAdminPlans(): Promise<AdminPlan[]> {
   const sql = getSql()
-  const [plans, planModules] = await Promise.all([
-    sql<PlanRow[]>`
+  const plans = await sql<PlanRow[]>`
       select id, code, name, description, price::text, billing_cycle, active, sort_order
       from public.system_plans
       order by sort_order, name
-    `,
-    sql<(PlanModuleRow & Record<string, string>)[]>`
+    `
+  const planModules = await sql<(PlanModuleRow & Record<string, string>)[]>`
       select plan_id, module_id
       from public.plan_modules
       where included = true
       order by module_id
-    `,
-  ])
+    `
   const moduleMap = groupModuleIds(planModules, "plan_id")
 
   return plans.map((plan) => ({
@@ -146,8 +144,7 @@ export async function getAdminPlans(): Promise<AdminPlan[]> {
 
 export async function getAdminCompanies(): Promise<AdminCompany[]> {
   const sql = getSql()
-  const [companies, companyModules] = await Promise.all([
-    sql<CompanyRow[]>`
+  const companies = await sql<CompanyRow[]>`
       select
         c.id,
         c.legacy_id,
@@ -169,13 +166,12 @@ export async function getAdminCompanies(): Promise<AdminCompany[]> {
       from public.companies c
       left join public.system_plans p on p.id = c.plan_id
       order by c.created_at desc
-    `,
-    sql<(CompanyModuleRow & Record<string, string>)[]>`
+    `
+  const companyModules = await sql<(CompanyModuleRow & Record<string, string>)[]>`
       select company_id, module_id
       from public.company_enabled_modules
       order by sort_order
-    `,
-  ])
+    `
   const moduleMap = groupModuleIds(companyModules, "company_id")
 
   return companies.map((company) => ({
@@ -232,12 +228,10 @@ export async function getAdminProfiles(): Promise<AdminProfile[]> {
 }
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
-  const [companies, users, plans, modules] = await Promise.all([
-    getAdminCompanies(),
-    getAdminProfiles(),
-    getAdminPlans(),
-    getAdminModules(),
-  ])
+  const modules = await getAdminModules()
+  const plans = await getAdminPlans()
+  const companies = await getAdminCompanies()
+  const users = await getAdminProfiles()
 
   return { companies, users, plans, modules }
 }
