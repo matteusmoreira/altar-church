@@ -206,7 +206,7 @@ export default async function PublicChurchPage({ params }: PublicChurchPageProps
       </main>
 
       <footer className="border-t border-border/50 py-6 text-center text-sm text-muted-foreground">
-        <p>{data.church.publicName} © {new Date().getFullYear()} • EcclesiaHub</p>
+        <p>{data.church.publicName} © {new Date().getFullYear()} • Altar Church</p>
       </footer>
     </div>
   )

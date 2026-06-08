@@ -53,8 +53,8 @@ export default function LoginPage() {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary shadow-glow">
             <Church className="h-7 w-7 text-white" />
           </div>
-          <CardTitle className="text-2xl font-bold">EcclesiaHub</CardTitle>
-          <CardDescription>Gestao inteligente para sua igreja</CardDescription>
+          <CardTitle className="text-2xl font-bold">Altar Church</CardTitle>
+          <CardDescription>Gestão inteligente para sua igreja</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

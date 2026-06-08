@@ -1,4 +1,4 @@
-# EcclesiaHub
+# Altar Church
 
 Plataforma administrativa multi-tenant para igrejas. O app usa Next.js App Router, React, Supabase Auth/SSR, Postgres, Server Components para leitura inicial e Server Actions para mutações auditadas.
 

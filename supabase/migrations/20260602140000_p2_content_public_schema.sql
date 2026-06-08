@@ -322,7 +322,7 @@ insert into public.banners (
 )
 select
   c.id,
-  'Bem-vindo ao EcclesiaHub',
+  'Bem-vindo ao Altar Church',
   '',
   '/login',
   10,
@@ -334,6 +334,6 @@ where not exists (
   select 1
   from public.banners b
   where b.company_id = c.id
-    and lower(b.title) = lower('Bem-vindo ao EcclesiaHub')
+    and lower(b.title) = lower('Bem-vindo ao Altar Church')
     and b.deleted_at is null
 );

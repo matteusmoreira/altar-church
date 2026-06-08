@@ -108,7 +108,7 @@ test("admin logado abre Conteúdo real e modal de publicação", async ({ page }
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Conteúdo" })).toBeVisible()
   await expect(page.getByText("Culto de Celebração neste domingo")).toBeVisible()
-  await expect(page.getByText("Bem-vindo ao EcclesiaHub")).toBeVisible()
+  await expect(page.getByText("Bem-vindo ao Altar Church")).toBeVisible()
 
   await page.getByRole("button", { name: "Novo conteúdo" }).click()
   await expect(page.getByRole("dialog", { name: "Novo conteúdo" })).toBeVisible()

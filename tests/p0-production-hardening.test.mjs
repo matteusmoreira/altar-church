@@ -20,7 +20,7 @@ test("P0 documents local setup, validation, deploy, rollback and secret handling
   const readme = read("README.md")
 
   for (const required of [
-    /EcclesiaHub/,
+    /Altar Church/,
     /POSTGRES_URL/,
     /Supabase/,
     /npm run typecheck/,

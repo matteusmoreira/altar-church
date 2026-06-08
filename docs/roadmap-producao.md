@@ -1,4 +1,4 @@
-# Roadmap de Produção - EcclesiaHub
+# Roadmap de Produção - Altar Church
 
 Status validado em 05/06/2026.
 

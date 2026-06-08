@@ -121,7 +121,7 @@ function SidebarContent({
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold tracking-tight">EcclesiaHub</h1>
+            <h1 className="text-lg font-bold tracking-tight">Altar Church</h1>
             <p className="truncate text-xs text-muted-foreground">Igreja Batista Central</p>
           </div>
         )}
@@ -333,7 +333,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg gradient-primary">
               <Church className="h-4 w-4 text-white" />
             </div>
-            <span className="truncate font-bold">EcclesiaHub</span>
+            <span className="truncate font-bold">Altar Church</span>
           </div>
           <div className="ml-auto shrink-0">
             <ThemeToggle />

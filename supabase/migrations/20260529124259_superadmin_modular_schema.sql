@@ -475,7 +475,7 @@ select seed.legacy_id,
        true
 from (
   values
-    ('u1', null, 'Super Admin', 'superadmin@ecclesiahub.com', 'superadmin'),
+    ('u1', null, 'Super Admin', 'superadmin@altarchurch.com', 'superadmin'),
     ('u2', 'c1', 'Pastor Joao Silva', 'admin@igreja.com', 'admin'),
     ('u3', 'c1', 'Pastor Pedro Santos', 'pastor@igreja.com', 'pastor'),
     ('u4', 'c1', 'Lucas Oliveira', 'lider@igreja.com', 'ministry_leader'),

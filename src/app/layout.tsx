@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "EcclesiaHub - Gestão Inteligente para Igrejas",
+  title: "Altar Church - Gestão Inteligente para Igrejas",
   description: "Sistema completo de gestão para igrejas. Gerencie membros, grupos, eventos, finanças e muito mais.",
 }
 
