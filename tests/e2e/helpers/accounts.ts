@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 export type E2ERole = "superadmin" | "admin" | "member"
@@ -21,7 +21,47 @@ export interface E2EAccountDocument {
 
 const defaultDocPath = path.join(process.cwd(), "docs", "testing", "e2e-accounts.local.md")
 
+function buildDefaultAccountDocument(): E2EAccountDocument {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
+
+  const password = process.env.E2E_DEFAULT_PASSWORD ?? "AltarChurch-E2E-2026!"
+  const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID ?? "c1"
+
+  return {
+    baseUrl: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    supabaseProjectRef: process.env.SUPABASE_PROJECT_REF ?? new URL(supabaseUrl).hostname.split(".")[0],
+    supabaseUrl,
+    companyLegacyId,
+    accounts: {
+      superadmin: {
+        email: process.env.E2E_SUPERADMIN_EMAIL ?? "e2e.superadmin@altar-church.test",
+        password,
+        role: "superadmin",
+        name: "Superadmin E2E",
+        companyLegacyId: null,
+      },
+      admin: {
+        email: process.env.E2E_ADMIN_EMAIL ?? "e2e.admin@altar-church.test",
+        password,
+        role: "admin",
+        name: "Admin E2E",
+        companyLegacyId,
+      },
+      member: {
+        email: process.env.E2E_MEMBER_EMAIL ?? "e2e.membro@altar-church.test",
+        password,
+        role: "reader",
+        name: "Membro E2E",
+        companyLegacyId,
+      },
+    },
+  }
+}
+
 export function readE2EAccounts(docPath = process.env.E2E_ACCOUNTS_DOC ?? defaultDocPath): E2EAccountDocument {
+  if (!existsSync(docPath)) return buildDefaultAccountDocument()
+
   const content = readFileSync(docPath, "utf8")
   const match = content.match(/```json\s*([\s\S]*?)```/)
 

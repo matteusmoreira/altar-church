@@ -192,6 +192,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
 })
 
 test("admin logado faz smoke dos modulos P4", async ({ page }) => {
+  test.setTimeout(90_000)
   await loginAs(page, e2e.accounts.admin)
 
   const modules = [

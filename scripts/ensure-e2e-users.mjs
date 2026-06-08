@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
 import { createClient } from "@supabase/supabase-js"
@@ -9,6 +9,8 @@ const accountDocPath = process.env.E2E_ACCOUNTS_DOC ?? path.join(root, "docs", "
 const envPath = path.join(root, ".env.local")
 
 function readKeyValueFile(filePath) {
+  if (!existsSync(filePath)) return { ...process.env }
+
   return readFileSync(filePath, "utf8")
     .split(/\r?\n/)
     .reduce((acc, line) => {
@@ -18,7 +20,49 @@ function readKeyValueFile(filePath) {
     }, {})
 }
 
+function buildDefaultAccountDocument() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
+
+  const supabaseProjectRef =
+    process.env.SUPABASE_PROJECT_REF ?? new URL(supabaseUrl).hostname.split(".")[0]
+  const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000"
+  const password = process.env.E2E_DEFAULT_PASSWORD ?? "AltarChurch-E2E-2026!"
+
+  return {
+    baseUrl,
+    supabaseProjectRef,
+    supabaseUrl,
+    companyLegacyId: process.env.E2E_COMPANY_LEGACY_ID ?? "c1",
+    accounts: {
+      superadmin: {
+        email: process.env.E2E_SUPERADMIN_EMAIL ?? "e2e.superadmin@altar-church.test",
+        password,
+        role: "superadmin",
+        name: "Superadmin E2E",
+        companyLegacyId: null,
+      },
+      admin: {
+        email: process.env.E2E_ADMIN_EMAIL ?? "e2e.admin@altar-church.test",
+        password,
+        role: "admin",
+        name: "Admin E2E",
+        companyLegacyId: process.env.E2E_COMPANY_LEGACY_ID ?? "c1",
+      },
+      member: {
+        email: process.env.E2E_MEMBER_EMAIL ?? "e2e.membro@altar-church.test",
+        password,
+        role: "reader",
+        name: "Membro E2E",
+        companyLegacyId: process.env.E2E_COMPANY_LEGACY_ID ?? "c1",
+      },
+    },
+  }
+}
+
 function readAccountDocument() {
+  if (!existsSync(accountDocPath)) return buildDefaultAccountDocument()
+
   const content = readFileSync(accountDocPath, "utf8")
   const match = content.match(/```json\s*([\s\S]*?)```/)
   if (!match) throw new Error(`Bloco JSON nao encontrado em ${accountDocPath}`)
@@ -125,9 +169,18 @@ async function ensureAuthUserDirect(sql, account) {
           role = 'authenticated',
           encrypted_password = extensions.crypt(${account.password}, extensions.gen_salt('bf')),
           email_confirmed_at = coalesce(email_confirmed_at, now()),
+          confirmation_token = '',
+          recovery_token = '',
+          email_change_token_new = '',
+          email_change = '',
           raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb,
           raw_user_meta_data = ${sql.json(metadata)},
           updated_at = now(),
+          phone_change = '',
+          phone_change_token = '',
+          email_change_token_current = '',
+          email_change_confirm_status = 0,
+          reauthentication_token = '',
           deleted_at = null
       where id = ${authUserId}
     `
@@ -152,6 +205,10 @@ async function ensureAuthUserDirect(sql, account) {
         email_change_token_current,
         email_change_confirm_status,
         reauthentication_token,
+        confirmation_token,
+        recovery_token,
+        email_change_token_new,
+        email_change,
         is_sso_user,
         is_anonymous
       )
@@ -173,6 +230,10 @@ async function ensureAuthUserDirect(sql, account) {
         '',
         '',
         0,
+        '',
+        '',
+        '',
+        '',
         '',
         false,
         false
@@ -218,7 +279,7 @@ async function ensureAuthUserDirect(sql, account) {
 async function main() {
   const env = readKeyValueFile(envPath)
   const doc = readAccountDocument()
-  const sql = postgres(env.POSTGRES_URL, { max: 1, idle_timeout: 5, connect_timeout: 10 })
+  const sql = postgres(env.POSTGRES_URL, { max: 1, idle_timeout: 5, connect_timeout: 10, prepare: false })
   const serviceRoleKey = tryGetServiceRoleKey(doc.supabaseProjectRef)
   const supabase = serviceRoleKey
     ? createClient(doc.supabaseUrl, serviceRoleKey, {
@@ -246,6 +307,14 @@ async function main() {
       on conflict (company_id, module_id) do update
       set enabled = true,
           updated_at = now()
+    `
+
+    await sql`
+      update public.banners
+      set title = 'Bem-vindo ao Altar Church',
+          updated_at = now()
+      where company_id = ${company.id}
+        and lower(title) = lower('Bem-vindo ao EcclesiaHub')
     `
 
     const accountEntries = Object.entries(doc.accounts)
