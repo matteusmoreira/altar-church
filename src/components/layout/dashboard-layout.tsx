@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   BarChart3,
   Bell,
@@ -242,42 +242,19 @@ function Topbar() {
   )
 }
 
-export function DashboardLayout({ children }: { children: React.ReactNode }) {
+export function DashboardLayout({
+  children,
+  initialEnabledModuleIds,
+}: {
+  children: React.ReactNode
+  initialEnabledModuleIds: string[] | null
+}) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [moduleState, setModuleState] = useState<{ companyId: string; moduleIds: string[] } | null>(null)
+  const [enabledModuleIds] = useState<string[] | null>(initialEnabledModuleIds)
   const pathname = usePathname()
   const { user, hasRole, isLoading } = useAuth()
   const isSuperAdmin = hasRole(["superadmin"])
-  const shouldLoadCompanyModules = !!user?.churchId && !isSuperAdmin
-  const enabledModuleIds =
-    isSuperAdmin
-      ? null
-      : user?.churchId && moduleState && moduleState.companyId === user.churchId
-        ? moduleState.moduleIds
-        : []
-
-  useEffect(() => {
-    if (!shouldLoadCompanyModules || !user?.churchId) {
-      return
-    }
-
-    let active = true
-    const companyId = user.churchId
-
-    fetch(`/api/company-modules?companyId=${encodeURIComponent(user.churchId)}`)
-      .then((response) => response.json() as Promise<{ moduleIds: string[] }>)
-      .then((data) => {
-        if (active) setModuleState({ companyId, moduleIds: data.moduleIds })
-      })
-      .catch(() => {
-        if (active) setModuleState({ companyId, moduleIds: [] })
-      })
-
-    return () => {
-      active = false
-    }
-  }, [shouldLoadCompanyModules, user?.churchId])
 
   const currentModuleId = useMemo(() => {
     return navGroups

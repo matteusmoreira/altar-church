@@ -4,5 +4,5 @@ import { requireSuperadmin } from "@/lib/auth/server"
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   await requireSuperadmin()
 
-  return <DashboardLayout>{children}</DashboardLayout>
+  return <DashboardLayout initialEnabledModuleIds={null}>{children}</DashboardLayout>
 }

@@ -11,18 +11,14 @@ export function getSql() {
     throw new Error("POSTGRES_URL is required to connect to Supabase Postgres")
   }
 
-  const sql =
-    globalThis.ecclesiaHubSql ??
-    postgres(connectionString, {
+  if (!globalThis.ecclesiaHubSql) {
+    globalThis.ecclesiaHubSql = postgres(connectionString, {
       max: 5,
       idle_timeout: 20,
       connect_timeout: 10,
       prepare: false,
     })
-
-  if (process.env.NODE_ENV !== "production") {
-    globalThis.ecclesiaHubSql = sql
   }
 
-  return sql
+  return globalThis.ecclesiaHubSql
 }

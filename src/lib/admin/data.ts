@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { getSql } from "@/lib/db/client"
 import type {
   AdminCompany,
@@ -236,7 +237,7 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   return { companies, users, plans, modules }
 }
 
-export async function getCompanyEnabledModuleIds(companyId: string): Promise<string[]> {
+export const getCompanyEnabledModuleIds = cache(async function getCompanyEnabledModuleIds(companyId: string): Promise<string[]> {
   const sql = getSql()
   const rows = await sql<{ module_id: string }[]>`
     select module_id
@@ -246,4 +247,4 @@ export async function getCompanyEnabledModuleIds(companyId: string): Promise<str
   `
 
   return rows.map((row) => row.module_id)
-}
+})

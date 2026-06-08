@@ -1,4 +1,7 @@
+import { cache } from "react"
+import { headers } from "next/headers"
 import { redirect } from "next/navigation"
+import { AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
 import { getSql } from "@/lib/db/client"
 import type { User, UserRole } from "@/lib/types"
 import { createClient } from "@/lib/supabase/server"
@@ -84,7 +87,15 @@ export function requireUserCompanyId(user: User, requestedCompanyId?: string | n
   return companyId
 }
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async function getCurrentUser() {
+  const headerStore = await headers()
+  const proxiedAuthUserId = headerStore.get(AUTH_USER_ID_HEADER)
+
+  if (proxiedAuthUserId) {
+    const profile = await getProfileForAuthUser(proxiedAuthUserId, headerStore.get(AUTH_USER_EMAIL_HEADER))
+    return profile ? toUser(profile) : null
+  }
+
   const supabase = await createClient()
   const {
     data: { user: authUser },
@@ -97,7 +108,7 @@ export async function getCurrentUser() {
   if (!profile) return null
 
   return toUser(profile)
-}
+})
 
 export async function requireUser() {
   const user = await getCurrentUser()
