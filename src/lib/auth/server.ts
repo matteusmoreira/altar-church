@@ -30,14 +30,34 @@ function toUser(profile: ProfileRow): User {
 async function getProfileForAuthUser(authUserId: string, email?: string | null) {
   const sql = getSql()
   const rows = await sql<ProfileRow[]>`
-    select id, auth_user_id, company_id, name, email, role, active, avatar_url, created_at
-    from public.profiles
-    where active = true
+    select
+      p.id,
+      p.auth_user_id,
+      coalesce(
+        p.company_id,
+        case
+          when p.role = 'superadmin' then (
+            select c.id
+            from public.companies c
+            where c.active = true
+            order by c.created_at, c.id
+            limit 1
+          )
+        end
+      ) as company_id,
+      p.name,
+      p.email,
+      p.role,
+      p.active,
+      p.avatar_url,
+      p.created_at
+    from public.profiles p
+    where p.active = true
       and (
-        auth_user_id = ${authUserId}
-        or (${email ?? ""} <> '' and lower(email) = lower(${email ?? ""}) and auth_user_id is null)
+        p.auth_user_id = ${authUserId}
+        or (${email ?? ""} <> '' and lower(p.email) = lower(${email ?? ""}) and p.auth_user_id is null)
       )
-    order by auth_user_id nulls last
+    order by p.auth_user_id nulls last
     limit 1
   `
 
@@ -54,6 +74,14 @@ async function getProfileForAuthUser(authUserId: string, email?: string | null) 
   }
 
   return profile
+}
+
+export function requireUserCompanyId(user: User, requestedCompanyId?: string | null) {
+  const companyId = user.role === "superadmin" ? requestedCompanyId ?? user.churchId : user.churchId
+  if (!companyId) {
+    throw new Error("Igreja obrigatória")
+  }
+  return companyId
 }
 
 export async function getCurrentUser() {

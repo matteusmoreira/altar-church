@@ -1,5 +1,5 @@
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
-import { getCurrentUser } from "@/lib/auth/server"
+import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import type { Permission } from "@/lib/types"
 
 export async function requireExportContext(searchParams: URLSearchParams, permission: Permission) {
@@ -9,11 +9,7 @@ export async function requireExportContext(searchParams: URLSearchParams, permis
   }
 
   const requestedCompanyId = searchParams.get("companyId")?.trim() || null
-  const companyId = user.role === "superadmin" ? requestedCompanyId : user.churchId
-  if (!companyId) {
-    throw new Error("Igreja obrigatória")
-  }
-
+  const companyId = requireUserCompanyId(user, requestedCompanyId)
   await requirePermission(permission, companyId)
   return { user, companyId }
 }

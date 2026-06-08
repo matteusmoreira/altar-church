@@ -1,5 +1,5 @@
 import { requirePermission } from "@/lib/auth/permissions"
-import { getCurrentUser } from "@/lib/auth/server"
+import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import type {
   GroupCategory,
@@ -112,12 +112,7 @@ async function resolveCompanyId(companyId?: string | null) {
     throw new Error("Acesso negado")
   }
 
-  const resolvedCompanyId = user.role === "superadmin" ? companyId : user.churchId
-  if (!resolvedCompanyId) {
-    throw new Error("Igreja obrigatória")
-  }
-
-  return resolvedCompanyId
+  return requireUserCompanyId(user, companyId)
 }
 
 function toIso(value: Date | string | null) {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
-import { getCurrentUser } from "@/lib/auth/server"
+import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import type { Permission } from "@/lib/types"
@@ -189,11 +189,7 @@ async function actionContext(formData: FormData, permission: Permission) {
   }
 
   const inputCompanyId = optionalText(formData, "companyId")
-  const companyId = user.role === "superadmin" ? inputCompanyId : user.churchId
-  if (!companyId) {
-    throw new Error("Igreja obrigatória")
-  }
-
+  const companyId = requireUserCompanyId(user, inputCompanyId)
   await requirePermission(permission, companyId)
   return { user, companyId }
 }

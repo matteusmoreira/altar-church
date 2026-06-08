@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
-import { getCurrentUser } from "@/lib/auth/server"
+import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import type { CongregationActionResult, SaveCongregationInput } from "./types"
 
@@ -41,11 +41,7 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
     throw new Error("Acesso negado")
   }
 
-  const companyId = user.role === "superadmin" ? inputCompanyId : user.churchId
-  if (!companyId) {
-    throw new Error("Igreja obrigatória")
-  }
-
+  const companyId = requireUserCompanyId(user, inputCompanyId)
   return { user, companyId }
 }
 

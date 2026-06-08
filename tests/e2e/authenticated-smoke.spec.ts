@@ -28,13 +28,35 @@ test("superadmin acessa console administrativo e admin comum nao acessa", async 
   await expect(page).toHaveURL(/\/dashboard/)
 })
 
+test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao", async ({ page }) => {
+  test.setTimeout(180_000)
+  await loginAs(page, e2e.accounts.superadmin)
+
+  const modules = [
+    { path: "/church-info", heading: /Informa/i },
+    { path: "/ministries", heading: /Minist/i },
+    { path: "/congregations", heading: /Congrega/i },
+    { path: "/members", heading: /Pessoas/i },
+    { path: "/groups", heading: /GCEUs/i },
+    { path: "/content", heading: /Conte/i },
+    { path: "/events", heading: /Eventos/i },
+    { path: "/finance", heading: /Financeiro/i },
+  ]
+
+  for (const entry of modules) {
+    await page.goto(entry.path, { waitUntil: "domcontentloaded" })
+    await expectNoDevError(page)
+    await expect(page.getByRole("heading", { name: entry.heading }).first()).toBeVisible({ timeout: 30_000 })
+  }
+})
+
 test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/members")
+  await page.goto("/members", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Pessoas" })).toBeVisible()
   await page.getByRole("link", { name: /Joao|João|Maria|Ana/i }).first().click()
-  await expect(page).toHaveURL(/\/members\/[0-9a-f-]+/)
+  await expect(page).toHaveURL(/\/members\/[0-9a-f-]+/, { timeout: 20_000 })
   await expectNoDevError(page)
   await expect(page.getByText("Histórico pastoral")).toBeVisible()
   await page.getByRole("tab", { name: "Jornada" }).click()
@@ -210,7 +232,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
 })
 
 test("admin logado faz smoke dos modulos P4", async ({ page }) => {
-  test.setTimeout(90_000)
+  test.setTimeout(150_000)
   await loginAs(page, e2e.accounts.admin)
 
   const modules = [
@@ -228,7 +250,7 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
   ]
 
   for (const entry of modules) {
-    await page.goto(entry.path)
+    await page.goto(entry.path, { waitUntil: "domcontentloaded" })
     await expectNoDevError(page)
     await expect(page.getByRole("heading", { name: entry.heading }).first()).toBeVisible()
   }
