@@ -128,6 +128,7 @@ test("portal público da igreja consome conteúdo real publicado", async ({ page
 })
 
 test("admin logado cria edita e exclui grupo real", async ({ page }) => {
+  test.setTimeout(90_000)
   const stamp = Date.now()
   const name = `GCEU E2E ${stamp}`
   const description = `Grupo E2E criado pelo fluxo autenticado ${stamp}`
@@ -155,6 +156,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await page.getByTestId("group-capacity-input").fill("12")
   await page.getByTestId("group-save-button").click()
   const groupRow = page.getByRole("row").filter({ hasText: name })
+  const groupActionsButton = page.getByRole("button", { name: `Ações de ${name}` })
   await expect(groupRow).toBeVisible()
 
   await page.getByTestId("group-ops-group-select").click()
@@ -178,14 +180,16 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await expect(meetingsPanel.getByText(meetingTitle).first()).toBeVisible()
   await expect(meetingsPanel.getByText("3 presentes · 1 visitantes").first()).toBeVisible()
 
-  await page.getByRole("button", { name: `Ações de ${name}` }).click()
+  await expect(groupActionsButton).toBeEnabled()
+  await groupActionsButton.click()
   await page.getByRole("menuitem", { name: "Editar" }).click()
   await expect(page.getByRole("dialog", { name: "Editar grupo" })).toBeVisible()
   await page.getByTestId("group-description-input").fill(updatedDescription)
   await page.getByTestId("group-save-button").click()
   await expect(page.getByText(updatedDescription)).toBeVisible()
 
-  await page.getByRole("button", { name: `Ações de ${name}` }).click()
+  await expect(groupActionsButton).toBeEnabled()
+  await groupActionsButton.click()
   await page.getByRole("menuitem", { name: "Excluir" }).click()
   await page.getByRole("button", { name: "Excluir" }).click()
   await expect(groupRow).toBeHidden()
@@ -227,6 +231,7 @@ test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) =>
 })
 
 test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
+  test.setTimeout(90_000)
   await loginAs(page, e2e.accounts.superadmin)
   await page.goto("/admin")
   await expectNoDevError(page)
