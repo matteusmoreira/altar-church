@@ -213,7 +213,7 @@ function StatCard({
 export function VisitorsClient({ visitorsResult, filters }: VisitorsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const routePath = pathname ?? "/visitors"
+  const routePath = pathname ?? "/visitantes"
   const visitors = visitorsResult.people
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)

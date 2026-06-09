@@ -21,25 +21,25 @@ const targetConfig = {
     entityTable: "church_profiles",
     purpose: "logo",
     permission: "settings.edit" as const,
-    paths: ["/church-info", "/dashboard"],
+    paths: ["/informacoes", "/dashboard"],
   },
   "church-cover": {
     entityTable: "church_profiles",
     purpose: "cover",
     permission: "settings.edit" as const,
-    paths: ["/church-info", "/dashboard"],
+    paths: ["/informacoes", "/dashboard"],
   },
   "content-cover": {
     entityTable: "content_posts",
     purpose: "cover",
     permission: "content.create" as const,
-    paths: ["/content", "/dashboard"],
+    paths: ["/conteudo", "/dashboard"],
   },
   "banner-image": {
     entityTable: "banners",
     purpose: "image",
     permission: "content.create" as const,
-    paths: ["/content", "/dashboard"],
+    paths: ["/conteudo", "/dashboard"],
   },
 }
 

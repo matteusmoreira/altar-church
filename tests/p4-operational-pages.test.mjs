@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
 const operationalPages = [
-  "events",
-  "attendance",
-  "prayer",
-  "reading-plans",
-  "communication",
-  "notifications",
+  "eventos",
+  "presenca",
+  "intercessao",
+  "discipulado",
+  "comunicacao",
+  "notificacao",
   "crm",
-  "donations",
-  "finance",
+  "doacao",
+  "financeiro",
   "inpeace-play",
 ]
 

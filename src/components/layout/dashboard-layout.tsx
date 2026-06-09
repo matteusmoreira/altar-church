@@ -32,8 +32,10 @@ import {
   Shield,
   Users,
   UsersRound,
+  type LucideIcon,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth/context"
+import { dashboardRoutes, isDashboardRouteActive, type DashboardRouteId } from "@/lib/navigation/routes"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -41,61 +43,68 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
-const navGroups = [
+type NavigationItem = {
+  href: string
+  label: string
+  icon: LucideIcon
+  moduleId: DashboardRouteId
+}
+
+const navGroups: { label: string; items: NavigationItem[] }[] = [
   {
     label: "Início",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, moduleId: "dashboard" }],
+    items: [{ href: dashboardRoutes.dashboard, label: "Dashboard", icon: LayoutDashboard, moduleId: "dashboard" }],
   },
   {
     label: "Sobre a Igreja",
     items: [
-      { href: "/church-info", label: "Informações", icon: Church, moduleId: "church-info" },
-      { href: "/ministries", label: "Ministérios", icon: Heart, moduleId: "ministries" },
-      { href: "/programming", label: "Programação", icon: CalendarDays, moduleId: "programming" },
-      { href: "/songs", label: "Louvor", icon: Music, moduleId: "songs" },
-      { href: "/congregations", label: "Congregações", icon: Building2, moduleId: "congregations" },
+      { href: dashboardRoutes["church-info"], label: "Informações", icon: Church, moduleId: "church-info" },
+      { href: dashboardRoutes.ministries, label: "Ministérios", icon: Heart, moduleId: "ministries" },
+      { href: dashboardRoutes.programming, label: "Programação", icon: CalendarDays, moduleId: "programming" },
+      { href: dashboardRoutes.songs, label: "Louvor", icon: Music, moduleId: "songs" },
+      { href: dashboardRoutes.congregations, label: "Congregações", icon: Building2, moduleId: "congregations" },
     ],
   },
   {
     label: "Cuidar",
     items: [
-      { href: "/members", label: "Pessoas", icon: Users, moduleId: "members" },
-      { href: "/visitors", label: "Visitantes", icon: UsersRound, moduleId: "visitors" },
-      { href: "/groups", label: "GCEUs", icon: Home, moduleId: "groups" },
-      { href: "/cells", label: "Células", icon: Network, moduleId: "cells" },
-      { href: "/prayer", label: "Intercessão", icon: HandHeart, moduleId: "prayer" },
-      { href: "/reading-plans", label: "Discipulado", icon: BookOpen, moduleId: "reading-plans" },
+      { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
+      { href: dashboardRoutes.visitors, label: "Visitantes", icon: UsersRound, moduleId: "visitors" },
+      { href: dashboardRoutes.groups, label: "GCEUs", icon: Home, moduleId: "groups" },
+      { href: dashboardRoutes.cells, label: "Células", icon: Network, moduleId: "cells" },
+      { href: dashboardRoutes.prayer, label: "Intercessão", icon: HandHeart, moduleId: "prayer" },
+      { href: dashboardRoutes["reading-plans"], label: "Discipulado", icon: BookOpen, moduleId: "reading-plans" },
     ],
   },
   {
     label: "Comunicar",
     items: [
-      { href: "/events", label: "Eventos", icon: CalendarDays, moduleId: "events" },
-      { href: "/content", label: "Conteúdo", icon: Newspaper, moduleId: "content" },
-      { href: "/notifications", label: "Notificação", icon: Bell, moduleId: "notifications" },
-      { href: "/communication", label: "Comunicação", icon: MessageSquare, moduleId: "communication" },
-      { href: "/inpeace-play", label: "InPeace Play", icon: Play, moduleId: "inpeace-play" },
+      { href: dashboardRoutes.events, label: "Eventos", icon: CalendarDays, moduleId: "events" },
+      { href: dashboardRoutes.content, label: "Conteúdo", icon: Newspaper, moduleId: "content" },
+      { href: dashboardRoutes.notifications, label: "Notificação", icon: Bell, moduleId: "notifications" },
+      { href: dashboardRoutes.communication, label: "Comunicação", icon: MessageSquare, moduleId: "communication" },
+      { href: dashboardRoutes["inpeace-play"], label: "InPeace Play", icon: Play, moduleId: "inpeace-play" },
     ],
   },
   {
     label: "Administrar",
     items: [
-      { href: "/attendance", label: "Presença", icon: ClipboardCheck, moduleId: "attendance" },
-      { href: "/crm", label: "CRM", icon: KanbanSquare, moduleId: "crm" },
-      { href: "/finance", label: "Financeiro", icon: DollarSign, moduleId: "finance" },
-      { href: "/donations", label: "Doação", icon: Gift, moduleId: "donations" },
-      { href: "/reports", label: "Relatórios", icon: BarChart3, moduleId: "reports" },
-      { href: "/settings", label: "Configurações", icon: Settings, moduleId: "settings" },
+      { href: dashboardRoutes.attendance, label: "Presença", icon: ClipboardCheck, moduleId: "attendance" },
+      { href: dashboardRoutes.crm, label: "CRM", icon: KanbanSquare, moduleId: "crm" },
+      { href: dashboardRoutes.finance, label: "Financeiro", icon: DollarSign, moduleId: "finance" },
+      { href: dashboardRoutes.donations, label: "Doação", icon: Gift, moduleId: "donations" },
+      { href: dashboardRoutes.reports, label: "Relatórios", icon: BarChart3, moduleId: "reports" },
+      { href: dashboardRoutes.settings, label: "Configurações", icon: Settings, moduleId: "settings" },
     ],
   },
 ]
 
-const mobileNavItems = [
-  { href: "/dashboard", label: "Início", icon: LayoutDashboard, moduleId: "dashboard" },
-  { href: "/members", label: "Pessoas", icon: Users, moduleId: "members" },
-  { href: "/events", label: "Eventos", icon: CalendarDays, moduleId: "events" },
-  { href: "/groups", label: "GCEUs", icon: Home, moduleId: "groups" },
-  { href: "/finance", label: "Financeiro", icon: DollarSign, moduleId: "finance" },
+const mobileNavItems: NavigationItem[] = [
+  { href: dashboardRoutes.dashboard, label: "Início", icon: LayoutDashboard, moduleId: "dashboard" },
+  { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
+  { href: dashboardRoutes.events, label: "Eventos", icon: CalendarDays, moduleId: "events" },
+  { href: dashboardRoutes.groups, label: "GCEUs", icon: Home, moduleId: "groups" },
+  { href: dashboardRoutes.finance, label: "Financeiro", icon: DollarSign, moduleId: "finance" },
 ]
 
 function SidebarContent({
@@ -143,7 +152,7 @@ function SidebarContent({
                   </p>
                 )}
                 {visibleItems.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+                  const isActive = isDashboardRouteActive(pathname, item.href)
                   return (
                     <Link
                       key={item.href}
@@ -176,13 +185,13 @@ function SidebarContent({
                 </p>
               )}
               <Link
-                href="/admin"
+                href={dashboardRoutes.admin}
                 onClick={onNavClick}
                 title={collapsed ? "SuperAdmin" : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                   collapsed && "justify-center px-2",
-                  pathname.startsWith("/admin")
+                  isDashboardRouteActive(pathname, dashboardRoutes.admin)
                     ? "bg-warning/10 text-warning"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 )}
@@ -259,7 +268,7 @@ export function DashboardLayout({
   const currentModuleId = useMemo(() => {
     return navGroups
       .flatMap((group) => group.items)
-      .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.moduleId
+      .find((item) => isDashboardRouteActive(pathname, item.href))?.moduleId
   }, [pathname])
 
   const moduleBlocked =
@@ -267,7 +276,7 @@ export function DashboardLayout({
     !isSuperAdmin &&
     enabledModuleIds !== null &&
     !enabledModuleIds.includes(currentModuleId)
-  const adminBlocked = pathname.startsWith("/admin") && !isSuperAdmin
+  const adminBlocked = isDashboardRouteActive(pathname, dashboardRoutes.admin) && !isSuperAdmin
 
   const visibleMobileItems = mobileNavItems.filter(
     (item) => isSuperAdmin || enabledModuleIds === null || enabledModuleIds.includes(item.moduleId)
@@ -299,7 +308,9 @@ export function DashboardLayout({
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 items-center gap-4 border-b border-border/50 px-4 glass lg:hidden">
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger render={<Button variant="ghost" size="icon" className="h-9 w-9" />}>
+            <SheetTrigger
+              render={<Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Abrir menu" />}
+            >
               <Menu className="h-5 w-5" />
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0 glass-strong">
@@ -320,7 +331,7 @@ export function DashboardLayout({
         <Topbar />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
-          <div className="mx-auto max-w-7xl p-4 md:p-6 lg:p-8">
+          <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">
             {adminBlocked ? (
               <div className="flex min-h-[55vh] items-center justify-center">
                 <div className="max-w-md rounded-lg border border-border/40 p-6 text-center">
@@ -347,15 +358,15 @@ export function DashboardLayout({
           </div>
         </main>
 
-        <nav className="flex items-center justify-around border-t border-border/50 px-1 py-1.5 glass safe-bottom lg:hidden">
+        <nav className="flex min-h-16 items-center justify-around border-t border-border/50 px-1 py-1.5 glass safe-bottom lg:hidden">
           {visibleMobileItems.map((item) => {
-            const isActive = pathname === item.href
+            const isActive = isDashboardRouteActive(pathname, item.href)
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition-all",
+                  "flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition-all touch-manipulation",
                   isActive ? "text-primary" : "text-muted-foreground"
                 )}
               >

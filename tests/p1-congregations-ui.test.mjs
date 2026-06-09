@@ -5,9 +5,9 @@ import { test } from "node:test"
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
 test("congregations page uses real server data and client actions", () => {
-  const page = read("src/app/(dashboard)/congregations/page.tsx")
-  const client = read("src/app/(dashboard)/congregations/congregations-client.tsx")
-  const routeActions = read("src/app/(dashboard)/congregations/actions.ts")
+  const page = read("src/app/(dashboard)/congregacoes/page.tsx")
+  const client = read("src/app/(dashboard)/congregacoes/congregations-client.tsx")
+  const routeActions = read("src/app/(dashboard)/congregacoes/actions.ts")
   const data = read("src/lib/congregations/data.ts")
   const actions = read("src/lib/congregations/actions.ts")
   const types = read("src/lib/congregations/types.ts")
@@ -42,5 +42,5 @@ test("congregations page uses real server data and client actions", () => {
   assert.match(actions, /writeAuditLog/)
   assert.match(actions, /action: "congregation\.save"/)
   assert.match(actions, /action: "congregation\.delete"/)
-  assert.match(actions, /revalidatePath\("\/congregations"\)/)
+  assert.match(actions, /revalidatePath\("\/congregacoes"\)/)
 })

@@ -116,7 +116,7 @@ function songToForm(song: SongListItem): SongFormState {
 export function SongsClient({ songsResult, filters }: SongsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const routePath = pathname ?? "/songs"
+  const routePath = pathname ?? "/louvor"
   const songs = songsResult.items
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)

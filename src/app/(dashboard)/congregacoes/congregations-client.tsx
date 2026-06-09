@@ -240,7 +240,7 @@ export function CongregationsClient({
                 value={filterState.isActive}
                 onValueChange={(value) => value && setFilterState({ ...filterState, isActive: value })}
               >
-                <SelectTrigger className="w-36">
+                <SelectTrigger className="w-full sm:w-36">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>

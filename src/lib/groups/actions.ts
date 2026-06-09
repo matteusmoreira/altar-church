@@ -129,11 +129,11 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 function refreshGroupsPaths() {
-  revalidatePath("/groups")
-  revalidatePath("/cells")
+  revalidatePath("/gceus")
+  revalidatePath("/celulas")
   revalidatePath("/dashboard")
-  revalidatePath("/church-info")
-  revalidatePath("/attendance")
+  revalidatePath("/informacoes")
+  revalidatePath("/presenca")
 }
 
 async function assertCompanyReference(table: "group_categories" | "congregations" | "people", id: string | null, companyId: string) {

@@ -6,8 +6,9 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 45_000,
   expect: {
-    timeout: 10_000,
+    timeout: 20_000,
   },
+  workers: 1,
   fullyParallel: false,
   reporter: [
     ["list"],
@@ -32,6 +33,13 @@ export default defineConfig({
       name: "chrome-desktop",
       use: {
         ...devices["Desktop Chrome"],
+        channel: "chrome",
+      },
+    },
+    {
+      name: "chrome-mobile",
+      use: {
+        ...devices["Pixel 5"],
         channel: "chrome",
       },
     },

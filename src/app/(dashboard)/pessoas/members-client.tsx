@@ -200,7 +200,7 @@ function DuplicatePersonPanel({
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
           <Link
-            href={`/members/${person.id}`}
+            href={`/pessoas/${person.id}`}
             className="mt-1 block truncate font-medium transition-colors hover:text-primary"
           >
             {person.fullName}
@@ -275,7 +275,7 @@ export function MembersClient({
   }
 
   const openDetail = (person: PersonListItem) => {
-    router.push(`/members/${person.id}`)
+    router.push(`/pessoas/${person.id}`)
   }
 
   const handleSave = async () => {
@@ -410,7 +410,7 @@ export function MembersClient({
                     value={filterState.status}
                     onValueChange={(value) => value && setFilterState({ ...filterState, status: value })}
                   >
-                    <SelectTrigger className="w-36">
+                    <SelectTrigger className="w-full sm:w-36">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -424,7 +424,7 @@ export function MembersClient({
                     value={filterState.personType}
                     onValueChange={(value) => value && setFilterState({ ...filterState, personType: value })}
                   >
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger className="w-full sm:w-40">
                       <SelectValue placeholder="Tipo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -440,7 +440,7 @@ export function MembersClient({
                     value={filterState.congregationId}
                     onValueChange={(value) => value && setFilterState({ ...filterState, congregationId: value })}
                   >
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger className="w-full sm:w-44">
                       <SelectValue placeholder="Congregação" />
                     </SelectTrigger>
                     <SelectContent>
@@ -456,7 +456,7 @@ export function MembersClient({
                     value={filterState.baptized}
                     onValueChange={(value) => value && setFilterState({ ...filterState, baptized: value })}
                   >
-                    <SelectTrigger className="w-36">
+                    <SelectTrigger className="w-full sm:w-36">
                       <SelectValue placeholder="Batizado" />
                     </SelectTrigger>
                     <SelectContent>
@@ -519,7 +519,7 @@ export function MembersClient({
                             </Avatar>
                             <div>
                               <Link
-                                href={`/members/${person.id}`}
+                                href={`/pessoas/${person.id}`}
                                 className="text-sm font-medium transition-colors hover:text-primary"
                               >
                                 {person.fullName}
@@ -589,7 +589,7 @@ export function MembersClient({
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <Link
-                          href={`/members/${person.id}`}
+                          href={`/pessoas/${person.id}`}
                           className="block truncate text-sm font-medium transition-colors hover:text-primary"
                         >
                           {person.fullName}

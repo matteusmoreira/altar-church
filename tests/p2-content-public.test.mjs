@@ -24,9 +24,9 @@ test("P2 migration creates content and banner schema with RLS", () => {
 })
 
 test("content dashboard uses server data and audited server actions", () => {
-  const page = read("src/app/(dashboard)/content/page.tsx")
-  const client = read("src/app/(dashboard)/content/content-client.tsx")
-  const routeActions = read("src/app/(dashboard)/content/actions.ts")
+  const page = read("src/app/(dashboard)/conteudo/page.tsx")
+  const client = read("src/app/(dashboard)/conteudo/content-client.tsx")
+  const routeActions = read("src/app/(dashboard)/conteudo/actions.ts")
   const data = read("src/lib/content/data.ts")
   const actions = read("src/lib/content/actions.ts")
   const types = read("src/lib/content/types.ts")
@@ -67,7 +67,7 @@ test("content dashboard uses server data and audited server actions", () => {
   assert.match(actions, /writeAuditLog/)
   assert.match(actions, /action: "content_post\.save"/)
   assert.match(actions, /action: "banner\.save"/)
-  assert.match(actions, /revalidatePath\("\/content"\)/)
+  assert.match(actions, /revalidatePath\("\/conteudo"\)/)
 })
 
 test("public church page reads published real data without client mock", () => {

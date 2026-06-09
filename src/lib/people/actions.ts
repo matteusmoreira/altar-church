@@ -77,8 +77,8 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 async function refreshPeoplePaths() {
-  revalidatePath("/members")
-  revalidatePath("/visitors")
+  revalidatePath("/pessoas")
+  revalidatePath("/visitantes")
   revalidatePath("/dashboard")
 }
 

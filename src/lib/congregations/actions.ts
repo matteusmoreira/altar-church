@@ -46,9 +46,9 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 function refreshCongregationPaths() {
-  revalidatePath("/congregations")
-  revalidatePath("/members")
-  revalidatePath("/church-info")
+  revalidatePath("/congregacoes")
+  revalidatePath("/pessoas")
+  revalidatePath("/informacoes")
   revalidatePath("/dashboard")
 }
 

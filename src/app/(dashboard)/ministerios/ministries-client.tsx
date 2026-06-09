@@ -98,7 +98,7 @@ function ministryToForm(ministry: MinistryListItem): MinistryFormState {
 export function MinistriesClient({ ministriesResult, filters }: MinistriesClientProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const routePath = pathname ?? "/ministries"
+  const routePath = pathname ?? "/ministerios"
   const ministries = ministriesResult.items
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)

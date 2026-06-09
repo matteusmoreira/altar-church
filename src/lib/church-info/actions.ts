@@ -55,7 +55,7 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 function refreshChurchInfoPaths() {
-  revalidatePath("/church-info")
+  revalidatePath("/informacoes")
   revalidatePath("/church/[slug]", "page")
   revalidatePath("/dashboard")
 }

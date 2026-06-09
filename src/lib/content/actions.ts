@@ -86,7 +86,7 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 async function revalidateContent(companySlug?: string | null) {
-  revalidatePath("/content")
+  revalidatePath("/conteudo")
   revalidatePath("/dashboard")
   if (companySlug) {
     revalidatePath(`/church/${companySlug}`)

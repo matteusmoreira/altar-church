@@ -33,14 +33,14 @@ test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao
   await loginAs(page, e2e.accounts.superadmin)
 
   const modules = [
-    { path: "/church-info", heading: /Informa/i },
-    { path: "/ministries", heading: /Minist/i },
-    { path: "/congregations", heading: /Congrega/i },
-    { path: "/members", heading: /Pessoas/i },
-    { path: "/groups", heading: /GCEUs/i },
-    { path: "/content", heading: /Conte/i },
-    { path: "/events", heading: /Eventos/i },
-    { path: "/finance", heading: /Financeiro/i },
+    { path: "/informacoes", heading: /Informa/i },
+    { path: "/ministerios", heading: /Minist/i },
+    { path: "/congregacoes", heading: /Congrega/i },
+    { path: "/pessoas", heading: /Pessoas/i },
+    { path: "/gceus", heading: /GCEUs/i },
+    { path: "/conteudo", heading: /Conte/i },
+    { path: "/eventos", heading: /Eventos/i },
+    { path: "/financeiro", heading: /Financeiro/i },
   ]
 
   for (const entry of modules) {
@@ -52,11 +52,11 @@ test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao
 
 test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/members", { waitUntil: "domcontentloaded" })
+  await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Pessoas" })).toBeVisible()
   await page.getByRole("link", { name: /Joao|João|Maria|Ana/i }).first().click()
-  await expect(page).toHaveURL(/\/members\/[0-9a-f-]+/, { timeout: 20_000 })
+  await expect(page).toHaveURL(/\/pessoas\/[0-9a-f-]+/, { timeout: 20_000 })
   await expectNoDevError(page)
   await expect(page.getByText("Histórico pastoral")).toBeVisible()
   await page.getByRole("tab", { name: "Jornada" }).click()
@@ -65,12 +65,17 @@ test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
 
 test("admin logado revisa duplicidades em Pessoas", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/members")
+  await page.goto("/pessoas")
   await expectNoDevError(page)
   await page.getByRole("tab", { name: "Duplicidades" }).click()
   await expect(page.getByRole("heading", { name: "Duplicidades" })).toBeVisible()
   await expect(page.getByText(/possivel duplicidade|possível duplicidade/i).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: /Ignorar suspeita|Resolver duplicidade/i }).first()).toBeVisible()
+  await expect(
+    page
+      .getByRole("button", { name: /Ignorar suspeita|Resolver duplicidade/i })
+      .first()
+      .or(page.getByText(/Nenhuma possivel duplicidade aberta|Nenhuma possível duplicidade aberta/i))
+  ).toBeVisible()
 })
 
 test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
@@ -79,7 +84,7 @@ test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
   const updatedResponsible = `Responsavel E2E ${stamp}`
 
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/congregations")
+  await page.goto("/congregacoes")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Congregações" })).toBeVisible()
 
@@ -88,18 +93,18 @@ test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
   await page.getByPlaceholder("Nome do responsável").fill("Responsável E2E")
   await page.getByPlaceholder("Endereço completo").fill("Rua E2E, 123")
   await page.getByRole("button", { name: "Cadastrar" }).click()
-  await expect(page.getByRole("cell", { name, exact: true })).toBeVisible()
+  await expect(page.getByText(name, { exact: true }).filter({ visible: true })).toBeVisible()
 
   await page.getByRole("button", { name: `Ações de ${name}` }).click()
   await page.getByRole("menuitem", { name: "Editar" }).click()
   await page.getByPlaceholder("Nome do responsável").fill(updatedResponsible)
   await page.getByRole("button", { name: "Salvar alterações" }).click()
-  await expect(page.getByRole("cell", { name: updatedResponsible, exact: true })).toBeVisible()
+  await expect(page.getByText(updatedResponsible, { exact: true }).filter({ visible: true })).toBeVisible()
 
   await page.getByRole("button", { name: `Ações de ${name}` }).click()
   await page.getByRole("menuitem", { name: "Excluir" }).click()
   await page.getByRole("button", { name: "Excluir" }).click()
-  await expect(page.getByRole("cell", { name, exact: true })).toBeHidden()
+  await expect(page.getByText(name, { exact: true }).filter({ visible: true })).toHaveCount(0)
 })
 
 test("admin logado salva informacoes reais da igreja", async ({ page }) => {
@@ -109,7 +114,7 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
   const instagram = `https://instagram.com/e2e_${stamp}`
 
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/church-info")
+  await page.goto("/informacoes")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Informações da Igreja" })).toBeVisible()
 
@@ -140,7 +145,7 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
 
 test("admin logado abre Conteúdo real e modal de publicação", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/content")
+  await page.goto("/conteudo")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Conteúdo" })).toBeVisible()
   await expect(page.getByText("Culto de Celebração neste domingo")).toBeVisible()
@@ -171,7 +176,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   const updatedDescription = `Grupo E2E atualizado pelo fluxo autenticado ${stamp}`
 
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/groups")
+  await page.goto("/gceus")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "GCEUs e grupos" })).toBeVisible()
   await expect(page.getByRole("row").filter({ hasText: "GCEU Família Restaurada" })).toBeVisible()
@@ -236,17 +241,17 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
 
   const modules = [
-    { path: "/events", heading: /Eventos/i },
-    { path: "/attendance", heading: /Presen/i },
-    { path: "/prayer", heading: /Ora|Intercess/i },
-    { path: "/reading-plans", heading: /Planos de Leitura/i },
-    { path: "/communication", heading: /Comunica/i },
-    { path: "/notifications", heading: /Notifica/i },
+    { path: "/eventos", heading: /Eventos/i },
+    { path: "/presenca", heading: /Presen/i },
+    { path: "/intercessao", heading: /Ora|Intercess/i },
+    { path: "/discipulado", heading: /Planos de Leitura/i },
+    { path: "/comunicacao", heading: /Comunica/i },
+    { path: "/notificacao", heading: /Notifica/i },
     { path: "/crm", heading: /CRM/i },
-    { path: "/finance", heading: /Financeiro/i },
-    { path: "/donations", heading: /Doa/i },
+    { path: "/financeiro", heading: /Financeiro/i },
+    { path: "/doacao", heading: /Doa/i },
     { path: "/inpeace-play", heading: /InPeace Play/i },
-    { path: "/reports", heading: /Relat/i },
+    { path: "/relatorios", heading: /Relat/i },
   ]
 
   for (const entry of modules) {

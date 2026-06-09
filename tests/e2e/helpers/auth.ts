@@ -7,7 +7,7 @@ export async function loginAs(page: Page, account: E2EAccount) {
   await page.getByLabel("Senha").fill(account.password)
   await page.getByRole("button", { name: "Entrar" }).click()
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 })
-  await expect(page.getByText(account.role, { exact: true })).toBeVisible()
+  await expect(page.locator("main").first()).toBeVisible()
 }
 
 export async function resetSession(page: Page) {

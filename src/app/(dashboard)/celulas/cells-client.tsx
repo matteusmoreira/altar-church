@@ -131,7 +131,7 @@ function groupToForm(group: GroupListItem): CellFormState {
 export function CellsClient({ groupsResult, options, filters }: CellsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const routePath = pathname ?? "/cells"
+  const routePath = pathname ?? "/celulas"
   const cells = groupsResult.groups
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)

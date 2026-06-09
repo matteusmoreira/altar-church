@@ -31,9 +31,9 @@ test("dashboard exports CSV through authenticated audited route handlers", () =>
 })
 
 test("reports, finance and donations pages expose CSV export actions", () => {
-  const reportsClient = read("src/app/(dashboard)/reports/reports-client.tsx")
-  const financePage = read("src/app/(dashboard)/finance/page.tsx")
-  const donationsPage = read("src/app/(dashboard)/donations/page.tsx")
+  const reportsClient = read("src/app/(dashboard)/relatorios/reports-client.tsx")
+  const financePage = read("src/app/(dashboard)/financeiro/page.tsx")
+  const donationsPage = read("src/app/(dashboard)/doacao/page.tsx")
 
   assert.match(reportsClient, /href="\/api\/reports\/export"/)
   assert.match(financePage, /href="\/api\/finance\/export"/)

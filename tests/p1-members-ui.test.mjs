@@ -5,7 +5,7 @@ import { test } from "node:test"
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
 test("members page loads real P1 people data on the server", () => {
-  const page = read("src/app/(dashboard)/members/page.tsx")
+  const page = read("src/app/(dashboard)/pessoas/page.tsx")
 
   assert.doesNotMatch(page, /^"use client"/)
   assert.match(page, /listPeople/)
@@ -16,7 +16,7 @@ test("members page loads real P1 people data on the server", () => {
 })
 
 test("members client uses server actions for create, edit and delete", () => {
-  const client = read("src/app/(dashboard)/members/members-client.tsx")
+  const client = read("src/app/(dashboard)/pessoas/members-client.tsx")
 
   assert.match(client, /^"use client"/)
   assert.match(client, /savePerson/)
@@ -28,8 +28,8 @@ test("members client uses server actions for create, edit and delete", () => {
 })
 
 test("member detail page shows real profile history and journey data", () => {
-  const page = read("src/app/(dashboard)/members/[id]/page.tsx")
-  const client = read("src/app/(dashboard)/members/[id]/member-detail-client.tsx")
+  const page = read("src/app/(dashboard)/pessoas/[id]/page.tsx")
+  const client = read("src/app/(dashboard)/pessoas/[id]/member-detail-client.tsx")
   const data = read("src/lib/people/data.ts")
 
   assert.doesNotMatch(page, /^"use client"/)
@@ -50,10 +50,10 @@ test("member detail page shows real profile history and journey data", () => {
 })
 
 test("members duplicates flow lists candidates and resolves with audited server action", () => {
-  const page = read("src/app/(dashboard)/members/page.tsx")
-  const client = read("src/app/(dashboard)/members/members-client.tsx")
+  const page = read("src/app/(dashboard)/pessoas/page.tsx")
+  const client = read("src/app/(dashboard)/pessoas/members-client.tsx")
   const actions = read("src/lib/people/actions.ts")
-  const routeActions = read("src/app/(dashboard)/members/actions.ts")
+  const routeActions = read("src/app/(dashboard)/pessoas/actions.ts")
   const data = read("src/lib/people/data.ts")
   const types = read("src/lib/people/types.ts")
 
@@ -66,7 +66,7 @@ test("members duplicates flow lists candidates and resolves with audited server 
   assert.match(actions, /export async function resolveDuplicateCandidate/)
   assert.match(actions, /duplicate_candidates/)
   assert.match(actions, /action: "person_duplicate\.resolve"/)
-  assert.match(actions, /revalidatePath\("\/members"\)/)
+  assert.match(actions, /revalidatePath\("\/pessoas"\)/)
   assert.match(routeActions, /resolveDuplicateCandidate/)
   assert.match(data, /export async function listDuplicateCandidates/)
   assert.match(data, /primary_person/)

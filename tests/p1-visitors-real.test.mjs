@@ -5,8 +5,8 @@ import { test } from "node:test"
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
 test("visitors page uses real people data instead of mock visitors", () => {
-  const page = read("src/app/(dashboard)/visitors/page.tsx")
-  const client = read("src/app/(dashboard)/visitors/visitors-client.tsx")
+  const page = read("src/app/(dashboard)/visitantes/page.tsx")
+  const client = read("src/app/(dashboard)/visitantes/visitors-client.tsx")
   const actions = read("src/lib/people/actions.ts")
 
   assert.doesNotMatch(page, /"use client"/)
@@ -20,5 +20,5 @@ test("visitors page uses real people data instead of mock visitors", () => {
   assert.match(client, /journeyStatus/)
   assert.match(client, /router\.refresh\(\)/)
 
-  assert.match(actions, /revalidatePath\("\/visitors"\)/)
+  assert.match(actions, /revalidatePath\("\/visitantes"\)/)
 })

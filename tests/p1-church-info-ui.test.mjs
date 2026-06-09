@@ -5,9 +5,9 @@ import { test } from "node:test"
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
 test("church info page reads profile from server and saves social links with audit", () => {
-  const page = read("src/app/(dashboard)/church-info/page.tsx")
-  const client = read("src/app/(dashboard)/church-info/church-info-client.tsx")
-  const routeActions = read("src/app/(dashboard)/church-info/actions.ts")
+  const page = read("src/app/(dashboard)/informacoes/page.tsx")
+  const client = read("src/app/(dashboard)/informacoes/church-info-client.tsx")
+  const routeActions = read("src/app/(dashboard)/informacoes/actions.ts")
   const data = read("src/lib/church-info/data.ts")
   const actions = read("src/lib/church-info/actions.ts")
   const types = read("src/lib/church-info/types.ts")
@@ -50,5 +50,5 @@ test("church info page reads profile from server and saves social links with aud
   assert.match(actions, /insert into public\.social_links/i)
   assert.match(actions, /writeAuditLog/)
   assert.match(actions, /action: "church_profile\.save"/)
-  assert.match(actions, /revalidatePath\("\/church-info"\)/)
+  assert.match(actions, /revalidatePath\("\/informacoes"\)/)
 })

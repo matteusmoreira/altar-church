@@ -84,20 +84,20 @@ function startsAtFromDate(date: string) {
 }
 
 function refreshMinistryPaths() {
-  revalidatePath("/ministries")
-  revalidatePath("/church-info")
+  revalidatePath("/ministerios")
+  revalidatePath("/informacoes")
   revalidatePath("/dashboard")
 }
 
 function refreshProgrammingPaths() {
-  revalidatePath("/programming")
-  revalidatePath("/church-info")
+  revalidatePath("/programacao")
+  revalidatePath("/informacoes")
   revalidatePath("/dashboard")
 }
 
 function refreshSongPaths() {
-  revalidatePath("/songs")
-  revalidatePath("/church-info")
+  revalidatePath("/louvor")
+  revalidatePath("/informacoes")
   revalidatePath("/dashboard")
 }
 

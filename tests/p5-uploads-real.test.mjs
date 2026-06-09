@@ -35,10 +35,10 @@ test("managed upload layer validates files, isolates storage paths and records a
 })
 
 test("church and content screens expose real file uploads backed by file ids", () => {
-  const churchClient = read("src/app/(dashboard)/church-info/church-info-client.tsx")
+  const churchClient = read("src/app/(dashboard)/informacoes/church-info-client.tsx")
   const churchData = read("src/lib/church-info/data.ts")
   const churchTypes = read("src/lib/church-info/types.ts")
-  const contentClient = read("src/app/(dashboard)/content/content-client.tsx")
+  const contentClient = read("src/app/(dashboard)/conteudo/content-client.tsx")
   const contentActions = read("src/lib/content/actions.ts")
   const contentData = read("src/lib/content/data.ts")
   const contentTypes = read("src/lib/content/types.ts")
@@ -71,8 +71,8 @@ test("church and content screens expose real file uploads backed by file ids", (
 test("financial receipts use app_files for revenues, expenses and donations", () => {
   const migration = read("supabase/migrations/20260605130000_p4_financial_receipt_files.sql")
   const operationalActions = read("src/lib/operational/actions.ts")
-  const financePage = read("src/app/(dashboard)/finance/page.tsx")
-  const donationsPage = read("src/app/(dashboard)/donations/page.tsx")
+  const financePage = read("src/app/(dashboard)/financeiro/page.tsx")
+  const donationsPage = read("src/app/(dashboard)/doacao/page.tsx")
 
   for (const table of ["revenues", "expenses", "donations"]) {
     assert.match(migration, new RegExp(`alter table public\\.${table}`, "i"))
@@ -92,7 +92,7 @@ test("operational media uses app_files for reading plans and premium content", (
   const migration = read("supabase/migrations/20260605140000_p5_operational_media_files.sql")
   const operationalActions = read("src/lib/operational/actions.ts")
   const operationalData = read("src/lib/operational/data.ts")
-  const readingPlansPage = read("src/app/(dashboard)/reading-plans/page.tsx")
+  const readingPlansPage = read("src/app/(dashboard)/discipulado/page.tsx")
   const inpeacePage = read("src/app/(dashboard)/inpeace-play/page.tsx")
 
   assert.match(migration, /alter table public\.reading_plans/i)

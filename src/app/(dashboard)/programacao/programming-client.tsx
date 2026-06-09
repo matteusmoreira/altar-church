@@ -132,7 +132,7 @@ function programmingToForm(programming: ProgrammingListItem): ProgrammingFormSta
 export function ProgrammingClient({ programmingsResult, filters }: ProgrammingClientProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const routePath = pathname ?? "/programming"
+  const routePath = pathname ?? "/programacao"
   const programmings = programmingsResult.items
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)

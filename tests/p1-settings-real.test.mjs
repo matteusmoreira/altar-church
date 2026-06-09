@@ -6,8 +6,8 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 test("settings uses real company profiles instead of mock access and invoices", () => {
   const data = read("src/lib/settings/data.ts")
-  const page = read("src/app/(dashboard)/settings/page.tsx")
-  const client = read("src/app/(dashboard)/settings/settings-client.tsx")
+  const page = read("src/app/(dashboard)/configuracoes/page.tsx")
+  const client = read("src/app/(dashboard)/configuracoes/settings-client.tsx")
 
   assert.match(data, /export async function getSettingsData/)
   assert.match(data, /from public\.profiles/i)

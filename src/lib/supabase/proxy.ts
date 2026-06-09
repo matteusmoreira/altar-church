@@ -1,37 +1,11 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
+import { protectedDashboardPrefixes } from "@/lib/navigation/routes"
 import { getSupabasePublishableKey, getSupabaseUrl } from "./env"
 
-const protectedPrefixes = [
-  "/admin",
-  "/dashboard",
-  "/attendance",
-  "/cells",
-  "/church-info",
-  "/communication",
-  "/congregations",
-  "/content",
-  "/crm",
-  "/donations",
-  "/events",
-  "/finance",
-  "/groups",
-  "/inpeace-play",
-  "/members",
-  "/ministries",
-  "/notifications",
-  "/prayer",
-  "/programming",
-  "/reading-plans",
-  "/reports",
-  "/settings",
-  "/songs",
-  "/visitors",
-]
-
 function isProtectedPath(pathname: string) {
-  return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return protectedDashboardPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
 interface CookieToSet {

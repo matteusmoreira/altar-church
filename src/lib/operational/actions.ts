@@ -343,7 +343,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Evento não foi salvo")
     await audit("event.save", "events", savedId, companyId)
-    refresh(["/events", "/reports", "/dashboard"])
+    refresh(["/eventos", "/relatorios", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
     return toErrorResult(error)
@@ -366,7 +366,7 @@ export async function deleteEvent(formData: FormData): Promise<ActionResult> {
     `
     if (!rows[0]?.id) throw new Error("Evento não encontrado")
     await audit("event.delete", "events", rows[0].id, companyId)
-    refresh(["/events", "/reports", "/dashboard"])
+    refresh(["/eventos", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -392,7 +392,7 @@ export async function saveAttendanceRecord(formData: FormData): Promise<ActionRe
       returning id
     `
     await audit("attendance.create", "attendance_records", rows[0].id, companyId)
-    refresh(["/attendance", "/reports", "/dashboard"])
+    refresh(["/presenca", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -415,7 +415,7 @@ export async function deleteAttendanceRecord(formData: FormData): Promise<Action
     `
     if (!rows[0]?.id) throw new Error("Registro não encontrado")
     await audit("attendance.delete", "attendance_records", rows[0].id, companyId)
-    refresh(["/attendance", "/reports", "/dashboard"])
+    refresh(["/presenca", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -468,7 +468,7 @@ export async function savePrayerRequest(formData: FormData): Promise<ActionResul
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Pedido não foi salvo")
     await audit("prayer.save", "prayer_requests", savedId, companyId)
-    refresh(["/prayer", "/dashboard"])
+    refresh(["/intercessao", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
     return toErrorResult(error)
@@ -491,7 +491,7 @@ export async function deletePrayerRequest(formData: FormData): Promise<ActionRes
     `
     if (!rows[0]?.id) throw new Error("Pedido não encontrado")
     await audit("prayer.delete", "prayer_requests", rows[0].id, companyId)
-    refresh(["/prayer", "/dashboard"])
+    refresh(["/intercessao", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -547,7 +547,7 @@ export async function saveReadingPlan(formData: FormData): Promise<ActionResult>
       fileColumn: "cover_file_id",
     })
     await audit("reading_plan.save", "reading_plans", savedId, companyId)
-    refresh(["/reading-plans", "/dashboard"])
+    refresh(["/discipulado", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
     return toErrorResult(error)
@@ -570,7 +570,7 @@ export async function deleteReadingPlan(formData: FormData): Promise<ActionResul
     `
     if (!rows[0]?.id) throw new Error("Plano não encontrado")
     await audit("reading_plan.delete", "reading_plans", rows[0].id, companyId)
-    refresh(["/reading-plans", "/dashboard"])
+    refresh(["/discipulado", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -615,7 +615,7 @@ export async function saveAnnouncement(formData: FormData): Promise<ActionResult
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Aviso não foi salvo")
     await audit("announcement.save", "announcements", savedId, companyId)
-    refresh(["/communication", "/dashboard"])
+    refresh(["/comunicacao", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
     return toErrorResult(error)
@@ -638,7 +638,7 @@ export async function deleteAnnouncement(formData: FormData): Promise<ActionResu
     `
     if (!rows[0]?.id) throw new Error("Aviso não encontrado")
     await audit("announcement.delete", "announcements", rows[0].id, companyId)
-    refresh(["/communication", "/dashboard"])
+    refresh(["/comunicacao", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -666,7 +666,7 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
       returning id
     `
     await audit("notification.create", "notifications", rows[0].id, companyId)
-    refresh(["/notifications", "/dashboard"])
+    refresh(["/notificacao", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -684,7 +684,7 @@ export async function saveNotificationGroup(formData: FormData): Promise<ActionR
       returning id
     `
     await audit("notification_group.create", "notification_groups", rows[0].id, companyId)
-    refresh(["/notifications", "/dashboard"])
+    refresh(["/notificacao", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -784,7 +784,7 @@ export async function saveRevenue(formData: FormData): Promise<ActionResult> {
     `
     await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "revenues", entityId: rows[0].id })
     await audit("revenue.create", "revenues", rows[0].id, companyId)
-    refresh(["/finance", "/reports", "/dashboard"])
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -814,7 +814,7 @@ export async function saveExpense(formData: FormData): Promise<ActionResult> {
     `
     await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "expenses", entityId: rows[0].id })
     await audit("expense.create", "expenses", rows[0].id, companyId)
-    refresh(["/finance", "/reports", "/dashboard"])
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -833,7 +833,7 @@ export async function saveFinancialCategory(formData: FormData): Promise<ActionR
       returning id
     `
     await audit("financial_category.save", "financial_categories", rows[0].id, companyId)
-    refresh(["/finance"])
+    refresh(["/financeiro"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -850,7 +850,7 @@ export async function saveCostCenter(formData: FormData): Promise<ActionResult> 
       returning id
     `
     await audit("cost_center.create", "cost_centers", rows[0].id, companyId)
-    refresh(["/finance"])
+    refresh(["/financeiro"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -874,7 +874,7 @@ export async function saveBankAccount(formData: FormData): Promise<ActionResult>
       returning id
     `
     await audit("bank_account.create", "bank_accounts", rows[0].id, companyId)
-    refresh(["/finance"])
+    refresh(["/financeiro"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -891,7 +891,7 @@ export async function saveSupplier(formData: FormData): Promise<ActionResult> {
       returning id
     `
     await audit("supplier.create", "suppliers", rows[0].id, companyId)
-    refresh(["/finance"])
+    refresh(["/financeiro"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -911,7 +911,7 @@ export async function saveDonation(formData: FormData): Promise<ActionResult> {
     `
     await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "donations", entityId: rows[0].id })
     await audit("donation.create", "donations", rows[0].id, companyId)
-    refresh(["/donations", "/reports", "/dashboard"])
+    refresh(["/doacao", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)
@@ -930,7 +930,7 @@ export async function saveDonationRecurrence(formData: FormData): Promise<Action
       returning id
     `
     await audit("donation_recurrence.create", "donation_recurrences", rows[0].id, companyId)
-    refresh(["/donations"])
+    refresh(["/doacao"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)

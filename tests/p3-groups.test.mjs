@@ -35,10 +35,10 @@ test("P3 migration creates group schema with tenant RLS", () => {
 })
 
 test("groups route uses server data and audited server actions", () => {
-  const page = read("src/app/(dashboard)/groups/page.tsx")
-  const client = read("src/app/(dashboard)/groups/groups-client.tsx")
-  const operationsPanel = read("src/app/(dashboard)/groups/group-operations-panel.tsx")
-  const routeActions = read("src/app/(dashboard)/groups/actions.ts")
+  const page = read("src/app/(dashboard)/gceus/page.tsx")
+  const client = read("src/app/(dashboard)/gceus/groups-client.tsx")
+  const operationsPanel = read("src/app/(dashboard)/gceus/group-operations-panel.tsx")
+  const routeActions = read("src/app/(dashboard)/gceus/actions.ts")
   const data = read("src/lib/groups/data.ts")
   const actions = read("src/lib/groups/actions.ts")
   const types = read("src/lib/groups/types.ts")
@@ -102,5 +102,5 @@ test("groups route uses server data and audited server actions", () => {
   assert.match(actions, /action: "group\.delete"/)
   assert.match(actions, /action: "group\.member\.save"/)
   assert.match(actions, /action: "group\.meeting\.save"/)
-  assert.match(actions, /revalidatePath\("\/groups"\)/)
+  assert.match(actions, /revalidatePath\("\/gceus"\)/)
 })

@@ -44,20 +44,24 @@ test("P1 pastoral modules expose real server data and audited mutations", () => 
     /action: "ministry\.save"/,
     /action: "programming\.save"/,
     /action: "song\.save"/,
-    /revalidatePath\("\/ministries"\)/,
-    /revalidatePath\("\/programming"\)/,
-    /revalidatePath\("\/songs"\)/,
+    /revalidatePath\("\/ministerios"\)/,
+    /revalidatePath\("\/programacao"\)/,
+    /revalidatePath\("\/louvor"\)/,
   ]) {
     assert.match(actions, expected)
   }
 })
 
 test("P1 pastoral module pages do not import mock data", () => {
-  const routes = ["ministries", "programming", "songs"]
+  const routes = [
+    { slug: "ministerios", client: "ministries" },
+    { slug: "programacao", client: "programming" },
+    { slug: "louvor", client: "songs" },
+  ]
 
   for (const route of routes) {
-    const page = read(`src/app/(dashboard)/${route}/page.tsx`)
-    const client = read(`src/app/(dashboard)/${route}/${route}-client.tsx`)
+    const page = read(`src/app/(dashboard)/${route.slug}/page.tsx`)
+    const client = read(`src/app/(dashboard)/${route.slug}/${route.client}-client.tsx`)
 
     assert.doesNotMatch(page, /"use client"/)
     assert.doesNotMatch(page, /@\/lib\/mock\/data/)
@@ -65,10 +69,10 @@ test("P1 pastoral module pages do not import mock data", () => {
     assert.match(client, /router\.refresh\(\)/)
   }
 
-  assert.match(read("src/app/(dashboard)/ministries/page.tsx"), /listMinistries/)
-  assert.match(read("src/app/(dashboard)/programming/page.tsx"), /listProgrammings/)
-  assert.match(read("src/app/(dashboard)/songs/page.tsx"), /listSongs/)
-  assert.match(read("src/app/(dashboard)/ministries/ministries-client.tsx"), /saveMinistry/)
-  assert.match(read("src/app/(dashboard)/programming/programming-client.tsx"), /saveProgramming/)
-  assert.match(read("src/app/(dashboard)/songs/songs-client.tsx"), /saveSong/)
+  assert.match(read("src/app/(dashboard)/ministerios/page.tsx"), /listMinistries/)
+  assert.match(read("src/app/(dashboard)/programacao/page.tsx"), /listProgrammings/)
+  assert.match(read("src/app/(dashboard)/louvor/page.tsx"), /listSongs/)
+  assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /saveMinistry/)
+  assert.match(read("src/app/(dashboard)/programacao/programming-client.tsx"), /saveProgramming/)
+  assert.match(read("src/app/(dashboard)/louvor/songs-client.tsx"), /saveSong/)
 })

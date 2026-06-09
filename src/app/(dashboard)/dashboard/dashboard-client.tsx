@@ -62,18 +62,18 @@ const checklistItems = [
 ]
 
 const shortcuts = [
-  { href: "/members", icon: Users, title: "Pessoas", description: "Gerencie membros, visitantes e cadastros" },
-  { href: "/groups", icon: UsersRound, title: "GCEUs", description: "Acompanhe grupos, participantes e reuniões" },
-  { href: "/cells", icon: UsersRound, title: "Células", description: "Visão operacional dos grupos do tipo célula" },
-  { href: "/content", icon: BookOpen, title: "Conteúdo", description: "Devocionais, notícias e publicações" },
-  { href: "/visitors", icon: UserPlus, title: "Visitantes", description: "Acompanhamento de visitantes reais" },
-  { href: "/ministries", icon: Church, title: "Ministérios", description: "Gerencie ministérios persistidos" },
-  { href: "/events", icon: CalendarDays, title: "Eventos", description: "Agenda e inscrições persistidas" },
-  { href: "/finance", icon: DollarSign, title: "Financeiro", description: "Receitas, despesas e comprovantes" },
-  { href: "/donations", icon: HandHeart, title: "Doações", description: "Doações manuais e recorrências" },
-  { href: "/communication", icon: Bell, title: "Comunicação", description: "Notificações e avisos persistidos" },
-  { href: "/prayer", icon: Heart, title: "Intercessão", description: "Pedidos de oração persistidos" },
-  { href: "/reports", icon: BarChart3, title: "Relatórios", description: "Relatórios reais por módulo" },
+  { href: "/pessoas", icon: Users, title: "Pessoas", description: "Gerencie membros, visitantes e cadastros" },
+  { href: "/gceus", icon: UsersRound, title: "GCEUs", description: "Acompanhe grupos, participantes e reuniões" },
+  { href: "/celulas", icon: UsersRound, title: "Células", description: "Visão operacional dos grupos do tipo célula" },
+  { href: "/conteudo", icon: BookOpen, title: "Conteúdo", description: "Devocionais, notícias e publicações" },
+  { href: "/visitantes", icon: UserPlus, title: "Visitantes", description: "Acompanhamento de visitantes reais" },
+  { href: "/ministerios", icon: Church, title: "Ministérios", description: "Gerencie ministérios persistidos" },
+  { href: "/eventos", icon: CalendarDays, title: "Eventos", description: "Agenda e inscrições persistidas" },
+  { href: "/financeiro", icon: DollarSign, title: "Financeiro", description: "Receitas, despesas e comprovantes" },
+  { href: "/doacao", icon: HandHeart, title: "Doações", description: "Doações manuais e recorrências" },
+  { href: "/comunicacao", icon: Bell, title: "Comunicação", description: "Notificações e avisos persistidos" },
+  { href: "/intercessao", icon: Heart, title: "Intercessão", description: "Pedidos de oração persistidos" },
+  { href: "/relatorios", icon: BarChart3, title: "Relatórios", description: "Relatórios reais por módulo" },
 ]
 
 export function DashboardClient({ data }: { data: DashboardClientData }) {

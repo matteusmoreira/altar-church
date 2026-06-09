@@ -129,7 +129,7 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 space-y-4">
-          <Button render={<Link href="/members" />} nativeButton={false} variant="outline" className="w-fit">
+          <Button render={<Link href="/pessoas" />} nativeButton={false} variant="outline" className="w-fit">
             <ArrowLeft className="h-4 w-4" />
             Pessoas
           </Button>
