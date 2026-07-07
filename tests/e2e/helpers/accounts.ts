@@ -25,7 +25,10 @@ function buildDefaultAccountDocument(): E2EAccountDocument {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
 
-  const password = process.env.E2E_DEFAULT_PASSWORD ?? "AltarChurch-E2E-2026!"
+  const password = process.env.E2E_DEFAULT_PASSWORD
+  if (!password) {
+    throw new Error("E2E_DEFAULT_PASSWORD nao configurado no ambiente")
+  }
   const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID ?? "c1"
 
   return {

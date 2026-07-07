@@ -2,7 +2,9 @@ import { expect, type Page } from "@playwright/test"
 import type { E2EAccount } from "./accounts"
 
 export async function loginAs(page: Page, account: E2EAccount) {
-  await page.goto("/login")
+  await page.goto("/login", { waitUntil: "load" })
+  await page.locator('[data-testid="login-form"][data-ready="true"]').waitFor({ timeout: 15_000 })
+  await expect(page.getByTestId("login-submit")).toBeEnabled()
   await page.getByLabel("E-mail").fill(account.email)
   await page.getByLabel("Senha").fill(account.password)
   await page.getByRole("button", { name: "Entrar" }).click()

@@ -15,38 +15,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+async function readCurrentUser() {
+  const response = await fetch("/api/auth/me", { cache: "no-store" })
+  if (!response.ok) return null
+  const payload = (await response.json()) as { user: User | null }
+  return payload.user
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), [])
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-
-  const refreshUser = useCallback(async () => {
-    const response = await fetch("/api/auth/me", { cache: "no-store" })
-    if (!response.ok) {
-      setUser(null)
-      return null
-    }
-
-    const payload = (await response.json()) as { user: User | null }
-    setUser(payload.user)
-    return payload.user
-  }, [])
 
   useEffect(() => {
     let active = true
 
     async function loadInitialUser() {
       try {
-        const response = await fetch("/api/auth/me", { cache: "no-store" })
+        const currentUser = await readCurrentUser()
         if (!active) return
-
-        if (!response.ok) {
-          setUser(null)
-          return
-        }
-
-        const payload = (await response.json()) as { user: User | null }
-        setUser(payload.user)
+        setUser(currentUser)
       } catch {
         if (active) setUser(null)
       } finally {
@@ -59,34 +47,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        setUser(null)
-        return
-      }
+      if (event === "INITIAL_SESSION") return
 
-      refreshUser().catch(() => setUser(null))
+      queueMicrotask(() => {
+        if (!active) return
+
+        if (event === "SIGNED_OUT") {
+          setUser(null)
+          return
+        }
+
+        void readCurrentUser()
+          .then((currentUser) => {
+            if (active) setUser(currentUser)
+          })
+          .catch(() => {
+            if (active) setUser(null)
+          })
+      })
     })
 
     return () => {
       active = false
       subscription.unsubscribe()
     }
-  }, [refreshUser, supabase])
+  }, [supabase])
 
   const login = useCallback(
     async (email: string, password: string) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) return false
 
-      const profile = await refreshUser()
+      const profile = await readCurrentUser()
       if (!profile) {
         await supabase.auth.signOut()
+        setUser(null)
         return false
       }
 
+      setUser(profile)
       return true
     },
-    [refreshUser, supabase]
+    [supabase]
   )
 
   const logout = useCallback(async () => {

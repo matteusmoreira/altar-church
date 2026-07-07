@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { getContentDashboardData } from "@/lib/content/data"
 import { csvResponse, type CsvCell } from "@/lib/export/csv"
-import { auditExport, requireExportContext } from "@/lib/export/server"
+import { auditExport, requireExportContext, toExportErrorResponse } from "@/lib/export/server"
 import { getGroupsDashboardData, listGroupMeetingReports, listGroups } from "@/lib/groups/data"
 import { getPeopleDashboardData, listPeople } from "@/lib/people/data"
 
@@ -55,6 +55,6 @@ export async function GET(request: NextRequest) {
     await auditExport("reports.export", "reports", companyId)
     return csvResponse(`relatorios-${todayStamp()}.csv`, rows)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Erro inesperado" }, { status: 400 })
+    return toExportErrorResponse(error)
   }
 }

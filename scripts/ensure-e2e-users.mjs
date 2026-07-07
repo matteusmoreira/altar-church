@@ -27,7 +27,10 @@ function buildDefaultAccountDocument() {
   const supabaseProjectRef =
     process.env.SUPABASE_PROJECT_REF ?? new URL(supabaseUrl).hostname.split(".")[0]
   const baseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000"
-  const password = process.env.E2E_DEFAULT_PASSWORD ?? "AltarChurch-E2E-2026!"
+  const password = process.env.E2E_DEFAULT_PASSWORD
+  if (!password) {
+    throw new Error("E2E_DEFAULT_PASSWORD nao configurado no ambiente")
+  }
 
   return {
     baseUrl,
@@ -277,7 +280,8 @@ async function ensureAuthUserDirect(sql, account) {
 }
 
 async function main() {
-  const env = readKeyValueFile(envPath)
+  const env = { ...process.env, ...readKeyValueFile(envPath) }
+  Object.assign(process.env, env)
   const doc = readAccountDocument()
   const sql = postgres(env.POSTGRES_URL, { max: 1, idle_timeout: 5, connect_timeout: 10, prepare: false })
   const serviceRoleKey = tryGetServiceRoleKey(doc.supabaseProjectRef)

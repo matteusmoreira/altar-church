@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { Church, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
@@ -15,6 +15,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const ready = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
   const { login, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
 
@@ -24,8 +29,7 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, isLoading, router])
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const handleSubmit = async () => {
     setLoading(true)
 
     try {
@@ -57,12 +61,22 @@ export default function LoginPage() {
           <CardDescription>Gestão inteligente para sua igreja</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            data-testid="login-form"
+            data-ready={ready ? "true" : "false"}
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!ready || loading) return
+              void handleSubmit()
+            }}
+          >
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
               <Input
                 id="email"
                 type="email"
+                autoComplete="email"
                 placeholder="seu@email.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -75,6 +89,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   placeholder="Senha"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -91,8 +106,13 @@ export default function LoginPage() {
                 </Button>
               </div>
             </div>
-            <Button type="submit" className="w-full gradient-primary" disabled={loading || isLoading}>
-              {loading || isLoading ? "Entrando..." : "Entrar"}
+            <Button
+              type="submit"
+              data-testid="login-submit"
+              className="w-full gradient-primary"
+              disabled={loading || !ready}
+            >
+              {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
         </CardContent>
