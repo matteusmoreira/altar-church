@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server"
 import { requireApiAuth } from "@/lib/api/auth"
 import { jsonError, jsonOk } from "@/lib/api/http"
 import { parseJsonBody } from "@/lib/api/parse"
-import { createApiKey, listApiKeys } from "@/lib/integrations/api-keys"
+import { createApiKey } from "@/lib/integrations/api-keys-actions"
+import { listApiKeys } from "@/lib/integrations/api-keys"
 import type { ApiKeyScope } from "@/lib/integrations/types"
 
 export async function GET(request: NextRequest) {

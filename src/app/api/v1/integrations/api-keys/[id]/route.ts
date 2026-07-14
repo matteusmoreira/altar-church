@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { requireApiAuth } from "@/lib/api/auth"
 import { jsonError, jsonOk } from "@/lib/api/http"
-import { revokeApiKey } from "@/lib/integrations/api-keys"
+import { revokeApiKey } from "@/lib/integrations/api-keys-actions"
 
 export async function DELETE(
   request: NextRequest,

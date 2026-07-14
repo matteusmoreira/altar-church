@@ -106,12 +106,20 @@ npm run integrations:dispatch
 npm run integrations:echo -- --secret=SEU_SECRET --port=8787
 ```
 
-### pg_cron + pg_net (produção)
+### pg_cron (produção / Supabase)
 
-No SQL Editor do Supabase (com `pg_cron`, `pg_net` e Vault):
+Worker preferido: função SQL `process_integration_deliveries` (HMAC + `pg_net`), agendada a cada 2 minutos.
 
-1. Guarde no Vault: `integration_dispatch_url` (ex. `https://app.../api/internal/integrations/dispatch`) e `integration_worker_secret`.
-2. Rode o SQL em `scripts/setup-integration-cron.sql` (ajuste nomes se necessário).
+```bash
+# aplica migration do worker SQL + agenda o cron
+npm run db:migrate
+# se o job já existir e precisar reapontar:
+node scripts/reschedule-integration-sql-cron.mjs
+```
+
+SQL manual: `scripts/setup-integration-cron.sql`.
+
+Alternativa (Edge Function `integration-delivery-worker`): requer token Supabase com permissão de deploy (`sbp_…` clássico). Código em `supabase/functions/integration-delivery-worker/`.
 
 ## Segurança
 

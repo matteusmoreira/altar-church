@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createApiKey, revokeApiKey } from "@/lib/integrations/api-keys"
+import { createApiKey, revokeApiKey } from "@/lib/integrations/api-keys-actions"
 import { EVENT_CATALOG } from "@/lib/integrations/events"
 import {
   API_KEY_SCOPES,
@@ -43,7 +43,7 @@ import {
   retryIntegrationDelivery,
   saveWebhookEndpoint,
   testWebhookEndpoint,
-} from "@/lib/integrations/webhooks"
+} from "@/lib/integrations/webhooks-actions"
 
 function formatDateTime(value: string) {
   try {

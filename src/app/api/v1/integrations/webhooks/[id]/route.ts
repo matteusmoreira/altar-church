@@ -6,7 +6,7 @@ import {
   deleteWebhookEndpoint,
   saveWebhookEndpoint,
   testWebhookEndpoint,
-} from "@/lib/integrations/webhooks"
+} from "@/lib/integrations/webhooks-actions"
 import type { IntegrationEventType } from "@/lib/integrations/types"
 
 export async function PATCH(

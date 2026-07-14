@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server"
 import { requireApiAuth } from "@/lib/api/auth"
 import { jsonError, jsonOk } from "@/lib/api/http"
-import { retryIntegrationDelivery } from "@/lib/integrations/webhooks"
+import { retryIntegrationDelivery } from "@/lib/integrations/webhooks-actions"
 
 export async function POST(
   request: NextRequest,
