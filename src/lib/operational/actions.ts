@@ -34,7 +34,8 @@ const eventSchema = z.object({
   startDate: requiredString("Início"),
 })
 const attendanceSchema = z.object({
-  personName: requiredString("Nome"),
+  personId: optionalUuidField,
+  personName: z.string().trim().optional().default(""),
   date: requiredString("Data"),
 })
 const prayerSchema = z.object({
@@ -45,6 +46,12 @@ const prayerSchema = z.object({
 const readingPlanSchema = z.object({
   id: optionalUuidField,
   name: requiredString("Nome"),
+})
+const readingPlanStepSchema = z.object({
+  id: optionalUuidField,
+  planId: requiredUuidField,
+  dayNumber: z.preprocess((value) => Number(value), z.number().int().positive("Dia inválido")),
+  title: requiredString("Título"),
 })
 const announcementSchema = z.object({
   id: optionalUuidField,
@@ -60,7 +67,8 @@ const notificationGroupSchema = z.object({
 })
 const crmCardSchema = z.object({
   id: optionalUuidField,
-  personName: requiredString("Nome"),
+  personId: optionalUuidField,
+  personName: z.string().trim().optional().default(""),
 })
 const revenueSchema = z.object({
   amount: positiveMoneyField,
@@ -196,6 +204,35 @@ async function actionContext(formData: FormData, permission: Permission) {
 
 async function audit(action: string, entityTable: string, entityId: string, companyId: string) {
   await writeAuditLog({ action, entityTable, entityId, companyId, metadata: {} })
+}
+
+async function resolvePersonReference(
+  companyId: string,
+  personId: string | null,
+  fallbackName: string
+) {
+  if (personId) {
+    const rows = await getSql()<{ full_name: string; phone: string; email: string | null }[]>`
+      select full_name, phone, coalesce(email, '') as email
+      from public.people
+      where id = ${personId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    const person = rows[0]
+    if (!person) throw new Error("Pessoa não encontrada no cadastro")
+    return {
+      personId,
+      personName: person.full_name,
+      personPhone: person.phone,
+      personEmail: person.email ?? "",
+    }
+  }
+
+  const personName = fallbackName.trim()
+  if (!personName) throw new Error("Selecione uma pessoa ou informe o nome")
+  return { personId: null, personName, personPhone: "", personEmail: "" }
 }
 
 async function attachReceiptFile(formData: FormData, input: { companyId: string; userId: string; entityTable: "revenues" | "expenses" | "donations"; entityId: string }) {
@@ -389,15 +426,15 @@ export async function saveAttendanceRecord(formData: FormData): Promise<ActionRe
   try {
     validateActionForm(formData, attendanceSchema)
     const { user, companyId } = await actionContext(formData, "attendance.create")
-    const personName = requiredText(formData, "personName", "Nome")
+    const person = await resolvePersonReference(companyId, uuid(formData, "personId"), text(formData, "personName"))
     const occurredOn = requiredText(formData, "date", "Data")
     const rows = await getSql()<{ id: string }[]>`
       insert into public.attendance_records (
-        company_id, person_name, event_type, event_ref_name, occurred_on,
+        company_id, person_id, person_name, event_type, event_ref_name, occurred_on,
         occurred_time, status, registered_by, registered_by_name
       )
       values (
-        ${companyId}, ${personName}, ${text(formData, "eventType", "service")},
+        ${companyId}, ${person.personId}, ${person.personName}, ${text(formData, "eventType", "service")},
         ${text(formData, "eventRefName")}, ${occurredOn}, ${optionalText(formData, "time")},
         ${text(formData, "status", "present")}, ${user.id}, ${user.name}
       )
@@ -416,10 +453,10 @@ export async function deleteAttendanceRecord(formData: FormData): Promise<Action
     validateActionForm(formData, deleteEntitySchema)
     const id = uuid(formData, "id")
     if (!id) throw new Error("Registro inválido")
-    const { user, companyId } = await actionContext(formData, "attendance.create")
+    const { companyId } = await actionContext(formData, "attendance.create")
     const rows = await getSql()<{ id: string }[]>`
       update public.attendance_records
-      set deleted_at = now(), updated_by = ${user.id}
+      set deleted_at = now(), updated_at = now()
       where id = ${id}
         and company_id = ${companyId}
         and deleted_at is null
@@ -589,6 +626,94 @@ export async function deleteReadingPlan(formData: FormData): Promise<ActionResul
   }
 }
 
+export async function saveReadingPlanStep(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, readingPlanStepSchema)
+    const id = uuid(formData, "id")
+    const planId = uuid(formData, "planId")
+    if (!planId) throw new Error("Plano inválido")
+    const { companyId } = await actionContext(formData, id ? "content.edit" : "content.create")
+    const dayNumber = integer(formData, "dayNumber", 0)
+    if (dayNumber <= 0) throw new Error("Dia inválido")
+    const title = requiredText(formData, "title", "Título")
+    const content = text(formData, "content")
+    const scriptureRef = text(formData, "scriptureRef")
+    const sql = getSql()
+
+    const planRows = await sql<{ id: string }[]>`
+      select id
+      from public.reading_plans
+      where id = ${planId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    if (!planRows[0]?.id) throw new Error("Plano não encontrado")
+
+    const rows = id
+      ? await sql<{ id: string }[]>`
+          update public.reading_plan_steps
+          set day_number = ${dayNumber},
+              title = ${title},
+              content = ${content},
+              scripture_ref = ${scriptureRef},
+              updated_at = now()
+          where id = ${id}
+            and plan_id = ${planId}
+            and company_id = ${companyId}
+            and deleted_at is null
+          returning id
+        `
+      : await sql<{ id: string }[]>`
+          insert into public.reading_plan_steps (
+            company_id, plan_id, day_number, title, content, scripture_ref
+          )
+          values (
+            ${companyId}, ${planId}, ${dayNumber}, ${title}, ${content}, ${scriptureRef}
+          )
+          on conflict (plan_id, day_number)
+          do update set
+            title = excluded.title,
+            content = excluded.content,
+            scripture_ref = excluded.scripture_ref,
+            deleted_at = null,
+            updated_at = now()
+          returning id
+        `
+
+    const savedId = rows[0]?.id
+    if (!savedId) throw new Error("Etapa não foi salva")
+    await audit("reading_plan_step.save", "reading_plan_steps", savedId, companyId)
+    refresh(["/discipulado", "/dashboard"])
+    return { ok: true, id: savedId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteReadingPlanStep(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Etapa inválida")
+    const { companyId } = await actionContext(formData, "content.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.reading_plan_steps
+      set deleted_at = now(), updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Etapa não encontrada")
+    await audit("reading_plan_step.delete", "reading_plan_steps", rows[0].id, companyId)
+    refresh(["/discipulado", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function saveAnnouncement(formData: FormData): Promise<ActionResult> {
   try {
     validateActionForm(formData, announcementSchema)
@@ -708,14 +833,17 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
     validateActionForm(formData, crmCardSchema)
     const id = uuid(formData, "id")
     const { user, companyId } = await actionContext(formData, "crm.edit")
-    const personName = requiredText(formData, "personName", "Nome")
+    const person = await resolvePersonReference(companyId, uuid(formData, "personId"), text(formData, "personName"))
+    const personPhone = text(formData, "personPhone") || person.personPhone
+    const personEmail = text(formData, "personEmail") || person.personEmail
     const sql = getSql()
     const rows = id
       ? await sql<{ id: string }[]>`
           update public.crm_cards
-          set person_name = ${personName},
-              person_phone = ${text(formData, "personPhone")},
-              person_email = ${text(formData, "personEmail")},
+          set person_id = ${person.personId},
+              person_name = ${person.personName},
+              person_phone = ${personPhone},
+              person_email = ${personEmail},
               stage = ${text(formData, "stage", "new")},
               source = ${text(formData, "source")},
               assigned_to_name = ${text(formData, "assignedToName")},
@@ -729,11 +857,11 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
         `
       : await sql<{ id: string }[]>`
           insert into public.crm_cards (
-            company_id, person_name, person_phone, person_email, stage, source,
+            company_id, person_id, person_name, person_phone, person_email, stage, source,
             assigned_to_name, last_contact, notes, created_by, updated_by
           )
           values (
-            ${companyId}, ${personName}, ${text(formData, "personPhone")}, ${text(formData, "personEmail")},
+            ${companyId}, ${person.personId}, ${person.personName}, ${personPhone}, ${personEmail},
             ${text(formData, "stage", "new")}, ${text(formData, "source")}, ${text(formData, "assignedToName")},
             ${optionalText(formData, "lastContact")}, ${text(formData, "notes")}, ${user.id}, ${user.id}
           )
@@ -826,6 +954,52 @@ export async function saveExpense(formData: FormData): Promise<ActionResult> {
     `
     await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "expenses", entityId: rows[0].id })
     await audit("expense.create", "expenses", rows[0].id, companyId)
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteRevenue(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Lançamento inválido")
+    const { user, companyId } = await actionContext(formData, "finance.delete")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.revenues
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Receita não encontrada")
+    await audit("revenue.delete", "revenues", rows[0].id, companyId)
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteExpense(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Lançamento inválido")
+    const { user, companyId } = await actionContext(formData, "finance.delete")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.expenses
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Despesa não encontrada")
+    await audit("expense.delete", "expenses", rows[0].id, companyId)
     refresh(["/financeiro", "/relatorios", "/dashboard"])
     return { ok: true, id: rows[0].id }
   } catch (error) {

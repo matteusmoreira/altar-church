@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { Church, Eye, EyeOff } from "lucide-react"
@@ -114,6 +115,12 @@ export default function LoginPage() {
             >
               {loading ? "Entrando..." : "Entrar"}
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Não tem conta?{" "}
+              <Link href="/register" className="font-medium text-primary hover:underline">
+                Criar conta
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>

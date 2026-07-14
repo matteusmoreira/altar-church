@@ -219,6 +219,7 @@ export interface AttendanceRecord {
 export interface CRMCard {
   id: string
   churchId: string
+  personId?: string
   personName: string
   personPhone: string
   personEmail?: string
@@ -229,6 +230,13 @@ export interface CRMCard {
   lastContact?: string
   notes?: string
   createdAt: string
+}
+
+export interface PersonDirectoryOption {
+  id: string
+  fullName: string
+  email: string
+  phone: string
 }
 
 export interface Group {

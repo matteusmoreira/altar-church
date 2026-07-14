@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { deleteAttendanceRecord, saveAttendanceRecord } from "@/lib/operational/actions"
-import { listAttendanceRecords } from "@/lib/operational/data"
+import { listAttendanceRecords, listPeopleDirectory } from "@/lib/operational/data"
 import type { AttendanceRecord } from "@/lib/types"
 
 async function saveAttendanceRecordForm(formData: FormData) {
@@ -39,7 +39,7 @@ function formatDate(value: string) {
 }
 
 export default async function AttendancePage() {
-  const records = await listAttendanceRecords()
+  const [records, people] = await Promise.all([listAttendanceRecords(), listPeopleDirectory()])
   const today = new Date().toISOString().slice(0, 10)
   const presentToday = records.filter((record) => record.date === today && record.status === "present").length
   const absentToday = records.filter((record) => record.date === today && record.status === "absent").length
@@ -49,7 +49,7 @@ export default async function AttendancePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Presença e Check-in</h1>
-        <p className="text-muted-foreground">Registros persistidos de presença nos eventos.</p>
+        <p className="text-muted-foreground">Registros vinculados ao cadastro de pessoas quando disponível.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -69,8 +69,24 @@ export default async function AttendancePage() {
         <CardContent>
           <form action={saveAttendanceRecordForm} className="grid gap-4 lg:grid-cols-6">
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="personName">Nome *</Label>
-              <Input id="personName" name="personName" required placeholder="Nome completo" />
+              <Label htmlFor="personId">Pessoa do cadastro</Label>
+              <Select name="personId" defaultValue="__manual__">
+                <SelectTrigger id="personId">
+                  <SelectValue placeholder="Selecione (recomendado)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">Digitação manual</SelectItem>
+                  {people.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>
+                      {person.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2 lg:col-span-2">
+              <Label htmlFor="personName">Nome manual (se não selecionar)</Label>
+              <Input id="personName" name="personName" placeholder="Nome completo" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="eventType">Tipo</Label>
@@ -140,7 +156,12 @@ export default async function AttendancePage() {
           <TableBody>
             {records.map((record) => (
               <TableRow key={record.id}>
-                <TableCell className="font-medium">{record.personName}</TableCell>
+                <TableCell className="font-medium">
+                  {record.personName}
+                  {record.personId ? (
+                    <span className="ml-2 text-xs text-muted-foreground">vinculado</span>
+                  ) : null}
+                </TableCell>
                 <TableCell>
                   <span className="text-muted-foreground">{eventTypeLabels[record.eventType]}</span>
                   {record.eventRefName && <span className="ml-1">{record.eventRefName}</span>}
@@ -168,7 +189,17 @@ export default async function AttendancePage() {
   )
 }
 
-function Metric({ title, value, icon: Icon, tone = "primary" }: { title: string; value: number; icon: React.ElementType; tone?: "primary" | "success" | "destructive" | "warning" }) {
+function Metric({
+  title,
+  value,
+  icon: Icon,
+  tone = "primary",
+}: {
+  title: string
+  value: number
+  icon: React.ElementType
+  tone?: "primary" | "success" | "destructive" | "warning"
+}) {
   const toneClass = {
     primary: "gradient-primary text-white",
     success: "bg-success/10 text-success",

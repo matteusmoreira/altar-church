@@ -15,6 +15,7 @@ test("P4 operational server actions validate form payloads with Zod schemas", ()
     "attendanceSchema",
     "prayerSchema",
     "readingPlanSchema",
+    "readingPlanStepSchema",
     "announcementSchema",
     "notificationSchema",
     "notificationGroupSchema",

@@ -115,11 +115,13 @@ function SidebarContent({
   collapsed,
   onToggle,
   enabledModuleIds,
+  churchName,
 }: {
   onNavClick?: () => void
   collapsed?: boolean
   onToggle?: () => void
   enabledModuleIds: string[] | null
+  churchName: string
 }) {
   const pathname = usePathname()
   const { logout, hasRole, user } = useAuth()
@@ -139,7 +141,7 @@ function SidebarContent({
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-bold tracking-tight">Altar Church</h1>
-            <p className="truncate text-xs text-muted-foreground">Igreja Batista Central</p>
+            <p className="truncate text-xs text-muted-foreground">{churchName}</p>
           </div>
         )}
       </div>
@@ -237,14 +239,14 @@ function SidebarContent({
   )
 }
 
-function Topbar() {
+function Topbar({ churchName }: { churchName: string }) {
   const { user } = useAuth()
 
   return (
     <div className="hidden h-14 items-center justify-between border-b border-border/50 px-6 glass lg:flex">
       <div className="flex items-center gap-2">
         <Church className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium text-muted-foreground">Igreja Batista Central</span>
+        <span className="text-sm font-medium text-muted-foreground">{churchName}</span>
       </div>
       <div className="flex items-center gap-3">
         <div className="text-right">
@@ -262,9 +264,11 @@ function Topbar() {
 export function DashboardLayout({
   children,
   initialEnabledModuleIds,
+  churchName = "Altar Church",
 }: {
   children: React.ReactNode
   initialEnabledModuleIds: string[] | null
+  churchName?: string
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -312,6 +316,7 @@ export function DashboardLayout({
         <SidebarContent
           collapsed={collapsed}
           enabledModuleIds={enabledModuleIds}
+          churchName={churchName}
           onToggle={() => setCollapsed(!collapsed)}
         />
       </aside>
@@ -325,21 +330,25 @@ export function DashboardLayout({
               <Menu className="h-5 w-5" />
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0 glass-strong">
-              <SidebarContent enabledModuleIds={enabledModuleIds} onNavClick={() => setSheetOpen(false)} />
+              <SidebarContent
+                enabledModuleIds={enabledModuleIds}
+                churchName={churchName}
+                onNavClick={() => setSheetOpen(false)}
+              />
             </SheetContent>
           </Sheet>
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg gradient-primary">
               <Church className="h-4 w-4 text-white" />
             </div>
-            <span className="truncate font-bold">Altar Church</span>
+            <span className="truncate font-bold">{churchName}</span>
           </div>
           <div className="ml-auto shrink-0">
             <ThemeToggle />
           </div>
         </header>
 
-        <Topbar />
+        <Topbar churchName={churchName} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">

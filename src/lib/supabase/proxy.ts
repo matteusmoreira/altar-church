@@ -64,7 +64,7 @@ export async function updateSession(request: NextRequest) {
     return applySessionUpdates(NextResponse.redirect(url), cookiesToSet, headersToSet)
   }
 
-  if (user && pathname === "/login") {
+  if (user && (pathname === "/login" || pathname === "/register")) {
     const url = request.nextUrl.clone()
     url.pathname = "/dashboard"
     url.search = ""

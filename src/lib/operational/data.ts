@@ -15,6 +15,7 @@ import type {
   FinancialCategory,
   Notification,
   NotificationGroup,
+  PersonDirectoryOption,
   PrayerRequest,
   ReadingPlan,
   ReadingPlanStep,
@@ -71,6 +72,7 @@ interface AttendanceRow {
 interface CrmRow {
   id: string
   company_id: string
+  person_id: string | null
   person_name: string
   person_phone: string
   person_email: string
@@ -478,6 +480,7 @@ function toCrmCard(row: CrmRow): CRMCard {
   return {
     id: row.id,
     churchId: row.company_id,
+    personId: row.person_id ?? undefined,
     personName: row.person_name,
     personPhone: row.person_phone,
     personEmail: row.person_email,
@@ -838,6 +841,29 @@ export async function listAttendanceRecords(companyIdInput?: string | null): Pro
   `
 
   return rows.map(toAttendance)
+}
+
+export async function listPeopleDirectory(companyIdInput?: string | null): Promise<PersonDirectoryOption[]> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requireCompanyAccess(companyId)
+
+  const sql = getSql()
+  const rows = await sql<{ id: string; full_name: string; email: string | null; phone: string }[]>`
+    select id, full_name, email, phone
+    from public.people
+    where company_id = ${companyId}
+      and deleted_at is null
+      and is_active = true
+    order by full_name asc
+    limit 500
+  `
+
+  return rows.map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email ?? "",
+    phone: row.phone,
+  }))
 }
 
 export async function listCrmCards(companyIdInput?: string | null): Promise<CRMCard[]> {

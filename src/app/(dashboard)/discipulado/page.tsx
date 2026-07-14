@@ -7,7 +7,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { deleteReadingPlan, saveReadingPlan } from "@/lib/operational/actions"
+import {
+  deleteReadingPlan,
+  deleteReadingPlanStep,
+  saveReadingPlan,
+  saveReadingPlanStep,
+} from "@/lib/operational/actions"
 import { listReadingPlans } from "@/lib/operational/data"
 
 async function saveReadingPlanForm(formData: FormData) {
@@ -20,22 +25,35 @@ async function deleteReadingPlanForm(formData: FormData) {
   await deleteReadingPlan(formData)
 }
 
+async function saveReadingPlanStepForm(formData: FormData) {
+  "use server"
+  await saveReadingPlanStep(formData)
+}
+
+async function deleteReadingPlanStepForm(formData: FormData) {
+  "use server"
+  await deleteReadingPlanStep(formData)
+}
+
 export default async function ReadingPlansPage() {
   const plans = await listReadingPlans()
   const published = plans.filter((plan) => plan.status === "published").length
   const drafts = plans.filter((plan) => plan.status === "draft").length
+  const totalSteps = plans.reduce((sum, plan) => sum + plan.steps.length, 0)
+  const defaultPlanId = plans[0]?.id ?? ""
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Planos de Leitura / Discipulado</h1>
-        <p className="text-muted-foreground">Planos persistidos para leitura e discipulado.</p>
+        <p className="text-muted-foreground">Planos e etapas diárias persistidos para leitura e discipulado.</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <Metric title="Total de Planos" value={plans.length} icon={BookOpen} />
         <Metric title="Publicados" value={published} icon={CheckCircle2} />
         <Metric title="Rascunhos" value={drafts} icon={FilePen} />
+        <Metric title="Etapas" value={totalSteps} icon={Plus} />
       </div>
 
       <Card className="glass">
@@ -93,6 +111,59 @@ export default async function ReadingPlansPage() {
         </CardContent>
       </Card>
 
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BookOpen className="h-4 w-4 text-primary" />
+            Nova etapa do plano
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {plans.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Crie um plano antes de adicionar etapas.</p>
+          ) : (
+            <form action={saveReadingPlanStepForm} className="grid gap-4 lg:grid-cols-6">
+              <div className="grid gap-2 lg:col-span-2">
+                <Label htmlFor="planId">Plano *</Label>
+                <Select name="planId" defaultValue={defaultPlanId} required>
+                  <SelectTrigger id="planId">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {plans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="dayNumber">Dia *</Label>
+                <Input id="dayNumber" name="dayNumber" type="number" min="1" defaultValue="1" required />
+              </div>
+              <div className="grid gap-2 lg:col-span-2">
+                <Label htmlFor="stepTitle">Título *</Label>
+                <Input id="stepTitle" name="title" required placeholder="Leitura do dia" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="scriptureRef">Referência</Label>
+                <Input id="scriptureRef" name="scriptureRef" placeholder="João 3:16" />
+              </div>
+              <div className="grid gap-2 lg:col-span-6">
+                <Label htmlFor="stepContent">Conteúdo</Label>
+                <Textarea id="stepContent" name="content" rows={3} placeholder="Orientação, reflexão ou texto" />
+              </div>
+              <div className="lg:col-span-6">
+                <Button type="submit" className="gradient-primary">
+                  Salvar etapa
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="glass overflow-hidden">
         <Table>
           <TableHeader>
@@ -132,6 +203,47 @@ export default async function ReadingPlansPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {plans.map((plan) =>
+        plan.steps.length === 0 ? null : (
+          <Card key={`${plan.id}-steps`} className="glass overflow-hidden">
+            <CardHeader>
+              <CardTitle className="text-base">Etapas — {plan.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-20">Dia</TableHead>
+                    <TableHead>Título</TableHead>
+                    <TableHead>Referência</TableHead>
+                    <TableHead>Conteúdo</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plan.steps.map((step) => (
+                    <TableRow key={step.id}>
+                      <TableCell className="font-medium">{step.day}</TableCell>
+                      <TableCell>{step.title}</TableCell>
+                      <TableCell>{step.scriptureRef || "-"}</TableCell>
+                      <TableCell className="max-w-md truncate text-muted-foreground">{step.content || "-"}</TableCell>
+                      <TableCell>
+                        <form action={deleteReadingPlanStepForm}>
+                          <input type="hidden" name="id" value={step.id} />
+                          <Button type="submit" variant="ghost" size="icon">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </form>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )
+      )}
     </div>
   )
 }

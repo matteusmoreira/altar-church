@@ -248,7 +248,19 @@ create unique index if not exists volunteer_delivery_assignment_unique_idx on pu
 do $$
 declare
   table_name text;
-  managed_tables text[] := array[
+  company_tables text[] := array[
+    'volunteer_profiles', 'volunteer_departments', 'volunteer_department_memberships',
+    'volunteer_schedule_templates', 'volunteer_schedule_template_slots', 'volunteer_schedules',
+    'volunteer_shifts', 'volunteer_assignments', 'volunteer_checkin_qr_sessions',
+    'volunteer_feed_posts', 'volunteer_delivery_outbox'
+  ];
+  updated_at_tables text[] := array[
+    'volunteer_profiles', 'volunteer_departments', 'volunteer_department_memberships',
+    'volunteer_schedule_templates', 'volunteer_schedule_template_slots', 'volunteer_schedules',
+    'volunteer_shifts', 'volunteer_assignments',
+    'volunteer_feed_posts', 'volunteer_delivery_outbox'
+  ];
+  all_tables text[] := array[
     'volunteer_profiles', 'volunteer_departments', 'volunteer_department_memberships',
     'volunteer_schedule_templates', 'volunteer_schedule_template_slots', 'volunteer_schedules',
     'volunteer_shifts', 'volunteer_assignments', 'volunteer_checkin_qr_sessions',
@@ -256,19 +268,85 @@ declare
     'volunteer_delivery_outbox', 'volunteer_delivery_webhook_events'
   ];
 begin
-  foreach table_name in array managed_tables loop
-    execute format('drop trigger if exists %I on public.%I', table_name || '_set_updated_at', table_name);
-    if table_name not in ('volunteer_checkin_qr_sessions', 'volunteer_feed_reads', 'volunteer_delivery_webhook_events') then
-      execute format('create trigger %I before update on public.%I for each row execute function public.set_updated_at()', table_name || '_set_updated_at', table_name);
-    end if;
+  foreach table_name in array all_tables loop
     execute format('alter table public.%I enable row level security', table_name);
+    execute format('grant select, insert, update, delete on public.%I to authenticated', table_name);
+  end loop;
+
+  foreach table_name in array updated_at_tables loop
+    execute format('drop trigger if exists %I on public.%I', table_name || '_set_updated_at', table_name);
+    execute format(
+      'create trigger %I before update on public.%I for each row execute function public.set_updated_at()',
+      table_name || '_set_updated_at',
+      table_name
+    );
+  end loop;
+
+  foreach table_name in array company_tables loop
     execute format('drop policy if exists %I on public.%I', table_name || ' company access', table_name);
     execute format(
       'create policy %I on public.%I for all to authenticated using ((select public.is_superadmin()) or (select public.is_company_member(company_id))) with check ((select public.is_superadmin()) or (select public.is_company_member(company_id)))',
-      table_name || ' company access', table_name
+      table_name || ' company access',
+      table_name
     );
-    execute format('grant select, insert, update, delete on public.%I to authenticated', table_name);
   end loop;
+
+  -- Junction / child tables without company_id need policies via parent rows.
+  drop policy if exists "volunteer_feed_post_departments company access" on public.volunteer_feed_post_departments;
+  create policy "volunteer_feed_post_departments company access"
+  on public.volunteer_feed_post_departments
+  for all
+  to authenticated
+  using (
+    (select public.is_superadmin())
+    or exists (
+      select 1
+      from public.volunteer_feed_posts post
+      where post.id = post_id
+        and public.is_company_member(post.company_id)
+    )
+  )
+  with check (
+    (select public.is_superadmin())
+    or exists (
+      select 1
+      from public.volunteer_feed_posts post
+      where post.id = post_id
+        and public.is_company_member(post.company_id)
+    )
+  );
+
+  drop policy if exists "volunteer_feed_reads company access" on public.volunteer_feed_reads;
+  create policy "volunteer_feed_reads company access"
+  on public.volunteer_feed_reads
+  for all
+  to authenticated
+  using (
+    (select public.is_superadmin())
+    or exists (
+      select 1
+      from public.volunteer_profiles volunteer
+      where volunteer.id = volunteer_id
+        and public.is_company_member(volunteer.company_id)
+    )
+  )
+  with check (
+    (select public.is_superadmin())
+    or exists (
+      select 1
+      from public.volunteer_profiles volunteer
+      where volunteer.id = volunteer_id
+        and public.is_company_member(volunteer.company_id)
+    )
+  );
+
+  drop policy if exists "volunteer_delivery_webhook_events superadmin access" on public.volunteer_delivery_webhook_events;
+  create policy "volunteer_delivery_webhook_events superadmin access"
+  on public.volunteer_delivery_webhook_events
+  for all
+  to authenticated
+  using ((select public.is_superadmin()))
+  with check ((select public.is_superadmin()));
 end $$;
 
 insert into public.volunteer_profiles (company_id, person_id, registration_status, created_at, updated_at)
@@ -286,7 +364,7 @@ update public.profiles profile
 set person_id = matches.person_id,
     updated_at = now()
 from (
-  select profile_row.id as profile_id, min(person.id) as person_id
+  select profile_row.id as profile_id, (array_agg(person.id order by person.created_at, person.id))[1] as person_id
   from public.profiles profile_row
   join public.people person
     on person.company_id = profile_row.company_id

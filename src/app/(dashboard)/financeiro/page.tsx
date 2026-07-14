@@ -7,6 +7,7 @@ import {
   Landmark,
   Plus,
   Tag,
+  Trash2,
   Users,
   Wallet,
 } from "lucide-react"
@@ -20,6 +21,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import {
+  deleteExpense,
+  deleteRevenue,
   saveBankAccount,
   saveCostCenter,
   saveExpense,
@@ -58,6 +61,16 @@ async function saveBankAccountForm(formData: FormData) {
 async function saveSupplierForm(formData: FormData) {
   "use server"
   await saveSupplier(formData)
+}
+
+async function deleteRevenueForm(formData: FormData) {
+  "use server"
+  await deleteRevenue(formData)
+}
+
+async function deleteExpenseForm(formData: FormData) {
+  "use server"
+  await deleteExpense(formData)
 }
 
 const paymentMethods = [
@@ -187,6 +200,7 @@ export default async function FinancePage() {
               party: revenue.receivedFromName,
             }))}
             amountClass="text-success"
+            deleteAction={deleteRevenueForm}
           />
         </TabsContent>
 
@@ -221,6 +235,7 @@ export default async function FinancePage() {
               party: expense.paidToName,
             }))}
             amountClass="text-destructive"
+            deleteAction={deleteExpenseForm}
           />
         </TabsContent>
 
@@ -480,9 +495,11 @@ function Submit({ label }: { label: string }) {
 function FinanceTable({
   rows,
   amountClass,
+  deleteAction,
 }: {
   rows: { id: string; date: string; description: string; category: string; account: string; amount: number; party: string }[]
   amountClass: string
+  deleteAction: (formData: FormData) => Promise<void>
 }) {
   return (
     <Card className="glass overflow-hidden">
@@ -495,6 +512,7 @@ function FinanceTable({
             <TableHead>Conta</TableHead>
             <TableHead>Valor</TableHead>
             <TableHead>Contraparte</TableHead>
+            <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -506,6 +524,14 @@ function FinanceTable({
               <TableCell>{row.account || "-"}</TableCell>
               <TableCell className={`font-semibold ${amountClass}`}>R$ {money(row.amount)}</TableCell>
               <TableCell>{row.party || "-"}</TableCell>
+              <TableCell>
+                <form action={deleteAction}>
+                  <input type="hidden" name="id" value={row.id} />
+                  <Button type="submit" variant="ghost" size="icon" aria-label="Excluir lançamento">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </form>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

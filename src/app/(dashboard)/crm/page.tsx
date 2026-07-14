@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { deleteCrmCard, saveCrmCard } from "@/lib/operational/actions"
-import { listCrmCards } from "@/lib/operational/data"
+import { listCrmCards, listPeopleDirectory } from "@/lib/operational/data"
 import type { CRMCard } from "@/lib/types"
 
 async function saveCrmCardForm(formData: FormData) {
@@ -35,7 +35,7 @@ function formatDate(value?: string) {
 }
 
 export default async function CRMPage() {
-  const cards = await listCrmCards()
+  const [cards, people] = await Promise.all([listCrmCards(), listPeopleDirectory()])
   const cardsByStage = new Map<CRMCard["stage"], CRMCard[]>()
   for (const stage of stages) cardsByStage.set(stage.key, [])
   for (const card of cards) cardsByStage.get(card.stage)?.push(card)
@@ -45,7 +45,7 @@ export default async function CRMPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">CRM / Kanban</h1>
-          <p className="text-muted-foreground">Acompanhamento persistido de pessoas.</p>
+          <p className="text-muted-foreground">Acompanhamento vinculado ao cadastro de pessoas.</p>
         </div>
         <Badge variant="outline" className="w-fit gap-1">
           <Users className="h-3 w-3" />
@@ -63,8 +63,24 @@ export default async function CRMPage() {
         <CardContent>
           <form action={saveCrmCardForm} className="grid gap-4 lg:grid-cols-6">
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="personName">Nome *</Label>
-              <Input id="personName" name="personName" required />
+              <Label htmlFor="personId">Pessoa do cadastro</Label>
+              <Select name="personId" defaultValue="__manual__">
+                <SelectTrigger id="personId">
+                  <SelectValue placeholder="Selecione (recomendado)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__manual__">Digitação manual</SelectItem>
+                  {people.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>
+                      {person.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2 lg:col-span-2">
+              <Label htmlFor="personName">Nome manual (se não selecionar)</Label>
+              <Input id="personName" name="personName" placeholder="Nome da pessoa" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="personPhone">Telefone</Label>
@@ -126,7 +142,12 @@ export default async function CRMPage() {
               {(cardsByStage.get(stage.key) ?? []).map((card) => (
                 <div key={card.id} className="glass-strong rounded-lg p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-sm">{card.personName}</span>
+                    <div>
+                      <span className="font-medium text-sm">{card.personName}</span>
+                      {card.personId ? (
+                        <p className="text-[11px] text-muted-foreground">cadastro vinculado</p>
+                      ) : null}
+                    </div>
                     <form action={deleteCrmCardForm}>
                       <input type="hidden" name="id" value={card.id} />
                       <Button type="submit" variant="ghost" size="icon" className="h-7 w-7">
