@@ -26,6 +26,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useAuth } from "@/lib/auth/context"
 import { deletePerson, resolveDuplicateCandidate, savePerson } from "./actions"
 import type {
   DuplicateCandidateItem,
@@ -33,6 +34,7 @@ import type {
   PeopleDashboardData,
   PeopleListFilters,
   PeopleListResult,
+  PersonAccessRole,
   PersonFormOptions,
   PersonGender,
   PersonListItem,
@@ -79,6 +81,10 @@ interface PersonFormState {
   emailValidated: boolean
   isActive: boolean
   internalNotes: string
+  inviteAccess: boolean
+  accessRole: PersonAccessRole
+  temporaryPassword: string
+  hasSystemAccess: boolean
 }
 
 interface FilterState {
@@ -95,6 +101,17 @@ const statusColors: Record<PersonStatus, string> = {
   active: "bg-success/10 text-success border-success/20",
   inactive: "bg-destructive/10 text-destructive border-destructive/20",
   visitor: "bg-info/10 text-info border-info/20",
+}
+
+const accessRoleLabels: Record<PersonAccessRole, string> = {
+  admin: "Admin",
+  pastor: "Pastor",
+  ministry_leader: "Líder de ministério",
+  cell_leader: "Líder de célula",
+  communication: "Comunicação",
+  finance: "Financeiro",
+  volunteer: "Voluntário",
+  reader: "Leitor",
 }
 
 const statusLabels: Record<PersonStatus, string> = {
@@ -129,6 +146,10 @@ const emptyForm: PersonFormState = {
   emailValidated: false,
   isActive: true,
   internalNotes: "",
+  inviteAccess: false,
+  accessRole: "reader",
+  temporaryPassword: "",
+  hasSystemAccess: false,
 }
 
 function initials(name: string) {
@@ -179,6 +200,10 @@ function personToForm(person: PersonListItem): PersonFormState {
     emailValidated: person.emailValidated,
     isActive: person.isActive,
     internalNotes: "",
+    inviteAccess: false,
+    accessRole: person.accessRole ?? "reader",
+    temporaryPassword: "",
+    hasSystemAccess: person.hasSystemAccess,
   }
 }
 
@@ -226,6 +251,8 @@ export function MembersClient({
 }: MembersClientProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const { hasRole } = useAuth()
+  const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
   const [activeTab, setActiveTab] = useState("lista")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -285,6 +312,17 @@ export function MembersClient({
       return
     }
 
+    if (formData.inviteAccess) {
+      if (!formData.email.trim()) {
+        toast.error("Informe um e-mail para convidar o acesso")
+        return
+      }
+      if (!formData.temporaryPassword || formData.temporaryPassword.length < 8) {
+        toast.error("Senha temporária deve ter no mínimo 8 caracteres")
+        return
+      }
+    }
+
     setIsSaving(true)
     const { firstName, lastName } = splitFullName(fullName)
     const result = await savePerson({
@@ -307,6 +345,9 @@ export function MembersClient({
       emailValidated: formData.emailValidated,
       isActive: formData.isActive,
       internalNotes: formData.internalNotes,
+      inviteAccess: formData.inviteAccess,
+      accessRole: formData.inviteAccess ? formData.accessRole : undefined,
+      temporaryPassword: formData.inviteAccess ? formData.temporaryPassword : undefined,
     })
     setIsSaving(false)
 
@@ -315,7 +356,15 @@ export function MembersClient({
       return
     }
 
-    toast.success(formData.id ? "Pessoa atualizada com sucesso" : "Pessoa cadastrada com sucesso")
+    if (formData.inviteAccess) {
+      toast.success(
+        formData.hasSystemAccess
+          ? "Pessoa salva e acesso atualizado. Informe a senha temporária à pessoa."
+          : "Pessoa salva e acesso criado. Informe a senha temporária à pessoa.",
+      )
+    } else {
+      toast.success(formData.id ? "Pessoa atualizada com sucesso" : "Pessoa cadastrada com sucesso")
+    }
     setDialogOpen(false)
     setFormData(emptyForm)
     router.refresh()
@@ -525,6 +574,11 @@ export function MembersClient({
                                 {person.fullName}
                               </Link>
                               <p className="text-xs text-muted-foreground">{person.email ?? "Sem e-mail"}</p>
+                              {person.hasSystemAccess ? (
+                                <Badge variant="outline" className="mt-1 border-success/30 text-success">
+                                  Com acesso
+                                </Badge>
+                              ) : null}
                             </div>
                           </div>
                         </TableCell>
@@ -600,6 +654,11 @@ export function MembersClient({
                             {statusLabels[person.status]}
                           </Badge>
                           <Badge variant="outline">{personTypeLabels[person.personType]}</Badge>
+                          {person.hasSystemAccess ? (
+                            <Badge variant="outline" className="border-success/30 text-success">
+                              Com acesso
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                       <DropdownMenu>
@@ -979,6 +1038,60 @@ export function MembersClient({
                 />
               </div>
             </div>
+            {canInviteAccess ? (
+              <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label>
+                      {formData.hasSystemAccess ? "Atualizar acesso ao sistema" : "Convidar para o sistema"}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Cria login com e-mail + senha temporária (admin/pastor).
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.inviteAccess}
+                    onCheckedChange={(checked) => setFormData({ ...formData, inviteAccess: checked })}
+                  />
+                </div>
+                {formData.inviteAccess ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label>Perfil de acesso</Label>
+                      <Select
+                        value={formData.accessRole}
+                        onValueChange={(value) =>
+                          value && setFormData({ ...formData, accessRole: value as PersonAccessRole })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(accessRoleLabels) as PersonAccessRole[]).map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {accessRoleLabels[role]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Senha temporária</Label>
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={formData.temporaryPassword}
+                        onChange={(event) =>
+                          setFormData({ ...formData, temporaryPassword: event.target.value })
+                        }
+                        placeholder="Mínimo 8 caracteres"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>

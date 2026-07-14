@@ -9,6 +9,7 @@ import type {
   PeopleListResult,
   PersonDetail,
   PersonFormOptions,
+  PersonAccessRole,
   PersonGender,
   PersonListItem,
   PersonStatus,
@@ -33,6 +34,9 @@ interface PersonRow {
   state: string
   country: string
   access_profile: string | null
+  profile_id: string | null
+  access_role: PersonAccessRole | null
+  access_active: boolean | null
   internal_notes?: string
   status: PersonStatus
   person_type: PersonType
@@ -223,6 +227,10 @@ function toPerson(row: PersonRow): PersonListItem {
     state: row.state,
     country: row.country,
     accessProfile: row.access_profile,
+    profileId: row.profile_id,
+    accessRole: row.access_role,
+    accessActive: row.access_active,
+    hasSystemAccess: Boolean(row.profile_id),
     internalNotes: row.internal_notes ?? undefined,
     status: row.status,
     personType: row.person_type,
@@ -300,6 +308,9 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.state,
         p.country,
         p.access_profile,
+        p.profile_id,
+        pr.role as access_role,
+        pr.active as access_active,
         p.internal_notes,
         p.status,
         p.person_type,
@@ -312,6 +323,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.updated_at
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
+      left join public.profiles pr on pr.id = p.profile_id
       where p.id = ${personId}
         and p.company_id = ${companyId}
         and p.deleted_at is null
@@ -468,6 +480,9 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.state,
         p.country,
         p.access_profile,
+        p.profile_id,
+        pr.role as access_role,
+        pr.active as access_active,
         p.status,
         p.person_type,
         p.journey_status,
@@ -478,6 +493,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.updated_at
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
+      left join public.profiles pr on pr.id = p.profile_id
       where p.company_id = ${companyId}
         and p.deleted_at is null
         and (${search} = '' or p.full_name ilike ${searchPattern} or coalesce(p.email, '') ilike ${searchPattern} or p.phone ilike ${searchPattern})

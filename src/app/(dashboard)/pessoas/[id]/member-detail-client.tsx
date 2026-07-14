@@ -1,6 +1,8 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
@@ -14,6 +16,7 @@ import {
   Church,
   ClipboardList,
   FileText,
+  KeyRound,
   Mail,
   MapPin,
   Phone,
@@ -21,11 +24,18 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react"
-import type { PersonDetail, PersonStatus, PersonType } from "@/lib/people/types"
+import { toast } from "sonner"
+import { useAuth } from "@/lib/auth/context"
+import { invitePersonAccess } from "../actions"
+import type { PersonAccessRole, PersonDetail, PersonStatus, PersonType } from "@/lib/people/types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -58,6 +68,17 @@ const genderLabels = {
   male: "Masculino",
   not_informed: "Não informado",
   other: "Outro",
+}
+
+const accessRoleLabels: Record<PersonAccessRole, string> = {
+  admin: "Admin",
+  pastor: "Pastor",
+  ministry_leader: "Líder de ministério",
+  cell_leader: "Líder de célula",
+  communication: "Comunicação",
+  finance: "Financeiro",
+  volunteer: "Voluntário",
+  reader: "Leitor",
 }
 
 const activityCategoryLabels: Record<string, string> = {
@@ -121,9 +142,51 @@ function DetailItem({
 }
 
 export function MemberDetailClient({ person }: MemberDetailClientProps) {
+  const router = useRouter()
+  const { hasRole } = useAuth()
+  const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [isInviting, setIsInviting] = useState(false)
+  const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "reader")
+  const [temporaryPassword, setTemporaryPassword] = useState("")
+
   const completedSteps = person.journeySteps.filter((step) => step.completedAt).length
   const totalSteps = person.journeySteps.length
   const journeyProgress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+
+  const handleInvite = async () => {
+    if (!person.email?.trim()) {
+      toast.error("Informe um e-mail na pessoa antes de convidar o acesso")
+      return
+    }
+    if (temporaryPassword.length < 8) {
+      toast.error("Senha temporária deve ter no mínimo 8 caracteres")
+      return
+    }
+
+    setIsInviting(true)
+    const result = await invitePersonAccess({
+      personId: person.id,
+      companyId: person.companyId,
+      role: accessRole,
+      temporaryPassword,
+    })
+    setIsInviting(false)
+
+    if (!result.ok) {
+      toast.error(result.error ?? "Não foi possível convidar o acesso")
+      return
+    }
+
+    toast.success(
+      person.hasSystemAccess
+        ? "Acesso atualizado. Informe a senha temporária à pessoa."
+        : "Acesso criado. Informe a senha temporária à pessoa.",
+    )
+    setInviteOpen(false)
+    setTemporaryPassword("")
+    router.refresh()
+  }
 
   return (
     <div className="space-y-6">
@@ -151,6 +214,16 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                 <Badge variant="outline">{personTypeLabels[person.personType]}</Badge>
                 <Badge variant="outline">{person.congregationName ?? "Sem congregação"}</Badge>
                 {person.baptized && <Badge className="bg-primary/10 text-primary">Batizado</Badge>}
+                <Badge
+                  variant="outline"
+                  className={
+                    person.hasSystemAccess
+                      ? "border-success/30 text-success"
+                      : "border-muted-foreground/30 text-muted-foreground"
+                  }
+                >
+                  {person.hasSystemAccess ? "Com acesso" : "Sem acesso"}
+                </Badge>
               </div>
             </div>
           </div>
@@ -320,6 +393,65 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
           <Card className="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-primary" />
+                Acesso ao sistema
+              </CardTitle>
+              <CardDescription>
+                Login com e-mail e senha. Apenas admin/pastor convidam.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Status</span>
+                <Badge
+                  variant="outline"
+                  className={
+                    person.hasSystemAccess
+                      ? "border-success/30 text-success"
+                      : "border-muted-foreground/30"
+                  }
+                >
+                  {person.hasSystemAccess ? "Com acesso" : "Sem acesso"}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">E-mail de login</span>
+                <span className="font-medium">{infoValue(person.email)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Perfil</span>
+                <span className="font-medium">
+                  {person.accessRole ? accessRoleLabels[person.accessRole] : "-"}
+                </span>
+              </div>
+              {person.hasSystemAccess ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Conta ativa</span>
+                  <Badge variant={person.accessActive ? "default" : "destructive"}>
+                    {person.accessActive ? "Sim" : "Não"}
+                  </Badge>
+                </div>
+              ) : null}
+              {canInviteAccess ? (
+                <Button
+                  className="mt-2 w-full"
+                  variant={person.hasSystemAccess ? "outline" : "default"}
+                  onClick={() => {
+                    setAccessRole(person.accessRole ?? "reader")
+                    setTemporaryPassword("")
+                    setInviteOpen(true)
+                  }}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {person.hasSystemAccess ? "Redefinir senha / perfil" : "Convidar acesso"}
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-primary" />
                 Cuidado
               </CardTitle>
@@ -373,12 +505,71 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">Perfil de acesso</span>
-                <span className="font-medium">{infoValue(person.accessProfile)}</span>
+                <span className="font-medium">
+                  {person.accessRole
+                    ? accessRoleLabels[person.accessRole]
+                    : infoValue(person.accessProfile)}
+                </span>
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="glass-strong sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {person.hasSystemAccess ? "Atualizar acesso" : "Convidar acesso"}
+            </DialogTitle>
+            <DialogDescription>
+              A pessoa entrará em /login com o e-mail cadastrado e a senha temporária informada.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>E-mail</Label>
+              <Input value={person.email ?? ""} disabled placeholder="Sem e-mail" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Perfil de acesso</Label>
+              <Select
+                value={accessRole}
+                onValueChange={(value) => value && setAccessRole(value as PersonAccessRole)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(accessRoleLabels) as PersonAccessRole[]).map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {accessRoleLabels[role]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Senha temporária</Label>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={temporaryPassword}
+                onChange={(event) => setTemporaryPassword(event.target.value)}
+                placeholder="Mínimo 8 caracteres"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleInvite} disabled={isInviting} className="gradient-primary">
+              {isInviting ? "Salvando..." : person.hasSystemAccess ? "Atualizar acesso" : "Convidar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

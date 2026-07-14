@@ -5,7 +5,15 @@ import { z } from "zod"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
-import type { DuplicateCandidateActionInput, PeopleActionResult, SavePersonInput } from "./types"
+import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import type { User } from "@/lib/types"
+import type {
+  DuplicateCandidateActionInput,
+  InvitePersonAccessInput,
+  PeopleActionResult,
+  PersonAccessRole,
+  SavePersonInput,
+} from "./types"
 
 const nullableUuidSchema = z
   .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
@@ -14,6 +22,17 @@ const nullableUuidSchema = z
 const nullableTextSchema = z
   .union([z.string().trim(), z.null(), z.undefined()])
   .transform((value) => value || null)
+
+const accessRoleSchema = z.enum([
+  "admin",
+  "pastor",
+  "ministry_leader",
+  "cell_leader",
+  "communication",
+  "finance",
+  "volunteer",
+  "reader",
+])
 
 const personSchema = z.object({
   id: nullableUuidSchema,
@@ -43,6 +62,16 @@ const personSchema = z.object({
   emailValidated: z.boolean().optional().default(false),
   internalNotes: z.string().trim().optional().default(""),
   isActive: z.boolean().optional().default(true),
+  inviteAccess: z.boolean().optional().default(false),
+  accessRole: accessRoleSchema.optional(),
+  temporaryPassword: z.string().optional(),
+})
+
+const invitePersonAccessSchema = z.object({
+  personId: z.string().uuid(),
+  companyId: nullableUuidSchema,
+  role: accessRoleSchema,
+  temporaryPassword: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
 })
 
 const deletePersonSchema = z.object({
@@ -66,6 +95,12 @@ function toErrorResult(error: unknown): PeopleActionResult {
   return { ok: false, error: "Erro inesperado" }
 }
 
+function assertCanInviteAccess(user: User) {
+  if (!["superadmin", "admin", "pastor"].includes(user.role)) {
+    throw new Error("Apenas admin ou pastor podem convidar acesso ao sistema")
+  }
+}
+
 async function resolveActionCompanyId(inputCompanyId?: string | null) {
   const user = await getCurrentUser()
   if (!user) {
@@ -76,10 +111,13 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
   return { user, companyId }
 }
 
-async function refreshPeoplePaths() {
+async function refreshPeoplePaths(personId?: string | null) {
   revalidatePath("/pessoas")
   revalidatePath("/visitantes")
   revalidatePath("/dashboard")
+  if (personId) {
+    revalidatePath(`/pessoas/${personId}`)
+  }
 }
 
 async function refreshMemberCount(companyId: string) {
@@ -99,6 +137,211 @@ async function refreshMemberCount(companyId: string) {
   `
 }
 
+async function refreshCompanyUserCount(companyId: string) {
+  const sql = getSql()
+  await sql`
+    update public.companies c
+    set user_count = counts.total
+    from (
+      select company_id, count(*)::integer as total
+      from public.profiles
+      where company_id is not null and active = true
+      group by company_id
+    ) counts
+    where c.id = counts.company_id
+      and c.id = ${companyId}
+  `
+}
+
+async function findAuthUserIdByEmail(email: string) {
+  const supabase = createSupabaseAdminClient()
+  if (!supabase) return null
+
+  const users = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  if (users.error) {
+    throw new Error(`Consulta Auth falhou: ${users.error.message}`)
+  }
+
+  return users.data.users.find((user) => user.email?.toLowerCase() === email.toLowerCase())?.id ?? null
+}
+
+async function ensureAuthUserWithPassword(input: {
+  email: string
+  password: string
+  name: string
+  role: PersonAccessRole
+  companyId: string
+}) {
+  const supabase = createSupabaseAdminClient()
+  if (!supabase) {
+    throw new Error("Convite indisponível: configure SUPABASE_SERVICE_ROLE_KEY no servidor")
+  }
+
+  const userMetadata = {
+    name: input.name,
+    role: input.role,
+    company_id: input.companyId,
+  }
+
+  const created = await supabase.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: userMetadata,
+  })
+
+  if (!created.error && created.data.user?.id) {
+    return created.data.user.id
+  }
+
+  const message = created.error?.message ?? ""
+  if (!/already|registered|exists/i.test(message)) {
+    throw new Error(`Auth falhou: ${message || "não foi possível criar o usuário"}`)
+  }
+
+  const existingId = await findAuthUserIdByEmail(input.email)
+  if (!existingId) {
+    throw new Error("Usuário Auth já existe, mas não foi encontrado para vínculo")
+  }
+
+  const update = await supabase.auth.admin.updateUserById(existingId, {
+    password: input.password,
+    email_confirm: true,
+    ban_duration: "none",
+    user_metadata: userMetadata,
+  })
+  if (update.error) {
+    throw new Error(`Atualização Auth falhou: ${update.error.message}`)
+  }
+
+  return existingId
+}
+
+async function provisionPersonAccess(input: {
+  personId: string
+  companyId: string
+  role: PersonAccessRole
+  temporaryPassword: string
+  actorProfileId: string
+}) {
+  const sql = getSql()
+  const people = await sql<{
+    id: string
+    company_id: string
+    full_name: string
+    email: string | null
+    profile_id: string | null
+  }[]>`
+    select id, company_id, full_name, email, profile_id
+    from public.people
+    where id = ${input.personId}
+      and company_id = ${input.companyId}
+      and deleted_at is null
+    limit 1
+  `
+
+  const person = people[0]
+  if (!person) {
+    throw new Error("Pessoa não encontrada")
+  }
+
+  const email = person.email?.trim().toLowerCase() ?? ""
+  if (!email) {
+    throw new Error("Informe um e-mail na pessoa antes de convidar o acesso")
+  }
+
+  const existingByEmail = await sql<{
+    id: string
+    company_id: string | null
+    auth_user_id: string | null
+    role: string
+  }[]>`
+    select id, company_id, auth_user_id, role
+    from public.profiles
+    where lower(email) = ${email}
+    limit 1
+  `
+
+  const profileByEmail = existingByEmail[0]
+  if (profileByEmail?.company_id && profileByEmail.company_id !== input.companyId) {
+    throw new Error("Este e-mail já está vinculado a outra igreja")
+  }
+
+  const authUserId = await ensureAuthUserWithPassword({
+    email,
+    password: input.temporaryPassword,
+    name: person.full_name,
+    role: input.role,
+    companyId: input.companyId,
+  })
+
+  // Prefer profile matched by e-mail (unique) over a stale person.profile_id.
+  let profileId = profileByEmail?.id ?? person.profile_id ?? null
+  const wasReset = Boolean(profileId || person.profile_id)
+
+  if (profileId) {
+    await sql`
+      update public.profiles
+      set company_id = ${input.companyId},
+          auth_user_id = coalesce(${authUserId}, auth_user_id),
+          name = ${person.full_name},
+          email = ${email},
+          role = ${input.role},
+          active = true
+      where id = ${profileId}
+    `
+  } else {
+    const rows = await sql<{ id: string }[]>`
+      insert into public.profiles (company_id, auth_user_id, name, email, role, active)
+      values (${input.companyId}, ${authUserId}, ${person.full_name}, ${email}, ${input.role}, true)
+      returning id
+    `
+    profileId = rows[0]?.id ?? null
+  }
+
+  if (!profileId) {
+    throw new Error("Perfil de acesso não foi salvo")
+  }
+
+  // Ensure only one person points to this profile within the company.
+  await sql`
+    update public.people
+    set profile_id = null,
+        updated_by = ${input.actorProfileId}
+    where company_id = ${input.companyId}
+      and profile_id = ${profileId}
+      and id <> ${person.id}
+      and deleted_at is null
+  `
+
+  await sql`
+    update public.people
+    set profile_id = ${profileId},
+        access_profile = ${input.role},
+        email_validated = true,
+        updated_by = ${input.actorProfileId}
+    where id = ${person.id}
+      and company_id = ${input.companyId}
+      and deleted_at is null
+  `
+
+  await refreshCompanyUserCount(input.companyId)
+  await writeAuditLog({
+    action: wasReset ? "person.reset_access" : "person.invite_access",
+    entityTable: "people",
+    entityId: person.id,
+    companyId: input.companyId,
+    metadata: {
+      profileId,
+      role: input.role,
+      email,
+      authUserLinked: Boolean(authUserId),
+    },
+  })
+
+  return { profileId, personId: person.id, wasReset }
+}
+
 export async function savePerson(input: SavePersonInput): Promise<PeopleActionResult> {
   try {
     const parsed = personSchema.parse(input)
@@ -108,6 +351,19 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       await requirePermission("members.edit", companyId)
     } else {
       await requirePermission("members.create", companyId)
+    }
+
+    if (parsed.inviteAccess) {
+      assertCanInviteAccess(user)
+      if (!parsed.email) {
+        throw new Error("Informe um e-mail na pessoa antes de convidar o acesso")
+      }
+      if (!parsed.accessRole) {
+        throw new Error("Selecione o perfil de acesso")
+      }
+      if (!parsed.temporaryPassword || parsed.temporaryPassword.length < 8) {
+        throw new Error("Senha deve ter no mínimo 8 caracteres")
+      }
     }
 
     const fullName = parsed.fullName || [parsed.firstName, parsed.lastName].filter(Boolean).join(" ")
@@ -210,6 +466,16 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       }
     })
 
+    if (parsed.inviteAccess && personId && parsed.accessRole && parsed.temporaryPassword) {
+      await provisionPersonAccess({
+        personId,
+        companyId,
+        role: parsed.accessRole,
+        temporaryPassword: parsed.temporaryPassword,
+        actorProfileId: user.id,
+      })
+    }
+
     await refreshMemberCount(companyId)
     await writeAuditLog({
       action: "person.save",
@@ -220,11 +486,34 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
         status: parsed.status,
         personType: parsed.personType,
         isActive: parsed.isActive,
+        inviteAccess: Boolean(parsed.inviteAccess),
       },
     })
-    await refreshPeoplePaths()
+    await refreshPeoplePaths(personId)
 
     return { ok: true, id: personId ?? undefined }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function invitePersonAccess(input: InvitePersonAccessInput): Promise<PeopleActionResult> {
+  try {
+    const parsed = invitePersonAccessSchema.parse(input)
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    assertCanInviteAccess(user)
+    await requirePermission("members.edit", companyId)
+
+    const result = await provisionPersonAccess({
+      personId: parsed.personId,
+      companyId,
+      role: parsed.role,
+      temporaryPassword: parsed.temporaryPassword,
+      actorProfileId: user.id,
+    })
+
+    await refreshPeoplePaths(result.personId)
+    return { ok: true, id: result.personId }
   } catch (error) {
     return toErrorResult(error)
   }
@@ -261,7 +550,7 @@ export async function deletePerson(input: { id: string; companyId?: string | nul
       companyId,
       metadata: {},
     })
-    await refreshPeoplePaths()
+    await refreshPeoplePaths(personId)
 
     return { ok: true, id: personId }
   } catch (error) {
@@ -316,3 +605,4 @@ export async function resolveDuplicateCandidate(input: DuplicateCandidateActionI
     return toErrorResult(error)
   }
 }
+

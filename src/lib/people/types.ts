@@ -3,6 +3,15 @@ export type PersonType = "visitor" | "attendee" | "member" | "leader" | "volunte
 export type PersonGender = "male" | "female" | "other" | "not_informed"
 export type DuplicateCandidateStatus = "open" | "ignored" | "merged"
 export type DuplicateCandidateResolution = Exclude<DuplicateCandidateStatus, "open">
+export type PersonAccessRole =
+  | "admin"
+  | "pastor"
+  | "ministry_leader"
+  | "cell_leader"
+  | "communication"
+  | "finance"
+  | "volunteer"
+  | "reader"
 
 export interface PeopleListFilters {
   companyId?: string | null
@@ -35,6 +44,10 @@ export interface PersonListItem {
   state: string
   country: string
   accessProfile: string | null
+  profileId: string | null
+  accessRole: PersonAccessRole | null
+  accessActive: boolean | null
+  hasSystemAccess: boolean
   internalNotes?: string
   status: PersonStatus
   personType: PersonType
@@ -150,6 +163,16 @@ export interface SavePersonInput {
   emailValidated?: boolean
   internalNotes?: string
   isActive?: boolean
+  inviteAccess?: boolean
+  accessRole?: PersonAccessRole
+  temporaryPassword?: string
+}
+
+export interface InvitePersonAccessInput {
+  personId: string
+  companyId?: string | null
+  role: PersonAccessRole
+  temporaryPassword: string
 }
 
 export interface DuplicateCandidateActionInput {
