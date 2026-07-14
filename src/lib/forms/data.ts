@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
   ChurchForm,
   FormBuilderData,
@@ -441,15 +442,26 @@ export async function getPublicFormData(
 ): Promise<PublicFormData | null> {
   const sql = getSql()
   const companyRows = await sql<
-    { id: string; slug: string; name: string; public_name: string | null }[]
+    {
+      id: string
+      slug: string
+      name: string
+      public_name: string | null
+      logo_storage_path: string | null
+    }[]
   >`
     select
       c.id,
       c.slug,
       c.name,
-      cp.public_name
+      cp.public_name,
+      logo.storage_path as logo_storage_path
     from public.companies c
     left join public.church_profiles cp on cp.company_id = c.id
+    left join public.app_files logo
+      on logo.id = cp.logo_file_id
+      and logo.is_active = true
+      and logo.deleted_at is null
     where c.slug = ${companySlug}
       and c.active = true
       and c.status = 'active'
@@ -496,11 +508,19 @@ export async function getPublicFormData(
     order by sort_order, created_at
   `
 
+  const logoUrls = await createSignedUrlsByStoragePath(
+    company.logo_storage_path ? [company.logo_storage_path] : []
+  )
+  const logoUrl = company.logo_storage_path
+    ? logoUrls.get(company.logo_storage_path) || null
+    : null
+
   return {
     companyId: company.id,
     companySlug: company.slug,
     companyName: company.name,
     publicName: company.public_name || company.name,
+    logoUrl,
     form: toForm(form, company.slug),
     fields: fieldRows.map(toField),
   }

@@ -78,6 +78,7 @@ export interface PublicFormData {
   companySlug: string
   companyName: string
   publicName: string
+  logoUrl: string | null
   form: ChurchForm
   fields: FormField[]
 }
