@@ -301,6 +301,17 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     const title = requiredText(formData, "title", "Título")
     const startsAt = requiredText(formData, "startDate", "Início")
     const endsAt = optionalText(formData, "endDate") ?? startsAt
+    const volunteerTemplateValue = text(formData, "volunteerTemplateId")
+    const volunteerTemplateId = volunteerTemplateValue === "none" ? null : uuid(formData, "volunteerTemplateId")
+    if (volunteerTemplateValue && !volunteerTemplateId) throw new Error("Template de voluntariado inválido")
+    if (volunteerTemplateId) {
+      const templates = await sql<{ id: string }[]>`
+        select id from public.volunteer_schedule_templates
+        where id = ${volunteerTemplateId} and company_id = ${companyId} and is_active and deleted_at is null
+        limit 1
+      `
+      if (!templates[0]?.id) throw new Error("Template de voluntariado não encontrado")
+    }
 
     const rows = id
       ? await sql<{ id: string }[]>`
@@ -316,6 +327,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
               is_public = ${bool(formData, "isPublic", true)},
               is_online = ${bool(formData, "isOnline")},
               online_link = ${text(formData, "onlineLink")},
+              volunteer_template_id = ${volunteerTemplateId},
               status = ${text(formData, "status", "published")},
               recurring = ${bool(formData, "recurring")},
               updated_by = ${user.id}
@@ -327,14 +339,14 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       : await sql<{ id: string }[]>`
           insert into public.events (
             company_id, title, description, type, starts_at, ends_at, location,
-            max_capacity, registration_enabled, is_public, is_online, online_link,
+            max_capacity, registration_enabled, is_public, is_online, online_link, volunteer_template_id,
             status, recurring, created_by, updated_by
           )
           values (
             ${companyId}, ${title}, ${text(formData, "description")}, ${text(formData, "type", "service")},
             ${startsAt}, ${endsAt}, ${text(formData, "location")}, ${integer(formData, "maxCapacity")},
             ${bool(formData, "registrationEnabled")}, ${bool(formData, "isPublic", true)}, ${bool(formData, "isOnline")},
-            ${text(formData, "onlineLink")}, ${text(formData, "status", "published")}, ${bool(formData, "recurring")},
+            ${text(formData, "onlineLink")}, ${volunteerTemplateId}, ${text(formData, "status", "published")}, ${bool(formData, "recurring")},
             ${user.id}, ${user.id}
           )
           returning id

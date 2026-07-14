@@ -23,6 +23,7 @@ export const dashboardRoutes = {
   "settings": "/configuracoes",
   "songs": "/louvor",
   "visitors": "/visitantes",
+  "volunteers": "/voluntariado",
 } as const
 
 export type DashboardRouteId = keyof typeof dashboardRoutes
@@ -48,6 +49,7 @@ export const legacyDashboardRoutes = {
   "settings": "/settings",
   "songs": "/songs",
   "visitors": "/visitors",
+  "volunteers": "/volunteers",
 } as const satisfies Partial<Record<DashboardRouteId, string>>
 
 export const legacyDashboardRedirects = Object.entries(legacyDashboardRoutes).map(

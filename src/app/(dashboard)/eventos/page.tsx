@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { deleteEvent, saveEvent } from "@/lib/operational/actions"
 import { listEvents } from "@/lib/operational/data"
+import { listVolunteerTemplatesForEvents } from "@/lib/volunteers/data"
 import type { ChurchEvent } from "@/lib/types"
 
 async function saveEventForm(formData: FormData) {
@@ -45,7 +46,7 @@ function formatDateTime(value: string) {
 }
 
 export default async function EventsPage() {
-  const events = await listEvents()
+  const [events, volunteerTemplates] = await Promise.all([listEvents(), listVolunteerTemplatesForEvents()])
 
   return (
     <div className="space-y-6">
@@ -116,6 +117,16 @@ export default async function EventsPage() {
             <div className="grid gap-2 lg:col-span-2">
               <Label htmlFor="onlineLink">Link online</Label>
               <Input id="onlineLink" name="onlineLink" placeholder="https://..." />
+            </div>
+            <div className="grid gap-2 lg:col-span-2">
+              <Label htmlFor="volunteerTemplateId">Template de voluntariado</Label>
+              <Select name="volunteerTemplateId" defaultValue="none">
+                <SelectTrigger id="volunteerTemplateId"><SelectValue placeholder="Sem vagas de voluntariado" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem template</SelectItem>
+                  {volunteerTemplates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-end gap-4">
               <input type="hidden" name="isPublic" value="true" />

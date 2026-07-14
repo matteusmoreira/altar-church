@@ -1,4 +1,6 @@
 import { DashboardClient, type DashboardClientData } from "./dashboard-client"
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth/server"
 import { getContentDashboardData } from "@/lib/content/data"
 import { getGroupsDashboardData } from "@/lib/groups/data"
 import { getPeopleDashboardData } from "@/lib/people/data"
@@ -39,6 +41,8 @@ const emptyContent: ContentDashboardData = {
 }
 
 export default async function DashboardPage() {
+  const user = await getCurrentUser()
+  if (user?.role === "volunteer") redirect("/voluntariado")
   const [people, groups, content] = await Promise.all([
     safeRead(getPeopleDashboardData, emptyPeople),
     safeRead(getGroupsDashboardData, emptyGroups),

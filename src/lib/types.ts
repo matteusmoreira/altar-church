@@ -68,6 +68,20 @@ export type Permission =
   | "groups.edit"
   | "groups.delete"
   | "groups.approve"
+  | "volunteers.view"
+  | "volunteers.create"
+  | "volunteers.edit"
+  | "volunteers.invite"
+  | "schedules.view"
+  | "schedules.create"
+  | "schedules.edit"
+  | "schedules.publish"
+  | "volunteer_feed.view"
+  | "volunteer_feed.create"
+  | "volunteer_feed.publish"
+  | "volunteer_checkin.create"
+  | "volunteer.self.view"
+  | "volunteer.self.checkin"
 
 export interface User {
   id: string
@@ -331,6 +345,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "donation.view", "donation.create", "donation.edit", "donation.export",
     "subscription.view", "subscription.create", "subscription.edit", "subscription.delete",
     "groups.view", "groups.create", "groups.edit", "groups.delete", "groups.approve",
+    "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
+    "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
+    "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
   ],
   pastor: [
     "members.view", "members.create", "members.edit", "members.export",
@@ -348,6 +365,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "notification.view", "notification.create", "notification.send",
     "donation.view", "donation.export",
     "groups.view", "groups.create", "groups.edit", "groups.approve",
+    "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
+    "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
+    "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
   ],
   ministry_leader: [
     "members.view",
@@ -360,6 +380,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "prayer.view", "prayer.create",
     "content.view", "content.create",
     "groups.view", "groups.edit",
+    "volunteers.view", "volunteers.create", "volunteers.edit",
+    "schedules.view", "schedules.create", "schedules.edit",
+    "volunteer_feed.view", "volunteer_feed.create", "volunteer_checkin.create",
   ],
   cell_leader: [
     "members.view",
@@ -383,10 +406,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "subscription.view", "subscription.create", "subscription.edit",
   ],
   volunteer: [
-    "members.view",
-    "events.view",
-    "attendance.view", "attendance.create",
-    "prayer.view",
+    "volunteer.self.view", "volunteer.self.checkin",
   ],
   reader: [
     "members.view",

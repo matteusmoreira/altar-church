@@ -14,6 +14,7 @@ import {
   DollarSign,
   Gift,
   HandHeart,
+  Handshake,
   Heart,
   Home,
   KanbanSquare,
@@ -70,6 +71,7 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
     items: [
       { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
       { href: dashboardRoutes.visitors, label: "Visitantes", icon: UsersRound, moduleId: "visitors" },
+      { href: dashboardRoutes.volunteers, label: "Voluntariado", icon: Handshake, moduleId: "volunteers" },
       { href: dashboardRoutes.groups, label: "GCEUs", icon: Home, moduleId: "groups" },
       { href: dashboardRoutes.cells, label: "Células", icon: Network, moduleId: "cells" },
       { href: dashboardRoutes.prayer, label: "Intercessão", icon: HandHeart, moduleId: "prayer" },
@@ -100,6 +102,7 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
 ]
 
 const mobileNavItems: NavigationItem[] = [
+  { href: dashboardRoutes.volunteers, label: "Escala", icon: Handshake, moduleId: "volunteers" },
   { href: dashboardRoutes.dashboard, label: "Início", icon: LayoutDashboard, moduleId: "dashboard" },
   { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
   { href: dashboardRoutes.events, label: "Eventos", icon: CalendarDays, moduleId: "events" },
@@ -119,8 +122,13 @@ function SidebarContent({
   enabledModuleIds: string[] | null
 }) {
   const pathname = usePathname()
-  const { logout, hasRole } = useAuth()
-  const canSeeModule = (moduleId: string) => hasRole(["superadmin"]) || enabledModuleIds === null || enabledModuleIds.includes(moduleId)
+  const { logout, hasRole, user } = useAuth()
+  const canSeeModule = (moduleId: string) => {
+    if (user?.role === "volunteer") {
+      return ["dashboard", "volunteers"].includes(moduleId) && (enabledModuleIds === null || enabledModuleIds.includes(moduleId))
+    }
+    return hasRole(["superadmin"]) || enabledModuleIds === null || enabledModuleIds.includes(moduleId)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -278,9 +286,12 @@ export function DashboardLayout({
     !enabledModuleIds.includes(currentModuleId)
   const adminBlocked = isDashboardRouteActive(pathname, dashboardRoutes.admin) && !isSuperAdmin
 
-  const visibleMobileItems = mobileNavItems.filter(
-    (item) => isSuperAdmin || enabledModuleIds === null || enabledModuleIds.includes(item.moduleId)
-  )
+  const visibleMobileItems = mobileNavItems.filter((item) => {
+    if (user?.role === "volunteer") {
+      return ["dashboard", "volunteers"].includes(item.moduleId) && (enabledModuleIds === null || enabledModuleIds.includes(item.moduleId))
+    }
+    return isSuperAdmin || enabledModuleIds === null || enabledModuleIds.includes(item.moduleId)
+  })
 
   if (isLoading || !user) {
     return (
