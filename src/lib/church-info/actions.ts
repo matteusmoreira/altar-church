@@ -8,7 +8,8 @@ import { getSql } from "@/lib/db/client"
 import type { ChurchInfoActionResult, SaveChurchInfoInput } from "./types"
 
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const socialLinkSchema = z.object({

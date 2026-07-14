@@ -15,7 +15,8 @@ import {
 } from "./types"
 
 const nullableUuid = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((v) => v || null)
 
 const eventSchema = z.enum(INTEGRATION_EVENTS as unknown as [IntegrationEventType, ...IntegrationEventType[]])

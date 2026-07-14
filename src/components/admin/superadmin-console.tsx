@@ -17,7 +17,7 @@ import {
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
-import { saveCompany, savePlan, saveProfile, sendProfilePasswordReset, setModuleActive } from "@/lib/admin/actions"
+import { saveCompany, savePlan, saveProfile, setModuleActive, setProfilePassword } from "@/lib/admin/actions"
 import type {
   AdminCompany,
   AdminDashboardData,
@@ -105,6 +105,14 @@ interface ProfileForm {
   email: string
   role: UserRole
   active: boolean
+  password: string
+}
+
+interface PasswordResetForm {
+  profileId: string
+  name: string
+  email: string
+  password: string
 }
 
 const planLabels: Record<string, string> = {
@@ -171,6 +179,7 @@ function emptyProfileForm(companies: AdminCompany[]): ProfileForm {
     email: "",
     role: "reader",
     active: true,
+    password: "",
   }
 }
 
@@ -235,9 +244,16 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false)
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [companyForm, setCompanyForm] = useState<CompanyForm>(() => emptyCompanyForm(initialData.plans))
   const [planForm, setPlanForm] = useState<PlanForm>(() => emptyPlanForm())
   const [profileForm, setProfileForm] = useState<ProfileForm>(() => emptyProfileForm(initialData.companies))
+  const [passwordForm, setPasswordForm] = useState<PasswordResetForm>({
+    profileId: "",
+    name: "",
+    email: "",
+    password: "",
+  })
 
   const activeCompanies = data.companies.filter((company) => company.active).length
   const totalMembers = data.companies.reduce((sum, company) => sum + company.memberCount, 0)
@@ -306,10 +322,21 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             email: profile.email,
             role: profile.role,
             active: profile.active,
+            password: "",
           }
         : emptyProfileForm(data.companies)
     )
     setProfileDialogOpen(true)
+  }
+
+  const openPasswordReset = (profile: AdminProfile) => {
+    setPasswordForm({
+      profileId: profile.id,
+      name: profile.name,
+      email: profile.email,
+      password: "",
+    })
+    setPasswordDialogOpen(true)
   }
 
   const refresh = () => {
@@ -355,17 +382,21 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
     })
   }
 
-  const handlePasswordReset = (profile: AdminProfile) => {
+  const handlePasswordReset = () => {
+    if (passwordForm.password.trim().length < 8) {
+      toast.error("Senha deve ter no mínimo 8 caracteres")
+      return
+    }
+
     startTransition(async () => {
-      const result = await sendProfilePasswordReset(profile.id)
+      const result = await setProfilePassword(passwordForm.profileId, passwordForm.password.trim())
       if (!result.ok) {
-        toast.error(result.error)
+        toast.error(result.error ?? "Não foi possível redefinir a senha")
         return
       }
-      if (result.resetLink) {
-        await navigator.clipboard?.writeText(result.resetLink)
-      }
-      toast.success(result.resetLink ? "Link de reset copiado" : "Reset de senha gerado")
+      toast.success("Senha redefinida com sucesso")
+      setPasswordDialogOpen(false)
+      setPasswordForm({ profileId: "", name: "", email: "", password: "" })
     })
   }
 
@@ -613,9 +644,16 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                           <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar usuário" onClick={() => openProfile(user)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Resetar senha" disabled={isPending} onClick={() => handlePasswordReset(user)}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Redefinir senha"
+                            disabled={isPending}
+                            onClick={() => openPasswordReset(user)}
+                          >
                             <KeyRound className="h-4 w-4" />
-                            <span className="sr-only">Resetar senha</span>
+                            <span className="sr-only">Redefinir senha</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -827,7 +865,11 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
         <DialogContent className="glass-strong sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{profileForm.id ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
-            <DialogDescription>Defina empresa e perfil de acesso.</DialogDescription>
+            <DialogDescription>
+              {profileForm.id
+                ? "Atualize empresa, perfil e, se quiser, a senha de acesso."
+                : "Defina empresa, perfil e a senha inicial de acesso."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -837,6 +879,22 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <div className="grid gap-2">
               <Label>E-mail *</Label>
               <Input type="email" value={profileForm.email} onChange={(event) => setProfileForm({ ...profileForm, email: event.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-password">{profileForm.id ? "Nova senha (opcional)" : "Senha *"}</Label>
+              <Input
+                id="profile-password"
+                type="password"
+                autoComplete="new-password"
+                placeholder={profileForm.id ? "Deixe em branco para manter" : "Mínimo 8 caracteres"}
+                value={profileForm.password}
+                onChange={(event) => setProfileForm({ ...profileForm, password: event.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                {profileForm.id
+                  ? "Preencha apenas se quiser trocar a senha deste usuário."
+                  : "O usuário poderá entrar com este e-mail e senha."}
+              </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -871,6 +929,45 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           <DialogFooter>
             <Button variant="outline" onClick={() => setProfileDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleProfileSave} disabled={isPending} className="gradient-primary">Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="glass-strong sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Redefinir senha</DialogTitle>
+            <DialogDescription>
+              Defina uma nova senha para {passwordForm.name || "o usuário"}
+              {passwordForm.email ? ` (${passwordForm.email})` : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="reset-password">Nova senha *</Label>
+              <Input
+                id="reset-password"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Mínimo 8 caracteres"
+                value={passwordForm.password}
+                onChange={(event) => setPasswordForm({ ...passwordForm, password: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    handlePasswordReset()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handlePasswordReset} disabled={isPending} className="gradient-primary">
+              Salvar senha
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

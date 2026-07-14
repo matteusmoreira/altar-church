@@ -8,17 +8,20 @@ import { getSql } from "@/lib/db/client"
 import type { GroupsActionResult, SaveGroupInput, SaveGroupMeetingInput, SaveGroupMemberInput } from "./types"
 
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
-const optionalNullableUuidSchema = nullableUuidSchema.optional().transform((value) => value ?? null)
+const optionalNullableUuidSchema = nullableUuidSchema
 
 const nullableIntSchema = z
-  .union([z.number().int().min(0), z.null(), z.undefined()])
+  .union([z.number().int().min(0), z.null()])
+  .optional()
   .transform((value) => value ?? null)
 
 const nullableTimeSchema = z
-  .union([z.string().regex(/^\d{2}:\d{2}$/, "Horário inválido"), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().regex(/^\d{2}:\d{2}$/, "Horário inválido"), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const groupSchema = z.object({
@@ -62,7 +65,8 @@ const dateStringSchema = z.string().trim().min(1, "Data obrigatória").transform
 })
 
 const nullableDateStringSchema = z
-  .union([z.string().trim(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().trim(), z.literal(""), z.null()])
+  .optional()
   .transform((value, context) => {
     if (!value) return null
     const parsed = new Date(value)
@@ -73,7 +77,7 @@ const nullableDateStringSchema = z
     return parsed
   })
 
-const optionalNullableDateStringSchema = nullableDateStringSchema.optional().transform((value) => value ?? null)
+const optionalNullableDateStringSchema = nullableDateStringSchema
 
 const groupMemberSchema = z.object({
   id: nullableUuidSchema.optional(),

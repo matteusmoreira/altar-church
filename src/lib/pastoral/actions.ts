@@ -13,7 +13,8 @@ import type {
 } from "./types"
 
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const ministrySchema = z.object({

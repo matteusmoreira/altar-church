@@ -9,11 +9,15 @@ import { apiKeyPrefix, generateApiKeySecret, hashApiKey } from "./crypto"
 import { API_KEY_SCOPES, type ApiKeyScope, type IntegrationsActionResult } from "./types"
 
 const createSchema = z.object({
-  companyId: z.union([z.string().uuid(), z.literal(""), z.null(), z.undefined()]).transform((v) => v || null),
+  companyId: z
+    .union([z.string().uuid(), z.literal(""), z.null()])
+    .optional()
+    .transform((v) => v || null),
   name: z.string().trim().min(1, "Nome obrigatório").max(120),
   scopes: z.array(z.enum(API_KEY_SCOPES as unknown as [ApiKeyScope, ...ApiKeyScope[]])).min(1),
   expiresAt: z
-    .union([z.string(), z.literal(""), z.null(), z.undefined()])
+    .union([z.string(), z.literal(""), z.null()])
+    .optional()
     .transform((v) => (v && String(v).trim() ? String(v) : null)),
 })
 

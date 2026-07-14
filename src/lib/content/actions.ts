@@ -9,11 +9,13 @@ import { attachFileToEntity } from "@/lib/files/server"
 import type { ContentActionResult, SaveContentBannerInput, SaveContentPostInput } from "./types"
 
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const nullableDateTimeSchema = z
-  .union([z.string().trim(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().trim(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const contentPostSchema = z.object({

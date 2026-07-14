@@ -30,18 +30,24 @@ const tenantContextFiles = [
 test("superadmin profile creation can invite and link Supabase Auth users", () => {
   assert(adminActions.includes("ensureAuthUserForProfile"))
   assert(adminActions.includes("inviteUserByEmail"))
+  assert(adminActions.includes("createUser"))
   assert(adminActions.includes("auth_user_id"))
   assert(adminActions.includes("authUserLinked"))
+  assert.match(adminActions, /password/)
+  assert.match(adminUi, /profile-password/)
+  assert.match(adminUi, /Senha \*/)
 })
 
 test("superadmin can reset passwords and block Auth access for inactive profiles", () => {
   assert.match(adminActions, /export async function sendProfilePasswordReset/)
+  assert.match(adminActions, /export async function setProfilePassword/)
   assert.match(adminActions, /generateLink\(\{\s*type: "recovery"/)
   assert.match(adminActions, /ban_duration: parsed\.active \? "none" : "876000h"/)
   assert.match(adminActions, /profile\.password_reset/)
   assert.match(adminActions, /authAccessBlocked/)
-  assert.match(adminUi, /sendProfilePasswordReset/)
-  assert.match(adminUi, /Resetar senha/)
+  assert.match(adminUi, /setProfilePassword/)
+  assert.match(adminUi, /Redefinir senha/)
+  assert.match(adminUi, /reset-password/)
 })
 
 test("Supabase admin client only uses service role on the server", () => {

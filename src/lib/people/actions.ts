@@ -16,11 +16,13 @@ import type {
 } from "./types"
 
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const nullableTextSchema = z
-  .union([z.string().trim(), z.null(), z.undefined()])
+  .union([z.string().trim(), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const accessRoleSchema = z.enum([
@@ -42,12 +44,14 @@ const personSchema = z.object({
   lastName: z.string().trim().optional().default(""),
   fullName: z.string().trim().optional(),
   email: z
-    .union([z.string().trim().email("E-mail inválido"), z.literal(""), z.null(), z.undefined()])
+    .union([z.string().trim().email("E-mail inválido"), z.literal(""), z.null()])
+    .optional()
     .transform((value) => value || null),
   phone: z.string().trim().optional().default(""),
   document: nullableTextSchema,
   birthDate: z
-    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"), z.literal(""), z.null(), z.undefined()])
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"), z.literal(""), z.null()])
+    .optional()
     .transform((value) => value || null),
   gender: z.enum(["male", "female", "other", "not_informed"]).nullable().optional().default(null),
   address: z.string().trim().optional().default(""),

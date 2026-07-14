@@ -36,26 +36,48 @@ const planSchema = z.object({
   moduleIds: moduleIdsSchema,
 })
 
-const profileSchema = z.object({
-  id: z.string().uuid().optional().nullable(),
-  companyId: z.string().uuid().nullable(),
-  name: z.string().trim().min(2, "Nome obrigatorio"),
-  email: z.string().trim().email("E-mail invalido"),
-  role: z.enum([
-    "superadmin",
-    "admin",
-    "pastor",
-    "ministry_leader",
-    "cell_leader",
-    "communication",
-    "finance",
-    "volunteer",
-    "reader",
-  ]),
-  active: z.boolean(),
-})
+const profileSchema = z
+  .object({
+    id: z.string().uuid().optional().nullable(),
+    companyId: z.string().uuid().nullable(),
+    name: z.string().trim().min(2, "Nome obrigatorio"),
+    email: z.string().trim().email("E-mail invalido"),
+    role: z.enum([
+      "superadmin",
+      "admin",
+      "pastor",
+      "ministry_leader",
+      "cell_leader",
+      "communication",
+      "finance",
+      "volunteer",
+      "reader",
+    ]),
+    active: z.boolean(),
+    password: z.string().optional().default(""),
+  })
+  .superRefine((data, ctx) => {
+    const password = data.password?.trim() ?? ""
+    const isCreate = !data.id
+    if (isCreate && password.length < 8) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Senha deve ter no mínimo 8 caracteres",
+        path: ["password"],
+      })
+      return
+    }
+    if (!isCreate && password.length > 0 && password.length < 8) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Senha deve ter no mínimo 8 caracteres",
+        path: ["password"],
+      })
+    }
+  })
 
 const profileIdSchema = z.string().uuid()
+const passwordSchema = z.string().min(8, "Senha deve ter no mínimo 8 caracteres")
 
 function slugify(value: string) {
   return value
@@ -82,16 +104,64 @@ async function refreshAdminPaths() {
   revalidatePath("/admin/users")
 }
 
+async function findAuthUserIdByEmail(email: string) {
+  const supabase = createSupabaseAdminClient()
+  if (!supabase) return null
+
+  const users = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  if (users.error) {
+    throw new Error(`Consulta Auth falhou: ${users.error.message}`)
+  }
+
+  return users.data.users.find((user) => user.email?.toLowerCase() === email.toLowerCase())?.id ?? null
+}
+
 async function ensureAuthUserForProfile(profile: z.infer<typeof profileSchema>) {
   const supabase = createSupabaseAdminClient()
   if (!supabase) {
     return null
   }
 
+  const password = profile.password?.trim() ?? ""
   const userMetadata = {
     name: profile.name,
     role: profile.role,
     company_id: profile.companyId,
+  }
+
+  if (password) {
+    const created = await supabase.auth.admin.createUser({
+      email: profile.email,
+      password,
+      email_confirm: true,
+      user_metadata: userMetadata,
+    })
+
+    if (!created.error && created.data.user?.id) {
+      return created.data.user.id
+    }
+
+    const message = created.error?.message ?? ""
+    if (!/already|registered|exists/i.test(message)) {
+      throw new Error(`Auth falhou: ${message || "não foi possível criar o usuário"}`)
+    }
+
+    const existingId = await findAuthUserIdByEmail(profile.email)
+    if (!existingId) {
+      throw new Error("Usuário Auth já existe, mas não foi encontrado para vínculo")
+    }
+
+    const update = await supabase.auth.admin.updateUserById(existingId, {
+      password,
+      email_confirm: true,
+      ban_duration: "none",
+      user_metadata: userMetadata,
+    })
+    if (update.error) {
+      throw new Error(`Atualização Auth falhou: ${update.error.message}`)
+    }
+
+    return existingId
   }
 
   const invite = await supabase.auth.admin.inviteUserByEmail(profile.email, {
@@ -107,24 +177,94 @@ async function ensureAuthUserForProfile(profile: z.infer<typeof profileSchema>) 
     throw new Error(`Convite Auth falhou: ${message}`)
   }
 
-  const users = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
-  if (users.error) {
-    throw new Error(`Consulta Auth falhou: ${users.error.message}`)
-  }
-
-  const existing = users.data.users.find((user) => user.email?.toLowerCase() === profile.email.toLowerCase())
-  if (!existing) {
+  const existingId = await findAuthUserIdByEmail(profile.email)
+  if (!existingId) {
     throw new Error("Usuário Auth já existe, mas não foi encontrado para vínculo")
   }
 
-  const update = await supabase.auth.admin.updateUserById(existing.id, {
+  const update = await supabase.auth.admin.updateUserById(existingId, {
     user_metadata: userMetadata,
   })
   if (update.error) {
     throw new Error(`Atualização Auth falhou: ${update.error.message}`)
   }
 
-  return existing.id
+  return existingId
+}
+
+async function setAuthPasswordForProfile(input: {
+  profileId: string
+  email: string
+  name: string
+  role: z.infer<typeof profileSchema>["role"]
+  companyId: string | null
+  authUserId: string | null
+  password: string
+}) {
+  const supabase = createSupabaseAdminClient()
+  if (!supabase) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY obrigatória para definir senha")
+  }
+
+  const userMetadata = {
+    name: input.name,
+    role: input.role,
+    company_id: input.companyId,
+  }
+
+  let authUserId = input.authUserId
+
+  if (authUserId) {
+    const update = await supabase.auth.admin.updateUserById(authUserId, {
+      password: input.password,
+      email_confirm: true,
+      ban_duration: "none",
+      user_metadata: userMetadata,
+    })
+    if (update.error) {
+      throw new Error(`Redefinição de senha falhou: ${update.error.message}`)
+    }
+    return authUserId
+  }
+
+  const created = await supabase.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: userMetadata,
+  })
+
+  if (!created.error && created.data.user?.id) {
+    authUserId = created.data.user.id
+  } else {
+    const message = created.error?.message ?? ""
+    if (!/already|registered|exists/i.test(message)) {
+      throw new Error(`Auth falhou: ${message || "não foi possível criar o usuário"}`)
+    }
+
+    authUserId = await findAuthUserIdByEmail(input.email)
+    if (!authUserId) {
+      throw new Error("Usuário Auth já existe, mas não foi encontrado para vínculo")
+    }
+
+    const update = await supabase.auth.admin.updateUserById(authUserId, {
+      password: input.password,
+      email_confirm: true,
+      ban_duration: "none",
+      user_metadata: userMetadata,
+    })
+    if (update.error) {
+      throw new Error(`Redefinição de senha falhou: ${update.error.message}`)
+    }
+  }
+
+  await getSql()`
+    update public.profiles
+    set auth_user_id = coalesce(${authUserId}, auth_user_id)
+    where id = ${input.profileId}
+  `
+
+  return authUserId
 }
 
 async function getExistingProfileAuthUserId(profileId?: string | null) {
@@ -318,8 +458,22 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
   try {
     await assertSuperadmin()
     const parsed = profileSchema.parse(input)
+    const password = parsed.password?.trim() ?? ""
     const existingAuthUserId = await getExistingProfileAuthUserId(parsed.id)
-    const authUserId = parsed.active ? await ensureAuthUserForProfile(parsed) : existingAuthUserId
+
+    let authUserId = existingAuthUserId
+    if (parsed.active) {
+      authUserId = await ensureAuthUserForProfile(parsed)
+    } else if (password && existingAuthUserId) {
+      const supabase = createSupabaseAdminClient()
+      if (supabase) {
+        const update = await supabase.auth.admin.updateUserById(existingAuthUserId, { password })
+        if (update.error) {
+          throw new Error(`Atualização de senha falhou: ${update.error.message}`)
+        }
+      }
+    }
+
     const authAccessBlocked = await syncAuthAccessForProfile(authUserId, parsed)
     const db = getSql()
     let auditProfileId: string | null = parsed.id ?? null
@@ -363,7 +517,67 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
       entityTable: "profiles",
       entityId: auditProfileId,
       companyId: parsed.companyId,
-      metadata: { email: parsed.email, role: parsed.role, active: parsed.active, authUserLinked: Boolean(authUserId), authAccessBlocked },
+      metadata: {
+        email: parsed.email,
+        role: parsed.role,
+        active: parsed.active,
+        authUserLinked: Boolean(authUserId),
+        authAccessBlocked,
+        passwordSet: Boolean(password),
+      },
+    })
+    await refreshAdminPaths()
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function setProfilePassword(profileId: string, password: string): Promise<ActionResult> {
+  try {
+    await assertSuperadmin()
+    const id = profileIdSchema.parse(profileId)
+    const parsedPassword = passwordSchema.parse(password.trim())
+
+    const rows = await getSql()<{
+      id: string
+      company_id: string | null
+      email: string
+      name: string
+      role: z.infer<typeof profileSchema>["role"]
+      auth_user_id: string | null
+    }[]>`
+      select id, company_id, email, name, role, auth_user_id
+      from public.profiles
+      where id = ${id}
+      limit 1
+    `
+
+    const profile = rows[0]
+    if (!profile) {
+      throw new Error("Usuário não encontrado")
+    }
+
+    const authUserId = await setAuthPasswordForProfile({
+      profileId: profile.id,
+      email: profile.email,
+      name: profile.name,
+      role: profile.role,
+      companyId: profile.company_id,
+      authUserId: profile.auth_user_id,
+      password: parsedPassword,
+    })
+
+    await writeAuditLog({
+      action: "profile.password_reset",
+      entityTable: "profiles",
+      entityId: profile.id,
+      companyId: profile.company_id,
+      metadata: {
+        email: profile.email,
+        authUserLinked: Boolean(authUserId),
+        method: "set_password",
+      },
     })
     await refreshAdminPaths()
     return { ok: true }
@@ -385,9 +599,11 @@ export async function sendProfilePasswordReset(profileId: string): Promise<Actio
       id: string
       company_id: string | null
       email: string
+      name: string
+      role: z.infer<typeof profileSchema>["role"]
       auth_user_id: string | null
     }[]>`
-      select id, company_id, email, auth_user_id
+      select id, company_id, email, name, role, auth_user_id
       from public.profiles
       where id = ${id}
       limit 1
@@ -396,6 +612,22 @@ export async function sendProfilePasswordReset(profileId: string): Promise<Actio
     const profile = rows[0]
     if (!profile) {
       throw new Error("Usuário não encontrado")
+    }
+
+    let authUserId = profile.auth_user_id
+    if (!authUserId) {
+      authUserId = await findAuthUserIdByEmail(profile.email)
+      if (authUserId) {
+        await getSql()`
+          update public.profiles
+          set auth_user_id = ${authUserId}
+          where id = ${profile.id}
+        `
+      }
+    }
+
+    if (!authUserId) {
+      throw new Error("Usuário sem conta Auth. Defina uma senha pelo ícone de redefinição.")
     }
 
     const link = await supabase.auth.admin.generateLink({
@@ -407,6 +639,11 @@ export async function sendProfilePasswordReset(profileId: string): Promise<Actio
       throw new Error(`Reset Auth falhou: ${link.error.message}`)
     }
 
+    const resetLink =
+      link.data.properties?.action_link ??
+      (link.data as { action_link?: string }).action_link ??
+      undefined
+
     await writeAuditLog({
       action: "profile.password_reset",
       entityTable: "profiles",
@@ -414,12 +651,14 @@ export async function sendProfilePasswordReset(profileId: string): Promise<Actio
       companyId: profile.company_id,
       metadata: {
         email: profile.email,
-        authUserLinked: Boolean(profile.auth_user_id),
+        authUserLinked: Boolean(authUserId),
+        method: "recovery_link",
+        hasResetLink: Boolean(resetLink),
       },
     })
     await refreshAdminPaths()
 
-    return { ok: true, resetLink: link.data.properties?.action_link }
+    return { ok: true, resetLink }
   } catch (error) {
     return toErrorResult(error)
   }

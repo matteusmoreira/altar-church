@@ -10,7 +10,10 @@ import type { Permission } from "@/lib/types"
 import type { VolunteerActionResult } from "./types"
 
 const uuid = z.string().uuid()
-const nullableUuid = z.union([uuid, z.null(), z.undefined()]).transform((value) => value ?? null)
+const nullableUuid = z
+  .union([uuid, z.null()])
+  .optional()
+  .transform((value) => value ?? null)
 const status = z.enum(["pending", "active", "inactive", "suspended"])
 
 const volunteerSchema = z.object({

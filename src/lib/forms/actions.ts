@@ -14,8 +14,11 @@ import type {
   SaveFormInput,
 } from "./types"
 
+// Zod 4: missing object keys are not covered by z.undefined() inside a union.
+// Use .optional() so create flows can omit id / companyId / targetStageId.
 const nullableUuidSchema = z
-  .union([z.string().uuid(), z.literal(""), z.null(), z.undefined()])
+  .union([z.string().uuid(), z.literal(""), z.null()])
+  .optional()
   .transform((value) => value || null)
 
 const formStatusSchema = z.enum(["draft", "published", "archived"])
