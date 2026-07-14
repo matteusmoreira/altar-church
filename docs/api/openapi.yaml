@@ -1,0 +1,391 @@
+openapi: 3.0.3
+info:
+  title: Altar Church API
+  version: 1.0.0
+  description: |
+    REST API do Altar Church. Autenticação via sessão Supabase (cookie SSR).
+    Respostas de sucesso: `{ "data": ..., "meta"?: ... }`.
+    Respostas de erro: `{ "error": { "code", "message", "details"? } }`.
+servers:
+  - url: /api/v1
+security:
+  - cookieAuth: []
+paths:
+  /auth/me:
+    get:
+      summary: Usuário autenticado
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Não autenticado
+  /company-modules:
+    get:
+      summary: Módulos habilitados da empresa
+      parameters:
+        - in: query
+          name: companyId
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /people:
+    get:
+      summary: Listar pessoas
+      parameters:
+        - in: query
+          name: companyId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: personType
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: pageSize
+          schema: { type: integer }
+    post:
+      summary: Criar pessoa
+  /people/{id}:
+    get:
+      summary: Detalhe da pessoa
+    patch:
+      summary: Atualizar pessoa
+    delete:
+      summary: Remover pessoa
+  /people/{id}/invite:
+    post:
+      summary: Convidar acesso da pessoa
+  /people/dashboard:
+    get:
+      summary: Dashboard de pessoas
+  /people/form-options:
+    get:
+      summary: Opções de formulário de pessoas
+  /people/duplicates:
+    get:
+      summary: Candidatos a duplicidade
+  /people/duplicates/resolve:
+    post:
+      summary: Resolver duplicidade
+  /congregations:
+    get:
+      summary: Listar congregações
+    post:
+      summary: Criar congregação
+  /congregations/{id}:
+    patch:
+      summary: Atualizar congregação
+    delete:
+      summary: Remover congregação
+  /church-info:
+    get:
+      summary: Perfil da igreja
+    patch:
+      summary: Atualizar perfil da igreja
+  /groups:
+    get:
+      summary: Listar grupos
+    post:
+      summary: Criar grupo
+  /groups/{id}:
+    get:
+      summary: Detalhe do grupo
+    patch:
+      summary: Atualizar grupo
+    delete:
+      summary: Remover grupo
+  /groups/dashboard:
+    get:
+      summary: Dashboard de grupos
+  /groups/form-options:
+    get:
+      summary: Opções de formulário de grupos
+  /group-members:
+    get:
+      summary: Listar membros de grupos
+    post:
+      summary: Adicionar membro
+  /group-members/{id}:
+    delete:
+      summary: Remover membro
+  /group-meetings:
+    get:
+      summary: Listar reuniões (mode=upcoming|reports)
+    post:
+      summary: Criar/atualizar reunião
+  /ministries:
+    get:
+      summary: Listar ministérios
+    post:
+      summary: Criar ministério
+  /ministries/{id}:
+    patch:
+      summary: Atualizar ministério
+    delete:
+      summary: Remover ministério
+  /programmings:
+    get:
+      summary: Listar programações
+    post:
+      summary: Criar programação
+  /programmings/{id}:
+    patch:
+      summary: Atualizar programação
+    delete:
+      summary: Remover programação
+  /songs:
+    get:
+      summary: Listar músicas
+    post:
+      summary: Criar música
+  /songs/{id}:
+    patch:
+      summary: Atualizar música
+    delete:
+      summary: Remover música
+  /content/dashboard:
+    get:
+      summary: Dashboard de conteúdo
+  /content/posts:
+    post:
+      summary: Criar post
+  /content/posts/{id}:
+    patch:
+      summary: Atualizar post
+    delete:
+      summary: Remover post
+  /content/banners:
+    post:
+      summary: Criar banner
+  /content/banners/{id}:
+    patch:
+      summary: Atualizar banner
+    delete:
+      summary: Remover banner
+  /public/churches/{slug}:
+    get:
+      summary: Dados públicos da igreja
+      security: []
+  /events:
+    get:
+      summary: Listar eventos
+    post:
+      summary: Criar evento
+  /events/{id}:
+    patch:
+      summary: Atualizar evento
+    delete:
+      summary: Remover evento
+  /attendance:
+    get:
+      summary: Listar presença
+    post:
+      summary: Registrar presença
+  /attendance/{id}:
+    delete:
+      summary: Remover presença
+  /crm/cards:
+    get:
+      summary: Listar cards CRM
+    post:
+      summary: Criar card CRM
+  /crm/cards/{id}:
+    patch:
+      summary: Atualizar card CRM
+    delete:
+      summary: Remover card CRM
+  /prayer-requests:
+    get:
+      summary: Listar pedidos de oração
+    post:
+      summary: Criar pedido
+  /prayer-requests/{id}:
+    patch:
+      summary: Atualizar pedido
+    delete:
+      summary: Remover pedido
+  /reading-plans:
+    get:
+      summary: Listar planos de leitura
+    post:
+      summary: Criar plano
+  /reading-plans/{id}:
+    patch:
+      summary: Atualizar plano
+    delete:
+      summary: Remover plano
+  /reading-plans/steps:
+    post:
+      summary: Criar passo do plano
+  /reading-plans/steps/{id}:
+    patch:
+      summary: Atualizar passo
+    delete:
+      summary: Remover passo
+  /announcements:
+    get:
+      summary: Listar avisos
+    post:
+      summary: Criar aviso
+  /announcements/{id}:
+    patch:
+      summary: Atualizar aviso
+    delete:
+      summary: Remover aviso
+  /notifications:
+    get:
+      summary: Listar notificações
+    post:
+      summary: Criar notificação
+  /notification-groups:
+    get:
+      summary: Listar grupos de notificação
+    post:
+      summary: Criar grupo de notificação
+  /finance:
+    get:
+      summary: Dados financeiros agregados
+  /finance/revenues:
+    post:
+      summary: Criar receita
+  /finance/revenues/{id}:
+    delete:
+      summary: Remover receita
+  /finance/expenses:
+    post:
+      summary: Criar despesa
+  /finance/expenses/{id}:
+    delete:
+      summary: Remover despesa
+  /finance/categories:
+    post:
+      summary: Criar categoria financeira
+  /finance/cost-centers:
+    post:
+      summary: Criar centro de custo
+  /finance/bank-accounts:
+    post:
+      summary: Criar conta bancária
+  /finance/suppliers:
+    post:
+      summary: Criar fornecedor
+  /donations:
+    get:
+      summary: Dados de doações
+    post:
+      summary: Registrar doação
+  /donations/recurrences:
+    post:
+      summary: Criar recorrência
+  /subscriptions:
+    get:
+      summary: Dados InPeace Play / assinaturas
+    post:
+      summary: Criar assinatura
+  /subscriptions/plans:
+    post:
+      summary: Criar plano
+  /subscriptions/tags:
+    post:
+      summary: Criar tag
+  /subscriptions/contents:
+    post:
+      summary: Criar conteúdo premium
+  /subscriptions/collections:
+    post:
+      summary: Criar coletânea
+  /volunteers/dashboard:
+    get:
+      summary: Dashboard de voluntários
+  /volunteers/portal:
+    get:
+      summary: Portal do voluntário
+  /volunteers:
+    post:
+      summary: Salvar voluntário
+  /volunteers/departments:
+    post:
+      summary: Salvar departamento
+  /volunteers/templates:
+    get:
+      summary: Listar templates
+    post:
+      summary: Salvar template
+  /volunteers/schedules:
+    post:
+      summary: Gerar escala mensal
+  /volunteers/schedules/{id}/publish:
+    post:
+      summary: Publicar escala
+  /volunteers/assignments:
+    post:
+      summary: Atribuir voluntário
+  /volunteers/feed:
+    post:
+      summary: Post no feed
+  /volunteers/feed/{id}/read:
+    post:
+      summary: Marcar feed como lido
+  /volunteers/shifts/{id}/checkin-qr:
+    post:
+      summary: Gerar QR de check-in
+  /volunteers/checkin:
+    post:
+      summary: Check-in de voluntário
+  /settings:
+    get:
+      summary: Configurações
+  /files/upload:
+    post:
+      summary: Upload multipart (campo file)
+  /admin/dashboard:
+    get:
+      summary: Dashboard superadmin
+  /admin/companies:
+    get:
+      summary: Listar empresas
+    post:
+      summary: Salvar empresa
+  /admin/plans:
+    get:
+      summary: Listar planos
+    post:
+      summary: Salvar plano
+  /admin/profiles:
+    get:
+      summary: Listar perfis
+    post:
+      summary: Salvar perfil
+  /admin/profiles/{id}/reset-password:
+    post:
+      summary: Reset de senha
+  /admin/modules:
+    get:
+      summary: Listar módulos do sistema
+  /admin/modules/{id}/active:
+    patch:
+      summary: Ativar/desativar módulo
+  /exports/finance:
+    get:
+      summary: Export CSV financeiro
+  /exports/donations:
+    get:
+      summary: Export CSV doações
+  /exports/reports:
+    get:
+      summary: Export CSV relatórios
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sb-access-token
+      description: Sessão Supabase (cookies SSR do projeto)

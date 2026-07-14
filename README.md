@@ -28,6 +28,28 @@ SUPABASE_ACCESS_TOKEN=
 
 `SUPABASE_SERVICE_ROLE_KEY` é preferível para `npm run e2e:setup`. `SUPABASE_ACCESS_TOKEN` só deve existir em secret manager/ambiente, nunca em arquivo solto. Se qualquer segredo vazou em arquivo local, rotacione no provedor, remova o arquivo e atualize `.env.local` ou os secrets da plataforma.
 
+## API REST (`/api/v1`)
+
+Camada HTTP oficial sobre os services/actions existentes. Autenticação pela **sessão Supabase** (cookies SSR), multi-tenant por `company_id`.
+
+- Spec OpenAPI: `docs/api/openapi.yaml` ou `GET /api/v1/openapi`
+- Envelope de sucesso: `{ "data": ..., "meta"?: { total, page, pageSize, pageCount } }`
+- Envelope de erro: `{ "error": { "code", "message", "details"? } }`
+- Helpers em `src/lib/api/*` (`requireApiUser`, `jsonOk`, `fromActionResult`, `objectToFormData`)
+- Escopo: auth, people, congregations, church-info, groups, pastoral, content, público, events, attendance, CRM, prayer, reading-plans, announcements, notifications, finance, donations, subscriptions, volunteers, settings, files, admin e exports CSV
+
+Exemplos:
+
+```bash
+# sessão no browser (cookie)
+GET /api/v1/auth/me
+GET /api/v1/people?page=1&pageSize=20&q=maria
+POST /api/v1/people  # JSON body (mesmos campos das Server Actions)
+GET /api/v1/public/churches/{slug}  # sem auth
+```
+
+Rotas legadas (`/api/auth/me`, `/api/*/export`, webhooks) permanecem ativas.
+
 ## Desenvolvimento
 
 ```bash
