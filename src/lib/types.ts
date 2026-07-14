@@ -33,6 +33,10 @@ export type Permission =
   | "reports.export"
   | "crm.view"
   | "crm.edit"
+  | "forms.view"
+  | "forms.create"
+  | "forms.edit"
+  | "forms.delete"
   | "communication.view"
   | "communication.create"
   | "communication.edit"
@@ -216,6 +220,17 @@ export interface AttendanceRecord {
   createdAt: string
 }
 
+export interface CRMStage {
+  id: string
+  churchId: string
+  key: string
+  name: string
+  color: string
+  sortOrder: number
+  isDefault: boolean
+  cardCount?: number
+}
+
 export interface CRMCard {
   id: string
   churchId: string
@@ -223,7 +238,9 @@ export interface CRMCard {
   personName: string
   personPhone: string
   personEmail?: string
-  stage: "new" | "contacted" | "meeting" | "visiting" | "member" | "inactive"
+  stageId: string
+  stageKey?: string
+  stageName?: string
   source: string
   assignedTo: string
   assignedToName: string
@@ -345,6 +362,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "finance.view", "finance.create", "finance.edit", "finance.delete", "finance.export",
     "reports.view", "reports.export",
     "crm.view", "crm.edit",
+    "forms.view", "forms.create", "forms.edit", "forms.delete",
     "communication.view", "communication.create", "communication.edit", "communication.delete", "communication.send",
     "settings.edit", "settings.manage_settings",
     "prayer.view", "prayer.create", "prayer.edit", "prayer.delete",
@@ -367,6 +385,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "finance.view", "finance.export",
     "reports.view", "reports.export",
     "crm.view", "crm.edit",
+    "forms.view", "forms.create", "forms.edit", "forms.delete",
     "communication.view", "communication.create", "communication.edit", "communication.send",
     "prayer.view", "prayer.create", "prayer.edit",
     "content.view", "content.create", "content.edit", "content.publish",
@@ -385,6 +404,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "events.view", "events.create", "events.edit",
     "attendance.view", "attendance.create",
     "crm.view", "crm.edit",
+    "forms.view", "forms.create", "forms.edit",
     "prayer.view", "prayer.create",
     "content.view", "content.create",
     "groups.view", "groups.edit",

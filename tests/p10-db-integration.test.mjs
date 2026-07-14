@@ -105,12 +105,22 @@ test("database integration: reading plan steps, finance delete, person links, co
       `
       assert.equal(attendanceRows[0].person_id, people[0].id)
 
+      const stageRows = await sql`
+        select id
+        from public.crm_stages
+        where company_id = ${companyId}
+          and deleted_at is null
+        order by is_default desc, sort_order
+        limit 1
+      `
+      assert.ok(stageRows[0]?.id, "empresa deve ter coluna de kanban")
+
       const crmRows = await sql`
         insert into public.crm_cards (
-          company_id, person_id, person_name, person_phone, person_email, stage, source
+          company_id, person_id, person_name, person_phone, person_email, stage_id, source
         )
         values (
-          ${companyId}, ${people[0].id}, ${people[0].full_name}, '', '', 'new', 'integração'
+          ${companyId}, ${people[0].id}, ${people[0].full_name}, '', '', ${stageRows[0].id}, 'integração'
         )
         returning id, person_id
       `

@@ -30,13 +30,17 @@ SUPABASE_ACCESS_TOKEN=
 
 ## API REST (`/api/v1`)
 
-Camada HTTP oficial sobre os services/actions existentes. Autenticação pela **sessão Supabase** (cookies SSR), multi-tenant por `company_id`.
+Camada HTTP oficial sobre os services/actions existentes. Multi-tenant por `company_id`.
+
+**Auth**
+- Sessão Supabase (cookies SSR), ou
+- API key: `Authorization: Bearer ack_live_…` (Configurações → Integrações)
 
 - Spec OpenAPI: `docs/api/openapi.yaml` ou `GET /api/v1/openapi`
 - Envelope de sucesso: `{ "data": ..., "meta"?: { total, page, pageSize, pageCount } }`
 - Envelope de erro: `{ "error": { "code", "message", "details"? } }`
-- Helpers em `src/lib/api/*` (`requireApiUser`, `jsonOk`, `fromActionResult`, `objectToFormData`)
-- Escopo: auth, people, congregations, church-info, groups, pastoral, content, público, events, attendance, CRM, prayer, reading-plans, announcements, notifications, finance, donations, subscriptions, volunteers, settings, files, admin e exports CSV
+- Helpers em `src/lib/api/*` (`requireApiUser`, `requireApiAuth`, `jsonOk`, …)
+- Escopo: auth, people, forms/submissions, congregations, church-info, groups, pastoral, content, público, events, attendance, CRM, prayer, reading-plans, announcements, notifications, finance, donations, subscriptions, volunteers, settings, **integrations** (webhooks, deliveries, api-keys), files, admin e exports CSV
 
 Exemplos:
 
@@ -46,9 +50,42 @@ GET /api/v1/auth/me
 GET /api/v1/people?page=1&pageSize=20&q=maria
 POST /api/v1/people  # JSON body (mesmos campos das Server Actions)
 GET /api/v1/public/churches/{slug}  # sem auth
+
+# API key
+curl -H "Authorization: Bearer ack_live_…" https://seu-dominio/api/v1/forms
+curl -H "Authorization: Bearer ack_live_…" https://seu-dominio/api/v1/forms/{id}/submissions
 ```
 
-Rotas legadas (`/api/auth/me`, `/api/*/export`, webhooks) permanecem ativas.
+### Integrações / webhooks outbound
+
+UI: **Configurações → Integrações** (globais) e **Formulário → aba Webhooks** (por form).
+
+Quando um lead envia o formulário público, o sistema enfileira `form.submitted` (e eventos de pessoa/CRM relacionados) e faz `POST` assinado para as URLs cadastradas.
+
+Headers: `X-Altar-Event`, `X-Altar-Delivery-Id`, `X-Altar-Timestamp`, `X-Altar-Signature`  
+Assinatura: `HMAC-SHA256(secret, `${timestamp}.${rawBody}`)` com prefixo `sha256=`.
+
+Worker/cron (retry):
+
+```bash
+curl -X POST https://seu-dominio/api/internal/integrations/dispatch \
+  -H "x-integration-worker-secret: $INTEGRATION_WORKER_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"batchSize":25}'
+```
+
+Env: `INTEGRATION_WORKER_SECRET`, `INTEGRATION_WEBHOOK_HTTPS_ONLY`.
+
+Guia completo: [`docs/integrations.md`](docs/integrations.md).
+
+```bash
+npm run integrations:verify    # schema no Postgres
+npm run integrations:dispatch  # processa outbox (app no ar)
+npm run integrations:echo -- --secret=... --port=8787  # receptor local de teste
+npm run db:migrate             # aplica migrations pendentes
+```
+
+Rotas legadas (`/api/auth/me`, `/api/*/export`, webhooks Resend) permanecem ativas.
 
 ## Desenvolvimento
 

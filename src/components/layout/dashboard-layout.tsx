@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Church,
   ClipboardCheck,
+  ClipboardList,
   DollarSign,
   Gift,
   HandHeart,
@@ -93,6 +94,7 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
     items: [
       { href: dashboardRoutes.attendance, label: "Presença", icon: ClipboardCheck, moduleId: "attendance" },
       { href: dashboardRoutes.crm, label: "CRM", icon: KanbanSquare, moduleId: "crm" },
+      { href: dashboardRoutes.forms, label: "Formulários", icon: ClipboardList, moduleId: "forms" },
       { href: dashboardRoutes.finance, label: "Financeiro", icon: DollarSign, moduleId: "finance" },
       { href: dashboardRoutes.donations, label: "Doação", icon: Gift, moduleId: "donations" },
       { href: dashboardRoutes.reports, label: "Relatórios", icon: BarChart3, moduleId: "reports" },

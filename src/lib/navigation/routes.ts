@@ -8,6 +8,7 @@ export const dashboardRoutes = {
   "congregations": "/congregacoes",
   "content": "/conteudo",
   "crm": "/crm",
+  "forms": "/formularios",
   "donations": "/doacao",
   "events": "/eventos",
   "finance": "/financeiro",

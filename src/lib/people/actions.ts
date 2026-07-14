@@ -489,6 +489,40 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
         inviteAccess: Boolean(parsed.inviteAccess),
       },
     })
+
+    if (personId) {
+      try {
+        const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
+        const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
+        const eventType = parsed.id ? "person.updated" : "person.created"
+        await enqueueIntegrationEventSafe({
+          companyId,
+          eventType,
+          eventKey: `${eventType}:${personId}:${Date.now()}`,
+          data: {
+            person: {
+              id: personId,
+              name: fullName,
+              email: parsed.email || null,
+              phone: parsed.phone || null,
+              status: parsed.status,
+              personType: parsed.personType,
+            },
+          },
+        })
+        try {
+          const { after } = await import("next/server")
+          after(() => {
+            void processIntegrationOutbox(25)
+          })
+        } catch {
+          void processIntegrationOutbox(25)
+        }
+      } catch (integrationError) {
+        console.error("[integrations] person emit failed", integrationError)
+      }
+    }
+
     await refreshPeoplePaths(personId)
 
     return { ok: true, id: personId ?? undefined }

@@ -29,6 +29,7 @@ test("API foundation modules export expected helpers", () => {
   assert.match(auth, /export async function requireApiUser/)
   assert.match(auth, /export async function requireApiPermission/)
   assert.match(auth, /export async function requireApiSuperadmin/)
+  assert.match(auth, /export async function requireApiAuth/)
 
   const parse = read("src/lib/api/parse.ts")
   assert.match(parse, /export async function parseJsonBody/)
@@ -58,6 +59,8 @@ test("v1 API routes cover core modules", () => {
     "/public/churches/[slug]/route.ts",
     "/files/upload/route.ts",
     "/openapi/route.ts",
+    "/forms/route.ts",
+    "/integrations/webhooks/route.ts",
   ]
 
   for (const suffix of expected) {
@@ -78,6 +81,9 @@ test("OpenAPI doc exists and lists major paths", () => {
   assert.match(openapi, /\/volunteers/)
   assert.match(openapi, /\/admin\/companies/)
   assert.match(openapi, /cookieAuth/)
+  assert.match(openapi, /bearerAuth/)
+  assert.match(openapi, /\/forms/)
+  assert.match(openapi, /\/integrations\/webhooks/)
 })
 
 test("response envelope convention documented in helpers", () => {

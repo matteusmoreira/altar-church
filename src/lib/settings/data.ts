@@ -1,6 +1,9 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { listApiKeys } from "@/lib/integrations/api-keys"
+import { listDeliveries, listWebhookEndpoints } from "@/lib/integrations/webhooks"
+import type { ApiKeyRow, DeliveryRow, WebhookEndpoint } from "@/lib/integrations/types"
 import type { UserRole } from "@/lib/types"
 
 export interface SettingsCompany {
@@ -25,6 +28,11 @@ export interface SettingsProfile {
 export interface SettingsData {
   company: SettingsCompany | null
   profiles: SettingsProfile[]
+  integrations: {
+    webhooks: WebhookEndpoint[]
+    apiKeys: ApiKeyRow[]
+    deliveries: DeliveryRow[]
+  } | null
 }
 
 interface CompanyRow {
@@ -130,8 +138,23 @@ export async function getSettingsData(): Promise<SettingsData> {
         limit 200
       `
 
+  let integrations: SettingsData["integrations"] = null
+  if (companyId) {
+    try {
+      const [webhooks, apiKeys, deliveries] = await Promise.all([
+        listWebhookEndpoints({ companyId, globalOnly: true }),
+        listApiKeys(companyId),
+        listDeliveries({ companyId, limit: 40 }),
+      ])
+      integrations = { webhooks, apiKeys, deliveries }
+    } catch {
+      integrations = { webhooks: [], apiKeys: [], deliveries: [] }
+    }
+  }
+
   return {
     company: companyRows[0] ? toCompany(companyRows[0]) : null,
     profiles: profileRows.map(toProfile),
+    integrations,
   }
 }

@@ -9,6 +9,7 @@ import type {
   ChurchEvent,
   CostCenter,
   CRMCard,
+  CRMStage,
   Donation,
   DonationRecurrence,
   Expense,
@@ -69,6 +70,17 @@ interface AttendanceRow {
   created_at: Date | string
 }
 
+interface CrmStageRow {
+  id: string
+  company_id: string
+  key: string
+  name: string
+  color: string
+  sort_order: number
+  is_default: boolean
+  card_count?: number | string | null
+}
+
 interface CrmRow {
   id: string
   company_id: string
@@ -76,7 +88,9 @@ interface CrmRow {
   person_name: string
   person_phone: string
   person_email: string
-  stage: CRMCard["stage"]
+  stage_id: string
+  stage_key: string | null
+  stage_name: string | null
   source: string
   assigned_to: string | null
   assigned_to_name: string
@@ -476,6 +490,19 @@ function toAttendance(row: AttendanceRow): AttendanceRecord {
   }
 }
 
+function toCrmStage(row: CrmStageRow): CRMStage {
+  return {
+    id: row.id,
+    churchId: row.company_id,
+    key: row.key,
+    name: row.name,
+    color: row.color,
+    sortOrder: row.sort_order,
+    isDefault: row.is_default,
+    cardCount: row.card_count == null ? undefined : Number(row.card_count),
+  }
+}
+
 function toCrmCard(row: CrmRow): CRMCard {
   return {
     id: row.id,
@@ -484,7 +511,9 @@ function toCrmCard(row: CrmRow): CRMCard {
     personName: row.person_name,
     personPhone: row.person_phone,
     personEmail: row.person_email,
-    stage: row.stage,
+    stageId: row.stage_id,
+    stageKey: row.stage_key ?? undefined,
+    stageName: row.stage_name ?? undefined,
     source: row.source,
     assignedTo: row.assigned_to ?? "",
     assignedToName: row.assigned_to_name,
@@ -866,17 +895,98 @@ export async function listPeopleDirectory(companyIdInput?: string | null): Promi
   }))
 }
 
+async function ensureDefaultCrmStages(companyId: string) {
+  const sql = getSql()
+  const existing = await sql<{ count: number }[]>`
+    select count(*)::int as count
+    from public.crm_stages
+    where company_id = ${companyId}
+      and deleted_at is null
+  `
+  if (Number(existing[0]?.count ?? 0) > 0) return
+
+  const defaults = [
+    { key: "new", name: "Novo", color: "#6366f1", sortOrder: 10, isDefault: true },
+    { key: "contacted", name: "Contactado", color: "#0ea5e9", sortOrder: 20, isDefault: false },
+    { key: "meeting", name: "Reunião", color: "#8b5cf6", sortOrder: 30, isDefault: false },
+    { key: "visiting", name: "Visitando", color: "#f59e0b", sortOrder: 40, isDefault: false },
+    { key: "member", name: "Membro", color: "#10b981", sortOrder: 50, isDefault: false },
+    { key: "inactive", name: "Inativo", color: "#94a3b8", sortOrder: 60, isDefault: false },
+  ] as const
+
+  for (const stage of defaults) {
+    await sql`
+      insert into public.crm_stages (company_id, key, name, color, sort_order, is_default)
+      select ${companyId}, ${stage.key}, ${stage.name}, ${stage.color}, ${stage.sortOrder}, ${stage.isDefault}
+      where not exists (
+        select 1 from public.crm_stages
+        where company_id = ${companyId}
+          and key = ${stage.key}
+          and deleted_at is null
+      )
+    `
+  }
+}
+
+export async function listCrmStages(companyIdInput?: string | null): Promise<CRMStage[]> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("crm.view", companyId)
+
+  const sql = getSql()
+  await ensureDefaultCrmStages(companyId)
+
+  const rows = await sql<CrmStageRow[]>`
+    select
+      s.id,
+      s.company_id,
+      s.key,
+      s.name,
+      s.color,
+      s.sort_order,
+      s.is_default,
+      (
+        select count(*)::int
+        from public.crm_cards c
+        where c.company_id = s.company_id
+          and c.stage_id = s.id
+          and c.deleted_at is null
+      ) as card_count
+    from public.crm_stages s
+    where s.company_id = ${companyId}
+      and s.deleted_at is null
+    order by s.sort_order, s.created_at
+  `
+
+  return rows.map(toCrmStage)
+}
+
 export async function listCrmCards(companyIdInput?: string | null): Promise<CRMCard[]> {
   const companyId = await resolveCompanyId(companyIdInput)
   await requirePermission("crm.view", companyId)
 
   const sql = getSql()
   const rows = await sql<CrmRow[]>`
-    select *
-    from public.crm_cards
-    where company_id = ${companyId}
-      and deleted_at is null
-    order by created_at desc
+    select
+      c.id,
+      c.company_id,
+      c.person_id,
+      c.person_name,
+      c.person_phone,
+      c.person_email,
+      c.stage_id,
+      s.key as stage_key,
+      s.name as stage_name,
+      c.source,
+      c.assigned_to,
+      c.assigned_to_name,
+      c.last_contact,
+      c.notes,
+      c.created_at
+    from public.crm_cards c
+    left join public.crm_stages s on s.id = c.stage_id
+    where c.company_id = ${companyId}
+      and c.deleted_at is null
+    order by c.created_at desc
     limit 300
   `
 

@@ -1,15 +1,18 @@
 openapi: 3.0.3
 info:
   title: Altar Church API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    REST API do Altar Church. Autenticação via sessão Supabase (cookie SSR).
+    REST API do Altar Church.
+    Autenticação: sessão Supabase (cookie SSR) **ou** API key `Authorization: Bearer ack_live_…`.
     Respostas de sucesso: `{ "data": ..., "meta"?: ... }`.
     Respostas de erro: `{ "error": { "code", "message", "details"? } }`.
+    Webhooks outbound: POST assinado com HMAC-SHA256 (headers X-Altar-*).
 servers:
   - url: /api/v1
 security:
   - cookieAuth: []
+  - bearerAuth: []
 paths:
   /auth/me:
     get:
@@ -343,6 +346,53 @@ paths:
   /settings:
     get:
       summary: Configurações
+  /forms:
+    get:
+      summary: Listar formulários
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      summary: Criar formulário (sessão)
+  /forms/{id}:
+    get:
+      summary: Detalhe do formulário
+    patch:
+      summary: Atualizar formulário (sessão)
+    delete:
+      summary: Remover formulário (sessão)
+  /forms/{id}/submissions:
+    get:
+      summary: Listar envios do formulário
+  /forms/submissions/{id}:
+    get:
+      summary: Detalhe de um envio
+  /integrations/webhooks:
+    get:
+      summary: Listar webhooks outbound
+    post:
+      summary: Criar webhook (retorna secret uma vez)
+  /integrations/webhooks/{id}:
+    patch:
+      summary: Atualizar webhook
+    delete:
+      summary: Remover webhook
+    post:
+      summary: Testar webhook (?action=test)
+  /integrations/deliveries:
+    get:
+      summary: Log de entregas do outbox
+  /integrations/deliveries/{id}/retry:
+    post:
+      summary: Reenfileirar entrega
+  /integrations/api-keys:
+    get:
+      summary: Listar API keys (somente sessão)
+    post:
+      summary: Criar API key (secret uma vez; somente sessão)
+  /integrations/api-keys/{id}:
+    delete:
+      summary: Revogar API key (somente sessão)
   /files/upload:
     post:
       summary: Upload multipart (campo file)
@@ -389,3 +439,10 @@ components:
       in: cookie
       name: sb-access-token
       description: Sessão Supabase (cookies SSR do projeto)
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: ack_live
+      description: |
+        API key da igreja (Configurações → Integrações).
+        Scopes: forms:read, forms:write, crm:read, crm:write, people:read, people:write, webhooks:manage, *

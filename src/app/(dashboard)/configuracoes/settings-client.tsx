@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { FileText, Search, ShieldCheck } from "lucide-react"
+import { FileText, Plug, Search, ShieldCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { IntegrationsPanel } from "./integrations-panel"
 import type { SettingsData } from "@/lib/settings/data"
 import type { UserRole } from "@/lib/types"
 
@@ -61,7 +62,7 @@ export function SettingsClient({ settingsData }: { settingsData: SettingsData })
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Configurações</h1>
-        <p className="text-muted-foreground">Conta e acessos lidos do banco.</p>
+        <p className="text-muted-foreground">Conta, acessos e integrações externas (API / webhooks).</p>
       </div>
 
       <Tabs defaultValue="conta">
@@ -73,6 +74,10 @@ export function SettingsClient({ settingsData }: { settingsData: SettingsData })
           <TabsTrigger value="acessos">
             <ShieldCheck className="h-4 w-4" />
             Gestão de acessos
+          </TabsTrigger>
+          <TabsTrigger value="integracoes">
+            <Plug className="h-4 w-4" />
+            Integrações
           </TabsTrigger>
         </TabsList>
 
@@ -165,6 +170,24 @@ export function SettingsClient({ settingsData }: { settingsData: SettingsData })
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="integracoes" className="mt-4">
+          {settingsData.company && settingsData.integrations ? (
+            <IntegrationsPanel
+              companyId={settingsData.company.id}
+              webhooks={settingsData.integrations.webhooks}
+              apiKeys={settingsData.integrations.apiKeys}
+              deliveries={settingsData.integrations.deliveries}
+            />
+          ) : (
+            <Card className="glass">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Integrações ficam disponíveis no contexto de uma igreja. SuperAdmin: abra as
+                configurações a partir de uma empresa específica.
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

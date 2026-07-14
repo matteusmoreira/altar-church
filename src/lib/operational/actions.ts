@@ -69,6 +69,18 @@ const crmCardSchema = z.object({
   id: optionalUuidField,
   personId: optionalUuidField,
   personName: z.string().trim().optional().default(""),
+  stageId: optionalUuidField,
+})
+const crmStageSchema = z.object({
+  id: optionalUuidField,
+  name: requiredString("Nome"),
+  color: z.string().trim().optional().default("#6366f1"),
+  sortOrder: z.string().trim().optional().default("0"),
+  isDefault: z.string().trim().optional().default(""),
+})
+const deleteCrmStageSchema = z.object({
+  id: requiredUuidField,
+  reassignStageId: optionalUuidField,
 })
 const revenueSchema = z.object({
   amount: positiveMoneyField,
@@ -828,6 +840,211 @@ export async function saveNotificationGroup(formData: FormData): Promise<ActionR
   }
 }
 
+function slugifyStageKey(value: string) {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "coluna"
+  )
+}
+
+async function resolveCrmStageId(companyId: string, stageId: string | null) {
+  const sql = getSql()
+  if (stageId) {
+    const rows = await sql<{ id: string }[]>`
+      select id
+      from public.crm_stages
+      where id = ${stageId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    if (!rows[0]?.id) throw new Error("Coluna do Kanban não encontrada")
+    return rows[0].id
+  }
+
+  const defaults = await sql<{ id: string }[]>`
+    select id
+    from public.crm_stages
+    where company_id = ${companyId}
+      and deleted_at is null
+    order by is_default desc, sort_order, created_at
+    limit 1
+  `
+  if (!defaults[0]?.id) throw new Error("Nenhuma coluna do Kanban configurada")
+  return defaults[0].id
+}
+
+export async function saveCrmStage(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, crmStageSchema)
+    const id = uuid(formData, "id")
+    const { user, companyId } = await actionContext(formData, "crm.edit")
+    const name = requiredText(formData, "name", "Nome")
+    const color = text(formData, "color", "#6366f1") || "#6366f1"
+    const sortOrder = integer(formData, "sortOrder", 0)
+    const isDefault = bool(formData, "isDefault", false)
+    const sql = getSql()
+
+    if (isDefault) {
+      if (id) {
+        await sql`
+          update public.crm_stages
+          set is_default = false, updated_by = ${user.id}
+          where company_id = ${companyId}
+            and deleted_at is null
+            and id <> ${id}
+        `
+      } else {
+        await sql`
+          update public.crm_stages
+          set is_default = false, updated_by = ${user.id}
+          where company_id = ${companyId}
+            and deleted_at is null
+        `
+      }
+    }
+
+    if (id) {
+      const rows = await sql<{ id: string }[]>`
+        update public.crm_stages
+        set name = ${name},
+            color = ${color},
+            sort_order = ${sortOrder},
+            is_default = ${isDefault},
+            updated_by = ${user.id}
+        where id = ${id}
+          and company_id = ${companyId}
+          and deleted_at is null
+        returning id
+      `
+      if (!rows[0]?.id) throw new Error("Coluna não encontrada")
+      await audit("crm_stage.save", "crm_stages", rows[0].id, companyId)
+      refresh(["/crm", "/formularios", "/dashboard"])
+      return { ok: true, id: rows[0].id }
+    }
+
+    let key = slugifyStageKey(name)
+    const existing = await sql<{ key: string }[]>`
+      select key from public.crm_stages
+      where company_id = ${companyId} and deleted_at is null
+    `
+    const used = new Set(existing.map((row) => row.key))
+    if (used.has(key)) {
+      let n = 2
+      while (used.has(`${key}-${n}`)) n += 1
+      key = `${key}-${n}`
+    }
+
+    const maxSort = await sql<{ max: number | null }[]>`
+      select max(sort_order) as max from public.crm_stages
+      where company_id = ${companyId} and deleted_at is null
+    `
+    const nextSort = sortOrder || (Number(maxSort[0]?.max ?? 0) + 10)
+
+    const rows = await sql<{ id: string }[]>`
+      insert into public.crm_stages (
+        company_id, key, name, color, sort_order, is_default, created_by, updated_by
+      )
+      values (
+        ${companyId}, ${key}, ${name}, ${color}, ${nextSort}, ${isDefault}, ${user.id}, ${user.id}
+      )
+      returning id
+    `
+    await audit("crm_stage.save", "crm_stages", rows[0].id, companyId)
+    refresh(["/crm", "/formularios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteCrmStage(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteCrmStageSchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Coluna inválida")
+    const reassignStageId = uuid(formData, "reassignStageId")
+    const { user, companyId } = await actionContext(formData, "crm.edit")
+    const sql = getSql()
+
+    const stageRows = await sql<{ id: string; is_default: boolean }[]>`
+      select id, is_default
+      from public.crm_stages
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    if (!stageRows[0]) throw new Error("Coluna não encontrada")
+
+    const remaining = await sql<{ id: string }[]>`
+      select id from public.crm_stages
+      where company_id = ${companyId}
+        and deleted_at is null
+        and id <> ${id}
+      order by is_default desc, sort_order
+    `
+    if (remaining.length === 0) {
+      throw new Error("Não é possível excluir a última coluna do Kanban")
+    }
+
+    const cardCount = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.crm_cards
+      where company_id = ${companyId}
+        and stage_id = ${id}
+        and deleted_at is null
+    `
+    const count = Number(cardCount[0]?.count ?? 0)
+    if (count > 0) {
+      if (!reassignStageId) {
+        throw new Error("Mova os cards para outra coluna antes de excluir")
+      }
+      if (reassignStageId === id) {
+        throw new Error("Selecione uma coluna de destino diferente")
+      }
+      const target = remaining.find((row) => row.id === reassignStageId)
+      if (!target) throw new Error("Coluna de destino inválida")
+      await sql`
+        update public.crm_cards
+        set stage_id = ${reassignStageId}, updated_by = ${user.id}
+        where company_id = ${companyId}
+          and stage_id = ${id}
+          and deleted_at is null
+      `
+    }
+
+    await sql`
+      update public.crm_stages
+      set deleted_at = now(), updated_by = ${user.id}, is_default = false
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+    `
+
+    if (stageRows[0].is_default) {
+      await sql`
+        update public.crm_stages
+        set is_default = true, updated_by = ${user.id}
+        where id = ${remaining[0].id}
+          and company_id = ${companyId}
+          and deleted_at is null
+      `
+    }
+
+    await audit("crm_stage.delete", "crm_stages", id, companyId)
+    refresh(["/crm", "/formularios", "/dashboard"])
+    return { ok: true, id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
   try {
     validateActionForm(formData, crmCardSchema)
@@ -836,6 +1053,7 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
     const person = await resolvePersonReference(companyId, uuid(formData, "personId"), text(formData, "personName"))
     const personPhone = text(formData, "personPhone") || person.personPhone
     const personEmail = text(formData, "personEmail") || person.personEmail
+    const stageId = await resolveCrmStageId(companyId, uuid(formData, "stageId"))
     const sql = getSql()
     const rows = id
       ? await sql<{ id: string }[]>`
@@ -844,7 +1062,7 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
               person_name = ${person.personName},
               person_phone = ${personPhone},
               person_email = ${personEmail},
-              stage = ${text(formData, "stage", "new")},
+              stage_id = ${stageId},
               source = ${text(formData, "source")},
               assigned_to_name = ${text(formData, "assignedToName")},
               last_contact = ${optionalText(formData, "lastContact")},
@@ -857,12 +1075,12 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
         `
       : await sql<{ id: string }[]>`
           insert into public.crm_cards (
-            company_id, person_id, person_name, person_phone, person_email, stage, source,
+            company_id, person_id, person_name, person_phone, person_email, stage_id, source,
             assigned_to_name, last_contact, notes, created_by, updated_by
           )
           values (
             ${companyId}, ${person.personId}, ${person.personName}, ${personPhone}, ${personEmail},
-            ${text(formData, "stage", "new")}, ${text(formData, "source")}, ${text(formData, "assignedToName")},
+            ${stageId}, ${text(formData, "source")}, ${text(formData, "assignedToName")},
             ${optionalText(formData, "lastContact")}, ${text(formData, "notes")}, ${user.id}, ${user.id}
           )
           returning id
@@ -870,6 +1088,40 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Card não foi salvo")
     await audit("crm_card.save", "crm_cards", savedId, companyId)
+
+    try {
+      const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
+      const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
+      const eventType = id ? "crm.card.updated" : "crm.card.created"
+      await enqueueIntegrationEventSafe({
+        companyId,
+        eventType,
+        eventKey: `${eventType}:${savedId}:${Date.now()}`,
+        data: {
+          crmCard: {
+            id: savedId,
+            personId: person.personId,
+            personName: person.personName,
+            personPhone,
+            personEmail,
+            stageId,
+            source: text(formData, "source"),
+            notes: text(formData, "notes"),
+          },
+        },
+      })
+      try {
+        const { after } = await import("next/server")
+        after(() => {
+          void processIntegrationOutbox(25)
+        })
+      } catch {
+        void processIntegrationOutbox(25)
+      }
+    } catch (integrationError) {
+      console.error("[integrations] crm card emit failed", integrationError)
+    }
+
     refresh(["/crm", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
