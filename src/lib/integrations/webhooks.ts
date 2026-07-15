@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { parseJsonbObject } from "@/lib/db/jsonb"
 import type { DeliveryRow, IntegrationEventType, WebhookEndpoint } from "./types"
 
 function toIso(value: Date | string) {
@@ -146,7 +147,7 @@ export async function listDeliveries(input?: {
     endpointName: (row.endpoint_name as string | null) ?? null,
     eventType: row.event_type as string,
     eventKey: row.event_key as string,
-    payload: (row.payload as Record<string, unknown>) ?? {},
+    payload: parseJsonbObject(row.payload),
     status: row.status as DeliveryRow["status"],
     attempts: Number(row.attempts),
     nextAttemptAt: toIso(row.next_attempt_at as Date | string),

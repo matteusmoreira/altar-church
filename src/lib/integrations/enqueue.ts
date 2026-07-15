@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db/client"
+import { jsonbParam } from "@/lib/db/jsonb"
 import { buildEventEnvelope } from "./events"
 import type { IntegrationEventType } from "./types"
 
@@ -81,7 +82,7 @@ export async function enqueueIntegrationEvent(
           ${endpoint.id},
           ${input.eventType},
           ${input.eventKey},
-          ${JSON.stringify(envelope)}::jsonb,
+          ${jsonbParam(sql, envelope)},
           'pending',
           now()
         )

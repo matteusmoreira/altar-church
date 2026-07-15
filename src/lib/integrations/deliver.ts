@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db/client"
+import { jsonbPayloadToHttpBody } from "@/lib/db/jsonb"
 import { assertSafeWebhookUrl, signWebhookBody } from "./crypto"
 
 interface ClaimedRow {
@@ -70,7 +71,8 @@ export async function processIntegrationOutbox(batchSize = 25): Promise<{
 
     try {
       assertSafeWebhookUrl(endpoint.url)
-      const rawBody = JSON.stringify(row.payload)
+      // payload pode ser objeto ou string legada (double JSON) — body HTTP sempre objeto serializado
+      const rawBody = jsonbPayloadToHttpBody(row.payload)
       const timestamp = String(Math.floor(Date.now() / 1000))
       const signature = signWebhookBody(endpoint.secret, timestamp, rawBody)
 

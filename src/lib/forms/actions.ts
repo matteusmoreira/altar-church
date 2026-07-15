@@ -5,6 +5,7 @@ import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { jsonbParam } from "@/lib/db/jsonb"
 import type {
   FormFieldMapTo,
   FormFieldType,
@@ -261,7 +262,7 @@ async function insertDefaultFields(formId: string, companyId: string, userId: st
       )
       values (
         ${companyId}, ${formId}, ${field.fieldType}, ${field.label}, ${field.fieldKey},
-        ${field.placeholder}, ${""}, ${field.required}, ${JSON.stringify([])}::jsonb, ${field.mapTo},
+        ${field.placeholder}, ${""}, ${field.required}, ${jsonbParam(sql, [])}, ${field.mapTo},
         ${field.sortOrder}, ${userId}, ${userId}
       )
     `
@@ -420,7 +421,7 @@ export async function saveFormField(input: SaveFormFieldInput): Promise<FormsAct
             placeholder = ${parsed.placeholder},
             help_text = ${parsed.helpText},
             required = ${parsed.required},
-            options = ${JSON.stringify(options)}::jsonb,
+            options = ${jsonbParam(sql, options)},
             map_to = ${parsed.mapTo},
             sort_order = ${parsed.sortOrder},
             updated_by = ${user.id}
@@ -445,7 +446,7 @@ export async function saveFormField(input: SaveFormFieldInput): Promise<FormsAct
         )
         values (
           ${companyId}, ${parsed.formId}, ${parsed.fieldType}, ${parsed.label}, ${fieldKey},
-          ${parsed.placeholder}, ${parsed.helpText}, ${parsed.required}, ${JSON.stringify(options)}::jsonb,
+          ${parsed.placeholder}, ${parsed.helpText}, ${parsed.required}, ${jsonbParam(sql, options)},
           ${parsed.mapTo}, ${sortOrder}, ${user.id}, ${user.id}
         )
         returning id
@@ -689,6 +690,12 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
     }
     if (!personName) personName = "Visitante"
 
+    // Normaliza telefone BR para dígitos (Chat valida 10–15 dígitos)
+    if (personPhone) {
+      const digits = personPhone.replace(/\D/g, "")
+      personPhone = digits.length >= 10 ? digits : personPhone
+    }
+
     let personId: string | null = null
     let personWasCreated = false
     let personWasUpdated = false
@@ -782,7 +789,7 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
         company_id, form_id, crm_card_id, person_id, payload
       )
       values (
-        ${company.id}, ${form.id}, ${crmCardId}, ${personId}, ${JSON.stringify(normalized)}::jsonb
+        ${company.id}, ${form.id}, ${crmCardId}, ${personId}, ${jsonbParam(sql, normalized)}
       )
       returning id
     `
@@ -852,14 +859,19 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
           source: `Formulário: ${form.title}`,
         },
       })
-      // Best-effort immediate dispatch (cron also processes pending)
+      // Despacho imediato (Node) — não depender só do pg_cron/SQL worker
       try {
-        const { after } = await import("next/server")
-        after(() => {
-          void processIntegrationOutbox(25)
-        })
-      } catch {
-        void processIntegrationOutbox(25)
+        await processIntegrationOutbox(25)
+      } catch (dispatchError) {
+        console.error("[integrations] immediate dispatch failed", dispatchError)
+        try {
+          const { after } = await import("next/server")
+          after(() => {
+            void processIntegrationOutbox(25)
+          })
+        } catch {
+          /* cron / worker SQL still picks pending */
+        }
       }
     } catch (integrationError) {
       console.error("[integrations] form submit emit failed", integrationError)

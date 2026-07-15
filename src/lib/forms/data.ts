@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { parseJsonbObject } from "@/lib/db/jsonb"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
   ChurchForm,
@@ -124,10 +125,8 @@ function toSubmission(row: SubmissionRow): FormSubmission {
     companyId: row.company_id,
     crmCardId: row.crm_card_id,
     personId: row.person_id,
-    payload:
-      row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
-        ? (row.payload as Record<string, unknown>)
-        : {},
+    // corrige legado gravado como string JSON (UI mostrava {})
+    payload: parseJsonbObject(row.payload),
     createdAt: toIso(row.created_at),
   }
 }
