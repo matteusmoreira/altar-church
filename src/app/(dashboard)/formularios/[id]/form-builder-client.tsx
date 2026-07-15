@@ -47,12 +47,13 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import type { WebhookEndpoint } from "@/lib/integrations/types"
+import type { DeliveryRow, WebhookEndpoint } from "@/lib/integrations/types"
 import { FormWebhooksPanel } from "./form-webhooks-panel"
 
 interface FormBuilderClientProps {
   data: FormBuilderData
   formWebhooks?: WebhookEndpoint[]
+  formDeliveries?: DeliveryRow[]
 }
 
 type FieldFormState = {
@@ -100,7 +101,11 @@ function emptyFieldForm(): FieldFormState {
   }
 }
 
-export function FormBuilderClient({ data, formWebhooks = [] }: FormBuilderClientProps) {
+export function FormBuilderClient({
+  data,
+  formWebhooks = [],
+  formDeliveries = [],
+}: FormBuilderClientProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [localFields, setLocalFields] = useState<FormField[] | null>(null)
@@ -557,6 +562,7 @@ export function FormBuilderClient({ data, formWebhooks = [] }: FormBuilderClient
             companyId={data.companyId}
             formId={data.form.id}
             endpoints={formWebhooks}
+            deliveries={formDeliveries}
           />
         </TabsContent>
 
@@ -564,7 +570,10 @@ export function FormBuilderClient({ data, formWebhooks = [] }: FormBuilderClient
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Envios recentes</CardTitle>
-              <CardDescription>Últimos 20 envios deste formulário.</CardDescription>
+              <CardDescription>
+                Pessoas que preencheram o formulário público (não é o log do webhook — esse fica na
+                aba Webhooks).
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {data.recentSubmissions.length === 0 ? (

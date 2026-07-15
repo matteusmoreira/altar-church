@@ -97,25 +97,47 @@ export async function listWebhookEndpoints(input?: {
 export async function listDeliveries(input?: {
   companyId?: string | null
   limit?: number
+  /** When set, only deliveries for webhooks of this form. */
+  formId?: string | null
 }): Promise<DeliveryRow[]> {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
   const companyId = requireUserCompanyId(user, input?.companyId)
-  await requirePermission("settings.manage_settings", companyId)
+  if (input?.formId) {
+    await requirePermission("forms.view", companyId)
+  } else {
+    await requirePermission("settings.manage_settings", companyId)
+  }
   const limit = Math.min(Math.max(input?.limit ?? 50, 1), 200)
   const sql = getSql()
-  const rows = await sql`
-    select
-      d.id, d.company_id, d.endpoint_id, d.event_type, d.event_key, d.payload,
-      d.status, d.attempts, d.next_attempt_at, d.last_error, d.response_status,
-      d.sent_at, d.created_at,
-      e.name as endpoint_name
-    from public.integration_delivery_outbox d
-    left join public.integration_webhook_endpoints e on e.id = d.endpoint_id
-    where d.company_id = ${companyId}
-    order by d.created_at desc
-    limit ${limit}
-  `
+  const formId = input?.formId ?? null
+
+  const rows = formId
+    ? await sql`
+        select
+          d.id, d.company_id, d.endpoint_id, d.event_type, d.event_key, d.payload,
+          d.status, d.attempts, d.next_attempt_at, d.last_error, d.response_status,
+          d.sent_at, d.created_at,
+          e.name as endpoint_name
+        from public.integration_delivery_outbox d
+        left join public.integration_webhook_endpoints e on e.id = d.endpoint_id
+        where d.company_id = ${companyId}
+          and e.form_id = ${formId}
+        order by d.created_at desc
+        limit ${limit}
+      `
+    : await sql`
+        select
+          d.id, d.company_id, d.endpoint_id, d.event_type, d.event_key, d.payload,
+          d.status, d.attempts, d.next_attempt_at, d.last_error, d.response_status,
+          d.sent_at, d.created_at,
+          e.name as endpoint_name
+        from public.integration_delivery_outbox d
+        left join public.integration_webhook_endpoints e on e.id = d.endpoint_id
+        where d.company_id = ${companyId}
+        order by d.created_at desc
+        limit ${limit}
+      `
 
   return rows.map((row) => ({
     id: row.id as string,

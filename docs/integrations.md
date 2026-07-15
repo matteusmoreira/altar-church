@@ -10,7 +10,7 @@ Plataforma multi-tenant para sistemas externos (ex.: automação WhatsApp).
 | **Formulários → [form] → Webhooks** | Endpoints **só daquele formulário** (além dos globais) |
 | OpenAPI | `GET /api/v1/openapi` |
 
-## Fluxo lead → WhatsApp
+## Fluxo lead → WhatsApp / Altar Chat
 
 1. Admin cria webhook com evento `form.submitted` e URL HTTPS da automação.
 2. Copia o **secret** (exibido uma vez).
@@ -18,6 +18,19 @@ Plataforma multi-tenant para sistemas externos (ex.: automação WhatsApp).
 4. Lead envia o form público `/f/{slugIgreja}/{slugForm}`.
 5. Altar Church grava submission + CRM e enfileira outbox.
 6. Worker faz `POST` assinado na URL; a automação dispara o WhatsApp.
+
+### Destino: Altar Chat
+
+Para enviar leads ao **Altar Chat** (Kanban + automação WhatsApp):
+
+1. No Altar Chat → **Automações**, adicione o gatilho **Altar Church** (ou use o template “Lead Altar Church”).
+2. Conecte os blocos seguintes: **Mover para Kanban**, **Enviar texto** (`Olá {{nome}}!`), etc.
+3. Salve e **copie a URL** no inspector do bloco Altar Church.
+4. No Church, em **Formulários → [form] → Webhooks**, cadastre essa URL com evento `form.submitted`.
+5. Mapeie telefone com `map_to: person_phone` (obrigatório).
+6. O Chat cria contato/conversa se o número for novo e executa o fluxo.
+
+Um formulário por URL de automação = roteamento configurável (ex.: Visitantes → coluna `novo`, Discipulado → outra auto/coluna).
 
 ### Payload (resumo)
 
