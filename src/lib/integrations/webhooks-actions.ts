@@ -249,6 +249,8 @@ export async function testWebhookEndpoint(input: {
       where id = ${id}
     `
 
+    // Payload no formato form.submitted (com person.phone) para destinos como Altar Chat
+    // aceitarem o botão "Testar". O event type continua integration.test (só para log/UI).
     const eventKey = `integration.test:${id}:${Date.now()}`
     const { enqueued } = await enqueueIntegrationEvent({
       companyId,
@@ -260,6 +262,23 @@ export async function testWebhookEndpoint(input: {
       data: {
         message: "Teste de webhook do Altar Church",
         triggeredBy: user.id,
+        submissionId: null,
+        form: {
+          id: endpoints[0].form_id,
+          title: "Teste de webhook",
+          slug: "integration-test",
+        },
+        person: {
+          id: null,
+          name: "Lead Teste",
+          email: "teste@example.com",
+          phone: "+5511999990000",
+        },
+        fields: {
+          nome: "Lead Teste",
+          telefone: "+5511999990000",
+        },
+        source: "Teste de webhook (Altar Church)",
       },
     })
 

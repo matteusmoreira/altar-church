@@ -101,6 +101,17 @@ function emptyFieldForm(): FieldFormState {
   }
 }
 
+/** Sugere map_to a partir do tipo / chave do campo (telefone → person_phone). */
+function suggestedMapTo(fieldType: FormFieldType, fieldKey: string): FormFieldMapTo {
+  const key = fieldKey.trim().toLowerCase()
+  if (fieldType === "phone" || key === "telefone" || key === "phone" || key === "celular" || key === "whatsapp") {
+    return "person_phone"
+  }
+  if (fieldType === "email" || key === "email" || key === "e-mail") return "person_email"
+  if (key === "nome" || key === "name" || key === "nome_completo") return "person_name"
+  return "none"
+}
+
 export function FormBuilderClient({
   data,
   formWebhooks = [],
@@ -625,7 +636,14 @@ export function FormBuilderClient({
                 <Select
                   value={fieldForm.fieldType}
                   onValueChange={(value) =>
-                    setFieldForm((c) => ({ ...c, fieldType: (value as FormFieldType) || "text" }))
+                    setFieldForm((c) => {
+                      const fieldType = (value as FormFieldType) || "text"
+                      const nextMap =
+                        c.mapTo === "none"
+                          ? suggestedMapTo(fieldType, c.fieldKey)
+                          : c.mapTo
+                      return { ...c, fieldType, mapTo: nextMap }
+                    })
                   }
                 >
                   <SelectTrigger>
@@ -665,12 +683,14 @@ export function FormBuilderClient({
               <Label>Chave interna (opcional)</Label>
               <Input
                 value={fieldForm.fieldKey}
-                onChange={(e) =>
-                  setFieldForm((c) => ({
-                    ...c,
-                    fieldKey: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, "_"),
-                  }))
-                }
+                onChange={(e) => {
+                  const fieldKey = e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, "_")
+                  setFieldForm((c) => {
+                    const nextMap =
+                      c.mapTo === "none" ? suggestedMapTo(c.fieldType, fieldKey) : c.mapTo
+                    return { ...c, fieldKey, mapTo: nextMap }
+                  })
+                }}
                 placeholder="gerada a partir do rótulo"
               />
             </div>

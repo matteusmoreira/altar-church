@@ -659,6 +659,22 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
       else if (field.map_to === "person_email") personEmail = String(value)
       else if (field.map_to === "person_phone") personPhone = String(value)
       else if (field.map_to === "notes") noteParts.push(`${field.label}: ${display}`)
+      // Fallback: chave interna comum de telefone sem map_to (evita webhook sem phone)
+      else if (
+        !personPhone &&
+        (field.field_key === "telefone" ||
+          field.field_key === "phone" ||
+          field.field_key === "celular" ||
+          field.field_key === "whatsapp")
+      ) {
+        personPhone = String(value)
+      }
+      else if (
+        !personName &&
+        (field.field_key === "nome" || field.field_key === "name")
+      ) {
+        personName = String(value)
+      }
       else noteParts.push(`${field.label}: ${display}`)
     }
 

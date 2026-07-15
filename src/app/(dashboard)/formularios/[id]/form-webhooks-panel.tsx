@@ -118,7 +118,7 @@ export function FormWebhooksPanel({
         toast.success(`Teste OK: ${sent} envio(s) com sucesso. Veja o log abaixo.`)
       } else if (failed > 0) {
         toast.error(
-          `Teste processado, mas falhou (${failed}). Veja o log abaixo — URL do Chat pode recusar o payload de teste (sem telefone).`,
+          `Teste processado, mas falhou (${failed}). Veja o erro no log abaixo (URL, token ou automação desabilitada).`,
         )
       } else {
         toast.message("Teste enfileirado. Atualize a página e confira o log de webhooks abaixo.")
