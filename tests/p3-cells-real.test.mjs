@@ -4,9 +4,9 @@ import { test } from "node:test"
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
-test("cells route uses real group data and group actions", () => {
+test("cells route unifies management and portal with real data", () => {
   const page = read("src/app/(dashboard)/celulas/page.tsx")
-  const client = read("src/app/(dashboard)/celulas/cells-client.tsx")
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
   const actions = read("src/lib/groups/actions.ts")
 
   assert.doesNotMatch(page, /"use client"/)
@@ -16,8 +16,13 @@ test("cells route uses real group data and group actions", () => {
   assert.match(page, /getGroupFormOptions/)
 
   assert.doesNotMatch(client, /@\/lib\/mock\/data/)
-  assert.match(client, /saveGroup/)
-  assert.match(client, /deleteGroup/)
+  assert.match(page, /GroupsClient/)
+  assert.match(page, /getCellFeaturesData/)
+  assert.match(client, /saveCellStudy/)
+  assert.match(client, /openCellCheckin/)
+  assert.match(client, /uploadCellPhotos/)
+  assert.match(client, /saveCellPrayer/)
+  assert.match(client, /saveCellNotice/)
   assert.match(client, /router\.refresh\(\)/)
 
   assert.match(actions, /revalidatePath\("\/celulas"\)/)

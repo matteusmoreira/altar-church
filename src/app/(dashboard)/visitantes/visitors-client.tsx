@@ -359,7 +359,7 @@ export function VisitorsClient({ visitorsResult, filters }: VisitorsClientProps)
                 placeholder="Buscar por nome, e-mail ou telefone"
                 value={filterState.search}
                 onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-                className="pl-9"
+                className="pl-9 md:pl-9"
               />
             </div>
             <Select

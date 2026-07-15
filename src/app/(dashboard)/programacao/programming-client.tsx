@@ -238,7 +238,7 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
             placeholder="Buscar programação"
             value={filterState.search}
             onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-            className="pl-9"
+            className="pl-9 md:pl-9"
           />
         </div>
         <Select

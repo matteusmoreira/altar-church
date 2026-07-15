@@ -88,7 +88,7 @@ test("P1 adds reusable server-side dashboard route access guard", () => {
 test("P1 operational dashboard routes use server-side module and permission layouts", () => {
   const guardedRoutes = {
     presenca: ["attendance", "attendance.view"],
-    celulas: ["cells", "cells.view"],
+    celulas: ["cells", null],
     informacoes: ["church-info", "settings.edit"],
     comunicacao: ["communication", "communication.view"],
     congregacoes: ["congregations", "members.view"],
@@ -98,7 +98,6 @@ test("P1 operational dashboard routes use server-side module and permission layo
     doacao: ["donations", "donation.view"],
     eventos: ["events", "events.view"],
     financeiro: ["finance", "finance.view"],
-    gceus: ["groups", "groups.view"],
     "inpeace-play": ["inpeace-play", "subscription.view"],
     pessoas: ["members", "members.view"],
     ministerios: ["ministries", "ministries.view"],

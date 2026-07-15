@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
-import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { getCellContext } from "@/lib/cells/access"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
   GroupCategory,
   GroupDashboardData,
@@ -72,9 +73,13 @@ interface StudyRow {
   id: string
   company_id: string
   title: string
+  description: string
   content_type: "dynamic" | "lesson" | "preaching"
   content: string
   scripture_ref: string
+  file_id: string | null
+  file_name: string | null
+  storage_path: string | null
   is_active: boolean
 }
 
@@ -106,13 +111,10 @@ interface GroupMemberRow {
   left_at: Date | string | null
 }
 
-async function resolveCompanyId(companyId?: string | null) {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error("Acesso negado")
-  }
-
-  return requireUserCompanyId(user, companyId)
+async function resolveCellsContext(companyId?: string | null) {
+  const context = await getCellContext(companyId)
+  await requirePermission("cells.view", context.companyId)
+  return context
 }
 
 function toIso(value: Date | string | null) {
@@ -169,14 +171,18 @@ function toCategory(row: CategoryRow): GroupCategory {
   }
 }
 
-function toStudy(row: StudyRow): GroupStudy {
+function toStudy(row: StudyRow, fileUrl: string | null = null): GroupStudy {
   return {
     id: row.id,
     companyId: row.company_id,
     title: row.title,
+    description: row.description,
     contentType: row.content_type,
     content: row.content,
     scriptureRef: row.scripture_ref,
+    fileId: row.file_id,
+    fileName: row.file_name,
+    fileUrl,
     isActive: row.is_active,
   }
 }
@@ -214,8 +220,7 @@ function toGroupMember(row: GroupMemberRow): GroupMember {
 }
 
 export async function listGroups(filters: GroupListFilters = {}): Promise<GroupListResult> {
-  const companyId = await resolveCompanyId(filters.companyId)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(filters.companyId)
 
   const page = Math.max(1, filters.page ?? 1)
   const pageSize = Math.min(Math.max(1, filters.pageSize ?? 20), 100)
@@ -267,7 +272,11 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
       left join public.people coordinator on coordinator.id = g.coordinator_person_id
       left join public.group_members gm on gm.group_id = g.id
       where g.company_id = ${companyId}
+        and g.type = 'cell'
         and g.deleted_at is null
+        and (${user.role} not in ('cell_supervisor', 'cell_leader')
+          or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+          or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
         and (${search} = '' or g.name ilike ${searchPattern} or g.description ilike ${searchPattern} or coalesce(leader.full_name, '') ilike ${searchPattern})
         and (${categoryId} = 'all' or g.category_id::text = ${categoryId})
         and (${type} = 'all' or g.type = ${type})
@@ -283,7 +292,11 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
       from public.groups g
       left join public.people leader on leader.id = g.leader_person_id
       where g.company_id = ${companyId}
+        and g.type = 'cell'
         and g.deleted_at is null
+        and (${user.role} not in ('cell_supervisor', 'cell_leader')
+          or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+          or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
         and (${search} = '' or g.name ilike ${searchPattern} or g.description ilike ${searchPattern} or coalesce(leader.full_name, '') ilike ${searchPattern})
         and (${categoryId} = 'all' or g.category_id::text = ${categoryId})
         and (${type} = 'all' or g.type = ${type})
@@ -303,8 +316,7 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
 }
 
 export async function getGroupsDashboardData(companyIdInput?: string | null): Promise<GroupDashboardData> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(companyIdInput)
 
   const sql = getSql()
   const rows = await sql<DashboardRow[]>`
@@ -317,7 +329,11 @@ export async function getGroupsDashboardData(companyIdInput?: string | null): Pr
     from public.groups g
     left join public.group_members gm on gm.group_id = g.id
     where g.company_id = ${companyId}
+      and g.type = 'cell'
       and g.deleted_at is null
+      and (${user.role} not in ('cell_supervisor', 'cell_leader')
+        or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+        or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
   `
   const row = rows[0]
   const members = toNumber(row?.members)
@@ -333,8 +349,7 @@ export async function getGroupsDashboardData(companyIdInput?: string | null): Pr
 }
 
 export async function getGroupFormOptions(companyIdInput?: string | null): Promise<GroupFormOptions> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(companyIdInput)
 
   const sql = getSql()
   const [categoryRows, congregationRows, personRows, studyRows] = await Promise.all([
@@ -363,26 +378,41 @@ export async function getGroupFormOptions(companyIdInput?: string | null): Promi
       limit 300
     `,
     sql<StudyRow[]>`
-      select id, company_id, title, content_type, content, scripture_ref, is_active
-      from public.group_studies
-      where company_id = ${companyId}
-        and deleted_at is null
-      order by created_at desc
+      select study.id, study.company_id, study.title, study.description, study.content_type, study.content,
+        study.scripture_ref, study.file_id, file.original_name as file_name, file.storage_path, study.is_active
+      from public.group_studies study
+      left join public.app_files file on file.id = study.file_id and file.deleted_at is null and file.is_active = true
+      where study.company_id = ${companyId}
+        and study.deleted_at is null
+        and (${user.role} not in ('cell_supervisor', 'cell_leader')
+          or study.audience = 'all'
+          or exists (
+            select 1
+            from public.cell_study_targets target
+            join public.groups cell on cell.id = target.group_id
+            where target.study_id = study.id
+              and cell.company_id = ${companyId}
+              and cell.type = 'cell'
+              and cell.deleted_at is null
+              and ((${user.role} = 'cell_supervisor' and cell.coordinator_person_id = ${personId})
+                or (${user.role} = 'cell_leader' and cell.leader_person_id = ${personId}))
+          ))
+      order by study.created_at desc
       limit 100
     `,
   ])
 
+  const studyUrls = await createSignedUrlsByStoragePath(studyRows.map((study) => study.storage_path ?? ""))
   return {
     categories: categoryRows.map(toCategory),
     congregations: congregationRows,
     people: personRows.map((person) => ({ id: person.id, fullName: person.full_name })),
-    studies: studyRows.map(toStudy),
+    studies: studyRows.map((study) => toStudy(study, study.storage_path ? studyUrls.get(study.storage_path) ?? null : null)),
   }
 }
 
 export async function listUpcomingGroupMeetings(companyIdInput?: string | null): Promise<GroupMeeting[]> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(companyIdInput)
 
   const sql = getSql()
   const rows = await sql<MeetingRow[]>`
@@ -404,7 +434,11 @@ export async function listUpcomingGroupMeetings(companyIdInput?: string | null):
     join public.groups g on g.id = gm.group_id
     left join public.group_studies gs on gs.id = gm.study_id
     where gm.company_id = ${companyId}
+      and g.type = 'cell'
       and gm.deleted_at is null
+      and (${user.role} not in ('cell_supervisor', 'cell_leader')
+        or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+        or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
       and gm.starts_at >= now() - interval '1 day'
     order by gm.starts_at asc
     limit 20
@@ -414,8 +448,7 @@ export async function listUpcomingGroupMeetings(companyIdInput?: string | null):
 }
 
 export async function listGroupMembers(companyIdInput?: string | null): Promise<GroupMember[]> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(companyIdInput)
 
   const sql = getSql()
   const rows = await sql<GroupMemberRow[]>`
@@ -433,8 +466,12 @@ export async function listGroupMembers(companyIdInput?: string | null): Promise<
     join public.groups g on g.id = gm.group_id
     join public.people p on p.id = gm.person_id
     where gm.company_id = ${companyId}
+      and g.type = 'cell'
       and g.deleted_at is null
       and p.deleted_at is null
+      and (${user.role} not in ('cell_supervisor', 'cell_leader')
+        or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+        or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
     order by g.name, gm.status, gm.role, p.full_name
     limit 500
   `
@@ -443,8 +480,7 @@ export async function listGroupMembers(companyIdInput?: string | null): Promise<
 }
 
 export async function listGroupMeetingReports(companyIdInput?: string | null): Promise<GroupMeeting[]> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("groups.view", companyId)
+  const { companyId, user, personId } = await resolveCellsContext(companyIdInput)
 
   const sql = getSql()
   const rows = await sql<MeetingRow[]>`
@@ -468,6 +504,10 @@ export async function listGroupMeetingReports(companyIdInput?: string | null): P
     where gm.company_id = ${companyId}
       and gm.deleted_at is null
       and g.deleted_at is null
+      and g.type = 'cell'
+      and (${user.role} not in ('cell_supervisor', 'cell_leader')
+        or (${user.role} = 'cell_supervisor' and g.coordinator_person_id = ${personId})
+        or (${user.role} = 'cell_leader' and g.leader_person_id = ${personId}))
     order by gm.starts_at desc
     limit 50
   `

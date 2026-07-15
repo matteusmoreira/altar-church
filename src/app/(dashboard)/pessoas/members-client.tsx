@@ -107,6 +107,7 @@ const accessRoleLabels: Record<PersonAccessRole, string> = {
   admin: "Admin",
   pastor: "Pastor",
   ministry_leader: "Líder de ministério",
+  cell_supervisor: "Supervisor de células",
   cell_leader: "Líder de célula",
   communication: "Comunicação",
   finance: "Financeiro",
@@ -260,6 +261,7 @@ export function MembersClient({
   const [isDeleting, setIsDeleting] = useState(false)
   const [resolvingDuplicateId, setResolvingDuplicateId] = useState<string | null>(null)
   const [deletingPerson, setDeletingPerson] = useState<PersonListItem | null>(null)
+  const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState<PersonFormState>(emptyForm)
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
@@ -283,7 +285,27 @@ export function MembersClient({
     if (page > 1) params.set("page", String(page))
 
     const query = params.toString()
+    setSelectedPersonIds(new Set())
     router.push(query ? `${pathname}?${query}` : pathname)
+  }
+
+  const selectedPeople = peopleResult.people.filter((person) => selectedPersonIds.has(person.id))
+  const allPagePeopleSelected =
+    peopleResult.people.length > 0 && selectedPeople.length === peopleResult.people.length
+
+  const togglePersonSelection = (personId: string) => {
+    setSelectedPersonIds((current) => {
+      const next = new Set(current)
+      if (next.has(personId)) next.delete(personId)
+      else next.add(personId)
+      return next
+    })
+  }
+
+  const togglePageSelection = () => {
+    setSelectedPersonIds(
+      allPagePeopleSelected ? new Set() : new Set(peopleResult.people.map((person) => person.id)),
+    )
   }
 
   const handleFilterSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -371,23 +393,45 @@ export function MembersClient({
   }
 
   const handleDelete = async () => {
-    if (!deletingPerson) return
+    const peopleToDelete = deletingPerson ? [deletingPerson] : selectedPeople
+    if (peopleToDelete.length === 0) return
 
     setIsDeleting(true)
-    const result = await deletePerson({
-      id: deletingPerson.id,
-      companyId: deletingPerson.companyId,
-    })
+    const results = []
+    for (const person of peopleToDelete) {
+      const result = await deletePerson({
+        id: person.id,
+        companyId: person.companyId,
+      })
+      results.push({ person, result })
+    }
     setIsDeleting(false)
 
-    if (!result.ok) {
-      toast.error(result.error ?? "Não foi possível excluir a pessoa")
+    const failed = results.filter(({ result }) => !result.ok)
+    const removedCount = results.length - failed.length
+
+    if (failed.length > 0) {
+      const firstError = failed[0]?.result.error
+      toast.error(
+        removedCount > 0
+          ? `${removedCount} removida(s); ${failed.length} não puderam ser excluída(s).`
+          : firstError ?? "Não foi possível excluir as pessoas selecionadas",
+      )
+      setSelectedPersonIds(new Set(failed.map(({ person }) => person.id)))
+      setDeleteDialogOpen(false)
+      setDeletingPerson(null)
+      if (removedCount > 0) router.refresh()
       return
     }
 
-    toast.success("Pessoa removida com sucesso")
+    toast.success(
+      peopleToDelete.length === 1
+        ? "Pessoa removida com sucesso"
+        : `${peopleToDelete.length} pessoas removidas com sucesso`,
+    )
     setDeleteDialogOpen(false)
     setDeletingPerson(null)
+    setSelectedPersonIds(new Set())
     router.refresh()
   }
 
@@ -451,7 +495,7 @@ export function MembersClient({
                     placeholder="Buscar por nome, e-mail ou telefone"
                     value={filterState.search}
                     onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-                    className="pl-9"
+                    className="pl-9 md:pl-9"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -543,10 +587,62 @@ export function MembersClient({
                 </div>
               )}
 
+              {peopleResult.people.length > 0 && (
+                <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border/50 bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todas as pessoas desta página"
+                      checked={allPagePeopleSelected}
+                      onChange={togglePageSelection}
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                    <span className="text-sm font-medium">
+                      {selectedPeople.length > 0
+                        ? `${selectedPeople.length} selecionada${selectedPeople.length === 1 ? "" : "s"}`
+                        : "Selecionar pessoas desta página"}
+                    </span>
+                  </div>
+                  {selectedPeople.length > 0 && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedPersonIds(new Set())}
+                      >
+                        Limpar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setDeletingPerson(null)
+                          setDeleteDialogOpen(true)
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Excluir selecionadas
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label="Selecionar todas as pessoas desta página"
+                          checked={allPagePeopleSelected}
+                          onChange={togglePageSelection}
+                          className="h-4 w-4 accent-primary"
+                        />
+                      </TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Congregação</TableHead>
@@ -558,7 +654,16 @@ export function MembersClient({
                   </TableHeader>
                   <TableBody>
                     {peopleResult.people.map((person) => (
-                      <TableRow key={person.id}>
+                      <TableRow key={person.id} data-state={selectedPersonIds.has(person.id) ? "selected" : undefined}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar ${person.fullName}`}
+                            checked={selectedPersonIds.has(person.id)}
+                            onChange={() => togglePersonSelection(person.id)}
+                            className="h-4 w-4 accent-primary"
+                          />
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
@@ -634,8 +739,22 @@ export function MembersClient({
 
               <div className="space-y-3 md:hidden">
                 {peopleResult.people.map((person) => (
-                  <div key={person.id} className="rounded-lg border border-border/40 p-3">
+                  <div
+                    key={person.id}
+                    className={`rounded-lg border p-3 ${
+                      selectedPersonIds.has(person.id)
+                        ? "border-primary/50 bg-primary/5"
+                        : "border-border/40"
+                    }`}
+                  >
                     <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecionar ${person.fullName}`}
+                        checked={selectedPersonIds.has(person.id)}
+                        onChange={() => togglePersonSelection(person.id)}
+                        className="mt-3 h-4 w-4 shrink-0 accent-primary"
+                      />
                       <Avatar className="h-10 w-10 shrink-0">
                         <AvatarFallback className="gradient-primary text-xs text-white">
                           {initials(person.fullName)}
@@ -1107,9 +1226,15 @@ export function MembersClient({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="glass-strong">
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir pessoa</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deletingPerson ? "Excluir pessoa" : "Excluir pessoas selecionadas"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover <strong>{deletingPerson?.fullName}</strong>? A ação fica auditada.
+              {deletingPerson ? (
+                <>Tem certeza que deseja remover <strong>{deletingPerson.fullName}</strong>? A ação fica auditada.</>
+              ) : (
+                <>Tem certeza que deseja remover <strong>{selectedPeople.length} pessoa{selectedPeople.length === 1 ? "" : "s"}</strong>? As ações ficam auditadas.</>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1119,7 +1244,7 @@ export function MembersClient({
               disabled={isDeleting}
               className="bg-destructive text-destructive-foreground"
             >
-              {isDeleting ? "Excluindo..." : "Excluir"}
+              {isDeleting ? "Excluindo..." : deletingPerson ? "Excluir" : "Excluir selecionadas"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -22,6 +22,9 @@ type ManagedFileUploadInput = {
   purpose: string
   visibility?: "private" | "public"
   metadata?: Record<string, unknown>
+  allowedMimeTypes?: ReadonlySet<string>
+  allowedExtensions?: ReadonlySet<string>
+  maxSizeBytes?: number
 }
 
 type AttachFileInput = {
@@ -71,12 +74,18 @@ export function getOptionalFile(formData: FormData, key: string) {
   return value
 }
 
-export function assertManagedFile(file: File) {
-  if (!allowedMimeTypes.has(file.type)) {
+export function assertManagedFile(
+  file: File,
+  policy?: { allowedMimeTypes?: ReadonlySet<string>; allowedExtensions?: ReadonlySet<string>; maxSizeBytes?: number },
+) {
+  const mimeTypes = policy?.allowedMimeTypes ?? allowedMimeTypes
+  const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : ""
+  if (!mimeTypes.has(file.type) || (policy?.allowedExtensions && !policy.allowedExtensions.has(extension))) {
     throw new Error("Tipo de arquivo inválido")
   }
-  if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-    throw new Error("Arquivo deve ter até 10 MB")
+  const maxSizeBytes = policy?.maxSizeBytes ?? MAX_UPLOAD_SIZE_BYTES
+  if (file.size > maxSizeBytes) {
+    throw new Error(`Arquivo deve ter até ${Math.floor(maxSizeBytes / 1024 / 1024)} MB`)
   }
 }
 
@@ -85,7 +94,7 @@ async function getStorageClient() {
 }
 
 export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<ManagedFileUploadResult> {
-  assertManagedFile(input.file)
+  assertManagedFile(input.file, input)
   assertStorageSegment(input.entityTable, "Tabela")
   assertStorageSegment(input.purpose, "Finalidade")
 
@@ -119,6 +128,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
         owner_profile_id,
         entity_table,
         entity_id,
+        purpose,
         metadata
       )
       values (
@@ -132,6 +142,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
         ${input.ownerProfileId},
         ${input.entityTable},
         ${input.entityId ?? null},
+        ${input.purpose},
         ${JSON.stringify(input.metadata ?? {})}::jsonb
       )
       returning id

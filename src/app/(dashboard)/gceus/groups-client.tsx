@@ -98,7 +98,7 @@ interface GroupsClientProps {
 const weekDays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
 
 const typeLabels: Record<GroupType, string> = {
-  cell: "GCEU",
+  cell: "Célula",
   ministry: "Ministério",
   department: "Departamento",
   class: "Classe",
@@ -245,12 +245,17 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     return formOptions.people.find((person) => person.id === form.leaderPersonId)?.fullName ?? "Sem líder"
   }, [form.leaderPersonId, formOptions.people])
 
+  const supervisorLabel = useMemo(() => {
+    if (form.coordinatorPersonId === "none") return "Sem supervisor"
+    return formOptions.people.find((person) => person.id === form.coordinatorPersonId)?.fullName ?? "Sem supervisor"
+  }, [form.coordinatorPersonId, formOptions.people])
+
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const params = new URLSearchParams()
     if (filterState.search.trim()) params.set("search", filterState.search.trim())
     if (filterState.categoryId !== "all") params.set("categoryId", filterState.categoryId)
-    if (filterState.type !== "all") params.set("type", filterState.type)
+    params.set("type", "cell")
     if (filterState.status !== "all") params.set("status", filterState.status)
     if (filterState.meetingDay !== "all") params.set("meetingDay", filterState.meetingDay)
     router.push(params.toString() ? `${pathname}?${params.toString()}` : pathname)
@@ -288,10 +293,10 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     startTransition(async () => {
       const result = await saveGroup(buildActionInput(form))
       if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível salvar grupo")
+        toast.error(result.error ?? "Não foi possível salvar célula")
         return
       }
-      toast.success(form.id ? "Grupo atualizado" : "Grupo criado")
+      toast.success(form.id ? "Célula atualizada" : "Célula criada")
       setDialogOpen(false)
       router.refresh()
     })
@@ -302,10 +307,10 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     startTransition(async () => {
       const result = await deleteGroup({ id: groupToDelete.id, companyId: groupToDelete.companyId })
       if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível excluir grupo")
+        toast.error(result.error ?? "Não foi possível excluir célula")
         return
       }
-      toast.success("Grupo excluído")
+      toast.success("Célula excluída")
       setDeleteDialogOpen(false)
       setGroupToDelete(null)
       router.refresh()
@@ -314,15 +319,15 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
 
   return (
     <div className="space-y-6">
-      <PageHeader title="GCEUs e grupos" description="Gestão real de grupos, liderança, capacidade e agenda base.">
+      <PageHeader title="Células" description="Gestão de células, supervisão, liderança, participantes e encontros.">
         <Button onClick={openCreate} className="gradient-primary">
           <Plus className="mr-2 h-4 w-4" />
-          Novo grupo
+          Nova célula
         </Button>
       </PageHeader>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric title="Grupos" value={dashboard.total} icon={Network} />
+        <Metric title="Células" value={dashboard.total} icon={Network} />
         <Metric title="Ativos" value={dashboard.active} icon={UserCheck} />
         <Metric title="Inativos" value={dashboard.inactive} icon={Filter} />
         <Metric title="Participantes" value={dashboard.members} icon={UsersRound} />
@@ -341,8 +346,8 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
               <Input
                 value={filterState.search}
                 onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-                className="pl-9"
-                placeholder="Buscar grupo ou líder"
+                className="pl-9 md:pl-9"
+                placeholder="Buscar célula ou líder"
               />
             </div>
             <Select value={filterState.categoryId} onValueChange={(value) => setFilterState({ ...filterState, categoryId: value ?? "all" })}>
@@ -357,17 +362,6 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
                 <SelectItem value="all">Todas categorias</SelectItem>
                 {formOptions.categories.map((category) => (
                   <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterState.type} onValueChange={(value) => setFilterState({ ...filterState, type: value ?? "all" })}>
-              <SelectTrigger className="w-full">
-                <SelectValue>{filterState.type === "all" ? "Todos tipos" : typeLabels[filterState.type as GroupType]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos tipos</SelectItem>
-                {Object.entries(typeLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -391,23 +385,23 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
 
       <Card>
         <CardHeader>
-          <CardTitle>Grupos cadastrados</CardTitle>
-          <CardDescription>{groupsResult.total} grupos encontrados</CardDescription>
+          <CardTitle>Células cadastradas</CardTitle>
+          <CardDescription>{groupsResult.total} células encontradas</CardDescription>
         </CardHeader>
         <CardContent>
           {groupsResult.groups.length === 0 ? (
             <EmptyState
               icon={UsersRound}
-              title="Nenhum grupo encontrado"
-              description="Crie o primeiro grupo real para iniciar acompanhamento de GCEUs."
-              action={<Button onClick={openCreate}>Criar grupo</Button>}
+              title="Nenhuma célula encontrada"
+              description="Crie a primeira célula para iniciar o acompanhamento."
+              action={<Button onClick={openCreate}>Criar célula</Button>}
             />
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Grupo</TableHead>
+                    <TableHead>Célula</TableHead>
                     <TableHead>Liderança</TableHead>
                     <TableHead>Encontro</TableHead>
                     <TableHead>Participantes</TableHead>
@@ -521,7 +515,7 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <form onSubmit={submitGroup} className="space-y-5">
             <DialogHeader>
-              <DialogTitle>{form.id ? "Editar grupo" : "Novo grupo"}</DialogTitle>
+              <DialogTitle>{form.id ? "Editar célula" : "Nova célula"}</DialogTitle>
               <DialogDescription>Dados persistidos no banco com auditoria e validação no servidor.</DialogDescription>
             </DialogHeader>
 
@@ -533,19 +527,6 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
               <div className="grid gap-2 md:col-span-2">
                 <Label>Descrição</Label>
                 <Textarea data-testid="group-description-input" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Tipo</Label>
-                <Select value={form.type} onValueChange={(value) => setForm({ ...form, type: (value ?? "cell") as GroupType })}>
-                  <SelectTrigger data-testid="group-type-select" className="w-full">
-                    <SelectValue>{typeLabels[form.type]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(typeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="grid gap-2">
                 <Label>Categoria</Label>
@@ -586,6 +567,18 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
                     {formOptions.people.map((person) => (
                       <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Supervisor</Label>
+                <Select value={form.coordinatorPersonId} onValueChange={(value) => setForm({ ...form, coordinatorPersonId: value ?? "none" })}>
+                  <SelectTrigger data-testid="cell-supervisor-select" className="w-full">
+                    <SelectValue>{supervisorLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem supervisor</SelectItem>
+                    {formOptions.people.map((person) => <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -655,9 +648,9 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir grupo?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir célula?</AlertDialogTitle>
             <AlertDialogDescription>
-              O grupo será desativado e removido das listas operacionais. Auditoria será registrada.
+              A célula será desativada e removida das listas operacionais. Auditoria será registrada.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

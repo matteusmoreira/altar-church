@@ -17,7 +17,6 @@ import {
   HandHeart,
   Handshake,
   Heart,
-  Home,
   KanbanSquare,
   Layers3,
   LayoutDashboard,
@@ -73,7 +72,6 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
       { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
       { href: dashboardRoutes.visitors, label: "Visitantes", icon: UsersRound, moduleId: "visitors" },
       { href: dashboardRoutes.volunteers, label: "Voluntariado", icon: Handshake, moduleId: "volunteers" },
-      { href: dashboardRoutes.groups, label: "GCEUs", icon: Home, moduleId: "groups" },
       { href: dashboardRoutes.cells, label: "Células", icon: Network, moduleId: "cells" },
       { href: dashboardRoutes.prayer, label: "Intercessão", icon: HandHeart, moduleId: "prayer" },
       { href: dashboardRoutes["reading-plans"], label: "Discipulado", icon: BookOpen, moduleId: "reading-plans" },
@@ -108,7 +106,7 @@ const mobileNavItems: NavigationItem[] = [
   { href: dashboardRoutes.dashboard, label: "Início", icon: LayoutDashboard, moduleId: "dashboard" },
   { href: dashboardRoutes.members, label: "Pessoas", icon: Users, moduleId: "members" },
   { href: dashboardRoutes.events, label: "Eventos", icon: CalendarDays, moduleId: "events" },
-  { href: dashboardRoutes.groups, label: "GCEUs", icon: Home, moduleId: "groups" },
+  { href: dashboardRoutes.cells, label: "Células", icon: Network, moduleId: "cells" },
   { href: dashboardRoutes.finance, label: "Financeiro", icon: DollarSign, moduleId: "finance" },
 ]
 

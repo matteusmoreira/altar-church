@@ -222,7 +222,7 @@ export function SongsClient({ songsResult, filters }: SongsClientProps) {
             placeholder="Buscar por título, autor ou tema"
             value={filterState.search}
             onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-            className="pl-9"
+            className="pl-9 md:pl-9"
           />
         </div>
         <Select

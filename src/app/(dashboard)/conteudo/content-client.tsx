@@ -413,7 +413,7 @@ export function ContentClient({ data }: ContentClientProps) {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="pl-9"
+              className="pl-9 md:pl-9"
               placeholder="Buscar por título, autor ou categoria"
             />
           </div>

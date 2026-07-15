@@ -12,7 +12,6 @@ export const dashboardRoutes = {
   "donations": "/doacao",
   "events": "/eventos",
   "finance": "/financeiro",
-  "groups": "/gceus",
   "inpeace-play": "/inpeace-play",
   "members": "/pessoas",
   "ministries": "/ministerios",
@@ -39,7 +38,6 @@ export const legacyDashboardRoutes = {
   "donations": "/donations",
   "events": "/events",
   "finance": "/finance",
-  "groups": "/groups",
   "members": "/members",
   "ministries": "/ministries",
   "notifications": "/notifications",
@@ -59,6 +57,11 @@ export const legacyDashboardRedirects = Object.entries(legacyDashboardRoutes).ma
     destination: `${dashboardRoutes[moduleId as keyof typeof legacyDashboardRoutes]}/:path*`,
     permanent: true,
   })
+)
+
+legacyDashboardRedirects.push(
+  { source: "/gceus/:path*", destination: "/celulas/:path*", permanent: true },
+  { source: "/groups/:path*", destination: "/celulas/:path*", permanent: true },
 )
 
 export const protectedDashboardPrefixes = [

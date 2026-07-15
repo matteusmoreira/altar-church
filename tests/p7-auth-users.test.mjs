@@ -62,6 +62,6 @@ test("superadmin without assigned church uses the first active church across ope
 
   for (const file of tenantContextFiles) {
     const source = readFileSync(file, "utf8")
-    assert.match(source, /requireUserCompanyId\(user/, `${file} must use the shared tenant resolver`)
+    assert.match(source, /requireUserCompanyId\(user|getCellContext\(/, `${file} must use the shared tenant resolver`)
   }
 })

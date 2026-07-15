@@ -12,7 +12,6 @@ const friendlyRoutes = {
   congregations: "congregacoes",
   members: "pessoas",
   visitors: "visitantes",
-  groups: "gceus",
   cells: "celulas",
   prayer: "intercessao",
   "reading-plans": "discipulado",
@@ -62,4 +61,3 @@ test("shared select and dashboard shell are mobile-first", () => {
   assert.match(dialog, /max-h-\[calc\(100dvh-2rem\)\]/)
   assert.match(layout, /pb-\[calc\(5rem\+env\(safe-area-inset-bottom\)\)\]/)
 })
-

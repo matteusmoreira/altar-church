@@ -25,6 +25,7 @@ const roleLabels: Record<UserRole, string> = {
   admin: "Admin",
   pastor: "Pastor",
   ministry_leader: "Líder de ministério",
+  cell_supervisor: "Supervisor de células",
   cell_leader: "Líder de célula",
   communication: "Comunicação",
   finance: "Financeiro",
@@ -124,7 +125,7 @@ export function SettingsClient({ settingsData }: { settingsData: SettingsData })
                   placeholder="Buscar por nome, e-mail, empresa ou ID"
                   value={accessSearch}
                   onChange={(event) => setAccessSearch(event.target.value)}
-                  className="pl-9"
+                  className="pl-9 md:pl-9"
                 />
               </div>
             </CardHeader>

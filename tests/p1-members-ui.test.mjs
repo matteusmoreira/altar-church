@@ -27,6 +27,16 @@ test("members client uses server actions for create, edit and delete", () => {
   assert.doesNotMatch(client, /setMembers/)
 })
 
+test("members client supports page selection and bulk delete", () => {
+  const client = read("src/app/(dashboard)/pessoas/members-client.tsx")
+
+  assert.match(client, /selectedPersonIds/)
+  assert.match(client, /togglePageSelection/)
+  assert.match(client, /Selecionar todas as pessoas desta página/)
+  assert.match(client, /Excluir selecionadas/)
+  assert.match(client, /for \(const person of peopleToDelete\)/)
+})
+
 test("member detail page shows real profile history and journey data", () => {
   const page = read("src/app/(dashboard)/pessoas/[id]/page.tsx")
   const client = read("src/app/(dashboard)/pessoas/[id]/member-detail-client.tsx")

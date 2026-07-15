@@ -23,10 +23,15 @@ export default function LoginPage() {
   )
   const { login, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
+  const nextPath = () => {
+    if (typeof window === "undefined") return "/dashboard"
+    const value = new URLSearchParams(window.location.search).get("next")
+    return value?.startsWith("/") && !value.startsWith("//") ? value : "/dashboard"
+  }
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/dashboard")
+      router.replace(nextPath())
     }
   }, [isAuthenticated, isLoading, router])
 
@@ -37,7 +42,7 @@ export default function LoginPage() {
       const success = await login(email, password)
       if (success) {
         toast.success("Bem-vindo de volta!")
-        router.push("/dashboard")
+        router.push(nextPath())
       } else {
         toast.error("Credenciais invalidas ou perfil sem acesso")
       }

@@ -1,4 +1,4 @@
-export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_leader" | "communication" | "finance" | "volunteer" | "reader"
+export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_supervisor" | "cell_leader" | "communication" | "finance" | "volunteer" | "reader"
 
 export type ChurchStatus = "active" | "blocked" | "test"
 
@@ -15,6 +15,15 @@ export type Permission =
   | "cells.create"
   | "cells.edit"
   | "cells.delete"
+  | "cells.study.manage"
+  | "cells.meeting.manage"
+  | "cells.checkin.manage"
+  | "cells.photo.manage"
+  | "cells.notice.manage"
+  | "cells.prayer.manage"
+  | "cells.self.view"
+  | "cells.self.checkin"
+  | "cells.self.prayer"
   | "ministries.view"
   | "ministries.create"
   | "ministries.edit"
@@ -355,7 +364,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
     "members.view", "members.create", "members.edit", "members.delete", "members.export",
     "visitors.view", "visitors.create", "visitors.edit",
-    "cells.view", "cells.create", "cells.edit", "cells.delete",
+    "cells.view", "cells.create", "cells.edit", "cells.delete", "cells.study.manage", "cells.meeting.manage",
+    "cells.checkin.manage", "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage",
+    "cells.self.view", "cells.self.checkin", "cells.self.prayer",
     "ministries.view", "ministries.create", "ministries.edit",
     "events.view", "events.create", "events.edit", "events.delete",
     "attendance.view", "attendance.create",
@@ -378,7 +389,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   pastor: [
     "members.view", "members.create", "members.edit", "members.export",
     "visitors.view", "visitors.create", "visitors.edit",
-    "cells.view", "cells.create", "cells.edit",
+    "cells.view", "cells.create", "cells.edit", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
     "ministries.view", "ministries.create", "ministries.edit",
     "events.view", "events.create", "events.edit",
     "attendance.view", "attendance.create",
@@ -412,10 +423,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "schedules.view", "schedules.create", "schedules.edit",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_checkin.create",
   ],
+  cell_supervisor: [
+    "members.view", "visitors.view", "visitors.create",
+    "cells.view", "cells.edit", "cells.study.manage", "cells.meeting.manage",
+    "cells.checkin.manage", "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage",
+    "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+    "attendance.view", "attendance.create", "prayer.view", "prayer.create",
+  ],
   cell_leader: [
     "members.view",
     "visitors.view", "visitors.create",
-    "cells.view", "cells.edit",
+    "cells.view", "cells.edit", "cells.study.manage", "cells.meeting.manage", "cells.checkin.manage",
+    "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
     "events.view",
     "attendance.view", "attendance.create",
     "prayer.view", "prayer.create",
@@ -434,7 +453,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "subscription.view", "subscription.create", "subscription.edit",
   ],
   volunteer: [
-    "volunteer.self.view", "volunteer.self.checkin",
+    "volunteer.self.view", "volunteer.self.checkin", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
   ],
   reader: [
     "members.view",
@@ -442,7 +461,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "attendance.view",
     "prayer.view",
     "content.view",
-    "reports.view",
+    "reports.view", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
   ],
 }
 

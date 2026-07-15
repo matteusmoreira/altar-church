@@ -127,6 +127,7 @@ const roleLabels: Record<UserRole, string> = {
   admin: "Administrador",
   pastor: "Pastor",
   ministry_leader: "Líder de Ministério",
+  cell_supervisor: "Supervisor de Células",
   cell_leader: "Líder de Célula",
   communication: "Comunicação",
   finance: "Financeiro",
@@ -548,7 +549,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                 <div className="flex gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar..." className="pl-9" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar..." className="pl-9 md:pl-9" />
                   </div>
                   <Button onClick={() => openCompany()}>
                     <Plus className="mr-2 h-4 w-4" />

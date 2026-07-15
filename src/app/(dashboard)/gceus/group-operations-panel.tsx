@@ -121,7 +121,7 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
   function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedGroup || memberForm.personId === "none") {
-      toast.error("Selecione grupo e pessoa")
+      toast.error("Selecione célula e pessoa")
       return
     }
 
@@ -159,7 +159,11 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
   function submitMeeting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedGroup) {
-      toast.error("Selecione um grupo")
+      toast.error("Selecione uma célula")
+      return
+    }
+    if (meetingForm.studyId === "none") {
+      toast.error("Selecione o estudo do encontro")
       return
     }
 
@@ -195,14 +199,14 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
     <Card>
       <CardHeader>
         <CardTitle>Participantes e reuniões</CardTitle>
-        <CardDescription>Operação real de membros de grupos e relatórios de presença.</CardDescription>
+        <CardDescription>Participantes e encontros reais das células.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-2 md:max-w-md">
-          <Label>Grupo operacional</Label>
+          <Label>Célula operacional</Label>
           <Select value={selectedGroup?.id ?? ""} onValueChange={(value) => setSelectedGroupId(value ?? "")}>
             <SelectTrigger data-testid="group-ops-group-select" className="w-full">
-              <SelectValue>{selectedGroup?.name ?? "Selecione grupo"}</SelectValue>
+              <SelectValue>{selectedGroup?.name ?? "Selecione célula"}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {groups.map((group) => (
@@ -325,7 +329,6 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Sem estudo</SelectItem>
                     {formOptions.studies.map((study) => (
                       <SelectItem key={study.id} value={study.id}>{study.title}</SelectItem>
                     ))}

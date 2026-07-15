@@ -74,6 +74,7 @@ const accessRoleLabels: Record<PersonAccessRole, string> = {
   admin: "Admin",
   pastor: "Pastor",
   ministry_leader: "Líder de ministério",
+  cell_supervisor: "Supervisor de células",
   cell_leader: "Líder de célula",
   communication: "Comunicação",
   finance: "Financeiro",
@@ -84,7 +85,7 @@ const accessRoleLabels: Record<PersonAccessRole, string> = {
 const activityCategoryLabels: Record<string, string> = {
   ministry: "Ministério",
   pastoral: "Pastoral",
-  small_group: "GCEU",
+  small_group: "Célula",
   volunteer: "Voluntariado",
   worship: "Louvor",
 }

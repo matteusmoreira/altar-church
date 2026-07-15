@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Altar Church API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     REST API do Altar Church.
     Autenticação: sessão Supabase (cookie SSR) **ou** API key `Authorization: Bearer ack_live_…`.
@@ -93,18 +93,58 @@ paths:
       summary: Perfil da igreja
     patch:
       summary: Atualizar perfil da igreja
+  /cells:
+    get:
+      summary: Listar células
+    post:
+      summary: Criar célula
+  /cells/{id}:
+    get:
+      summary: Detalhe da célula
+    patch:
+      summary: Atualizar célula
+    delete:
+      summary: Remover célula
+  /cells/portal:
+    get:
+      summary: Portal pessoal ou painel operacional de células
   /groups:
     get:
-      summary: Listar grupos
+      deprecated: true
+      summary: Alias legado para listar células
     post:
-      summary: Criar grupo
+      deprecated: true
+      summary: Alias legado para criar célula
   /groups/{id}:
     get:
-      summary: Detalhe do grupo
+      deprecated: true
+      summary: Alias legado para detalhe da célula
     patch:
-      summary: Atualizar grupo
+      deprecated: true
+      summary: Alias legado para atualizar célula
     delete:
-      summary: Remover grupo
+      deprecated: true
+      summary: Alias legado para remover célula
+  /cell-studies:
+    post:
+      summary: Enviar estudo em multipart/form-data
+  /cell-meetings/{id}/checkin:
+    post:
+      summary: Abrir sessão QR do encontro
+    delete:
+      summary: Encerrar check-in e consolidar presença
+  /cell-checkins:
+    post:
+      summary: Confirmar QR em JSON ou registrar presença manual em multipart/form-data
+  /cell-meetings/{id}/photos:
+    post:
+      summary: Enviar fotos do encontro
+  /cell-prayers:
+    post:
+      summary: Enviar pedido de oração da célula
+  /cell-notices:
+    post:
+      summary: Publicar aviso para células
   /groups/dashboard:
     get:
       summary: Dashboard de grupos

@@ -75,9 +75,13 @@ export interface GroupStudy {
   id: string
   companyId: string
   title: string
+  description: string
   contentType: GroupStudyType
   content: string
   scriptureRef: string
+  fileId: string | null
+  fileName: string | null
+  fileUrl: string | null
   isActive: boolean
 }
 

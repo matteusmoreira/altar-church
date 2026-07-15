@@ -56,15 +56,14 @@ const checklistItems = [
   { id: "church", label: "Cadastrar igreja" },
   { id: "people", label: "Cadastrar pessoas" },
   { id: "content", label: "Criar conteúdo" },
-  { id: "groups", label: "Criar GCEUs/células" },
+  { id: "groups", label: "Criar células" },
   { id: "users", label: "Convidar usuários" },
   { id: "production", label: "Validar gate de produção" },
 ]
 
 const shortcuts = [
   { href: "/pessoas", icon: Users, title: "Pessoas", description: "Gerencie membros, visitantes e cadastros" },
-  { href: "/gceus", icon: UsersRound, title: "GCEUs", description: "Acompanhe grupos, participantes e reuniões" },
-  { href: "/celulas", icon: UsersRound, title: "Células", description: "Visão operacional dos grupos do tipo célula" },
+  { href: "/celulas", icon: UsersRound, title: "Células", description: "Participantes, encontros, estudos e check-in" },
   { href: "/conteudo", icon: BookOpen, title: "Conteúdo", description: "Devocionais, notícias e publicações" },
   { href: "/visitantes", icon: UserPlus, title: "Visitantes", description: "Acompanhamento de visitantes reais" },
   { href: "/ministerios", icon: Church, title: "Ministérios", description: "Gerencie ministérios persistidos" },

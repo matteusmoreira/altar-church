@@ -29,6 +29,7 @@ const accessRoleSchema = z.enum([
   "admin",
   "pastor",
   "ministry_leader",
+  "cell_supervisor",
   "cell_leader",
   "communication",
   "finance",
@@ -291,13 +292,14 @@ async function provisionPersonAccess(input: {
           name = ${person.full_name},
           email = ${email},
           role = ${input.role},
+          person_id = ${person.id},
           active = true
       where id = ${profileId}
     `
   } else {
     const rows = await sql<{ id: string }[]>`
-      insert into public.profiles (company_id, auth_user_id, name, email, role, active)
-      values (${input.companyId}, ${authUserId}, ${person.full_name}, ${email}, ${input.role}, true)
+      insert into public.profiles (company_id, auth_user_id, person_id, name, email, role, active)
+      values (${input.companyId}, ${authUserId}, ${person.id}, ${person.full_name}, ${email}, ${input.role}, true)
       returning id
     `
     profileId = rows[0]?.id ?? null
@@ -643,4 +645,3 @@ export async function resolveDuplicateCandidate(input: DuplicateCandidateActionI
     return toErrorResult(error)
   }
 }
-

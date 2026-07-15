@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
-import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { getCellContext, requireManagedCell } from "@/lib/cells/access"
 import type { GroupsActionResult, SaveGroupInput, SaveGroupMeetingInput, SaveGroupMemberInput } from "./types"
 
 const nullableUuidSchema = z
@@ -123,17 +123,10 @@ function toErrorResult(error: unknown): GroupsActionResult {
 }
 
 async function resolveActionCompanyId(inputCompanyId?: string | null) {
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error("Acesso negado")
-  }
-
-  const companyId = requireUserCompanyId(user, inputCompanyId)
-  return { user, companyId }
+  return getCellContext(inputCompanyId)
 }
 
 function refreshGroupsPaths() {
-  revalidatePath("/gceus")
   revalidatePath("/celulas")
   revalidatePath("/dashboard")
   revalidatePath("/informacoes")
@@ -165,6 +158,7 @@ async function assertGroupReference(id: string, companyId: string) {
     from public.groups
     where id = ${id}
       and company_id = ${companyId}
+      and type = 'cell'
       and deleted_at is null
     limit 1
   `
@@ -174,16 +168,31 @@ async function assertGroupReference(id: string, companyId: string) {
   }
 }
 
-async function assertStudyReference(id: string | null, companyId: string) {
+async function assertStudyReference(
+  id: string | null,
+  companyId: string,
+  groupId: string,
+  unrestricted: boolean,
+) {
   if (!id) return
 
   const sql = getSql()
   const rows = await sql<{ id: string }[]>`
-    select id
-    from public.group_studies
-    where id = ${id}
-      and company_id = ${companyId}
-      and deleted_at is null
+    select study.id
+    from public.group_studies study
+    where study.id = ${id}
+      and study.company_id = ${companyId}
+      and study.deleted_at is null
+      and (
+        ${unrestricted}
+        or study.audience = 'all'
+        or exists (
+          select 1
+          from public.cell_study_targets target
+          where target.study_id = study.id
+            and target.group_id = ${groupId}
+        )
+      )
     limit 1
   `
 
@@ -198,9 +207,10 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
 
     if (parsed.id) {
-      await requirePermission("groups.edit", companyId)
+      await requirePermission("cells.edit", companyId)
+      await requireManagedCell({ user, companyId, personId: (await getCellContext(companyId)).personId }, parsed.id)
     } else {
-      await requirePermission("groups.create", companyId)
+      await requirePermission("cells.create", companyId)
     }
 
     await Promise.all([
@@ -221,7 +231,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
             congregation_id = ${parsed.congregationId},
             name = ${parsed.name},
             description = ${parsed.description},
-            type = ${parsed.type},
+            type = 'cell',
             leader_person_id = ${parsed.leaderPersonId},
             co_leader_person_id = ${parsed.coLeaderPersonId},
             coordinator_person_id = ${parsed.coordinatorPersonId},
@@ -273,7 +283,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           ${parsed.congregationId},
           ${parsed.name},
           ${parsed.description},
-          ${parsed.type},
+          'cell',
           ${parsed.leaderPersonId},
           ${parsed.coLeaderPersonId},
           ${parsed.coordinatorPersonId},
@@ -305,7 +315,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
       entityId: groupId,
       companyId,
       metadata: {
-        type: parsed.type,
+        type: "cell",
         isActive: parsed.isActive,
         acceptsRequests: parsed.acceptsRequests,
       },
@@ -322,7 +332,7 @@ export async function deleteGroup(input: { id: string; companyId?: string | null
   try {
     const parsed = deleteGroupSchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
-    await requirePermission("groups.delete", companyId)
+    await requirePermission("cells.delete", companyId)
 
     const sql = getSql()
     const rows = await sql<{ id: string }[]>`
@@ -360,7 +370,8 @@ export async function saveGroupMember(input: SaveGroupMemberInput): Promise<Grou
   try {
     const parsed = groupMemberSchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
-    await requirePermission("groups.edit", companyId)
+    await requirePermission("cells.edit", companyId)
+    await requireManagedCell(await getCellContext(companyId), parsed.groupId)
 
     await Promise.all([
       assertGroupReference(parsed.groupId, companyId),
@@ -448,9 +459,14 @@ export async function removeGroupMember(input: { id: string; companyId?: string 
   try {
     const parsed = removeGroupMemberSchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
-    await requirePermission("groups.edit", companyId)
+    await requirePermission("cells.edit", companyId)
 
     const sql = getSql()
+    const memberRows = await sql<{ group_id: string }[]>`
+      select group_id from public.group_members where id = ${parsed.id} and company_id = ${companyId}
+    `
+    if (!memberRows[0]) throw new Error("Participante não encontrado")
+    await requireManagedCell(await getCellContext(companyId), memberRows[0].group_id)
     const rows = await sql<{ id: string; group_id: string; person_id: string }[]>`
       update public.group_members
       set status = 'inactive',
@@ -488,11 +504,21 @@ export async function saveGroupMeeting(input: SaveGroupMeetingInput): Promise<Gr
   try {
     const parsed = groupMeetingSchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
-    await requirePermission("groups.edit", companyId)
+    await requirePermission("cells.meeting.manage", companyId)
+    await requireManagedCell(await getCellContext(companyId), parsed.groupId)
+
+    if (parsed.reportStatus !== "cancelled" && !parsed.studyId) {
+      throw new Error("Selecione o estudo do encontro")
+    }
 
     await Promise.all([
       assertGroupReference(parsed.groupId, companyId),
-      assertStudyReference(parsed.studyId, companyId),
+      assertStudyReference(
+        parsed.studyId,
+        companyId,
+        parsed.groupId,
+        user.role === "admin" || user.role === "superadmin",
+      ),
     ])
 
     const sql = getSql()

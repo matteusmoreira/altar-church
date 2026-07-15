@@ -47,6 +47,7 @@ const profileSchema = z
       "admin",
       "pastor",
       "ministry_leader",
+      "cell_supervisor",
       "cell_leader",
       "communication",
       "finance",
