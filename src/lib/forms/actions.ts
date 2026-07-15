@@ -219,7 +219,7 @@ async function insertDefaultFields(formId: string, companyId: string, userId: st
     {
       fieldType: "text",
       label: "Nome completo",
-      fieldKey: "nome_completo",
+      fieldKey: "nome",
       mapTo: "person_name",
       required: true,
       sortOrder: 10,
@@ -849,14 +849,11 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
         },
       })
       // Aliases canônicos para automações ({{nome}}, {{telefone}}, {{email}}).
-      // O form padrão usa field_key "nome_completo"; o Chat/templates esperam "nome".
+      // Cada field_key do form vira {{field_key}}; estes aliases cobrem map_to de pessoa.
       const templateFields: Record<string, unknown> = { ...normalized }
       if (personName) {
         templateFields.nome = personName
         templateFields.name = personName
-        if (templateFields.nome_completo == null || templateFields.nome_completo === "") {
-          templateFields.nome_completo = personName
-        }
       }
       if (personPhone) {
         templateFields.telefone = personPhone

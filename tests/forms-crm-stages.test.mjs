@@ -46,3 +46,18 @@ test("dashboard route and permissions include forms", () => {
   assert(types.includes('"forms.delete"'))
   assert(types.includes("stageId"))
 })
+
+test("form defaults and builder expose automation variables", () => {
+  const actions = readFileSync("src/lib/forms/actions.ts", "utf8")
+  const builder = readFileSync(
+    "src/app/(dashboard)/formularios/[id]/form-builder-client.tsx",
+    "utf8",
+  )
+  // form novo: variável {{nome}} (não nome_completo)
+  assert(actions.includes('fieldKey: "nome"'))
+  assert(!actions.includes('fieldKey: "nome_completo"'))
+  assert(builder.includes("Variável da automação"))
+  assert(builder.includes("Variáveis para automação"))
+  assert(builder.includes("suggestVariableFromLabel"))
+  assert(builder.includes("formatAutomationVar"))
+})

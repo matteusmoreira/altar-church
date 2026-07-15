@@ -32,6 +32,25 @@ Para enviar leads ao **Altar Chat** (Kanban + automação WhatsApp):
 
 Um formulário por URL de automação = roteamento configurável (ex.: Visitantes → coluna `novo`, Discipulado → outra auto/coluna).
 
+### Variáveis por campo (`{{...}}`)
+
+No construtor do formulário, cada campo tem uma **variável da automação** (armazenada como `field_key`):
+
+| Rótulo no form | Variável sugerida | Uso no Altar Chat |
+|----------------|-------------------|-------------------|
+| Nome completo | `nome` | `{{nome}}` |
+| Endereço | `endereco` | `{{endereco}}` |
+| Telefone | `telefone` | `{{telefone}}` |
+
+- A variável é gerada automaticamente a partir do rótulo (editável).
+- No builder: painel **Variáveis para automação** com botão copiar.
+- No webhook, o valor vai em `data.fields.<variavel>`.
+- O Altar Chat resolve qualquer chave de `fields` como `{{variavel}}`.
+
+Variáveis de sistema (sempre no envelope): `{{form_title}}`, `{{form_slug}}`, `{{source}}`.
+
+Aliases de pessoa (quando há `map_to`): `{{nome}}`, `{{telefone}}`, `{{email}}` também são garantidos no payload.
+
 ### Payload (resumo)
 
 ```json
@@ -47,9 +66,10 @@ Um formulário por URL de automação = roteamento configurável (ex.: Visitante
     "crmCard": { "id": "...", "stageId": "..." },
     "person": { "id": "...", "name": "...", "email": null, "phone": "+55..." },
     "fields": {
-      "nome_completo": "...",
-      "telefone": "...",
       "nome": "...",
+      "endereco": "...",
+      "telefone": "...",
+      "email": "...",
       "name": "...",
       "phone": "..."
     },
@@ -57,8 +77,6 @@ Um formulário por URL de automação = roteamento configurável (ex.: Visitante
   }
 }
 ```
-
-Variáveis canônicas em `data.fields` (sempre presentes no envio real): `nome`, `name`, `telefone`, `phone`, `email` (se houver) — além das chaves originais do formulário (ex.: `nome_completo`).
 
 ### Headers
 

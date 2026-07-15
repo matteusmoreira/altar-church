@@ -66,6 +66,8 @@ type FieldFormState = {
   required: boolean
   optionsText: string
   mapTo: FormFieldMapTo
+  /** Se true, não sobrescreve a variável ao digitar o rótulo */
+  variableLocked: boolean
 }
 
 const fieldTypeLabels: Record<FormFieldType, string> = {
@@ -87,6 +89,94 @@ const mapToLabels: Record<FormFieldMapTo, string> = {
   none: "Somente no envio",
 }
 
+const SYSTEM_AUTOMATION_VARS = ["form_title", "form_slug", "source"] as const
+
+/** Slug de variável a partir do rótulo (espelha fieldKeyify do server). */
+function slugifyVariable(value: string) {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60) || "campo"
+  )
+}
+
+/**
+ * Sugere variável amigável a partir do rótulo.
+ * Ex.: "Nome completo" → nome, "Endereço" → endereco
+ */
+function suggestVariableFromLabel(label: string): string {
+  const normalized = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+
+  if (!normalized) return ""
+
+  if (
+    normalized === "nome" ||
+    normalized === "name" ||
+    normalized === "nome completo" ||
+    normalized === "seu nome" ||
+    normalized === "nome e sobrenome" ||
+    normalized.startsWith("nome completo")
+  ) {
+    return "nome"
+  }
+  if (
+    normalized === "telefone" ||
+    normalized === "celular" ||
+    normalized === "whatsapp" ||
+    normalized === "fone" ||
+    normalized === "tel" ||
+    normalized.includes("telefone") ||
+    normalized.includes("whatsapp")
+  ) {
+    return "telefone"
+  }
+  if (
+    normalized === "email" ||
+    normalized === "e mail" ||
+    normalized === "e-mail" ||
+    normalized.includes("email") ||
+    normalized.includes("e mail")
+  ) {
+    return "email"
+  }
+  if (
+    normalized === "endereco" ||
+    normalized === "endereco completo" ||
+    normalized.includes("endereco")
+  ) {
+    return "endereco"
+  }
+
+  return slugifyVariable(label)
+}
+
+function formatAutomationVar(key: string) {
+  const k = key.trim()
+  if (!k) return ""
+  return `{{${k}}}`
+}
+
+async function copyAutomationVar(key: string) {
+  const text = formatAutomationVar(key)
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`${text} copiado`)
+  } catch {
+    toast.error("Não foi possível copiar")
+  }
+}
+
 function emptyFieldForm(): FieldFormState {
   return {
     id: null,
@@ -98,6 +188,7 @@ function emptyFieldForm(): FieldFormState {
     required: false,
     optionsText: "",
     mapTo: "none",
+    variableLocked: false,
   }
 }
 
@@ -166,6 +257,21 @@ export function FormBuilderClient({
     })
   }
 
+  const automationVariables = useMemo(() => {
+    const fromFields = orderedFields.map((f) => f.fieldKey).filter(Boolean)
+    const fromMapTo: string[] = []
+    for (const f of orderedFields) {
+      if (f.mapTo === "person_name" && !fromFields.includes("nome")) fromMapTo.push("nome")
+      if (f.mapTo === "person_phone" && !fromFields.includes("telefone")) fromMapTo.push("telefone")
+      if (f.mapTo === "person_email" && !fromFields.includes("email")) fromMapTo.push("email")
+    }
+    return {
+      fields: fromFields,
+      person: [...new Set(fromMapTo)],
+      system: [...SYSTEM_AUTOMATION_VARS],
+    }
+  }, [orderedFields])
+
   function openCreateField() {
     setFieldForm(emptyFieldForm())
     setFieldOpen(true)
@@ -182,6 +288,8 @@ export function FormBuilderClient({
       required: field.required,
       optionsText: field.options.join("\n"),
       mapTo: field.mapTo,
+      // Ao editar, trava para não sobrescrever a variável existente ao mudar o rótulo
+      variableLocked: true,
     })
     setFieldOpen(true)
   }
@@ -306,11 +414,15 @@ export function FormBuilderClient({
 
         <TabsContent value="fields" className="mt-4">
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-4">
             <Card className="glass">
               <CardHeader className="flex flex-row items-center justify-between space-y-0">
                 <div>
                   <CardTitle className="text-base">Campos do formulário</CardTitle>
-                  <CardDescription>Adicione, reordene e mapeie para o Kanban/pessoa.</CardDescription>
+                  <CardDescription>
+                    Cada campo gera uma variável <code className="text-xs">{"{{...}}"}</code> para
+                    o Altar Chat.
+                  </CardDescription>
                 </div>
                 <Button type="button" onClick={openCreateField}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -357,11 +469,26 @@ export function FormBuilderClient({
                           <span className="font-medium text-sm">{field.label}</span>
                           {field.required ? <Badge variant="secondary">obrigatório</Badge> : null}
                           <Badge variant="outline">{fieldTypeLabels[field.fieldType]}</Badge>
+                          <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-primary">
+                            {formatAutomationVar(field.fieldKey)}
+                          </code>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {field.fieldKey} · {mapToLabels[field.mapTo]}
+                          {mapToLabels[field.mapTo]}
                         </p>
                       </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title={`Copiar ${formatAutomationVar(field.fieldKey)}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void copyAutomationVar(field.fieldKey)
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
                       <Button
                         type="button"
                         variant="ghost"
@@ -376,6 +503,81 @@ export function FormBuilderClient({
                 )}
               </CardContent>
             </Card>
+
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="text-base">Variáveis para automação</CardTitle>
+                <CardDescription>
+                  Cole no bloco <strong>Enviar texto</strong> do Altar Chat (ex.:{" "}
+                  <code className="text-xs">{"Olá {{nome}}!"}</code>).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Campos do form</p>
+                  {automationVariables.fields.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Adicione campos para gerar variáveis.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {automationVariables.fields.map((key) => (
+                        <Button
+                          key={key}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="font-mono text-xs"
+                          onClick={() => void copyAutomationVar(key)}
+                        >
+                          {formatAutomationVar(key)}
+                          <Copy className="ml-1.5 h-3 w-3 opacity-60" />
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {automationVariables.person.length > 0 ? (
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                      Pessoa (map_to)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {automationVariables.person.map((key) => (
+                        <Button
+                          key={key}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="font-mono text-xs"
+                          onClick={() => void copyAutomationVar(key)}
+                        >
+                          {formatAutomationVar(key)}
+                          <Copy className="ml-1.5 h-3 w-3 opacity-60" />
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Sistema</p>
+                  <div className="flex flex-wrap gap-2">
+                    {automationVariables.system.map((key) => (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="border font-mono text-xs"
+                        onClick={() => void copyAutomationVar(key)}
+                      >
+                        {formatAutomationVar(key)}
+                        <Copy className="ml-1.5 h-3 w-3 opacity-60" />
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            </div>
 
             <Card className="glass">
               <CardHeader>
@@ -619,15 +821,32 @@ export function FormBuilderClient({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{fieldForm.id ? "Editar campo" : "Novo campo"}</DialogTitle>
-            <DialogDescription>Defina o tipo e para onde o valor é mapeado.</DialogDescription>
+            <DialogDescription>
+              O rótulo aparece no formulário público; a variável vira{" "}
+              <code className="text-xs">{"{{...}}"}</code> no Altar Chat.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitField} className="grid gap-4">
             <div className="grid gap-2">
               <Label>Rótulo</Label>
               <Input
                 value={fieldForm.label}
-                onChange={(e) => setFieldForm((c) => ({ ...c, label: e.target.value }))}
+                onChange={(e) => {
+                  const label = e.target.value
+                  setFieldForm((c) => {
+                    if (c.variableLocked) {
+                      return { ...c, label }
+                    }
+                    const fieldKey = suggestVariableFromLabel(label)
+                    const mapTo =
+                      c.mapTo === "none"
+                        ? suggestedMapTo(c.fieldType, fieldKey)
+                        : c.mapTo
+                    return { ...c, label, fieldKey, mapTo }
+                  })
+                }}
                 required
+                placeholder="Ex.: Nome completo, Endereço"
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -680,19 +899,51 @@ export function FormBuilderClient({
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Chave interna (opcional)</Label>
-              <Input
-                value={fieldForm.fieldKey}
-                onChange={(e) => {
-                  const fieldKey = e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, "_")
-                  setFieldForm((c) => {
-                    const nextMap =
-                      c.mapTo === "none" ? suggestedMapTo(c.fieldType, fieldKey) : c.mapTo
-                    return { ...c, fieldKey, mapTo: nextMap }
-                  })
-                }}
-                placeholder="gerada a partir do rótulo"
-              />
+              <Label>Variável da automação</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={fieldForm.fieldKey}
+                  onChange={(e) => {
+                    const fieldKey = e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, "_")
+                    setFieldForm((c) => {
+                      const nextMap =
+                        c.mapTo === "none" ? suggestedMapTo(c.fieldType, fieldKey) : c.mapTo
+                      return {
+                        ...c,
+                        fieldKey,
+                        mapTo: nextMap,
+                        variableLocked: true,
+                      }
+                    })
+                  }}
+                  placeholder="gerada a partir do rótulo"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={!fieldForm.fieldKey}
+                  title="Copiar variável"
+                  onClick={() => void copyAutomationVar(fieldForm.fieldKey)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Usar na automação:</span>
+                {fieldForm.fieldKey ? (
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-medium text-primary">
+                    {formatAutomationVar(fieldForm.fieldKey)}
+                  </code>
+                ) : (
+                  <span className="italic">digite o rótulo</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                No Altar Chat, cole esta variável no bloco Enviar texto. Ex.:{" "}
+                <code className="text-[11px]">{"Olá {{nome}}! Mora em {{endereco}}?"}</code>
+              </p>
             </div>
             <div className="grid gap-2">
               <Label>Placeholder</Label>

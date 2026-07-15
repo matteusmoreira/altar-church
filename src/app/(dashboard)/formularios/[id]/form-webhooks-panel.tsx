@@ -140,8 +140,9 @@ export function FormWebhooksPanel({
                 alguém preenche o form público.
               </span>
               <span className="block text-muted-foreground">
-                A aba <strong>Envios</strong> (ao lado) lista pessoas que preencheram o form — não é
-                o log do webhook. O log de entrega está nesta aba, abaixo.
+                As variáveis <code className="text-xs">{"{{campo}}"}</code> vêm da aba{" "}
+                <strong>Campos</strong> (variável de cada campo). A aba <strong>Envios</strong> lista
+                quem preencheu; o log de entrega do webhook está abaixo.
               </span>
             </CardDescription>
           </div>
