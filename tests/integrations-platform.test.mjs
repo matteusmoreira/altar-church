@@ -95,6 +95,9 @@ test("integrations lib and routes exist", () => {
   const submit = read("src/lib/forms/actions.ts")
   assert.match(submit, /form\.submitted/)
   assert.match(submit, /enqueueIntegrationEventSafe/)
+  // aliases canônicos para {{nome}} / {{telefone}} no Altar Chat
+  assert.match(submit, /templateFields\.nome/)
+  assert.match(submit, /templateFields\.telefone/)
 
   const apiRoot = join(root, "src/app/api/v1")
   const routes = walk(apiRoot).map((r) => r.replace(/\\/g, "/"))

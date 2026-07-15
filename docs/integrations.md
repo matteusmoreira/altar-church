@@ -46,11 +46,19 @@ Um formulário por URL de automação = roteamento configurável (ex.: Visitante
     "form": { "id": "...", "title": "...", "slug": "..." },
     "crmCard": { "id": "...", "stageId": "..." },
     "person": { "id": "...", "name": "...", "email": null, "phone": "+55..." },
-    "fields": { "nome": "...", "telefone": "..." },
+    "fields": {
+      "nome_completo": "...",
+      "telefone": "...",
+      "nome": "...",
+      "name": "...",
+      "phone": "..."
+    },
     "source": "Formulário: ..."
   }
 }
 ```
+
+Variáveis canônicas em `data.fields` (sempre presentes no envio real): `nome`, `name`, `telefone`, `phone`, `email` (se houver) — além das chaves originais do formulário (ex.: `nome_completo`).
 
 ### Headers
 

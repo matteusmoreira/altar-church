@@ -670,9 +670,14 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
       ) {
         personPhone = String(value)
       }
+      // Fallback: chaves comuns de nome (inclui nome_completo do form padrão)
       else if (
         !personName &&
-        (field.field_key === "nome" || field.field_key === "name")
+        (field.field_key === "nome" ||
+          field.field_key === "name" ||
+          field.field_key === "nome_completo" ||
+          field.field_key === "full_name" ||
+          field.field_key.includes("nome"))
       ) {
         personName = String(value)
       }
@@ -843,6 +848,27 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
           },
         },
       })
+      // Aliases canônicos para automações ({{nome}}, {{telefone}}, {{email}}).
+      // O form padrão usa field_key "nome_completo"; o Chat/templates esperam "nome".
+      const templateFields: Record<string, unknown> = { ...normalized }
+      if (personName) {
+        templateFields.nome = personName
+        templateFields.name = personName
+        if (templateFields.nome_completo == null || templateFields.nome_completo === "") {
+          templateFields.nome_completo = personName
+        }
+      }
+      if (personPhone) {
+        templateFields.telefone = personPhone
+        templateFields.phone = personPhone
+        if (templateFields.celular == null || templateFields.celular === "") {
+          templateFields.celular = personPhone
+        }
+      }
+      if (personEmail) {
+        templateFields.email = personEmail
+      }
+
       await enqueueIntegrationEventSafe({
         companyId: company.id,
         companySlug: company.slug,
@@ -855,7 +881,7 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
           form: { id: form.id, title: form.title, slug: form.slug },
           crmCard: { id: crmCardId, stageId },
           person: personPayload,
-          fields: normalized,
+          fields: templateFields,
           source: `Formulário: ${form.title}`,
         },
       })
