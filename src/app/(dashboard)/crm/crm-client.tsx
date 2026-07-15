@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
+  CalendarClock,
   Columns3,
   Edit,
   MoreVertical,
@@ -82,6 +83,19 @@ function formatDate(value?: string) {
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`))
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
+}
+
 function emptyCardForm(defaultStageId: string): CardFormState {
   return {
     id: null,
@@ -136,6 +150,10 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
     }
     return map
   }, [cards, stages])
+
+  const editingCardCreatedAt = cardForm.id
+    ? formatDateTime(cards.find((item) => item.id === cardForm.id)?.createdAt)
+    : ""
 
   function openCreateCard(stageId?: string) {
     setCardForm(emptyCardForm(stageId || defaultStageId))
@@ -398,11 +416,19 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
                           {card.source}
                         </div>
                       ) : null}
+                      {card.createdAt ? (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                          <CalendarClock className="h-3 w-3 shrink-0" />
+                          {formatDateTime(card.createdAt)}
+                        </div>
+                      ) : null}
                       {card.assignedToName ? (
                         <p className="mt-1 text-xs text-muted-foreground">{card.assignedToName}</p>
                       ) : null}
                       {card.lastContact ? (
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDate(card.lastContact)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Último contato: {formatDate(card.lastContact)}
+                        </p>
                       ) : null}
                     </div>
                   ))}
@@ -431,7 +457,10 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{cardForm.id ? "Editar card" : "Novo card"}</DialogTitle>
-            <DialogDescription>Vincule a uma pessoa do cadastro ou preencha manualmente.</DialogDescription>
+            <DialogDescription>
+              Vincule a uma pessoa do cadastro ou preencha manualmente.
+              {editingCardCreatedAt ? ` Preenchido em ${editingCardCreatedAt}.` : null}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitCard} className="grid gap-4">
             <div className="grid gap-2">
