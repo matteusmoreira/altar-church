@@ -1,7 +1,6 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Mail, MessageSquare, Megaphone, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/shared"
-import { sendKidCampaign } from "@/lib/kids/actions"
+import { loadKidsCommunicationData, markKidConversationRead, sendKidCampaign, sendKidInternalMessage } from "@/lib/kids/actions"
 import type { KidsCommunicationData } from "@/lib/kids/types"
+import { createClient } from "@/lib/supabase/client"
 
 function showResult(result: { ok: boolean; error?: string }) {
   if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
@@ -26,9 +26,9 @@ function formatDateTime(value: string) {
 
 type SegmentKind = "all" | "congregation" | "classroom" | "age" | "kid"
 
-export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) {
-  const router = useRouter()
-  const [channel, setChannel] = useState<"whatsapp" | "email">("whatsapp")
+export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunicationData }) {
+  const [data, setData] = useState(initialData)
+  const [channel, setChannel] = useState<"whatsapp" | "email" | "internal">("whatsapp")
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
   const [segmentKind, setSegmentKind] = useState<SegmentKind>("all")
@@ -38,10 +38,33 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
   const [maxAge, setMaxAge] = useState("")
   const [kidId, setKidId] = useState("")
   const [pending, setPending] = useState(false)
+  const [guardianPersonId, setGuardianPersonId] = useState("")
+  const [conversationId, setConversationId] = useState("")
+
+  useEffect(() => {
+    const supabase = createClient()
+    const subscription = supabase.channel("kids-chat-staff")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "kid_conversation_messages" }, () => {
+        void loadKidsCommunicationData().then((result) => { if (result.ok && result.data) setData(result.data) })
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(subscription) }
+  }, [])
 
   async function submit() {
     setPending(true)
     try {
+      if (channel === "internal") {
+        const result = await sendKidInternalMessage({ conversationId: conversationId || null, guardianPersonId: guardianPersonId || null, kidId: segmentKind === "kid" ? kidId || null : null, body })
+        if (showResult(result)) {
+          toast.success("Mensagem enviada no chat interno")
+          setBody("")
+          if (result.id) setConversationId(result.id)
+          const refreshed = await loadKidsCommunicationData()
+          if (refreshed.ok && refreshed.data) setData(refreshed.data)
+        }
+        return
+      }
       const result = await sendKidCampaign({
         channel,
         subject,
@@ -56,7 +79,8 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
         toast.success("Campanha enfileirada. Entregas seguem preferências e consentimentos.")
         setBody("")
         setSubject("")
-        router.refresh()
+        const refreshed = await loadKidsCommunicationData()
+        if (refreshed.ok && refreshed.data) setData(refreshed.data)
       }
     } finally {
       setPending(false)
@@ -67,21 +91,22 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
     <div className="grid gap-6 lg:grid-cols-2">
       <Card className="glass h-fit">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Megaphone className="h-5 w-5" />Nova campanha</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Megaphone className="h-5 w-5" />Nova comunicação</CardTitle>
           <CardDescription>
-            Segmentada por congregação, sala, idade ou família. Campanhas exigem consentimento de comunicação e respeitam os canais de cada responsável.
+            Campanhas externas respeitam consentimentos. O chat interno é direto e fica disponível no Portal da Família.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Canal</Label>
-              <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={channel} onChange={(event) => setChannel(event.target.value as "whatsapp" | "email")}>
+              <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={channel} onChange={(event) => setChannel(event.target.value as "whatsapp" | "email" | "internal")}>
                 <option value="whatsapp">WhatsApp</option>
                 <option value="email">E-mail</option>
+                <option value="internal">Chat interno</option>
               </select>
             </div>
-            <div className="space-y-1">
+            {channel !== "internal" && <div className="space-y-1">
               <Label>Segmento</Label>
               <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={segmentKind} onChange={(event) => setSegmentKind(event.target.value as SegmentKind)}>
                 <option value="all">Todos os responsáveis</option>
@@ -90,10 +115,20 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
                 <option value="age">Faixa etária</option>
                 <option value="kid">Família (uma criança)</option>
               </select>
-            </div>
+            </div>}
           </div>
 
-          {segmentKind === "congregation" && (
+          {channel === "internal" && (
+            <div className="space-y-1">
+              <Label>Responsável *</Label>
+              <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={guardianPersonId} onChange={(event) => { setGuardianPersonId(event.target.value); const existing = data.conversations.find((item) => item.guardianPersonId === event.target.value); setConversationId(existing?.id ?? "") }}>
+                <option value="">Escolha o responsável…</option>
+                {data.guardians.map((guardian) => <option key={guardian.personId} value={guardian.personId}>{guardian.fullName} · {guardian.children.join(", ")}{guardian.portalActive ? "" : " · portal ainda não ativado"}</option>)}
+              </select>
+            </div>
+          )}
+
+          {channel !== "internal" && segmentKind === "congregation" && (
             <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={congregationId} onChange={(event) => setCongregationId(event.target.value)}>
               <option value="">Escolha a congregação…</option>
               {data.congregations.map((congregation) => (
@@ -101,7 +136,7 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
               ))}
             </select>
           )}
-          {segmentKind === "classroom" && (
+          {channel !== "internal" && segmentKind === "classroom" && (
             <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={classroomId} onChange={(event) => setClassroomId(event.target.value)}>
               <option value="">Escolha a sala…</option>
               {data.classrooms.map((classroom) => (
@@ -109,7 +144,7 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
               ))}
             </select>
           )}
-          {segmentKind === "age" && (
+          {channel !== "internal" && segmentKind === "age" && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Idade mín. (meses)</Label>
@@ -121,7 +156,7 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
               </div>
             </div>
           )}
-          {segmentKind === "kid" && (
+          {channel !== "internal" && segmentKind === "kid" && (
             <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={kidId} onChange={(event) => setKidId(event.target.value)}>
               <option value="">Escolha a criança…</option>
               {data.children.map((child) => (
@@ -144,15 +179,28 @@ export function KidsCommunicationTab({ data }: { data: KidsCommunicationData }) 
           <Button
             type="button"
             className="w-full"
-            disabled={pending || body.trim().length < 2 || (channel === "email" && subject.trim().length === 0) || (segmentKind === "congregation" && !congregationId) || (segmentKind === "classroom" && !classroomId) || (segmentKind === "kid" && !kidId)}
+            disabled={pending || body.trim().length < 2 || (channel === "internal" && !guardianPersonId && !conversationId) || (channel === "email" && subject.trim().length === 0) || (channel !== "internal" && segmentKind === "congregation" && !congregationId) || (channel !== "internal" && segmentKind === "classroom" && !classroomId) || (channel !== "internal" && segmentKind === "kid" && !kidId)}
             onClick={() => void submit()}
           >
-            <Send className="mr-2 h-4 w-4" />Enviar campanha
+            <Send className="mr-2 h-4 w-4" />{channel === "internal" ? "Enviar mensagem" : "Enviar campanha"}
           </Button>
         </CardContent>
       </Card>
 
       <div className="space-y-3">
+        {data.conversations.map((conversation) => (
+          <Card key={conversation.id} className="glass">
+            <CardContent className="space-y-3 p-4">
+              <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => { setChannel("internal"); setConversationId(conversation.id); setGuardianPersonId(conversation.guardianPersonId); void markKidConversationRead(conversation.id) }}>
+                <span className="font-medium">{conversation.guardianName}{conversation.childName ? ` · ${conversation.childName}` : ""}</span>
+                {conversation.unreadCount > 0 && <Badge>{conversation.unreadCount} nova(s)</Badge>}
+              </button>
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {conversation.messages.map((message) => <div key={message.id} className={`rounded-lg p-2 text-sm ${message.senderKind === "staff" ? "ml-8 bg-primary/10" : "mr-8 bg-muted"}`}><p>{message.body}</p><p className="mt-1 text-[10px] text-muted-foreground">{message.senderName} · {formatDateTime(message.createdAt)}</p></div>)}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
         {data.messages.length === 0 && (
           <Card className="glass">
             <CardContent className="p-0">

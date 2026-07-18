@@ -22,10 +22,10 @@ async function readCurrentUser() {
   return payload.user
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children, initialUser }: { children: React.ReactNode; initialUser?: User | null }) {
   const supabase = useMemo(() => createClient(), [])
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(initialUser ?? null)
+  const [isLoading, setIsLoading] = useState(initialUser === undefined)
 
   useEffect(() => {
     let active = true
@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    void loadInitialUser()
+    if (initialUser === undefined) void loadInitialUser()
 
     const {
       data: { subscription },
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [initialUser, supabase])
 
   const login = useCallback(
     async (email: string, password: string) => {

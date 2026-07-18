@@ -21,6 +21,7 @@ export interface MinistryListItem {
   description: string
   contact: string
   leaderName: string
+  leaderPersonId: string | null
   memberCount: number
   isActive: boolean
   createdAt: string
@@ -70,6 +71,7 @@ export interface SaveMinistryInput {
   name: string
   description?: string
   contact?: string
+  leaderPersonId?: string | null
   isActive?: boolean
 }
 

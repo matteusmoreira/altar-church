@@ -414,7 +414,8 @@ export async function saveGuardianContact(input: unknown): Promise<KidsPortalAct
     assertOwnsKid(kidIds, parsed.kidId)
     const sql = getSql()
 
-    const fullName = `${parsed.contact.firstName} ${parsed.contact.lastName}`.trim()
+    const contactName = splitFullName(parsed.contact.fullName)
+    const fullName = contactName.fullName
     const digits = parsed.contact.phone.replace(/\D/g, "")
 
     let personId = parsed.contact.personId
@@ -441,7 +442,7 @@ export async function saveGuardianContact(input: unknown): Promise<KidsPortalAct
     if (!personId) {
       const inserted = await sql<{ id: string }[]>`
         insert into public.people (company_id, first_name, last_name, full_name, email, phone, status, person_type, is_active, created_by, updated_by)
-        values (${companyId}, ${parsed.contact.firstName}, ${parsed.contact.lastName}, ${fullName}, ${parsed.contact.email}, ${parsed.contact.phone}, 'active', 'attendee', true, ${user.id}, ${user.id})
+        values (${companyId}, ${contactName.firstName}, ${contactName.lastName}, ${fullName}, ${parsed.contact.email}, ${parsed.contact.phone}, 'active', 'attendee', true, ${user.id}, ${user.id})
         returning id
       `
       personId = inserted[0]?.id ?? null
@@ -633,8 +634,7 @@ const visitorSchema = z.object({
     .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"), z.literal(""), z.null()])
     .optional()
     .transform((value) => value || null),
-  guardianFirstName: z.string().trim().min(2, "Seu nome é obrigatório"),
-  guardianLastName: z.string().trim().optional().default(""),
+  guardianFullName: z.string().trim().min(2, "Seu nome completo é obrigatório").transform((value) => value.replace(/\s+/g, " ")),
   guardianPhone: z.string().trim().min(8, "Telefone obrigatório"),
   guardianEmail: z
     .union([z.string().trim().email("E-mail inválido"), z.literal(""), z.null()])
@@ -704,7 +704,8 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
 
     const childName = splitFullName(parsed.childFullName)
     const childFullName = childName.fullName
-    const guardianFullName = `${parsed.guardianFirstName} ${parsed.guardianLastName}`.trim()
+    const guardianName = splitFullName(parsed.guardianFullName)
+    const guardianFullName = guardianName.fullName
     const guardianDigits = parsed.guardianPhone.replace(/\D/g, "")
     const customFields = await listKidCustomFields(company.id, { surface: "public" })
     const childCustomValues = validateKidCustomValues(customFields, "child", "public", parsed.childCustomValues)
@@ -741,7 +742,7 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
             postal_code, address, address_number, address_complement, neighborhood, city, state, country,
             status, person_type, is_active
           ) values (
-            ${company.id}, ${parsed.guardianFirstName}, ${parsed.guardianLastName}, ${guardianFullName}, ${parsed.guardianEmail}, ${parsed.guardianPhone},
+            ${company.id}, ${guardianName.firstName}, ${guardianName.lastName}, ${guardianFullName}, ${parsed.guardianEmail}, ${parsed.guardianPhone},
             ${parsed.guardianAddress.postalCode}, ${parsed.guardianAddress.street}, ${parsed.guardianAddress.number},
             ${parsed.guardianAddress.complement}, ${parsed.guardianAddress.neighborhood}, ${parsed.guardianAddress.city},
             ${parsed.guardianAddress.state}, ${parsed.guardianAddress.country}, 'active', 'attendee', true

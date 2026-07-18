@@ -9,6 +9,7 @@ import { ageMonthsAt } from "./suggest"
 import { parseJsonbObject } from "@/lib/db/jsonb"
 import { EMPTY_KID_ADDRESS } from "./form-model"
 import { listKidCustomFields, listPersonKidCustomValues } from "./custom-fields"
+import { assertKidsLeaderScope } from "./access"
 import type {
   KidAttendanceItem,
   KidClassroomItem,
@@ -35,6 +36,7 @@ import type {
   KidsSessionsData,
   KidStaffAssignmentItem,
   KidStatus,
+  KidConversation,
 } from "./types"
 
 type DateValue = Date | string | null
@@ -54,7 +56,9 @@ function dateOnly(value: DateValue): string | null {
 async function companyId(input?: string | null) {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
-  return requireUserCompanyId(user, input)
+  const resolved = requireUserCompanyId(user, input)
+  await assertKidsLeaderScope(user, resolved)
+  return resolved
 }
 
 function ageMonthsFromBirthDate(birthDate: string | null): number | null {
@@ -201,6 +205,7 @@ function toClassroom(row: ClassroomRow): KidClassroomItem {
 interface SettingsRow {
   id: string
   congregation_id: string | null
+  ministry_id: string | null
   require_checkout_pin: boolean
   pin_rotation_minutes: number
   allow_capacity_override: boolean
@@ -215,6 +220,7 @@ function toSettings(row: SettingsRow): KidSettingsItem {
   return {
     id: row.id,
     congregationId: row.congregation_id,
+    ministryId: row.ministry_id,
     requireCheckoutPin: row.require_checkout_pin,
     pinRotationMinutes: row.pin_rotation_minutes,
     allowCapacityOverride: row.allow_capacity_override,
@@ -226,12 +232,14 @@ function toSettings(row: SettingsRow): KidSettingsItem {
   }
 }
 
-export async function getKidsDashboardData(companyIdInput?: string | null): Promise<KidsDashboardData> {
+export async function getKidsDashboardData(companyIdInput?: string | null, familyPageInput = 0): Promise<KidsDashboardData> {
   const resolvedCompanyId = await companyId(companyIdInput)
   await requirePermission("kids.view", resolvedCompanyId)
   const sql = getSql()
+  const familyPage = Math.max(0, Math.trunc(familyPageInput))
+  const familyPageSize = 25
 
-  const [kidRows, classroomRows, settingsRows, congregationRows, metricRows, customFields] = await Promise.all([
+  const [kidRows, classroomRows, settingsRows, congregationRows, ministryRows, metricRows, customFields] = await Promise.all([
     sql<KidRow[]>`
       select
         kp.id,
@@ -295,6 +303,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
       where kp.company_id = ${resolvedCompanyId}
         and kp.deleted_at is null
       order by p.first_name, p.full_name
+      limit ${familyPageSize} offset ${familyPage * familyPageSize}
     `,
     sql<ClassroomRow[]>`
       select
@@ -333,7 +342,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
     `,
     sql<SettingsRow[]>`
       select
-        id, congregation_id, require_checkout_pin, pin_rotation_minutes,
+        id, congregation_id, ministry_id, require_checkout_pin, pin_rotation_minutes,
         allow_capacity_override, label_paper, label_show_qr, auto_print,
         visitor_form_enabled, required_consent_types
       from public.kid_settings
@@ -346,6 +355,12 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
       where company_id = ${resolvedCompanyId}
         and deleted_at is null
         and is_active = true
+      order by name
+    `,
+    sql<{ id: string; name: string; leader_person_id: string | null }[]>`
+      select id, name, leader_person_id
+      from public.ministries
+      where company_id = ${resolvedCompanyId} and deleted_at is null and is_active = true
       order by name
     `,
     sql<{
@@ -387,9 +402,12 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
   return {
     metrics,
     children: kidRows.map((row) => toKid(row, photoUrls, customValues)),
+    familyPage,
+    familyPageSize,
     classrooms: classroomRows.map(toClassroom),
     settings: settingsRows.map(toSettings),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
+    ministries: ministryRows.map((row) => ({ id: row.id, name: row.name, leaderPersonId: row.leader_person_id })),
     customFields,
   }
 }
@@ -980,12 +998,106 @@ interface MessageRow {
   failed_count: number
 }
 
+interface ConversationRow {
+  id: string
+  guardian_person_id: string
+  guardian_name: string
+  kid_id: string | null
+  child_name: string | null
+  portal_active: boolean
+  status: string
+  unread_count: number
+  last_message_at: Date | string
+  messages: unknown
+}
+
+function toConversations(rows: ConversationRow[]): KidConversation[] {
+  return rows.map((row) => ({
+    id: row.id,
+    guardianPersonId: row.guardian_person_id,
+    guardianName: row.guardian_name,
+    kidId: row.kid_id,
+    childName: row.child_name,
+    portalActive: row.portal_active,
+    status: row.status as "open" | "closed",
+    unreadCount: Number(row.unread_count ?? 0),
+    lastMessageAt: iso(row.last_message_at) ?? "",
+    messages: Array.isArray(row.messages) ? row.messages.map((message) => {
+      const item = message as Record<string, unknown>
+      return {
+        id: String(item.id),
+        conversationId: row.id,
+        kidId: item.kidId ? String(item.kidId) : null,
+        senderProfileId: String(item.senderProfileId),
+        senderKind: item.senderKind === "guardian" ? "guardian" as const : "staff" as const,
+        senderName: String(item.senderName ?? ""),
+        body: String(item.body ?? ""),
+        createdAt: String(item.createdAt ?? ""),
+      }
+    }) : [],
+  }))
+}
+
+export async function listKidConversationsForStaff(companyId: string): Promise<KidConversation[]> {
+  const rows = await getSql()<ConversationRow[]>`
+    select conversation.id, conversation.guardian_person_id, guardian_person.full_name as guardian_name,
+           conversation.kid_id, child_person.full_name as child_name,
+           exists(select 1 from public.kid_guardians link where link.person_id = conversation.guardian_person_id and link.profile_id is not null and link.deleted_at is null) as portal_active,
+           conversation.status, conversation.last_message_at,
+           (select count(*)::int from public.kid_conversation_messages unread
+            where unread.conversation_id = conversation.id and unread.deleted_at is null and unread.sender_kind = 'guardian'
+              and unread.created_at > coalesce(conversation.staff_read_at, '-infinity'::timestamptz)) as unread_count,
+           coalesce((select jsonb_agg(jsonb_build_object(
+             'id', message.id, 'kidId', message.kid_id, 'senderProfileId', message.sender_profile_id,
+             'senderKind', message.sender_kind, 'senderName', profile.name, 'body', message.body, 'createdAt', message.created_at
+           ) order by message.created_at)
+           from public.kid_conversation_messages message
+           join public.profiles profile on profile.id = message.sender_profile_id
+           where message.conversation_id = conversation.id and message.deleted_at is null), '[]'::jsonb) as messages
+    from public.kid_conversations conversation
+    join public.people guardian_person on guardian_person.id = conversation.guardian_person_id and guardian_person.deleted_at is null
+    left join public.kid_profiles child on child.id = conversation.kid_id and child.deleted_at is null
+    left join public.people child_person on child_person.id = child.person_id and child_person.deleted_at is null
+    where conversation.company_id = ${companyId} and conversation.deleted_at is null
+    order by conversation.last_message_at desc
+    limit 100
+  `
+  return toConversations(rows)
+}
+
+export async function listKidConversationsForGuardian(companyId: string, profileId: string): Promise<KidConversation[]> {
+  const rows = await getSql()<ConversationRow[]>`
+    select conversation.id, conversation.guardian_person_id, guardian_person.full_name as guardian_name,
+           conversation.kid_id, child_person.full_name as child_name, true as portal_active,
+           conversation.status, conversation.last_message_at,
+           (select count(*)::int from public.kid_conversation_messages unread
+            where unread.conversation_id = conversation.id and unread.deleted_at is null and unread.sender_kind = 'staff'
+              and unread.created_at > coalesce(conversation.guardian_read_at, '-infinity'::timestamptz)) as unread_count,
+           coalesce((select jsonb_agg(jsonb_build_object(
+             'id', message.id, 'kidId', message.kid_id, 'senderProfileId', message.sender_profile_id,
+             'senderKind', message.sender_kind, 'senderName', profile.name, 'body', message.body, 'createdAt', message.created_at
+           ) order by message.created_at)
+           from public.kid_conversation_messages message
+           join public.profiles profile on profile.id = message.sender_profile_id
+           where message.conversation_id = conversation.id and message.deleted_at is null), '[]'::jsonb) as messages
+    from public.kid_conversations conversation
+    join public.people guardian_person on guardian_person.id = conversation.guardian_person_id and guardian_person.deleted_at is null
+    left join public.kid_profiles child on child.id = conversation.kid_id and child.deleted_at is null
+    left join public.people child_person on child_person.id = child.person_id and child_person.deleted_at is null
+    where conversation.company_id = ${companyId} and conversation.deleted_at is null
+      and exists(select 1 from public.kid_guardians link where link.person_id = conversation.guardian_person_id and link.profile_id = ${profileId} and link.deleted_at is null)
+    order by conversation.last_message_at desc
+    limit 100
+  `
+  return toConversations(rows)
+}
+
 export async function getKidsCommunicationData(companyIdInput?: string | null): Promise<KidsCommunicationData> {
   const resolvedCompanyId = await companyId(companyIdInput)
   await requirePermission("kids.communicate", resolvedCompanyId)
   const sql = getSql()
 
-  const [messageRows, classroomRows, congregationRows, childrenRows] = await Promise.all([
+  const [messageRows, classroomRows, congregationRows, childrenRows, guardianRows, conversations] = await Promise.all([
     sql<MessageRow[]>`
       select
         m.id, m.channel, m.audience, m.subject, m.body, m.status, m.created_at,
@@ -1020,6 +1132,20 @@ export async function getKidsCommunicationData(companyIdInput?: string | null): 
       order by p.full_name
       limit 500
     `,
+    sql<{ person_id: string; full_name: string; child_names: string[]; portal_active: boolean }[]>`
+      select guardian.person_id, person.full_name,
+             array_agg(distinct child_person.full_name order by child_person.full_name) as child_names,
+             bool_or(guardian.profile_id is not null) as portal_active
+      from public.kid_guardians guardian
+      join public.people person on person.id = guardian.person_id and person.deleted_at is null
+      join public.kid_profiles child on child.id = guardian.kid_id and child.deleted_at is null
+      join public.people child_person on child_person.id = child.person_id and child_person.deleted_at is null
+      where guardian.company_id = ${resolvedCompanyId} and guardian.deleted_at is null
+      group by guardian.person_id, person.full_name
+      order by person.full_name
+      limit 500
+    `,
+    listKidConversationsForStaff(resolvedCompanyId),
   ])
 
   return {
@@ -1041,6 +1167,8 @@ export async function getKidsCommunicationData(companyIdInput?: string | null): 
     classrooms: classroomRows.map((row) => ({ id: row.id, name: row.name })),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
     children: childrenRows.map((row) => ({ id: row.id, fullName: row.full_name })),
+    guardians: guardianRows.map((row) => ({ personId: row.person_id, fullName: row.full_name, children: row.child_names ?? [], portalActive: row.portal_active })),
+    conversations,
   }
 }
 

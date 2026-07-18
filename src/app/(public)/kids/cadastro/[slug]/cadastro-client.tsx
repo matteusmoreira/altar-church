@@ -50,8 +50,7 @@ export function CadastroVisitanteClient({
   const [form, setForm] = useState({
     childFullName: "",
     childBirthDate: "",
-    guardianFirstName: "",
-    guardianLastName: "",
+    guardianFullName: "",
     guardianPhone: "",
     guardianEmail: "",
     relationship: "guardian" as KidRelationship,
@@ -75,8 +74,7 @@ export function CadastroVisitanteClient({
         slug,
         childFullName: form.childFullName,
         childBirthDate: form.childBirthDate || null,
-        guardianFirstName: form.guardianFirstName,
-        guardianLastName: form.guardianLastName,
+        guardianFullName: form.guardianFullName,
         guardianPhone: form.guardianPhone,
         guardianEmail: form.guardianEmail || null,
         guardianAddress,
@@ -200,13 +198,9 @@ export function CadastroVisitanteClient({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label>Nome *</Label>
-              <Input value={form.guardianFirstName} onChange={(event) => setForm({ ...form, guardianFirstName: event.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <Label>Sobrenome</Label>
-              <Input value={form.guardianLastName} onChange={(event) => setForm({ ...form, guardianLastName: event.target.value })} />
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Nome completo *</Label>
+              <Input value={form.guardianFullName} onChange={(event) => setForm({ ...form, guardianFullName: event.target.value })} />
             </div>
             <div className="space-y-1">
               <Label>Telefone (WhatsApp) *</Label>
@@ -265,7 +259,7 @@ export function CadastroVisitanteClient({
       <Button
         type="button"
         className="h-12 w-full gradient-primary text-base"
-        disabled={pending || form.childFullName.trim().length < 2 || form.guardianFirstName.trim().length < 2 || form.guardianPhone.trim().length < 8}
+        disabled={pending || form.childFullName.trim().length < 2 || form.guardianFullName.trim().length < 2 || form.guardianPhone.trim().length < 8}
         onClick={() => void submit()}
       >
         Concluir cadastro

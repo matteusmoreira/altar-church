@@ -9,6 +9,7 @@ import { decryptHealthDetails, formatChildLabelName } from "./security"
 import { ageMonthsAt } from "./suggest"
 import { EMPTY_KID_ADDRESS } from "./form-model"
 import { listKidCustomFields, listPersonKidCustomValues } from "./custom-fields"
+import { listKidConversationsForGuardian } from "./data"
 import type {
   GuardianChildItem,
   GuardianPortalData,
@@ -262,7 +263,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     order by p.first_name, p.full_name
   `
 
-  const [congregations, companyRows, reportRows, guardianRows, customFields] = await Promise.all([
+  const [congregations, companyRows, reportRows, guardianRows, customFields, conversations] = await Promise.all([
     sql<{ id: string; name: string }[]>`
       select id, name from public.congregations
       where company_id = ${companyId} and deleted_at is null and is_active = true
@@ -322,6 +323,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       limit 1
     `,
     listKidCustomFields(companyId, { surface: "portal" }),
+    listKidConversationsForGuardian(companyId, user.id),
   ])
 
   const photoPaths = rows.flatMap((row) => [
@@ -403,5 +405,6 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     })),
     customFields,
+    conversations,
   }
 }

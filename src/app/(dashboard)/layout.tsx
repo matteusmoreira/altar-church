@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { getCompanyEnabledModuleIds } from "@/lib/admin/data"
 import { requireUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { AuthProvider } from "@/lib/auth/context"
 
 async function getChurchDisplayName(companyId?: string | null) {
   if (!companyId) return "Altar Church"
@@ -31,8 +32,10 @@ export default async function DashboardRootLayout({ children }: { children: Reac
   ])
 
   return (
-    <DashboardLayout initialEnabledModuleIds={initialEnabledModuleIds} churchName={churchName}>
-      {children}
-    </DashboardLayout>
+    <AuthProvider initialUser={user}>
+      <DashboardLayout initialEnabledModuleIds={initialEnabledModuleIds} churchName={churchName}>
+        {children}
+      </DashboardLayout>
+    </AuthProvider>
   )
 }

@@ -49,6 +49,7 @@ import { Textarea } from "@/components/ui/textarea"
 interface MinistriesClientProps {
   ministriesResult: MinistriesListResult
   filters: PastoralListFilters
+  leaderCandidates: { id: string; fullName: string }[]
 }
 
 interface MinistryFormState {
@@ -57,6 +58,7 @@ interface MinistryFormState {
   name: string
   description: string
   contact: string
+  leaderPersonId: string
   isActive: boolean
 }
 
@@ -71,6 +73,7 @@ const emptyForm: MinistryFormState = {
   name: "",
   description: "",
   contact: "",
+  leaderPersonId: "",
   isActive: true,
 }
 
@@ -91,11 +94,12 @@ function ministryToForm(ministry: MinistryListItem): MinistryFormState {
     name: ministry.name,
     description: ministry.description,
     contact: ministry.contact,
+    leaderPersonId: ministry.leaderPersonId ?? "",
     isActive: ministry.isActive,
   }
 }
 
-export function MinistriesClient({ ministriesResult, filters }: MinistriesClientProps) {
+export function MinistriesClient({ ministriesResult, filters, leaderCandidates }: MinistriesClientProps) {
   const router = useRouter()
   const pathname = usePathname()
   const routePath = pathname ?? "/ministerios"
@@ -155,6 +159,7 @@ export function MinistriesClient({ ministriesResult, filters }: MinistriesClient
       name: formData.name,
       description: formData.description,
       contact: formData.contact,
+      leaderPersonId: formData.leaderPersonId || null,
       isActive: formData.isActive,
     })
     setIsSaving(false)
@@ -401,6 +406,15 @@ export function MinistriesClient({ ministriesResult, filters }: MinistriesClient
                 onChange={(event) => setFormData({ ...formData, contact: event.target.value })}
                 placeholder="Nome, e-mail ou telefone"
               />
+            </div>
+            <div className="grid gap-2">
+              <Label>Líder vinculado</Label>
+              <Select value={formData.leaderPersonId} onValueChange={(value) => setFormData({ ...formData, leaderPersonId: value ?? "" })}>
+                <SelectTrigger><SelectValue placeholder="Selecione uma pessoa" /></SelectTrigger>
+                <SelectContent>
+                  {leaderCandidates.map((person) => <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label>Status</Label>

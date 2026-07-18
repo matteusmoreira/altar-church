@@ -22,6 +22,7 @@ interface MinistryRow {
   description: string
   contact: string
   leader_name: string | null
+  leader_person_id: string | null
   member_count: string | number
   is_active: boolean
   created_at: Date | string
@@ -97,6 +98,7 @@ function toMinistry(row: MinistryRow): MinistryListItem {
     description: row.description,
     contact: row.contact,
     leaderName: row.leader_name ?? row.contact,
+    leaderPersonId: row.leader_person_id,
     memberCount: toNumber(row.member_count),
     isActive: row.is_active,
     createdAt: toIso(row.created_at),
@@ -161,6 +163,7 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
         m.name,
         m.description,
         m.contact,
+        m.leader_person_id,
         p.full_name as leader_name,
         0 as member_count,
         m.is_active,
@@ -195,6 +198,18 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
     pageSize,
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
   }
+}
+
+export async function listMinistryLeaderCandidates(companyIdInput?: string | null) {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("ministries.view", companyId)
+  const rows = await getSql()<{ id: string; full_name: string }[]>`
+    select id, full_name from public.people
+    where company_id = ${companyId} and deleted_at is null and is_active = true
+    order by full_name
+    limit 500
+  `
+  return rows.map((row) => ({ id: row.id, fullName: row.full_name }))
 }
 
 export async function listProgrammings(filters: PastoralListFilters = {}): Promise<ProgrammingsListResult> {

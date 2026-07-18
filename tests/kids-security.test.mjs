@@ -3,7 +3,7 @@ import { test } from "node:test"
 
 // Chave de teste (32 bytes hex) definida ANTES de importar o módulo.
 process.env.KIDS_HEALTH_ENCRYPTION_KEY = "a".repeat(64)
-delete process.env.KIDS_PIN_PEPPER
+process.env.KIDS_PIN_PEPPER = "pepper-separado-de-teste-com-entropia-suficiente"
 
 const security = await import("../src/lib/kids/security.ts")
 
@@ -40,12 +40,12 @@ test("PIN: seis dígitos, hash com pepper e verificação por attendance", () =>
 })
 
 test("PIN: sem chave configurada o hash falha de forma explícita", () => {
-  const original = process.env.KIDS_HEALTH_ENCRYPTION_KEY
-  delete process.env.KIDS_HEALTH_ENCRYPTION_KEY
+  const original = process.env.KIDS_PIN_PEPPER
+  delete process.env.KIDS_PIN_PEPPER
   try {
-    assert.throws(() => security.hashPickupPin(crypto.randomUUID(), "123456"), /Configure KIDS_PIN_PEPPER|KIDS_HEALTH_ENCRYPTION_KEY/)
+    assert.throws(() => security.hashPickupPin(crypto.randomUUID(), "123456"), /Configure KIDS_PIN_PEPPER/)
   } finally {
-    process.env.KIDS_HEALTH_ENCRYPTION_KEY = original
+    process.env.KIDS_PIN_PEPPER = original
   }
 })
 

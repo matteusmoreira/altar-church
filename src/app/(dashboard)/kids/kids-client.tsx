@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -29,24 +29,31 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState, MetricCard, PageHeader } from "@/components/shared"
-import { usePermission } from "@/lib/permissions"
 import {
   deleteKid,
   deleteKidClassroom,
   deleteKidClassroomRule,
   fetchKidHealthDetails,
+  loadKidsCommunicationData,
+  loadKidsFamiliesPage,
+  loadKidsReportsData,
+  loadKidsSessionsData,
   saveKid,
   saveKidClassroom,
   saveKidClassroomRule,
   saveKidSettings,
+  searchKidsPeople,
+  unlinkKidGuardian,
 } from "@/lib/kids/actions"
 import { saveKidsPersonPhoto } from "@/lib/kids/photo-actions"
 import type {
   KidConsentType,
   KidLabelPaper,
   KidListItem,
+  KidPersonSuggestion,
   KidRelationship,
   KidsCommunicationData,
+  KidsCapabilities,
   KidsDashboardData,
   KidsReportsData,
   KidsSessionsData,
@@ -54,6 +61,7 @@ import type {
 import { KidsSessionsTab } from "./kids-sessions-tab"
 import { KidsCommunicationTab } from "./kids-communication-tab"
 import { KidsReportsTab } from "./kids-reports-tab"
+import { KidsLabelBuilder } from "./kids-label-builder"
 
 const CONSENT_LABELS: Record<KidConsentType, string> = {
   data_processing: "Tratamento de dados",
@@ -101,8 +109,8 @@ function formatPhoneMask(value: string) {
 interface GuardianForm {
   id: string | null
   personId: string | null
-  firstName: string
-  lastName: string
+  confirmNewPerson: boolean
+  fullName: string
   email: string
   phone: string
   relationship: KidRelationship
@@ -122,6 +130,7 @@ interface GuardianForm {
 interface ChildForm {
   id: string | null
   personId: string | null
+  confirmNewPerson: boolean
   fullName: string
   birthDate: string
   congregationId: string
@@ -149,8 +158,8 @@ interface ChildForm {
 const emptyGuardian: GuardianForm = {
   id: null,
   personId: null,
-  firstName: "",
-  lastName: "",
+  confirmNewPerson: false,
+  fullName: "",
   email: "",
   phone: "",
   relationship: "guardian",
@@ -170,6 +179,7 @@ const emptyGuardian: GuardianForm = {
 const emptyChildForm: ChildForm = {
   id: null,
   personId: null,
+  confirmNewPerson: false,
   fullName: "",
   birthDate: "",
   congregationId: "",
@@ -231,6 +241,7 @@ interface RuleForm {
 
 interface SettingsForm {
   congregationId: string
+  ministryId: string
   requireCheckoutPin: boolean
   pinRotationMinutes: number
   allowCapacityOverride: boolean
@@ -243,6 +254,7 @@ interface SettingsForm {
 
 const defaultSettingsForm: SettingsForm = {
   congregationId: "",
+  ministryId: "",
   requireCheckoutPin: true,
   pinRotationMinutes: 30,
   allowCapacityOverride: true,
@@ -255,23 +267,21 @@ const defaultSettingsForm: SettingsForm = {
 
 export function KidsClient({
   data,
-  sessionsData,
-  communicationData,
-  reportsData,
+  capabilities,
+  securityStatus,
 }: {
   data: KidsDashboardData
-  sessionsData: KidsSessionsData
-  communicationData: KidsCommunicationData | null
-  reportsData: KidsReportsData | null
+  capabilities: KidsCapabilities
+  securityStatus: { pinConfigured: boolean; healthConfigured: boolean }
 }) {
   const router = useRouter()
-  const canManageSettings = usePermission("kids.settings.manage")
-  const canManageChildren = usePermission("kids.children.manage")
-  const canManageGuardians = usePermission("kids.guardians.manage")
-  const canManageClasses = usePermission("kids.classes.manage")
-  const canViewHealth = usePermission("kids.health.view")
-  const canCommunicate = usePermission("kids.communicate")
-  const canViewReports = usePermission("kids.reports.view")
+  const canManageSettings = capabilities.manageSettings
+  const canManageChildren = capabilities.manageChildren
+  const canManageGuardians = capabilities.manageGuardians
+  const canManageClasses = capabilities.manageClasses
+  const canViewHealth = capabilities.viewHealth
+  const canCommunicate = capabilities.communicate
+  const canViewReports = capabilities.viewReports
 
   const [childForm, setChildForm] = useState<ChildForm>(emptyChildForm)
   const [classroomForm, setClassroomForm] = useState<ClassroomForm>(emptyClassroomForm)
@@ -287,6 +297,78 @@ export function KidsClient({
   const healthRequestRef = useRef(0)
   const [classroomAgeUnits, setClassroomAgeUnits] = useState<{ min: "months" | "years"; max: "months" | "years" }>({ min: "months", max: "months" })
   const [pending, setPending] = useState(false)
+  const [childSuggestions, setChildSuggestions] = useState<KidPersonSuggestion[]>([])
+  const [guardianSuggestions, setGuardianSuggestions] = useState<KidPersonSuggestion[]>([])
+  const [activeGuardianIndex, setActiveGuardianIndex] = useState<number | null>(null)
+  const [sessionsData, setSessionsData] = useState<KidsSessionsData | null>(null)
+  const [communicationData, setCommunicationData] = useState<KidsCommunicationData | null>(null)
+  const [reportsData, setReportsData] = useState<KidsReportsData | null>(null)
+  const [loadingTab, setLoadingTab] = useState<string | null>(null)
+  const [familyPageData, setFamilyPageData] = useState<{ children: KidListItem[]; page: number } | null>(null)
+  const children = familyPageData?.children ?? data.children
+  const familyPage = familyPageData?.page ?? data.familyPage
+
+  async function changeFamilyPage(nextPage: number) {
+    setPending(true)
+    try {
+      const result = await loadKidsFamiliesPage(nextPage)
+      if (result.ok && result.children && result.page != null) setFamilyPageData({ children: result.children, page: result.page })
+      else toast.error(result.error ?? "Não foi possível carregar famílias")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function loadTab(value: string) {
+    if ((value === "sessoes" && sessionsData) || (value === "comunicacao" && communicationData) || (value === "relatorios" && reportsData)) return
+    if (!(["sessoes", "comunicacao", "relatorios"] as string[]).includes(value)) return
+    setLoadingTab(value)
+    try {
+      if (value === "sessoes") {
+        const result = await loadKidsSessionsData()
+        if (result.ok && result.data) setSessionsData(result.data)
+        else toast.error(result.error ?? "Não foi possível carregar sessões")
+      } else if (value === "comunicacao") {
+        const result = await loadKidsCommunicationData()
+        if (result.ok && result.data) setCommunicationData(result.data)
+        else toast.error(result.error ?? "Não foi possível carregar comunicação")
+      } else {
+        const result = await loadKidsReportsData()
+        if (result.ok && result.data) setReportsData(result.data)
+        else toast.error(result.error ?? "Não foi possível carregar relatórios")
+      }
+    } finally {
+      setLoadingTab(null)
+    }
+  }
+
+  useEffect(() => {
+    const query = childForm.fullName.trim()
+    if (childForm.id || childForm.personId || query.length < 3) {
+      return
+    }
+    let active = true
+    const timer = window.setTimeout(() => {
+      void searchKidsPeople({ target: "child", query }).then((result) => {
+        if (active) setChildSuggestions(result.people ?? [])
+      })
+    }, 300)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [childForm.fullName, childForm.id, childForm.personId])
+
+  useEffect(() => {
+    if (activeGuardianIndex == null) return
+    const guardian = childForm.guardians[activeGuardianIndex]
+    const query = guardian?.fullName.trim() ?? ""
+    if (!guardian || guardian.personId || query.length < 3) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void searchKidsPeople({ target: "guardian", query }).then((result) => {
+        if (active) setGuardianSuggestions(result.people ?? [])
+      })
+    }, 300)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [activeGuardianIndex, childForm.guardians])
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string, after?: () => void) {
     setPending(true)
@@ -295,6 +377,7 @@ export function KidsClient({
       if (showResult(result)) {
         toast.success(success)
         after?.()
+        setFamilyPageData(null)
         router.refresh()
       }
     } finally {
@@ -307,6 +390,7 @@ export function KidsClient({
     setChildForm({
       id: child.id,
       personId: child.personId,
+      confirmNewPerson: false,
       fullName: child.fullName,
       birthDate: child.birthDate ?? "",
       congregationId: child.congregationId ?? "",
@@ -327,8 +411,8 @@ export function KidsClient({
       guardians: child.guardians.map((guardian) => ({
         id: guardian.id,
         personId: guardian.personId,
-        firstName: guardian.name.split(" ")[0] ?? guardian.name,
-        lastName: guardian.name.split(" ").slice(1).join(" "),
+        confirmNewPerson: false,
+        fullName: guardian.name,
         email: guardian.email ?? "",
         phone: formatPhoneMask(guardian.phone),
         relationship: guardian.relationship,
@@ -380,6 +464,7 @@ export function KidsClient({
       const result = await saveKid({
           id: childForm.id,
           personId: childForm.personId,
+          confirmNewPerson: childForm.confirmNewPerson,
           fullName: childForm.fullName,
           birthDate: childForm.birthDate || null,
           congregationId: childForm.congregationId || null,
@@ -417,6 +502,7 @@ export function KidsClient({
       }
       toast.success(childForm.id ? "Criança atualizada" : "Criança cadastrada")
       setChildForm(emptyChildForm)
+      setFamilyPageData(null)
       router.refresh()
     } finally {
       setPending(false)
@@ -485,6 +571,7 @@ export function KidsClient({
       existing
         ? {
             congregationId,
+            ministryId: existing.ministryId ?? "",
             requireCheckoutPin: existing.requireCheckoutPin,
             pinRotationMinutes: existing.pinRotationMinutes,
             allowCapacityOverride: existing.allowCapacityOverride,
@@ -503,6 +590,7 @@ export function KidsClient({
       () =>
         saveKidSettings({
           congregationId: settingsForm.congregationId || null,
+          ministryId: settingsForm.congregationId ? null : settingsForm.ministryId || null,
           requireCheckoutPin: settingsForm.requireCheckoutPin,
           pinRotationMinutes: settingsForm.pinRotationMinutes,
           allowCapacityOverride: settingsForm.allowCapacityOverride,
@@ -516,14 +604,14 @@ export function KidsClient({
     )
   }
 
-  const deleteChildName = data.children.find((child) => child.id === deleteChildId)?.fullName ?? ""
+  const deleteChildName = children.find((child) => child.id === deleteChildId)?.fullName ?? ""
   const deleteClassroomName = data.classrooms.find((classroom) => classroom.id === deleteClassroomId)?.name ?? ""
 
   return (
     <div className="space-y-6">
       <PageHeader title="Kids" description="Cadastro infantil, famílias, salas e configurações do ministério." />
 
-      <Tabs defaultValue="visao-geral">
+      <Tabs defaultValue="visao-geral" onValueChange={(value) => void loadTab(value)}>
         <TabsList>
           <TabsTrigger value="visao-geral">Visão geral</TabsTrigger>
           <TabsTrigger value="familias">Famílias</TabsTrigger>
@@ -559,14 +647,14 @@ export function KidsClient({
               </div>
             </CardHeader>
             <CardContent className={overviewMode === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
-              {data.children.length === 0 && (
+              {children.length === 0 && (
                 <EmptyState
                   icon={Baby}
                   title="Nenhuma criança cadastrada"
                   description="Comece pela aba Famílias para cadastrar a primeira criança e seus responsáveis."
                 />
               )}
-              {data.children.slice(0, 8).map((child) => (
+              {children.slice(0, 8).map((child) => (
                 <div key={child.id} className={`gap-2 rounded-lg border border-border/60 p-3 ${overviewMode === "grid" ? "flex min-h-28 flex-col justify-between" : "flex flex-wrap items-center justify-between"}`}>
                   <div className="flex items-center gap-3">
                     {child.photoUrl ? (
@@ -617,10 +705,33 @@ export function KidsClient({
                 <CardDescription>Dados essenciais, saúde, consentimentos e responsáveis.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2 rounded-lg border p-3">
+                  <Badge variant={securityStatus.pinConfigured ? "default" : "destructive"}>PIN {securityStatus.pinConfigured ? "configurado" : "não configurado"}</Badge>
+                  <Badge variant={securityStatus.healthConfigured ? "default" : "destructive"}>Saúde {securityStatus.healthConfigured ? "configurada" : "não configurada"}</Badge>
+                  {(!securityStatus.pinConfigured || !securityStatus.healthConfigured) && <p className="w-full text-xs text-muted-foreground">Configure os segredos no ambiente do servidor. Valores nunca são exibidos aqui.</p>}
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1 sm:col-span-2">
                     <Label htmlFor="kid-full-name">Nome completo *</Label>
-                    <Input id="kid-full-name" value={childForm.fullName} onChange={(event) => setChildForm({ ...childForm, fullName: event.target.value })} />
+                    <Input id="kid-full-name" value={childForm.fullName} onChange={(event) => { setChildSuggestions([]); setChildForm({ ...childForm, fullName: event.target.value, personId: null, confirmNewPerson: false }) }} />
+                    {childSuggestions.length > 0 && (
+                      <div className="rounded-md border bg-popover p-1 shadow-md">
+                        <p className="px-2 py-1 text-xs text-muted-foreground">Possíveis cadastros existentes</p>
+                        {childSuggestions.map((person) => (
+                          <button key={person.personId} type="button" className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-muted" onClick={() => {
+                            const existingKid = person.kidId ? children.find((child) => child.id === person.kidId) : null
+                            if (existingKid) startEditChild(existingKid)
+                            else setChildForm({ ...childForm, personId: person.personId, confirmNewPerson: false, fullName: person.fullName, birthDate: person.birthDate ?? childForm.birthDate })
+                            setChildSuggestions([])
+                          }}>
+                            <span className="font-medium">{person.fullName}</span>{person.birthDate ? ` · ${person.birthDate.split("-").reverse().join("/")}` : ""}{person.kidId ? " · criança já cadastrada" : " · pessoa existente"}
+                          </button>
+                        ))}
+                        <button type="button" className="w-full rounded px-2 py-2 text-left text-xs font-medium text-primary hover:bg-muted" onClick={() => { setChildForm({ ...childForm, confirmNewPerson: true }); setChildSuggestions([]) }}>
+                          É outra pessoa com o mesmo nome — cadastrar novo
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="kid-birth">Nascimento</Label>
@@ -752,8 +863,27 @@ export function KidsClient({
                         )}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <Input placeholder="Nome *" value={guardian.firstName} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, firstName: event.target.value } : g)) })} />
-                        <Input placeholder="Sobrenome" value={guardian.lastName} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, lastName: event.target.value } : g)) })} />
+                        <div className="space-y-1 sm:col-span-2">
+                          <Input placeholder="Nome completo *" value={guardian.fullName} onFocus={() => setActiveGuardianIndex(index)} onChange={(event) => { setGuardianSuggestions([]); setActiveGuardianIndex(index); setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, fullName: event.target.value, personId: null, confirmNewPerson: false } : g)) }) }} />
+                          {activeGuardianIndex === index && guardianSuggestions.length > 0 && (
+                            <div className="rounded-md border bg-popover p-1 shadow-md">
+                              {guardianSuggestions.map((person) => (
+                                <button key={person.personId} type="button" className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-muted" onClick={() => {
+                                  setChildForm({ ...childForm, guardians: childForm.guardians.map((item, itemIndex) => itemIndex === index ? { ...item, personId: person.personId, confirmNewPerson: false, fullName: person.fullName, phone: formatPhoneMask(person.phone), email: person.email ?? "" } : item) })
+                                  setGuardianSuggestions([])
+                                }}>
+                                  <span className="font-medium">{person.fullName}</span>{person.phone ? ` · ${formatPhoneMask(person.phone)}` : ""}{person.linkedChildren.length ? ` · responsável por ${person.linkedChildren.map((child) => child.fullName).join(", ")}` : ""}
+                                </button>
+                              ))}
+                              <button type="button" className="w-full rounded px-2 py-2 text-left text-xs font-medium text-primary hover:bg-muted" onClick={() => {
+                                setChildForm({ ...childForm, guardians: childForm.guardians.map((item, itemIndex) => itemIndex === index ? { ...item, confirmNewPerson: true } : item) })
+                                setGuardianSuggestions([])
+                              }}>
+                                É outra pessoa com o mesmo nome — cadastrar novo
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         <Input type="tel" inputMode="tel" maxLength={15} placeholder="Telefone *" value={guardian.phone} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, phone: formatPhoneMask(event.target.value) } : g)) })} />
                         <Input placeholder="E-mail" value={guardian.email} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, email: event.target.value } : g)) })} />
                         <select
@@ -829,13 +959,13 @@ export function KidsClient({
           <Card className="glass h-fit">
             <CardHeader>
               <CardTitle>Famílias</CardTitle>
-              <CardDescription>{data.children.length} criança(s) cadastrada(s).</CardDescription>
+              <CardDescription>{data.metrics.totalChildren} criança(s) cadastrada(s).</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {data.children.length === 0 && (
+              {children.length === 0 && (
                 <EmptyState icon={Users} title="Nenhuma família" description="Cadastre a primeira criança ao lado." />
               )}
-              {data.children.map((child) => (
+              {children.map((child) => (
                 <div key={child.id} className="rounded-lg border border-border/60 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
@@ -859,11 +989,11 @@ export function KidsClient({
                       {child.health.hasSpecialNeeds && <Badge variant="destructive">ATENÇÃO</Badge>}
                       {canManageChildren && (
                         <>
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEditChild(child)}>
-                            <Pencil className="h-4 w-4" />
+                          <Button type="button" variant="outline" size="sm" onClick={() => startEditChild(child)}>
+                            <Pencil className="mr-1 h-4 w-4" />Editar
                           </Button>
-                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteChildId(child.id)}>
-                            <Trash2 className="h-4 w-4" />
+                          <Button type="button" variant="outline" size="sm" onClick={() => setDeleteChildId(child.id)}>
+                            <Trash2 className="mr-1 h-4 w-4" />Excluir
                           </Button>
                         </>
                       )}
@@ -871,10 +1001,13 @@ export function KidsClient({
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {child.guardians.map((guardian) => (
-                      <Badge key={guardian.id} variant="outline">
-                        {guardian.name} · {RELATIONSHIP_LABELS[guardian.relationship]}
-                        {guardian.isPrimary ? " · principal" : ""}
-                      </Badge>
+                      <div key={guardian.id} className="flex items-center gap-1 rounded-md border px-2 py-1">
+                        <span className="text-xs">{guardian.name} · {RELATIONSHIP_LABELS[guardian.relationship]}{guardian.isPrimary ? " · principal" : ""}</span>
+                        {canManageGuardians && <Button type="button" variant="ghost" size="sm" onClick={() => startEditChild(child)}>Editar responsável</Button>}
+                        {canManageGuardians && child.guardians.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => {
+                          if (window.confirm(`Desvincular ${guardian.name} somente de ${child.fullName}?`)) void run(() => unlinkKidGuardian({ kidId: child.id, guardianPersonId: guardian.personId }), "Responsável desvinculado")
+                        }}>Desvincular</Button>}
+                      </div>
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -882,6 +1015,13 @@ export function KidsClient({
                   </p>
                 </div>
               ))}
+              {data.metrics.totalChildren > data.familyPageSize && (
+                <div className="flex items-center justify-between pt-2">
+                  <Button type="button" variant="outline" size="sm" disabled={pending || familyPage === 0} onClick={() => void changeFamilyPage(familyPage - 1)}>Anterior</Button>
+                  <span className="text-xs text-muted-foreground">Página {familyPage + 1}</span>
+                  <Button type="button" variant="outline" size="sm" disabled={pending || (familyPage + 1) * data.familyPageSize >= data.metrics.totalChildren} onClick={() => void changeFamilyPage(familyPage + 1)}>Próxima</Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1123,24 +1263,25 @@ export function KidsClient({
         </TabsContent>
 
         <TabsContent value="sessoes">
-          <KidsSessionsTab data={sessionsData} />
+          {sessionsData ? <KidsSessionsTab data={sessionsData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "sessoes" ? "Carregando sessões..." : "Abra novamente para carregar."}</p>}
         </TabsContent>
 
-        {canCommunicate && communicationData && (
+        {canCommunicate && (
           <TabsContent value="comunicacao">
-            <KidsCommunicationTab data={communicationData} />
+            {communicationData ? <KidsCommunicationTab data={communicationData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "comunicacao" ? "Carregando comunicação..." : "Abra novamente para carregar."}</p>}
           </TabsContent>
         )}
 
-        {canViewReports && reportsData && (
+        {canViewReports && (
           <TabsContent value="relatorios">
-            <KidsReportsTab data={reportsData} />
+            {reportsData ? <KidsReportsTab data={reportsData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "relatorios" ? "Carregando relatórios..." : "Abra novamente para carregar."}</p>}
           </TabsContent>
         )}
 
         {canManageSettings && (
           <TabsContent value="configuracoes" className="space-y-6">
             <CustomFieldBuilder fields={data.customFields} />
+            <KidsLabelBuilder congregations={data.congregations} customFields={data.customFields} availableChildren={children.map((child) => ({ id: child.id, fullName: child.fullName }))} canViewHealth={canViewHealth} />
             <Card className="glass max-w-2xl">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Settings2 className="h-5 w-5" />Configurações do Kids</CardTitle>
@@ -1161,6 +1302,24 @@ export function KidsClient({
                     ))}
                   </select>
                 </div>
+
+                {!settingsForm.congregationId && (
+                  <div className="space-y-1">
+                    <Label htmlFor="settings-ministry">Ministério responsável</Label>
+                    <select
+                      id="settings-ministry"
+                      className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                      value={settingsForm.ministryId}
+                      onChange={(event) => setSettingsForm({ ...settingsForm, ministryId: event.target.value })}
+                    >
+                      <option value="">Nenhum líder vinculado</option>
+                      {data.ministries.map((ministry) => (
+                        <option key={ministry.id} value={ministry.id}>{ministry.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">Somente o líder cadastrado neste ministério recebe gestão operacional do Kids.</p>
+                  </div>
+                )}
 
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="flex items-center gap-2 text-sm">

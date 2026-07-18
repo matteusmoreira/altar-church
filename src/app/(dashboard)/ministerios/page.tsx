@@ -1,5 +1,5 @@
 import { MinistriesClient } from "./ministries-client"
-import { listMinistries } from "@/lib/pastoral/data"
+import { listMinistries, listMinistryLeaderCandidates } from "@/lib/pastoral/data"
 import type { PastoralListFilters } from "@/lib/pastoral/types"
 
 type SearchParams = Record<string, string | string[] | undefined>
@@ -32,7 +32,7 @@ export default async function MinistriesPage({ searchParams }: { searchParams?: 
     page: numberFilter(params.page, 1),
     pageSize: 10,
   }
-  const ministriesResult = await listMinistries(filters)
+  const [ministriesResult, leaderCandidates] = await Promise.all([listMinistries(filters), listMinistryLeaderCandidates()])
 
-  return <MinistriesClient ministriesResult={ministriesResult} filters={filters} />
+  return <MinistriesClient ministriesResult={ministriesResult} filters={filters} leaderCandidates={leaderCandidates} />
 }

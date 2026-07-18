@@ -23,6 +23,7 @@ const ministrySchema = z.object({
   name: z.string().trim().min(2, "Nome obrigatorio"),
   description: z.string().trim().optional().default(""),
   contact: z.string().trim().optional().default(""),
+  leaderPersonId: nullableUuidSchema,
   isActive: z.boolean().optional().default(true),
 })
 
@@ -117,6 +118,7 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
         set name = ${parsed.name},
             description = ${parsed.description},
             contact = ${parsed.contact},
+            leader_person_id = ${parsed.leaderPersonId},
             is_active = ${parsed.isActive},
             updated_by = ${user.id},
             updated_at = now()
@@ -133,6 +135,7 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
           name,
           description,
           contact,
+          leader_person_id,
           is_active,
           created_by,
           updated_by
@@ -142,6 +145,7 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
           ${parsed.name},
           ${parsed.description},
           ${parsed.contact},
+          ${parsed.leaderPersonId},
           ${parsed.isActive},
           ${user.id},
           ${user.id}

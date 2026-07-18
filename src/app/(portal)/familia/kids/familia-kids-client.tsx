@@ -1,10 +1,10 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
-import { Baby, Church, LogOut, Pencil, Plus, QrCode, ShieldCheck, Trash2, UserPlus } from "lucide-react"
+import { Baby, Church, LogOut, MessageSquare, Pencil, Plus, QrCode, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,8 @@ import {
   updateGuardianConsents,
 } from "@/lib/kids/portal-actions"
 import { saveGuardianChildWithPhotos } from "@/lib/kids/photo-actions"
+import { markKidConversationRead, sendKidInternalMessage } from "@/lib/kids/actions"
+import { createClient } from "@/lib/supabase/client"
 import type {
   GuardianChildItem,
   GuardianPickupCode,
@@ -114,8 +116,7 @@ const emptyChildForm: ChildFormState = {
 }
 
 interface ContactFormState {
-  firstName: string
-  lastName: string
+  fullName: string
   phone: string
   email: string
   relationship: KidRelationship
@@ -125,8 +126,7 @@ interface ContactFormState {
 }
 
 const emptyContactForm: ContactFormState = {
-  firstName: "",
-  lastName: "",
+  fullName: "",
   phone: "",
   email: "",
   relationship: "relative",
@@ -145,6 +145,19 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
   const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
   const [guardianCustomValues, setGuardianCustomValues] = useState(data.guardianCustomValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("guardian"))))
+  const [chatReplies, setChatReplies] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel("family-kids-chat")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "kid_conversation_messages" }, () => router.refresh())
+      .subscribe()
+    for (const conversation of data.conversations) {
+      if (conversation.unreadCount > 0) void markKidConversationRead(conversation.id)
+    }
+    return () => { void supabase.removeChannel(channel) }
+  }, [data.conversations, router])
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -246,6 +259,16 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
     router.refresh()
   }
 
+  async function sendChatReply(conversationId: string) {
+    const body = chatReplies[conversationId]?.trim()
+    if (!body) return
+    await run(
+      () => sendKidInternalMessage({ conversationId, guardianPersonId: null, kidId: null, body }),
+      "Mensagem enviada",
+      () => setChatReplies((current) => ({ ...current, [conversationId]: "" })),
+    )
+  }
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl space-y-6 p-4 pb-16">
       <header className="flex items-center justify-between gap-3 pt-4">
@@ -269,6 +292,43 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
           <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
           <CustomFieldInputs definitions={data.customFields} target="guardian" surface="portal" values={guardianCustomValues} onChange={setGuardianCustomValues} disabled={pending} />
           <Button type="button" disabled={pending} onClick={() => void run(() => saveGuardianKidsProfile({ address: guardianAddress, customValues: guardianCustomValues }), "Dados atualizados")}>Salvar meus dados</Button>
+        </CardContent>
+      </Card>
+
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4" />Chat com o Kids</CardTitle>
+          <CardDescription>Conversa direta com a equipe. Não envia WhatsApp ou e-mail.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {data.conversations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">A equipe ainda não iniciou uma conversa.</p>
+          ) : data.conversations.map((conversation) => (
+            <div key={conversation.id} className="space-y-3 rounded-lg border border-border/60 p-3">
+              <div className="max-h-72 space-y-2 overflow-y-auto">
+                {conversation.messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.senderKind === "guardian" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.senderKind === "guardian" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                      <p>{message.body}</p>
+                      <p className="mt-1 text-[10px] opacity-70">{formatTime(message.createdAt)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Textarea
+                  rows={2}
+                  placeholder="Digite sua mensagem"
+                  value={chatReplies[conversation.id] ?? ""}
+                  disabled={pending}
+                  onChange={(event) => setChatReplies((current) => ({ ...current, [conversation.id]: event.target.value }))}
+                />
+                <Button type="button" size="icon" disabled={pending || !(chatReplies[conversation.id]?.trim())} onClick={() => void sendChatReply(conversation.id)} title="Enviar">
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -398,8 +458,7 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
                 {contactForm?.kidId === child.kidId ? (
                   <div className="space-y-2 rounded-md border border-primary/40 p-3">
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <Input placeholder="Nome *" value={contactForm.form.firstName} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, firstName: event.target.value } })} />
-                      <Input placeholder="Sobrenome" value={contactForm.form.lastName} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, lastName: event.target.value } })} />
+                      <Input className="sm:col-span-2" placeholder="Nome completo *" value={contactForm.form.fullName} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, fullName: event.target.value } })} />
                       <Input placeholder="Telefone *" value={contactForm.form.phone} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, phone: event.target.value } })} />
                       <Input placeholder="E-mail" value={contactForm.form.email} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, email: event.target.value } })} />
                       <select

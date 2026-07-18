@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser"
-import { Baby, CheckCircle2, LogOut, Megaphone, Printer, QrCode, RefreshCw, Search, UserPlus } from "lucide-react"
+import { Baby, CheckCircle2, LogOut, Megaphone, Printer, QrCode, RefreshCw, Search, Settings2, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -22,7 +22,10 @@ import {
   searchKidsForCheckin,
 } from "@/lib/kids/actions"
 import type { KidLabelModel } from "@/lib/kids/printing"
-import type { KidCheckinCandidate, KidsReceptionData } from "@/lib/kids/types"
+import type { KidCheckinCandidate, KidPrintableLabel, KidPrinterPreference, KidsReceptionData } from "@/lib/kids/types"
+import { getKidPrinterPreference, listKidPrinters, printKidLabelsDirect, saveKidPrinterPreference, testKidPrinter } from "@/lib/kids/printer-client"
+import { PrintableLabels } from "./printable-labels"
+import { auditKidLabelPrint } from "@/lib/kids/label-actions"
 
 function showResult(result: { ok: boolean; error?: string }) {
   if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
@@ -122,10 +125,12 @@ export function RecepcaoClient({
   openSessions,
   selectedSessionId,
   initialData,
+  securityStatus,
 }: {
   openSessions: { id: string; title: string; startsAt: string }[]
   selectedSessionId: string
   initialData: KidsReceptionData | null
+  securityStatus: { pinConfigured: boolean; healthConfigured: boolean }
 }) {
   const router = useRouter()
   const canOverride = usePermission("kids.checkout.override")
@@ -136,6 +141,11 @@ export function RecepcaoClient({
   const [roomPick, setRoomPick] = useState<Record<string, string>>({})
   const [overrideReason, setOverrideReason] = useState<Record<string, string>>({})
   const [label, setLabel] = useState<KidLabelModel | null>(null)
+  const [printableLabels, setPrintableLabels] = useState<KidPrintableLabel[]>([])
+  const [printAttendanceId, setPrintAttendanceId] = useState<string | null>(null)
+  const [isReprint, setIsReprint] = useState(false)
+  const [printerPreference, setPrinterPreference] = useState<KidPrinterPreference>(() => getKidPrinterPreference())
+  const [printers, setPrinters] = useState<string[]>([])
   const [checkoutAttendanceId, setCheckoutAttendanceId] = useState<string | null>(null)
   const [checkoutPin, setCheckoutPin] = useState("")
   const [checkoutQr, setCheckoutQr] = useState("")
@@ -146,6 +156,25 @@ export function RecepcaoClient({
 
   const data = initialData
   const settings = data?.settings
+
+  function updatePrinterPreference(next: KidPrinterPreference) {
+    setPrinterPreference(next)
+    saveKidPrinterPreference(next)
+  }
+
+  async function discoverPrinters() {
+    try { const found = await listKidPrinters(); setPrinters(found); if (!printerPreference.printerName && found[0]) updatePrinterPreference({ ...printerPreference, printerName: found[0] }); toast.success(`${found.length} impressora(s) encontrada(s)`) }
+    catch { toast.error("QZ Tray indisponível. Instale/abra o QZ ou use impressão do navegador.") }
+  }
+
+  async function printLabels(labels: KidPrintableLabel[], forceBrowser = false, attendanceId?: string, reprint = false) {
+    if (!forceBrowser && printerPreference.directEnabled && printerPreference.printerName) {
+      try { await printKidLabelsDirect(labels, printerPreference.printerName); if (attendanceId) void auditKidLabelPrint({ attendanceId, revisionIds: labels.map((item) => item.revisionId).filter(Boolean), mode: "qz", reprint }); toast.success("Etiquetas enviadas à impressora"); return }
+      catch { toast.error("Impressão direta falhou. Abrindo impressão do navegador.") }
+    }
+    if (attendanceId) void auditKidLabelPrint({ attendanceId, revisionIds: labels.map((item) => item.revisionId).filter(Boolean), mode: "browser", reprint })
+    window.setTimeout(() => window.print(), 900)
+  }
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -177,6 +206,10 @@ export function RecepcaoClient({
 
   async function doCheckin(candidate: KidCheckinCandidate) {
     if (!data) return
+    if (!securityStatus.pinConfigured) {
+      toast.error("Check-in indisponível: configure KIDS_PIN_PEPPER no servidor")
+      return
+    }
     const picked = roomPick[candidate.kidId] ?? ""
     await run(
       () =>
@@ -190,9 +223,13 @@ export function RecepcaoClient({
       (result) => {
         if (result.label) {
           setLabel(result.label)
+          setPrintableLabels(result.labels ?? [])
+          setPrintAttendanceId(result.attendanceId ?? null)
+          setIsReprint(false)
           setCandidates((current) => current.filter((item) => item.kidId !== candidate.kidId))
           if (settings?.autoPrint) {
-            window.setTimeout(() => window.print(), 400)
+            if (result.labels?.length) void printLabels(result.labels, false, result.attendanceId, false)
+            else window.setTimeout(() => window.print(), 400)
           }
         }
       },
@@ -203,7 +240,11 @@ export function RecepcaoClient({
     await run(() => rotateKidCredential({ attendanceId }), "Nova credencial gerada", (result) => {
       if (result.label) {
         setLabel(result.label)
-        window.setTimeout(() => window.print(), 400)
+        setPrintableLabels(result.labels ?? [])
+        setPrintAttendanceId(result.attendanceId ?? attendanceId)
+        setIsReprint(true)
+        if (result.labels?.length) void printLabels(result.labels, false, result.attendanceId, true)
+        else window.setTimeout(() => window.print(), 400)
       }
     })
   }
@@ -285,6 +326,11 @@ export function RecepcaoClient({
                 <CardDescription>Busque por nome da criança, nome ou telefone do responsável.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                {!securityStatus.pinConfigured && (
+                  <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                    Check-in bloqueado: administrador deve configurar KIDS_PIN_PEPPER no ambiente do servidor.
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Input
                     placeholder="Nome da criança ou telefone do responsável"
@@ -362,7 +408,7 @@ export function RecepcaoClient({
                             <Button
                               type="button"
                               className="h-10"
-                              disabled={pending || blocked || (pickedFull && !canManageSessions)}
+                              disabled={pending || !securityStatus.pinConfigured || blocked || (pickedFull && !canManageSessions)}
                               onClick={() => void doCheckin(candidate)}
                             >
                               <UserPlus className="mr-1 h-4 w-4" />Check-in
@@ -392,12 +438,13 @@ export function RecepcaoClient({
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <LabelPreview label={label} showQr={settings?.labelShowQr ?? true} />
+                  {printableLabels.length ? <PrintableLabels labels={printableLabels} /> : <LabelPreview label={label} showQr={settings?.labelShowQr ?? true} />}
                   <div className="flex justify-center gap-2 print:hidden">
-                    <Button type="button" variant="outline" onClick={() => window.print()}>
+                    <Button type="button" variant="outline" onClick={() => printableLabels.length ? void printLabels(printableLabels, false, printAttendanceId ?? undefined, isReprint) : window.print()}>
                       <Printer className="mr-1 h-4 w-4" />Imprimir
                     </Button>
-                    <Button type="button" variant="ghost" onClick={() => setLabel(null)}>Fechar</Button>
+                    {printableLabels.length > 0 && <Button type="button" variant="ghost" onClick={() => void printLabels(printableLabels, true, printAttendanceId ?? undefined, isReprint)}>Navegador/PDF</Button>}
+                    <Button type="button" variant="ghost" onClick={() => { setLabel(null); setPrintableLabels([]); setPrintAttendanceId(null); setIsReprint(false) }}>Fechar</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -405,6 +452,14 @@ export function RecepcaoClient({
           </div>
 
           <div className="space-y-6">
+            <Card className="glass print:hidden">
+              <CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="h-5 w-5" />Impressora desta estação</CardTitle><CardDescription>QZ Tray no Windows; navegador/PDF continua disponível em qualquer dispositivo.</CardDescription></CardHeader>
+              <CardContent className="space-y-3">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={printerPreference.directEnabled} onChange={(event) => updatePrinterPreference({ ...printerPreference, directEnabled: event.target.checked })} />Impressão direta</label>
+                <div className="flex gap-2"><select className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" value={printerPreference.printerName} onChange={(event) => updatePrinterPreference({ ...printerPreference, printerName: event.target.value })}><option value="">Selecione impressora</option>{printers.map((printer) => <option key={printer}>{printer}</option>)}</select><Button type="button" size="sm" variant="outline" onClick={() => void discoverPrinters()}>Detectar</Button></div>
+                <Button type="button" size="sm" variant="outline" disabled={!printerPreference.printerName} onClick={() => void testKidPrinter(printerPreference.printerName).then(() => toast.success("Teste enviado")).catch(() => toast.error("Teste falhou"))}>Testar impressão</Button>
+              </CardContent>
+            </Card>
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><LogOut className="h-5 w-5" />Checkout</CardTitle>
@@ -551,10 +606,8 @@ export function RecepcaoClient({
 
       {label && (
         <div className="hidden print:block">
-          <style>{`@page { size: ${settings?.labelPaper === "a4" ? "A4" : "62mm 40mm"}; margin: ${settings?.labelPaper === "a4" ? "20mm" : "2mm"}; } body * { visibility: hidden; } .kids-label-print, .kids-label-print * { visibility: visible; } .kids-label-print { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center; background: white; }`}</style>
-          <div className="kids-label-print">
-            <LabelPreview label={label} showQr={settings?.labelShowQr ?? true} />
-          </div>
+          <style>{`@page { margin: 0; } body * { visibility: hidden; } .kids-label-print, .kids-label-print * { visibility: visible; } .kids-label-print { position: absolute; inset: 0; display: block; background: white; } .kids-label-page { page-break-inside: avoid; overflow: hidden; }`}</style>
+          {printableLabels.length ? <PrintableLabels labels={printableLabels} print /> : <div className="kids-label-print"><LabelPreview label={label} showQr={settings?.labelShowQr ?? true} /></div>}
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { requireDashboardModuleAccess } from "@/lib/auth/page-access"
 import { getKidsReceptionData, getKidsSessionsData } from "@/lib/kids/data"
 import { RecepcaoClient } from "./recepcao-client"
+import { getKidsSecurityStatus } from "@/lib/kids/security"
 
 export default async function KidsReceptionPage({ searchParams }: { searchParams?: Promise<{ session?: string }> }) {
   await requireDashboardModuleAccess({ moduleId: "kids", permission: "kids.checkin.create" })
@@ -17,5 +18,5 @@ export default async function KidsReceptionPage({ searchParams }: { searchParams
     : (openSessions[0]?.id ?? "")
 
   const data = selectedId ? await getKidsReceptionData(selectedId) : null
-  return <RecepcaoClient openSessions={openSessions} selectedSessionId={selectedId} initialData={data} />
+  return <RecepcaoClient openSessions={openSessions} selectedSessionId={selectedId} initialData={data} securityStatus={getKidsSecurityStatus()} />
 }

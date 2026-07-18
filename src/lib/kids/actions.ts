@@ -22,6 +22,7 @@ import {
   kidClassroomSchema,
   kidConsentUpdateSchema,
   kidGuardianCallSchema,
+  kidGuardianInputSchema,
   kidHealthUpdateSchema,
   kidIncidentSchema,
   kidCampaignSchema,
@@ -31,6 +32,7 @@ import {
   kidSessionSchema,
   kidSettingsSchema,
   kidStaffAssignmentSchema,
+  nullableUuidSchema,
 } from "./schemas"
 import {
   encryptHealthDetails,
@@ -43,6 +45,7 @@ import {
 } from "./security"
 import { ageMonthsAt, suggestClassroom, type SuggestCandidate } from "./suggest"
 import { buildKidLabelModel, parseQrPayload } from "./printing"
+import { buildAttendancePrintableLabels } from "./label-printing-server"
 import {
   buildCheckinCreatedPayload,
   buildCheckoutCompletedPayload,
@@ -51,18 +54,25 @@ import {
   buildGuardianCalledPayload,
   buildIncidentCreatedPayload,
 } from "./events"
-import { getKidHealthDetails, resolveKidEffectiveSettings } from "./data"
+import { getKidHealthDetails, getKidsCommunicationData, getKidsDashboardData, getKidsReportsData, getKidsSessionsData, resolveKidEffectiveSettings, listKidConversationsForGuardian, listKidConversationsForStaff } from "./data"
 import { splitFullName } from "./form-model"
 import { listKidCustomFields, saveKidCustomValues, validateKidCustomValues } from "./custom-fields"
+import { assertKidsLeaderScope } from "./access"
 import type {
   KidCheckinCandidate,
   KidConsentType,
   KidEffectiveSettings,
   KidHealthDetails,
   KidHealthIndicators,
+  KidListItem,
+  KidPersonSuggestion,
+  KidConversation,
   KidsActionResult,
   KidsCheckinResult,
   KidsCheckoutResult,
+  KidsCommunicationData,
+  KidsReportsData,
+  KidsSessionsData,
 } from "./types"
 
 const CONSENT_TYPES: KidConsentType[] = ["data_processing", "image_use", "emergency_care", "communication"]
@@ -78,6 +88,7 @@ async function context(permission: Permission) {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
   const companyId = requireUserCompanyId(user)
+  await assertKidsLeaderScope(user, companyId)
   await requirePermission(permission, companyId)
   return { user, companyId }
 }
@@ -98,7 +109,6 @@ async function audit(action: string, entityTable: string, entityId: string, comp
 function refresh() {
   revalidatePath("/kids")
   revalidatePath("/kids/recepcao")
-  revalidatePath("/dashboard")
 }
 
 /** Contexto autorizado quando mais de uma permissão habilita a ação (ex.: professor OU recepção). */
@@ -106,6 +116,7 @@ async function contextAny(permissions: Permission[]) {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
   const companyId = requireUserCompanyId(user)
+  await assertKidsLeaderScope(user, companyId)
   await requireCompanyAccess(companyId)
   if (!permissions.some((permission) => hasPermission(user.role, permission))) {
     throw new Error("Acesso negado")
@@ -218,10 +229,6 @@ function phoneDigits(phone: string) {
   return phone.replace(/\D/g, "")
 }
 
-function fullNameOf(firstName: string, lastName: string) {
-  return `${firstName} ${lastName}`.trim()
-}
-
 type Tx = postgres.TransactionSql
 
 /** Localiza pessoa existente na empresa por id, telefone normalizado ou e-mail. */
@@ -240,28 +247,35 @@ async function findPersonId(
     return rows[0].id
   }
 
+  return null
+}
+
+/** Repete a checagem dentro da transação e serializa cadastros concorrentes equivalentes. */
+async function assertNewPersonAllowed(
+  tx: Tx,
+  companyId: string,
+  input: { fullName: string; phone?: string; email?: string | null; confirmNewPerson: boolean },
+) {
   const digits = input.phone ? phoneDigits(input.phone) : ""
-  const email = input.email?.trim() ?? ""
-  const birthDate = input.birthDate ?? ""
-  const rows = await tx<{ id: string }[]>`
-    select id from public.people
-    where company_id = ${companyId}
-      and deleted_at is null
+  const email = input.email?.trim().toLowerCase() ?? ""
+  const lockKey = digits.length >= 8 ? `phone:${digits}` : email ? `email:${email}` : `name:${input.fullName}`
+  await tx`select pg_advisory_xact_lock(hashtextextended(${`${companyId}|${lockKey}`}, 0))`
+  const rows = await tx<{ id: string; same_contact: boolean }[]>`
+    select id,
+      ((${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits})
+       or (${email !== ""} and email is not null and lower(email) = ${email})) as same_contact
+    from public.people
+    where company_id = ${companyId} and deleted_at is null
       and (
-        (${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits})
-        or (${email !== ""} and email is not null and lower(email) = lower(${email}))
-        or (${birthDate !== ""} and lower(full_name) = lower(${input.fullName}) and birth_date = nullif(${birthDate}, '')::date)
+        public.kids_normalize_name(full_name) = public.kids_normalize_name(${input.fullName})
+        or (${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits})
+        or (${email !== ""} and email is not null and lower(email) = ${email})
       )
-    order by
-      case
-        when ${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits} then 1
-        when ${email !== ""} and email is not null and lower(email) = lower(${email}) then 2
-        else 3
-      end,
-      created_at
     limit 1
   `
-  return rows[0]?.id ?? null
+  if (!rows[0]) return
+  if (rows[0].same_contact) throw new Error("Cadastro já existente. Selecione a pessoa encontrada na busca")
+  if (!input.confirmNewPerson) throw new Error("Nome já existente. Selecione a pessoa ou confirme que é um homônimo")
 }
 
 export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<KidsActionResult> {
@@ -294,6 +308,7 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
     const detailsEncrypted = hasDetails ? encryptHealthDetails(JSON.stringify(details)) : ""
 
     const saved = await sql.begin(async (tx) => {
+      if (!parsed.personId) await assertNewPersonAllowed(tx, companyId, { fullName, confirmNewPerson: parsed.confirmNewPerson })
       const personId = await findPersonId(tx, companyId, {
         personId: parsed.personId,
         fullName,
@@ -398,10 +413,17 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
       // Responsáveis: remove vínculos ausentes e faz upsert dos informados.
       const desiredPersonIds: string[] = []
       for (const guardian of guardians) {
+        const guardianName = splitFullName(guardian.fullName)
+        if (!guardian.personId) await assertNewPersonAllowed(tx, companyId, {
+          fullName: guardianName.fullName,
+          phone: guardian.phone,
+          email: guardian.email,
+          confirmNewPerson: guardian.confirmNewPerson,
+        })
         const guardianCustomValues = validateKidCustomValues(customFields, "guardian", "internal", guardian.customValues)
         const guardianPersonId = await findPersonId(tx, companyId, {
           personId: guardian.personId,
-          fullName: fullNameOf(guardian.firstName, guardian.lastName),
+          fullName: guardianName.fullName,
           phone: guardian.phone,
           email: guardian.email,
         })
@@ -414,8 +436,8 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
               status, person_type, is_active, created_by, updated_by
             )
             values (
-              ${companyId}, ${guardian.firstName}, ${guardian.lastName},
-              ${fullNameOf(guardian.firstName, guardian.lastName)}, ${guardian.email}, ${guardian.phone},
+              ${companyId}, ${guardianName.firstName}, ${guardianName.lastName},
+              ${guardianName.fullName}, ${guardian.email}, ${guardian.phone},
               ${guardian.address.postalCode}, ${guardian.address.street}, ${guardian.address.number},
               ${guardian.address.complement}, ${guardian.address.neighborhood}, ${guardian.address.city},
               ${guardian.address.state}, ${guardian.address.country},
@@ -428,8 +450,8 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
         if (guardianPersonId) {
           await tx`
             update public.people set
-              first_name = ${guardian.firstName}, last_name = ${guardian.lastName},
-              full_name = ${fullNameOf(guardian.firstName, guardian.lastName)},
+              first_name = ${guardianName.firstName}, last_name = ${guardianName.lastName},
+              full_name = ${guardianName.fullName},
               email = ${guardian.email}, phone = ${guardian.phone},
               postal_code = ${guardian.address.postalCode}, address = ${guardian.address.street},
               address_number = ${guardian.address.number}, address_complement = ${guardian.address.complement},
@@ -546,6 +568,88 @@ export async function deleteKid(input: unknown): Promise<KidsActionResult> {
     await audit("kids.child.delete", "kid_profiles", id, companyId)
     refresh()
     return { ok: true, id }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function unlinkKidGuardian(input: unknown): Promise<KidsActionResult> {
+  try {
+    const parsed = z.object({ kidId: z.string().uuid(), guardianPersonId: z.string().uuid() }).parse(input)
+    const { user, companyId } = await context("kids.guardians.manage")
+    const sql = getSql()
+    const rows = await sql<{ id: string; guardian_count: number }[]>`
+      select guardian.id,
+             (select count(*)::int from public.kid_guardians current where current.kid_id = guardian.kid_id and current.deleted_at is null) as guardian_count
+      from public.kid_guardians guardian
+      where guardian.company_id = ${companyId}
+        and guardian.kid_id = ${parsed.kidId}
+        and guardian.person_id = ${parsed.guardianPersonId}
+        and guardian.deleted_at is null
+      limit 1
+    `
+    const link = rows[0]
+    if (!link) throw new Error("Responsável não encontrado")
+    if (Number(link.guardian_count) <= 1) throw new Error("Cadastre outro responsável antes de remover o último vínculo")
+    await sql`
+      update public.kid_guardians
+      set deleted_at = now(), updated_by = ${user.id}
+      where id = ${link.id} and company_id = ${companyId}
+    `
+    await audit("kids.guardian.unlink", "kid_guardians", link.id, companyId, { kidId: parsed.kidId, guardianPersonId: parsed.guardianPersonId })
+    revalidatePath("/kids")
+    return { ok: true, id: link.id }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function updateKidGuardian(input: unknown): Promise<KidsActionResult> {
+  try {
+    const parsed = z.object({ kidId: z.string().uuid(), guardian: kidGuardianInputSchema }).parse(input)
+    if (!parsed.guardian.personId) throw new Error("Responsável obrigatório")
+    const guardianPersonId = parsed.guardian.personId
+    const { user, companyId } = await context("kids.guardians.manage")
+    const sql = getSql()
+    const name = splitFullName(parsed.guardian.fullName)
+    const customFields = await listKidCustomFields(companyId, { surface: "internal" })
+    const customValues = validateKidCustomValues(customFields, "guardian", "internal", parsed.guardian.customValues)
+    const linkId = await sql.begin(async (tx) => {
+      const links = await tx<{ id: string }[]>`
+        select id from public.kid_guardians
+        where company_id = ${companyId} and kid_id = ${parsed.kidId}
+          and person_id = ${guardianPersonId} and deleted_at is null
+        limit 1
+      `
+      if (!links[0]) throw new Error("Responsável não encontrado")
+      await tx`
+        update public.people set first_name = ${name.firstName}, last_name = ${name.lastName}, full_name = ${name.fullName},
+          email = ${parsed.guardian.email}, phone = ${parsed.guardian.phone}, postal_code = ${parsed.guardian.address.postalCode},
+          address = ${parsed.guardian.address.street}, address_number = ${parsed.guardian.address.number},
+          address_complement = ${parsed.guardian.address.complement}, neighborhood = ${parsed.guardian.address.neighborhood},
+          city = ${parsed.guardian.address.city}, state = ${parsed.guardian.address.state}, country = ${parsed.guardian.address.country},
+          updated_by = ${user.id}
+        where id = ${guardianPersonId} and company_id = ${companyId} and deleted_at is null
+      `
+      await tx`
+        update public.kid_guardians set relationship = ${parsed.guardian.relationship}, is_primary = ${parsed.guardian.isPrimary},
+          can_checkin = ${parsed.guardian.canCheckin}, can_checkout = ${parsed.guardian.canCheckout},
+          is_emergency_contact = ${parsed.guardian.isEmergencyContact}, whatsapp_enabled = ${parsed.guardian.whatsappEnabled},
+          email_enabled = ${parsed.guardian.emailEnabled}, updated_by = ${user.id}
+        where id = ${links[0].id}
+      `
+      if (parsed.guardian.isPrimary) {
+        await tx`
+          update public.kid_guardians set is_primary = false, updated_by = ${user.id}
+          where company_id = ${companyId} and kid_id = ${parsed.kidId} and id <> ${links[0].id} and deleted_at is null
+        `
+      }
+      await saveKidCustomValues(tx, companyId, guardianPersonId, user.id, customValues)
+      return links[0].id
+    })
+    await audit("kids.guardian.update", "kid_guardians", linkId, companyId, { kidId: parsed.kidId, guardianPersonId })
+    revalidatePath("/kids")
+    return { ok: true, id: linkId }
   } catch (error) {
     return failure(error)
   }
@@ -790,7 +894,8 @@ export async function saveKidSettings(input: z.input<typeof kidSettingsSchema>):
     const rows = existing[0]?.id
       ? await sql<{ id: string }[]>`
           update public.kid_settings
-          set require_checkout_pin = ${parsed.requireCheckoutPin},
+          set ministry_id = ${parsed.congregationId ? null : parsed.ministryId},
+              require_checkout_pin = ${parsed.requireCheckoutPin},
               pin_rotation_minutes = ${parsed.pinRotationMinutes},
               allow_capacity_override = ${parsed.allowCapacityOverride},
               label_paper = ${parsed.labelPaper},
@@ -804,12 +909,12 @@ export async function saveKidSettings(input: z.input<typeof kidSettingsSchema>):
         `
       : await sql<{ id: string }[]>`
           insert into public.kid_settings (
-            company_id, congregation_id, require_checkout_pin, pin_rotation_minutes, allow_capacity_override,
+            company_id, congregation_id, ministry_id, require_checkout_pin, pin_rotation_minutes, allow_capacity_override,
             label_paper, label_show_qr, auto_print, visitor_form_enabled, required_consent_types,
             created_by, updated_by
           )
           values (
-            ${companyId}, ${parsed.congregationId}, ${parsed.requireCheckoutPin}, ${parsed.pinRotationMinutes},
+            ${companyId}, ${parsed.congregationId}, ${parsed.congregationId ? null : parsed.ministryId}, ${parsed.requireCheckoutPin}, ${parsed.pinRotationMinutes},
             ${parsed.allowCapacityOverride}, ${parsed.labelPaper}, ${parsed.labelShowQr}, ${parsed.autoPrint},
             ${parsed.visitorFormEnabled}, ${parsed.requiredConsentTypes}, ${user.id}, ${user.id}
           )
@@ -819,6 +924,7 @@ export async function saveKidSettings(input: z.input<typeof kidSettingsSchema>):
 
     await audit("kids.settings.save", "kid_settings", rows[0].id, companyId, {
       congregationId: parsed.congregationId,
+      ministryId: parsed.congregationId ? null : parsed.ministryId,
     })
     refresh()
     return { ok: true, id: rows[0].id }
@@ -863,6 +969,93 @@ export async function searchGuardianPeople(input: unknown): Promise<{ ok: boolea
       ok: true,
       people: rows.map((row) => ({ id: row.id, fullName: row.full_name, phone: row.phone ?? "", email: row.email })),
     }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+/** Autocomplete antduplicidade compartilhado pelo cadastro de criança e responsável. */
+export async function searchKidsPeople(input: unknown): Promise<{ ok: boolean; people?: KidPersonSuggestion[]; error?: string }> {
+  try {
+    const parsed = z.object({ target: z.enum(["child", "guardian"]), query: z.string().trim().min(3).max(120) }).parse(input)
+    const { companyId } = await context(parsed.target === "child" ? "kids.children.manage" : "kids.guardians.manage")
+    const query = parsed.query
+    const like = `%${query}%`
+    const prefix = `${query}%`
+    const rows = await getSql()<{
+      id: string; full_name: string; phone: string; email: string | null; birth_date: Date | string | null; kid_id: string | null; linked_children: unknown
+    }[]>`
+      select person.id, person.full_name, person.phone, person.email, person.birth_date,
+             child.id as kid_id,
+             coalesce((
+               select jsonb_agg(jsonb_build_object('kidId', linked_kid.id, 'fullName', linked_person.full_name) order by linked_person.full_name)
+               from public.kid_guardians guardian
+               join public.kid_profiles linked_kid on linked_kid.id = guardian.kid_id and linked_kid.deleted_at is null
+               join public.people linked_person on linked_person.id = linked_kid.person_id and linked_person.deleted_at is null
+               where guardian.person_id = person.id and guardian.deleted_at is null
+             ), '[]'::jsonb) as linked_children
+      from public.people person
+      left join public.kid_profiles child on child.person_id = person.id and child.deleted_at is null
+      where person.company_id = ${companyId}
+        and person.deleted_at is null
+        and public.kids_normalize_name(person.full_name) like public.kids_normalize_name(${like})
+      order by
+        case when public.kids_normalize_name(person.full_name) = public.kids_normalize_name(${query}) then 0 when public.kids_normalize_name(person.full_name) like public.kids_normalize_name(${prefix}) then 1 else 2 end,
+        person.full_name
+      limit 10
+    `
+    return {
+      ok: true,
+      people: rows.map((row) => ({
+        personId: row.id,
+        fullName: row.full_name,
+        phone: row.phone ?? "",
+        email: row.email,
+        birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
+        kidId: row.kid_id,
+        linkedChildren: Array.isArray(row.linked_children)
+          ? row.linked_children.map((item) => ({ kidId: String((item as Record<string, unknown>).kidId), fullName: String((item as Record<string, unknown>).fullName) }))
+          : [],
+      })),
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function loadKidsSessionsData(): Promise<{ ok: boolean; data?: KidsSessionsData; error?: string }> {
+  try {
+    await context("kids.view")
+    return { ok: true, data: await getKidsSessionsData() }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function loadKidsFamiliesPage(input: unknown): Promise<{ ok: boolean; children?: KidListItem[]; page?: number; pageSize?: number; error?: string }> {
+  try {
+    const page = z.coerce.number().int().min(0).parse(input)
+    await context("kids.view")
+    const data = await getKidsDashboardData(undefined, page)
+    return { ok: true, children: data.children, page: data.familyPage, pageSize: data.familyPageSize }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function loadKidsCommunicationData(): Promise<{ ok: boolean; data?: KidsCommunicationData; error?: string }> {
+  try {
+    await context("kids.communicate")
+    return { ok: true, data: await getKidsCommunicationData() }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function loadKidsReportsData(): Promise<{ ok: boolean; data?: KidsReportsData; error?: string }> {
+  try {
+    await context("kids.reports.view")
+    return { ok: true, data: await getKidsReportsData() }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
   }
@@ -1458,16 +1651,27 @@ export async function checkinKid(input: z.input<typeof kidCheckinSchema>): Promi
         const pickupGuardianId = authorizedGuardians[0]?.id
         if (!pickupGuardianId) throw new Error("Cadastre um responsável autorizado para retirada antes do check-in")
 
+        const labelRevisions = await tx<{ kind: "child" | "guardian"; published_revision_id: string }[]>`
+          select distinct on (template.kind) template.kind, template.published_revision_id
+          from public.kid_label_templates template
+          where template.company_id = ${companyId} and template.is_active = true and template.deleted_at is null
+            and template.published_revision_id is not null
+            and (template.congregation_id = ${session.congregation_id ?? kid.congregation_id} or template.congregation_id is null)
+          order by template.kind, (template.congregation_id is not null) desc
+        `
+        const childLabelRevisionId = labelRevisions.find((row) => row.kind === "child")?.published_revision_id ?? null
+        const guardianLabelRevisionId = labelRevisions.find((row) => row.kind === "guardian")?.published_revision_id ?? null
+
         // Transação atômica: presença + credencial de retirada.
         // O índice único parcial bloqueia duplicidade mesmo sob corrida.
         const attendances = await tx<{ id: string }[]>`
           insert into public.kid_attendances (
             company_id, session_id, session_classroom_id, classroom_name, kid_id,
-            status, checked_in_by, room_override_reason
+            status, checked_in_by, room_override_reason, child_label_revision_id, guardian_label_revision_id
           )
           values (
             ${companyId}, ${session.id}, ${classroom.id}, ${classroom.name}, ${kid.id},
-            'checked_in', ${user.id}, ${capacityOverride ? parsed.overrideReason.trim() : null}
+            'checked_in', ${user.id}, ${capacityOverride ? parsed.overrideReason.trim() : null}, ${childLabelRevisionId}, ${guardianLabelRevisionId}
           )
           returning id
         `
@@ -1551,6 +1755,7 @@ export async function checkinKid(input: z.input<typeof kidCheckinSchema>): Promi
       },
       checkedInAt,
     })
+    const labels = await buildAttendancePrintableLabels({ companyId, attendanceId: outcome.attendanceId, pickupPin: outcome.pickupPin, pickupToken: outcome.pickupToken })
 
     await emitKidsEvent(
       companyId,
@@ -1589,7 +1794,7 @@ export async function checkinKid(input: z.input<typeof kidCheckinSchema>): Promi
       createdBy: user.id,
     })
     refresh()
-    return { ok: true, attendanceId: outcome.attendanceId, label }
+    return { ok: true, attendanceId: outcome.attendanceId, label, labels }
   } catch (error) {
     const mapped = failure(error)
     return { ok: false, error: mapped.error }
@@ -2017,9 +2222,10 @@ export async function rotateKidCredential(input: z.input<typeof kidRotateCredent
       },
       checkedInAt: new Date().toISOString(),
     })
+    const labels = await buildAttendancePrintableLabels({ companyId, attendanceId: outcome.attendanceId, pickupPin: outcome.pickupPin, pickupToken: outcome.pickupToken })
 
     refresh()
-    return { ok: true, attendanceId: outcome.attendanceId, label }
+    return { ok: true, attendanceId: outcome.attendanceId, label, labels }
   } catch (error) {
     const mapped = failure(error)
     return { ok: false, error: mapped.error }
@@ -2343,6 +2549,133 @@ export async function sendKidCampaign(input: z.input<typeof kidCampaignSchema>):
     })
     refresh()
     return { ok: true, id: result.messageId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function listKidConversations(): Promise<{ ok: boolean; conversations?: KidConversation[]; error?: string }> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user)
+    if (user.role === "guardian") return { ok: true, conversations: await listKidConversationsForGuardian(companyId, user.id) }
+    await context("kids.communicate")
+    return { ok: true, conversations: await listKidConversationsForStaff(companyId) }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function listKidMessages(input: unknown): Promise<{ ok: boolean; conversation?: KidConversation; error?: string }> {
+  try {
+    const conversationId = z.string().uuid().parse(input)
+    const result = await listKidConversations()
+    if (!result.ok) return { ok: false, error: result.error }
+    const conversation = result.conversations?.find((item) => item.id === conversationId)
+    if (!conversation) throw new Error("Conversa não encontrada")
+    return { ok: true, conversation }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function sendKidInternalMessage(input: unknown): Promise<KidsActionResult> {
+  try {
+    const parsed = z.object({
+      conversationId: nullableUuidSchema,
+      guardianPersonId: nullableUuidSchema,
+      kidId: nullableUuidSchema,
+      body: z.string().trim().min(1, "Mensagem obrigatória").max(2000),
+    }).parse(input)
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user)
+    const sql = getSql()
+    const senderKind = user.role === "guardian" ? "guardian" : "staff"
+    if (senderKind === "staff") await context("kids.communicate")
+
+    let conversationId = parsed.conversationId
+    let guardianPersonId = parsed.guardianPersonId
+    if (conversationId) {
+      const allowed = senderKind === "guardian"
+        ? await sql<{ id: string; guardian_person_id: string }[]>`
+            select conversation.id, conversation.guardian_person_id
+            from public.kid_conversations conversation
+            where conversation.id = ${conversationId} and conversation.company_id = ${companyId} and conversation.deleted_at is null
+              and exists(select 1 from public.kid_guardians link where link.person_id = conversation.guardian_person_id and link.profile_id = ${user.id} and link.deleted_at is null)
+          `
+        : await sql<{ id: string; guardian_person_id: string }[]>`
+            select id, guardian_person_id from public.kid_conversations
+            where id = ${conversationId} and company_id = ${companyId} and deleted_at is null
+          `
+      if (!allowed[0]) throw new Error("Conversa não encontrada")
+      guardianPersonId = allowed[0].guardian_person_id
+    } else {
+      if (senderKind !== "staff" || !guardianPersonId) throw new Error("Responsável obrigatório")
+      const link = await sql<{ person_id: string }[]>`
+        select person_id from public.kid_guardians
+        where company_id = ${companyId} and person_id = ${guardianPersonId} and deleted_at is null
+          and (${parsed.kidId}::uuid is null or kid_id = ${parsed.kidId})
+        limit 1
+      `
+      if (!link[0]) throw new Error("Responsável não encontrado")
+      const existing = await sql<{ id: string }[]>`
+        select id from public.kid_conversations
+        where company_id = ${companyId} and guardian_person_id = ${guardianPersonId} and deleted_at is null
+        limit 1
+      `
+      conversationId = existing[0]?.id ?? null
+      if (!conversationId) {
+        const inserted = await sql<{ id: string }[]>`
+          insert into public.kid_conversations (company_id, guardian_person_id, kid_id, created_by, updated_by, staff_read_at)
+          values (${companyId}, ${guardianPersonId}, ${parsed.kidId}, ${user.id}, ${user.id}, now())
+          on conflict (company_id, guardian_person_id) where deleted_at is null
+          do update set kid_id = coalesce(excluded.kid_id, kid_conversations.kid_id), updated_by = excluded.updated_by
+          returning id
+        `
+        conversationId = inserted[0]?.id ?? null
+      }
+    }
+    if (!conversationId) throw new Error("Conversa não foi criada")
+    const rows = await sql<{ id: string }[]>`
+      insert into public.kid_conversation_messages (company_id, conversation_id, kid_id, sender_profile_id, sender_kind, body)
+      values (${companyId}, ${conversationId}, ${parsed.kidId}, ${user.id}, ${senderKind}, ${parsed.body})
+      returning id
+    `
+    await sql`
+      update public.kid_conversations
+      set last_message_at = now(), kid_id = coalesce(${parsed.kidId}, kid_id), updated_by = ${user.id},
+          staff_read_at = case when ${senderKind} = 'staff' then now() else staff_read_at end,
+          guardian_read_at = case when ${senderKind} = 'guardian' then now() else guardian_read_at end
+      where id = ${conversationId} and company_id = ${companyId}
+    `
+    await audit("kids.chat.send", "kid_conversation_messages", rows[0]?.id ?? conversationId, companyId, { conversationId, senderKind })
+    revalidatePath(senderKind === "guardian" ? "/familia/kids" : "/kids")
+    return { ok: true, id: conversationId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function markKidConversationRead(input: unknown): Promise<KidsActionResult> {
+  try {
+    const conversationId = z.string().uuid().parse(input)
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user)
+    const sql = getSql()
+    if (user.role === "guardian") {
+      await sql`
+        update public.kid_conversations conversation set guardian_read_at = now()
+        where conversation.id = ${conversationId} and conversation.company_id = ${companyId}
+          and exists(select 1 from public.kid_guardians link where link.person_id = conversation.guardian_person_id and link.profile_id = ${user.id} and link.deleted_at is null)
+      `
+    } else {
+      await context("kids.communicate")
+      await sql`update public.kid_conversations set staff_read_at = now() where id = ${conversationId} and company_id = ${companyId}`
+    }
+    return { ok: true, id: conversationId }
   } catch (error) {
     return failure(error)
   }

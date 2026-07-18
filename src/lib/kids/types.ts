@@ -6,6 +6,132 @@ export type KidConsentSource = "portal" | "reception" | "import"
 export type KidSessionStatus = "draft" | "open" | "closed" | "cancelled"
 export type KidAttendanceStatus = "checked_in" | "checkout_requested" | "checked_out"
 export type KidLabelPaper = "thermal_62x40" | "a4"
+export type KidLabelKind = "child" | "guardian"
+export type KidLabelElementType = "text" | "field" | "qr" | "image" | "rect" | "circle" | "line" | "badge"
+export type KidLabelTextAlign = "left" | "center" | "right"
+
+export interface KidLabelElement {
+  id: string
+  type: KidLabelElementType
+  name: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  opacity: number
+  visible: boolean
+  locked: boolean
+  zIndex: number
+  groupId?: string | null
+  text?: string
+  field?: string
+  assetId?: string | null
+  assetUrl?: string | null
+  fontFamily?: string
+  fontSize?: number
+  fontWeight?: number
+  textAlign?: KidLabelTextAlign
+  letterSpacing?: number
+  color?: string
+  fill?: string
+  gradientFrom?: string
+  gradientTo?: string
+  gradientAngle?: number
+  stroke?: string
+  strokeWidth?: number
+  radius?: number
+  shadowColor?: string
+  shadowBlur?: number
+  fit?: "cover" | "contain" | "stretch"
+}
+
+export interface KidLabelDesign {
+  schemaVersion: 1
+  backgroundColor: string
+  backgroundGradientFrom?: string | null
+  backgroundGradientTo?: string | null
+  backgroundGradientAngle?: number
+  backgroundAssetId: string | null
+  backgroundAssetUrl?: string | null
+  backgroundFit: "cover" | "contain" | "stretch"
+  showGrid: boolean
+  snapToGrid: boolean
+  gridSizeMm: number
+  bleedMm: number
+  elements: KidLabelElement[]
+}
+
+export interface KidLabelRevision {
+  id: string
+  templateId: string
+  version: number
+  status: "draft" | "published" | "superseded"
+  schemaVersion: number
+  widthMm: number
+  heightMm: number
+  dpi: 203 | 300 | 600
+  design: KidLabelDesign
+  containsSensitiveFields: boolean
+  publishedAt: string | null
+  createdAt: string
+}
+
+export interface KidLabelTemplate {
+  id: string
+  congregationId: string | null
+  kind: KidLabelKind
+  name: string
+  isActive: boolean
+  draftRevisionId: string | null
+  publishedRevisionId: string | null
+  revisions: KidLabelRevision[]
+}
+
+export interface KidLabelRenderContext {
+  childName: string
+  childFullName: string
+  childBirthDate: string
+  childAge: string
+  childNotes: string
+  childPhotoUrl: string
+  attendanceStatus: string
+  visitorStatus: string
+  guardianName: string
+  guardianFullName: string
+  guardianPhone: string
+  guardianEmail: string
+  churchName: string
+  congregationName: string
+  classroomName: string
+  sessionTitle: string
+  checkedInAt: string
+  pickupCode: string
+  qrPayload: string
+  consentSummary: string
+  alertSummary: string
+  allergies: string
+  dietaryRestrictions: string
+  medication: string
+  specialNeeds: string
+  healthInstructions: string
+  customFields: Record<string, string>
+}
+
+export interface KidPrintableLabel {
+  kind: KidLabelKind
+  revisionId: string | null
+  widthMm: number
+  heightMm: number
+  dpi: 203 | 300 | 600
+  design: KidLabelDesign
+  context: KidLabelRenderContext
+}
+
+export interface KidPrinterPreference {
+  printerName: string
+  directEnabled: boolean
+}
 export type KidCustomFieldTarget = "child" | "guardian"
 export type KidCustomFieldSurface = "internal" | "public" | "portal"
 export type KidCustomFieldType = "text" | "textarea" | "number" | "date" | "single" | "multiple" | "boolean"
@@ -94,6 +220,28 @@ export interface KidListItem {
   customValues: KidCustomFieldValue[]
 }
 
+export interface KidPersonSuggestion {
+  personId: string
+  fullName: string
+  phone: string
+  email: string | null
+  birthDate: string | null
+  kidId: string | null
+  linkedChildren: { kidId: string; fullName: string }[]
+}
+
+export interface KidsCapabilities {
+  view: boolean
+  manageChildren: boolean
+  manageGuardians: boolean
+  manageClasses: boolean
+  manageSessions: boolean
+  viewHealth: boolean
+  communicate: boolean
+  viewReports: boolean
+  manageSettings: boolean
+}
+
 export interface KidClassroomRuleItem {
   id: string
   classroomId: string
@@ -124,6 +272,7 @@ export interface KidClassroomItem {
 export interface KidSettingsItem {
   id: string | null
   congregationId: string | null
+  ministryId: string | null
   requireCheckoutPin: boolean
   pinRotationMinutes: number
   allowCapacityOverride: boolean
@@ -145,9 +294,12 @@ export interface KidsMetrics {
 export interface KidsDashboardData {
   metrics: KidsMetrics
   children: KidListItem[]
+  familyPage: number
+  familyPageSize: number
   classrooms: KidClassroomItem[]
   settings: KidSettingsItem[]
   congregations: { id: string; name: string }[]
+  ministries: { id: string; name: string; leaderPersonId: string | null }[]
   customFields: KidCustomFieldDefinition[]
 }
 
@@ -334,6 +486,7 @@ export interface KidsCheckinResult {
   error?: string
   attendanceId?: string
   label?: import("./printing").KidLabelModel
+  labels?: KidPrintableLabel[]
 }
 
 export interface KidsCheckoutResult {
@@ -389,6 +542,7 @@ export interface GuardianPortalData {
   congregations: { id: string; name: string }[]
   recentReports: GuardianReportItem[]
   customFields: KidCustomFieldDefinition[]
+  conversations: KidConversation[]
 }
 
 export interface GuardianPickupCode {
@@ -437,6 +591,32 @@ export interface KidsCommunicationData {
   classrooms: { id: string; name: string }[]
   congregations: { id: string; name: string }[]
   children: { id: string; fullName: string }[]
+  guardians: { personId: string; fullName: string; children: string[]; portalActive: boolean }[]
+  conversations: KidConversation[]
+}
+
+export interface KidConversationMessage {
+  id: string
+  conversationId: string
+  kidId: string | null
+  senderProfileId: string
+  senderKind: "staff" | "guardian"
+  senderName: string
+  body: string
+  createdAt: string
+}
+
+export interface KidConversation {
+  id: string
+  guardianPersonId: string
+  guardianName: string
+  kidId: string | null
+  childName: string | null
+  portalActive: boolean
+  status: "open" | "closed"
+  unreadCount: number
+  lastMessageAt: string
+  messages: KidConversationMessage[]
 }
 
 export interface KidsReportsMetrics {

@@ -35,17 +35,26 @@ function readHealthKey(): Buffer | null {
 
 function readPinPepper(): Buffer {
   const raw = process.env[PIN_PEPPER_ENV]?.trim()
-  if (raw) return createHash("sha256").update(raw, "utf8").digest()
-  const healthKey = readHealthKey()
-  if (healthKey) return healthKey
-  throw new Error(`Configure ${PIN_PEPPER_ENV} ou ${HEALTH_KEY_ENV} para credenciais Kids`)
+  if (!raw) throw new Error(`Configure ${PIN_PEPPER_ENV} para credenciais Kids`)
+  return createHash("sha256").update(raw, "utf8").digest()
 }
 
 export function isKidsSecurityConfigured(): boolean {
+  const status = getKidsSecurityStatus()
+  return status.pinConfigured && status.healthConfigured
+}
+
+/** Diagnóstico seguro: informa presença/validade, nunca retorna segredos. */
+export function getKidsSecurityStatus(): { pinConfigured: boolean; healthConfigured: boolean } {
+  let healthConfigured = false
   try {
-    return readHealthKey() !== null
+    healthConfigured = readHealthKey() !== null
   } catch {
-    return false
+    healthConfigured = false
+  }
+  return {
+    pinConfigured: Boolean(process.env[PIN_PEPPER_ENV]?.trim()),
+    healthConfigured,
   }
 }
 

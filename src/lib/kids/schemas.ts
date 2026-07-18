@@ -33,8 +33,8 @@ const consentTypeSchema = z.enum(["data_processing", "image_use", "emergency_car
 export const kidGuardianInputSchema = z.object({
   id: nullableUuidSchema,
   personId: nullableUuidSchema,
-  firstName: z.string().trim().min(2, "Nome do responsável obrigatório"),
-  lastName: z.string().trim().optional().default(""),
+  confirmNewPerson: z.boolean().default(false),
+  fullName: z.string().trim().min(2, "Nome completo do responsável obrigatório").transform((value) => value.replace(/\s+/g, " ")),
   email: nullableEmailSchema,
   phone: z.string().trim().min(8, "Telefone do responsável obrigatório"),
   relationship: z.enum(["father", "mother", "guardian", "grandparent", "relative", "other"]).default("guardian"),
@@ -75,6 +75,7 @@ export const kidHealthInputSchema = z.object({
 export const kidChildSchema = z.object({
   id: nullableUuidSchema,
   personId: nullableUuidSchema,
+  confirmNewPerson: z.boolean().default(false),
   fullName: z.string().trim().min(2, "Nome completo obrigatório").transform((value) => value.replace(/\s+/g, " ")),
   birthDate: nullableDateSchema,
   congregationId: nullableUuidSchema,
@@ -140,6 +141,7 @@ export const kidClassroomRuleSchema = z
 
 export const kidSettingsSchema = z.object({
   congregationId: nullableUuidSchema,
+  ministryId: nullableUuidSchema,
   requireCheckoutPin: z.boolean().default(true),
   pinRotationMinutes: z.coerce.number().int().min(5, "Mínimo 5 minutos").max(240, "Máximo 240 minutos").default(30),
   allowCapacityOverride: z.boolean().default(true),

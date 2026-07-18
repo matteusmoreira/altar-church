@@ -41,9 +41,11 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const claims = claimsData?.claims
+  const user = typeof claims?.sub === "string"
+    ? { id: claims.sub, email: typeof claims.email === "string" ? claims.email : null }
+    : null
 
   const pathname = request.nextUrl.pathname
   const requestHeaders = new Headers(request.headers)
