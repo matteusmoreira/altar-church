@@ -9,8 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { PhotoCapture } from "@/components/kids/photo-capture"
+import { AddressFields } from "@/components/kids/address-fields"
+import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
+import { EMPTY_KID_ADDRESS } from "@/lib/kids/form-model"
 import { registerVisitorKidWithPhotos } from "@/lib/kids/photo-actions"
-import type { KidConsentType, KidRelationship } from "@/lib/kids/types"
+import type { KidConsentType, KidCustomFieldDefinition, KidCustomFieldValue, KidRelationship } from "@/lib/kids/types"
 
 const CONSENT_LABELS: Record<KidConsentType, string> = {
   data_processing: "Autorizo o tratamento dos dados do meu filho(a)",
@@ -42,11 +45,10 @@ export function CadastroVisitanteClient({
   info,
 }: {
   slug: string
-  info: { ok: boolean; error?: string; companyName?: string; requiredConsents?: KidConsentType[] }
+  info: { ok: boolean; error?: string; companyName?: string; requiredConsents?: KidConsentType[]; customFields?: KidCustomFieldDefinition[] }
 }) {
   const [form, setForm] = useState({
-    childFirstName: "",
-    childLastName: "",
+    childFullName: "",
     childBirthDate: "",
     guardianFirstName: "",
     guardianLastName: "",
@@ -62,19 +64,24 @@ export function CadastroVisitanteClient({
   const [pending, setPending] = useState(false)
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
+  const [guardianAddress, setGuardianAddress] = useState({ ...EMPTY_KID_ADDRESS })
+  const [childCustomValues, setChildCustomValues] = useState<KidCustomFieldValue[]>([])
+  const [guardianCustomValues, setGuardianCustomValues] = useState<KidCustomFieldValue[]>([])
 
   async function submit() {
     setPending(true)
     try {
       const payload = {
         slug,
-        childFirstName: form.childFirstName,
-        childLastName: form.childLastName,
+        childFullName: form.childFullName,
         childBirthDate: form.childBirthDate || null,
         guardianFirstName: form.guardianFirstName,
         guardianLastName: form.guardianLastName,
         guardianPhone: form.guardianPhone,
         guardianEmail: form.guardianEmail || null,
+        guardianAddress,
+        childCustomValues,
+        guardianCustomValues,
         relationship: form.relationship,
         health: {
           ...flags,
@@ -147,13 +154,9 @@ export function CadastroVisitanteClient({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label>Nome *</Label>
-              <Input value={form.childFirstName} onChange={(event) => setForm({ ...form, childFirstName: event.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <Label>Sobrenome</Label>
-              <Input value={form.childLastName} onChange={(event) => setForm({ ...form, childLastName: event.target.value })} />
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Nome completo *</Label>
+              <Input value={form.childFullName} onChange={(event) => setForm({ ...form, childFullName: event.target.value })} />
             </div>
           </div>
           <div className="space-y-1">
@@ -161,6 +164,7 @@ export function CadastroVisitanteClient({
             <Input type="date" value={form.childBirthDate} onChange={(event) => setForm({ ...form, childBirthDate: event.target.value })} />
           </div>
           <PhotoCapture label="da criança" value={childPhoto} disabled={pending} onChange={(file) => setChildPhoto(file)} onError={(message) => toast.error(message)} />
+          <CustomFieldInputs definitions={info.customFields ?? []} target="child" surface="public" values={childCustomValues} onChange={setChildCustomValues} disabled={pending} />
           <div className="space-y-2 rounded-lg border border-border/60 p-3">
             <p className="text-sm font-medium">Saúde essencial</p>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -226,6 +230,8 @@ export function CadastroVisitanteClient({
             </div>
           </div>
           <PhotoCapture label="do responsável" value={guardianPhoto} disabled={pending} onChange={(file) => setGuardianPhoto(file)} onError={(message) => toast.error(message)} />
+          <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
+          <CustomFieldInputs definitions={info.customFields ?? []} target="guardian" surface="public" values={guardianCustomValues} onChange={setGuardianCustomValues} disabled={pending} />
         </CardContent>
       </Card>
 
@@ -259,7 +265,7 @@ export function CadastroVisitanteClient({
       <Button
         type="button"
         className="h-12 w-full gradient-primary text-base"
-        disabled={pending || form.childFirstName.trim().length < 2 || form.guardianFirstName.trim().length < 2 || form.guardianPhone.trim().length < 8}
+        disabled={pending || form.childFullName.trim().length < 2 || form.guardianFirstName.trim().length < 2 || form.guardianPhone.trim().length < 8}
         onClick={() => void submit()}
       >
         Concluir cadastro

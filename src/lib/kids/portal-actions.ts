@@ -28,7 +28,9 @@ import {
 import { buildQrPayload } from "./printing"
 import { encryptHealthDetails } from "./security"
 import { getGuardianKidIds, requireGuardianUser } from "./portal"
-import type { KidConsentType, KidsPortalActionResult } from "./types"
+import type { KidConsentType, KidCustomFieldDefinition, KidsPortalActionResult } from "./types"
+import { customValuesSchema, EMPTY_KID_ADDRESS, kidAddressSchema, splitFullName } from "./form-model"
+import { listKidCustomFields, saveKidCustomValues, validateKidCustomValues } from "./custom-fields"
 
 const CONSENT_TYPES: KidConsentType[] = ["data_processing", "image_use", "emergency_care", "communication"]
 
@@ -197,7 +199,9 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
     if (parsed.id) assertOwnsKid(kidIds, parsed.id)
 
     const sql = getSql()
-    const fullName = `${parsed.firstName} ${parsed.lastName}`.trim()
+    const { fullName, firstName, lastName } = splitFullName(parsed.fullName)
+    const customFields = await listKidCustomFields(companyId, { surface: "portal" })
+    const customValues = validateKidCustomValues(customFields, "child", "portal", parsed.customValues)
 
     const details = {
       allergies: parsed.health.allergies,
@@ -231,7 +235,7 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
         if (!owned[0]?.id) throw new Error("Acesso negado")
         await tx`
           update public.people
-          set first_name = ${parsed.firstName}, last_name = ${parsed.lastName}, full_name = ${fullName},
+          set first_name = ${firstName}, last_name = ${lastName}, full_name = ${fullName},
               birth_date = ${parsed.birthDate},
               congregation_id = coalesce(${parsed.congregationId}, congregation_id),
               updated_by = ${user.id}
@@ -244,7 +248,7 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
             status, person_type, is_active, created_by, updated_by
           )
           values (
-            ${companyId}, ${parsed.congregationId}, ${parsed.firstName}, ${parsed.lastName}, ${fullName},
+            ${companyId}, ${parsed.congregationId}, ${firstName}, ${lastName}, ${fullName},
             ${parsed.birthDate}, 'active', ${parsed.isVisitor ? "visitor" : "member"}, true, ${user.id}, ${user.id}
           )
           returning id
@@ -252,6 +256,7 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
         personId = inserted[0]?.id ?? null
       }
       if (!personId) throw new Error("Criança não foi salva")
+      await saveKidCustomValues(tx, companyId, personId, user.id, customValues)
 
       const kidRows = await tx<{ id: string }[]>`
         insert into public.kid_profiles (company_id, person_id, status, is_visitor, notes, created_by, updated_by)
@@ -312,6 +317,45 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
     }
     refresh()
     return { ok: true, id: saved.kidId, personId: saved.personId, guardianPersonIds: [guardianPersonId], createdPerson: !parsed.id }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+const guardianProfileSchema = z.object({
+  address: kidAddressSchema,
+  customValues: customValuesSchema,
+})
+
+export async function saveGuardianKidsProfile(input: z.input<typeof guardianProfileSchema>): Promise<KidsPortalActionResult> {
+  try {
+    const parsed = guardianProfileSchema.parse(input)
+    const user = await requireGuardianUser()
+    if (!user.churchId) throw new Error("Acesso negado")
+    const companyId = user.churchId
+    const definitions = await listKidCustomFields(companyId, { surface: "portal" })
+    const customValues = validateKidCustomValues(definitions, "guardian", "portal", parsed.customValues)
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      select id from public.people
+      where profile_id = ${user.id} and company_id = ${companyId} and deleted_at is null
+      limit 1
+    `
+    const personId = rows[0]?.id
+    if (!personId) throw new Error("Cadastro do responsável não encontrado")
+    await sql.begin(async (tx) => {
+      await tx`
+        update public.people set
+          postal_code = ${parsed.address.postalCode}, address = ${parsed.address.street},
+          address_number = ${parsed.address.number}, address_complement = ${parsed.address.complement},
+          neighborhood = ${parsed.address.neighborhood}, city = ${parsed.address.city},
+          state = ${parsed.address.state}, country = ${parsed.address.country}, updated_by = ${user.id}
+        where id = ${personId} and company_id = ${companyId} and deleted_at is null
+      `
+      await saveKidCustomValues(tx, companyId, personId, user.id, customValues)
+    })
+    refresh()
+    return { ok: true, id: personId }
   } catch (error) {
     return failure(error)
   }
@@ -584,8 +628,7 @@ export async function requestGuardianCheckout(input: unknown): Promise<KidsPorta
 
 const visitorSchema = z.object({
   slug: z.string().trim().regex(/^[a-z0-9-]+$/, "Link inválido"),
-  childFirstName: z.string().trim().min(2, "Nome da criança obrigatório"),
-  childLastName: z.string().trim().optional().default(""),
+  childFullName: z.string().trim().min(2, "Nome completo da criança obrigatório").transform((value) => value.replace(/\s+/g, " ")),
   childBirthDate: z
     .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida"), z.literal(""), z.null()])
     .optional()
@@ -597,6 +640,9 @@ const visitorSchema = z.object({
     .union([z.string().trim().email("E-mail inválido"), z.literal(""), z.null()])
     .optional()
     .transform((value) => value || null),
+  guardianAddress: kidAddressSchema.optional().default(EMPTY_KID_ADDRESS),
+  childCustomValues: customValuesSchema,
+  guardianCustomValues: customValuesSchema,
   relationship: z.enum(["father", "mother", "guardian", "grandparent", "relative", "other"]).default("guardian"),
   health: z
     .object({
@@ -656,9 +702,13 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
       return { ok: false, error: "Muitas tentativas. Aguarde uma hora e tente novamente." }
     }
 
-    const childFullName = `${parsed.childFirstName} ${parsed.childLastName}`.trim()
+    const childName = splitFullName(parsed.childFullName)
+    const childFullName = childName.fullName
     const guardianFullName = `${parsed.guardianFirstName} ${parsed.guardianLastName}`.trim()
     const guardianDigits = parsed.guardianPhone.replace(/\D/g, "")
+    const customFields = await listKidCustomFields(company.id, { surface: "public" })
+    const childCustomValues = validateKidCustomValues(customFields, "child", "public", parsed.childCustomValues)
+    const guardianCustomValues = validateKidCustomValues(customFields, "guardian", "public", parsed.guardianCustomValues)
 
     const saved = await sql.begin(async (tx) => {
       // Responsável: dedup por telefone normalizado, depois e-mail.
@@ -686,14 +736,23 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
       }
       if (!guardianPersonId) {
         const inserted = await tx<{ id: string }[]>`
-          insert into public.people (company_id, first_name, last_name, full_name, email, phone, status, person_type, is_active)
-          values (${company.id}, ${parsed.guardianFirstName}, ${parsed.guardianLastName}, ${guardianFullName}, ${parsed.guardianEmail}, ${parsed.guardianPhone}, 'active', 'attendee', true)
+          insert into public.people (
+            company_id, first_name, last_name, full_name, email, phone,
+            postal_code, address, address_number, address_complement, neighborhood, city, state, country,
+            status, person_type, is_active
+          ) values (
+            ${company.id}, ${parsed.guardianFirstName}, ${parsed.guardianLastName}, ${guardianFullName}, ${parsed.guardianEmail}, ${parsed.guardianPhone},
+            ${parsed.guardianAddress.postalCode}, ${parsed.guardianAddress.street}, ${parsed.guardianAddress.number},
+            ${parsed.guardianAddress.complement}, ${parsed.guardianAddress.neighborhood}, ${parsed.guardianAddress.city},
+            ${parsed.guardianAddress.state}, ${parsed.guardianAddress.country}, 'active', 'attendee', true
+          )
           returning id
         `
         guardianPersonId = inserted[0]?.id ?? null
         createdGuardian = true
       }
       if (!guardianPersonId) throw new Error("Não foi possível concluir o cadastro")
+      if (createdGuardian) await saveKidCustomValues(tx, company.id, guardianPersonId, null, guardianCustomValues)
 
       // Criança: dedup somente por nome+nascimento (vínculo final é decisão do operador).
       let childPersonId: string | null = null
@@ -712,13 +771,14 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
       if (!childPersonId) {
         const inserted = await tx<{ id: string }[]>`
           insert into public.people (company_id, first_name, last_name, full_name, birth_date, status, person_type, is_active)
-          values (${company.id}, ${parsed.childFirstName}, ${parsed.childLastName}, ${childFullName}, ${parsed.childBirthDate}, 'active', 'visitor', true)
+          values (${company.id}, ${childName.firstName}, ${childName.lastName}, ${childFullName}, ${parsed.childBirthDate}, 'active', 'visitor', true)
           returning id
         `
         childPersonId = inserted[0]?.id ?? null
         createdPerson = true
       }
       if (!childPersonId) throw new Error("Não foi possível concluir o cadastro")
+      if (createdPerson) await saveKidCustomValues(tx, company.id, childPersonId, null, childCustomValues)
 
       const kidRows = await tx<{ id: string }[]>`
         insert into public.kid_profiles (company_id, person_id, status, is_visitor)
@@ -822,6 +882,7 @@ export async function getVisitorFormInfo(input: unknown): Promise<{
   error?: string
   companyName?: string
   requiredConsents?: KidConsentType[]
+  customFields?: KidCustomFieldDefinition[]
 }> {
   try {
     const slug = z.string().trim().regex(/^[a-z0-9-]+$/).parse(input)
@@ -852,6 +913,7 @@ export async function getVisitorFormInfo(input: unknown): Promise<{
       ok: true,
       companyName: company.name,
       requiredConsents: (settingsRows[0]?.required_consent_types ?? ["data_processing", "emergency_care"]) as KidConsentType[],
+      customFields: await listKidCustomFields(company.id, { surface: "public" }),
     }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }

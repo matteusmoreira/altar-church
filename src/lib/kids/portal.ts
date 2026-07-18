@@ -7,6 +7,8 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { createClient } from "@/lib/supabase/server"
 import { decryptHealthDetails, formatChildLabelName } from "./security"
 import { ageMonthsAt } from "./suggest"
+import { EMPTY_KID_ADDRESS } from "./form-model"
+import { listKidCustomFields, listPersonKidCustomValues } from "./custom-fields"
 import type {
   GuardianChildItem,
   GuardianPortalData,
@@ -131,7 +133,7 @@ const EMPTY_DETAILS: KidHealthDetails = {
   instructions: "",
 }
 
-function toGuardianItem(value: unknown, photoUrls = new Map<string, string>()): KidGuardianItem[] {
+function toGuardianItem(value: unknown, photoUrls = new Map<string, string>(), customValues = new Map<string, import("./types").KidCustomFieldValue[]>()): KidGuardianItem[] {
   if (!Array.isArray(value)) return []
   return value.map((row) => {
     const item = row as Record<string, unknown>
@@ -150,6 +152,8 @@ function toGuardianItem(value: unknown, photoUrls = new Map<string, string>()): 
       whatsappEnabled: Boolean(item.whatsappEnabled),
       emailEnabled: Boolean(item.emailEnabled),
       photoUrl: item.photoPath ? photoUrls.get(String(item.photoPath)) ?? null : null,
+      address: { ...EMPTY_KID_ADDRESS },
+      customValues: customValues.get(String(item.personId)) ?? [],
     }
   })
 }
@@ -258,7 +262,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     order by p.first_name, p.full_name
   `
 
-  const [congregations, companyRows, reportRows, guardianPhotoRows] = await Promise.all([
+  const [congregations, companyRows, reportRows, guardianRows, customFields] = await Promise.all([
     sql<{ id: string; name: string }[]>`
       select id, name from public.congregations
       where company_id = ${companyId} and deleted_at is null and is_active = true
@@ -309,21 +313,25 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       order by report.created_at desc
       limit 5
     `,
-    sql<{ storage_path: string | null }[]>`
-      select file.storage_path
+    sql<{ id: string; storage_path: string | null; postal_code: string; address: string; address_number: string; address_complement: string; neighborhood: string; city: string; state: string; country: string }[]>`
+      select person.id, file.storage_path, person.postal_code, person.address, person.address_number,
+             person.address_complement, person.neighborhood, person.city, person.state, person.country
       from public.people person
       left join public.app_files file on file.id = person.photo_file_id and file.is_active = true and file.deleted_at is null
       where person.profile_id = ${user.id} and person.company_id = ${companyId} and person.deleted_at is null
       limit 1
     `,
+    listKidCustomFields(companyId, { surface: "portal" }),
   ])
 
   const photoPaths = rows.flatMap((row) => [
     row.photo_path ?? "",
     ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
   ])
-  photoPaths.push(guardianPhotoRows[0]?.storage_path ?? "")
+  photoPaths.push(guardianRows[0]?.storage_path ?? "")
   const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
+  const personIds = rows.flatMap((row) => [row.person_id, ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).personId ?? "")) : [])]).concat(guardianRows[0]?.id ?? "").filter(Boolean)
+  const customValues = await listPersonKidCustomValues(personIds)
 
   const children: GuardianChildItem[] = rows.map((row) => {
     let details = { ...EMPTY_DETAILS }
@@ -355,7 +363,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       },
       healthDetails: details,
       consents: (row.granted_consents ?? []) as KidConsentType[],
-      guardians: toGuardianItem(row.guardians, photoUrls),
+      guardians: toGuardianItem(row.guardians, photoUrls, customValues),
       activeAttendance: row.attendance_id
         ? {
             attendanceId: row.attendance_id,
@@ -368,12 +376,20 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
           }
         : null,
       photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
+      customValues: customValues.get(row.person_id) ?? [],
     }
   })
 
   return {
     guardianName: user.name,
-    guardianPhotoUrl: guardianPhotoRows[0]?.storage_path ? photoUrls.get(guardianPhotoRows[0].storage_path) ?? null : null,
+    guardianPhotoUrl: guardianRows[0]?.storage_path ? photoUrls.get(guardianRows[0].storage_path) ?? null : null,
+    guardianAddress: guardianRows[0] ? {
+      postalCode: guardianRows[0].postal_code, street: guardianRows[0].address,
+      number: guardianRows[0].address_number, complement: guardianRows[0].address_complement,
+      neighborhood: guardianRows[0].neighborhood, city: guardianRows[0].city,
+      state: guardianRows[0].state, country: guardianRows[0].country,
+    } : { ...EMPTY_KID_ADDRESS },
+    guardianCustomValues: customValues.get(guardianRows[0]?.id ?? "") ?? [],
     companyName: companyRows[0]?.name ?? "",
     children,
     congregations: congregations.map((row) => ({ id: row.id, name: row.name })),
@@ -386,5 +402,6 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       childName: row.child_full_name ? formatChildLabelName(row.child_full_name) : null,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     })),
+    customFields,
   }
 }

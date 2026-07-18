@@ -9,6 +9,7 @@ import {
   Activity,
   ArrowLeft,
   BadgeCheck,
+  Baby,
   CalendarDays,
   Cake,
   CheckCircle2,
@@ -214,6 +215,11 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
               <div className="mt-2 flex flex-wrap gap-2">
                 <Badge variant="outline">{personTypeLabels[person.personType]}</Badge>
                 <Badge variant="outline">{person.congregationName ?? "Sem congregação"}</Badge>
+                {person.kidsRoles.map((role) => (
+                  <Badge key={role} variant="outline" className="border-info/30 text-info">
+                    <Baby className="mr-1 h-3 w-3" />{role === "child" ? "Criança Kids" : "Responsável Kids"}
+                  </Badge>
+                ))}
                 {person.baptized && <Badge className="bg-primary/10 text-primary">Batizado</Badge>}
                 <Badge
                   variant="outline"
@@ -265,7 +271,12 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                     <DetailItem icon={Cake} label="Nascimento" value={formatDate(person.birthDate)} />
                     <DetailItem icon={UserRound} label="Gênero" value={genderLabels[person.gender ?? "not_informed"]} />
                     <DetailItem icon={Church} label="Congregação" value={person.congregationName ?? "Sem congregação"} />
-                    <DetailItem icon={MapPin} label="Endereço" value={[person.address, person.city, person.state].filter(Boolean).join(", ") || "-"} />
+                    <DetailItem icon={MapPin} label="Endereço" value={[
+                      person.postalCode && `CEP ${person.postalCode}`,
+                      [person.address, person.addressNumber].filter(Boolean).join(", "),
+                      person.addressComplement, person.neighborhood,
+                      [person.city, person.state].filter(Boolean).join("/")
+                    ].filter(Boolean).join(" · ") || "-"} />
                   </div>
                 </CardContent>
               </Card>
@@ -284,6 +295,9 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                       {person.customFields.map((field) => (
                         <div key={field.fieldId} className="rounded-lg border border-border/40 p-3">
                           <p className="text-xs text-muted-foreground">{field.name}</p>
+                          {field.sourceModule === "kids" && (
+                            <Badge variant="outline" className="mt-1 border-info/30 text-info">Kids · {field.kidsTargets.map((target) => target === "child" ? "Criança" : "Responsável").join("/")}</Badge>
+                          )}
                           <p className="mt-1 break-words text-sm font-medium">{field.value || "Sem valor"}</p>
                         </div>
                       ))}

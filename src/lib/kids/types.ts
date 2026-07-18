@@ -6,6 +6,37 @@ export type KidConsentSource = "portal" | "reception" | "import"
 export type KidSessionStatus = "draft" | "open" | "closed" | "cancelled"
 export type KidAttendanceStatus = "checked_in" | "checkout_requested" | "checked_out"
 export type KidLabelPaper = "thermal_62x40" | "a4"
+export type KidCustomFieldTarget = "child" | "guardian"
+export type KidCustomFieldSurface = "internal" | "public" | "portal"
+export type KidCustomFieldType = "text" | "textarea" | "number" | "date" | "single" | "multiple" | "boolean"
+
+export interface KidAddress {
+  postalCode: string
+  street: string
+  number: string
+  complement: string
+  neighborhood: string
+  city: string
+  state: string
+  country: string
+}
+
+export interface KidCustomFieldDefinition {
+  id: string
+  name: string
+  fieldType: KidCustomFieldType
+  options: string[]
+  targets: KidCustomFieldTarget[]
+  surfaces: KidCustomFieldSurface[]
+  required: boolean
+  sortOrder: number
+  isActive: boolean
+}
+
+export interface KidCustomFieldValue {
+  fieldId: string
+  value: string | string[] | boolean
+}
 
 export interface KidHealthIndicators {
   hasAllergy: boolean
@@ -38,6 +69,8 @@ export interface KidGuardianItem {
   whatsappEnabled: boolean
   emailEnabled: boolean
   photoUrl: string | null
+  address: KidAddress
+  customValues: KidCustomFieldValue[]
 }
 
 export interface KidListItem {
@@ -58,6 +91,7 @@ export interface KidListItem {
   guardians: KidGuardianItem[]
   createdAt: string
   photoUrl: string | null
+  customValues: KidCustomFieldValue[]
 }
 
 export interface KidClassroomRuleItem {
@@ -114,6 +148,7 @@ export interface KidsDashboardData {
   classrooms: KidClassroomItem[]
   settings: KidSettingsItem[]
   congregations: { id: string; name: string }[]
+  customFields: KidCustomFieldDefinition[]
 }
 
 export interface KidsActionResult {
@@ -341,15 +376,19 @@ export interface GuardianChildItem {
   guardians: KidGuardianItem[]
   activeAttendance: GuardianActiveAttendance | null
   photoUrl: string | null
+  customValues: KidCustomFieldValue[]
 }
 
 export interface GuardianPortalData {
   guardianName: string
   guardianPhotoUrl: string | null
+  guardianAddress: KidAddress
+  guardianCustomValues: KidCustomFieldValue[]
   companyName: string
   children: GuardianChildItem[]
   congregations: { id: string; name: string }[]
   recentReports: GuardianReportItem[]
+  customFields: KidCustomFieldDefinition[]
 }
 
 export interface GuardianPickupCode {

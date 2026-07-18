@@ -39,3 +39,12 @@ test("mobile capture, gallery fallback and private signed URLs are wired", () =>
   assert.match(config, /camera=\(self\)/)
   assert.match(config, /bodySizeLimit: "12mb"/)
 })
+
+test("dashboard child and guardian photos open an accessible enlarged preview", () => {
+  const dashboard = read("src/app/(dashboard)/kids/kids-client.tsx")
+
+  assert.match(dashboard, /setPhotoPreview\(\{ url: child\.photoUrl!?, name: child\.fullName \}\)/)
+  assert.match(dashboard, /setPhotoPreview\(\{ url: guardian\.photoUrl!?, name: guardian\.name \}\)/)
+  assert.match(dashboard, /<DialogTitle>Foto de \{photoPreview\.name\}<\/DialogTitle>/)
+  assert.match(dashboard, /max-h-\[calc\(100dvh-4rem\)\].*object-contain/)
+})

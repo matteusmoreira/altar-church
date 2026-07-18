@@ -55,6 +55,9 @@ export default async function MembersPage({
     baptized: booleanFilter(params.baptized),
     emailValidated: booleanFilter(params.emailValidated),
     isActive: booleanFilter(params.isActive),
+    kidsRole: ["any", "child", "guardian"].includes(textFilter(params.kidsRole))
+      ? textFilter(params.kidsRole) as "any" | "child" | "guardian"
+      : "all",
     page: numberFilter(params.page, 1),
     pageSize: 20,
   }

@@ -7,6 +7,8 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { decryptHealthDetails, formatChildLabelName } from "./security"
 import { ageMonthsAt } from "./suggest"
 import { parseJsonbObject } from "@/lib/db/jsonb"
+import { EMPTY_KID_ADDRESS } from "./form-model"
+import { listKidCustomFields, listPersonKidCustomValues } from "./custom-fields"
 import type {
   KidAttendanceItem,
   KidClassroomItem,
@@ -88,7 +90,7 @@ interface KidRow {
   photo_path: string | null
 }
 
-function toGuardian(value: unknown, photoUrls = new Map<string, string>()): KidGuardianItem[] {
+function toGuardian(value: unknown, photoUrls = new Map<string, string>(), customValues = new Map<string, import("./types").KidCustomFieldValue[]>()): KidGuardianItem[] {
   if (!Array.isArray(value)) return []
   return value.map((row) => {
     const item = row as Record<string, unknown>
@@ -107,11 +109,19 @@ function toGuardian(value: unknown, photoUrls = new Map<string, string>()): KidG
       whatsappEnabled: Boolean(item.whatsappEnabled),
       emailEnabled: Boolean(item.emailEnabled),
       photoUrl: item.photoPath ? photoUrls.get(String(item.photoPath)) ?? null : null,
+      address: {
+        ...EMPTY_KID_ADDRESS,
+        postalCode: String(item.postalCode ?? ""), street: String(item.street ?? ""),
+        number: String(item.addressNumber ?? ""), complement: String(item.addressComplement ?? ""),
+        neighborhood: String(item.neighborhood ?? ""), city: String(item.city ?? ""),
+        state: String(item.state ?? ""), country: String(item.country ?? "Brasil"),
+      },
+      customValues: customValues.get(String(item.personId)) ?? [],
     }
   })
 }
 
-function toKid(row: KidRow, photoUrls = new Map<string, string>()): KidListItem {
+function toKid(row: KidRow, photoUrls = new Map<string, string>(), customValues = new Map<string, import("./types").KidCustomFieldValue[]>()): KidListItem {
   const birthDate = dateOnly(row.birth_date)
   return {
     id: row.id,
@@ -133,9 +143,10 @@ function toKid(row: KidRow, photoUrls = new Map<string, string>()): KidListItem 
       hasSpecialNeeds: Boolean(row.has_special_needs),
     },
     grantedConsents: (row.granted_consents ?? []) as KidConsentType[],
-    guardians: toGuardian(row.guardians, photoUrls),
+    guardians: toGuardian(row.guardians, photoUrls, customValues),
     createdAt: iso(row.created_at) ?? "",
     photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
+    customValues: customValues.get(row.person_id) ?? [],
   }
 }
 
@@ -220,7 +231,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
   await requirePermission("kids.view", resolvedCompanyId)
   const sql = getSql()
 
-  const [kidRows, classroomRows, settingsRows, congregationRows, metricRows] = await Promise.all([
+  const [kidRows, classroomRows, settingsRows, congregationRows, metricRows, customFields] = await Promise.all([
     sql<KidRow[]>`
       select
         kp.id,
@@ -260,6 +271,14 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
             'isEmergencyContact', guardian.is_emergency_contact,
             'whatsappEnabled', guardian.whatsapp_enabled,
             'emailEnabled', guardian.email_enabled
+            , 'postalCode', guardian_person.postal_code
+            , 'street', guardian_person.address
+            , 'addressNumber', guardian_person.address_number
+            , 'addressComplement', guardian_person.address_complement
+            , 'neighborhood', guardian_person.neighborhood
+            , 'city', guardian_person.city
+            , 'state', guardian_person.state
+            , 'country', guardian_person.country
             , 'photoPath', guardian_photo.storage_path
           ) order by guardian.is_primary desc, guardian_person.full_name)
           from public.kid_guardians guardian
@@ -345,6 +364,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
           where hp.company_id = ${resolvedCompanyId} and hp.deleted_at is null
             and (hp.has_allergy or hp.has_dietary_restriction or hp.has_medication or hp.has_special_needs))::int as children_with_health_alerts
     `,
+    listKidCustomFields(resolvedCompanyId, { includeInactive: true }),
   ])
 
   const metricRow = metricRows[0]
@@ -361,13 +381,16 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
     ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
   ])
   const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
+  const personIds = kidRows.flatMap((row) => [row.person_id, ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).personId ?? "")) : [])]).filter(Boolean)
+  const customValues = await listPersonKidCustomValues(personIds)
 
   return {
     metrics,
-    children: kidRows.map((row) => toKid(row, photoUrls)),
+    children: kidRows.map((row) => toKid(row, photoUrls, customValues)),
     classrooms: classroomRows.map(toClassroom),
     settings: settingsRows.map(toSettings),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
+    customFields,
   }
 }
 

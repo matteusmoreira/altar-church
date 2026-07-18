@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { customValuesSchema, EMPTY_KID_ADDRESS, kidAddressSchema } from "./form-model"
 
 /** Versão corrente dos termos exibidos ao responsável (auditoria de aceite por versão). */
 export const KIDS_CONSENT_VERSION = "1.0"
@@ -43,6 +44,8 @@ export const kidGuardianInputSchema = z.object({
   isEmergencyContact: z.boolean().default(true),
   whatsappEnabled: z.boolean().default(true),
   emailEnabled: z.boolean().default(true),
+  address: kidAddressSchema.optional().default(EMPTY_KID_ADDRESS),
+  customValues: customValuesSchema,
 })
 
 const healthDetailsEmpty = {
@@ -72,8 +75,7 @@ export const kidHealthInputSchema = z.object({
 export const kidChildSchema = z.object({
   id: nullableUuidSchema,
   personId: nullableUuidSchema,
-  firstName: z.string().trim().min(2, "Nome obrigatório"),
-  lastName: z.string().trim().optional().default(""),
+  fullName: z.string().trim().min(2, "Nome completo obrigatório").transform((value) => value.replace(/\s+/g, " ")),
   birthDate: nullableDateSchema,
   congregationId: nullableUuidSchema,
   isVisitor: z.boolean().default(false),
@@ -82,6 +84,7 @@ export const kidChildSchema = z.object({
     .optional()
     .transform((value) => value ?? healthDetailsEmpty),
   consents: z.array(consentTypeSchema).default([]),
+  customValues: customValuesSchema,
   guardians: z.array(kidGuardianInputSchema).min(1, "Informe ao menos um responsável"),
 })
 

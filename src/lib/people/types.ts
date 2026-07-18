@@ -1,6 +1,7 @@
 export type PersonStatus = "active" | "inactive" | "visitor"
 export type PersonType = "visitor" | "attendee" | "member" | "leader" | "volunteer"
 export type PersonGender = "male" | "female" | "other" | "not_informed"
+export type PersonKidsRole = "child" | "guardian"
 export type DuplicateCandidateStatus = "open" | "ignored" | "merged"
 export type DuplicateCandidateResolution = Exclude<DuplicateCandidateStatus, "open">
 export type PersonAccessRole =
@@ -23,6 +24,7 @@ export interface PeopleListFilters {
   baptized?: boolean | null
   emailValidated?: boolean | null
   isActive?: boolean | null
+  kidsRole?: PersonKidsRole | "any" | "all"
   page?: number
   pageSize?: number
 }
@@ -41,6 +43,10 @@ export interface PersonListItem {
   birthDate: string | null
   gender: PersonGender | null
   address: string
+  postalCode: string
+  addressNumber: string
+  addressComplement: string
+  neighborhood: string
   city: string
   state: string
   country: string
@@ -58,15 +64,18 @@ export interface PersonListItem {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  kidsRoles: PersonKidsRole[]
 }
 
 export interface PersonCustomFieldValue {
   id: string | null
   fieldId: string
   name: string
-  fieldType: "text" | "date" | "single" | "multiple"
+  fieldType: "text" | "textarea" | "number" | "date" | "single" | "multiple" | "boolean"
   value: string
   sortOrder: number
+  sourceModule: "people" | "kids"
+  kidsTargets: PersonKidsRole[]
 }
 
 export interface PersonActivityDetail {

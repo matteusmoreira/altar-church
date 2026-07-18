@@ -14,11 +14,14 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
+import { AddressFields } from "@/components/kids/address-fields"
+import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
 import {
   deleteGuardianContact,
   generateGuardianPickupCode,
   requestGuardianCheckout,
   saveGuardianContact,
+  saveGuardianKidsProfile,
   signOutFamily,
   updateGuardianConsents,
 } from "@/lib/kids/portal-actions"
@@ -71,8 +74,7 @@ function formatTime(value: string) {
 interface ChildFormState {
   kidId: string | null
   personId: string | null
-  firstName: string
-  lastName: string
+  fullName: string
   birthDate: string
   congregationId: string
   notes: string
@@ -87,13 +89,13 @@ interface ChildFormState {
     specialNeeds: string
     instructions: string
   }
+  customValues: import("@/lib/kids/types").KidCustomFieldValue[]
 }
 
 const emptyChildForm: ChildFormState = {
   kidId: null,
   personId: null,
-  firstName: "",
-  lastName: "",
+  fullName: "",
   birthDate: "",
   congregationId: "",
   notes: "",
@@ -108,6 +110,7 @@ const emptyChildForm: ChildFormState = {
     specialNeeds: "",
     instructions: "",
   },
+  customValues: [],
 }
 
 interface ContactFormState {
@@ -140,6 +143,8 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
   const [pending, setPending] = useState(false)
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
+  const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
+  const [guardianCustomValues, setGuardianCustomValues] = useState(data.guardianCustomValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("guardian"))))
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -159,12 +164,12 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
     setChildForm({
       kidId: child.kidId,
       personId: child.personId,
-      firstName: child.firstName,
-      lastName: child.lastName,
+      fullName: child.fullName,
       birthDate: child.birthDate ?? "",
       congregationId: child.congregationId ?? "",
       notes: child.notes,
       health: { ...child.health, ...child.healthDetails },
+      customValues: child.customValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("child"))),
     })
   }
 
@@ -173,13 +178,13 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
     const payload = {
       id: childForm.kidId,
       personId: childForm.personId,
-      firstName: childForm.firstName,
-      lastName: childForm.lastName,
+      fullName: childForm.fullName,
       birthDate: childForm.birthDate || null,
       congregationId: childForm.congregationId || null,
       isVisitor: false,
       notes: childForm.notes,
       health: childForm.health,
+      customValues: childForm.customValues,
     }
     const request = new FormData()
     request.set("payload", JSON.stringify(payload))
@@ -257,6 +262,15 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
           <LogOut className="h-5 w-5" />
         </Button>
       </header>
+
+      <Card className="glass">
+        <CardHeader><CardTitle className="text-base">Meu endereço e dados adicionais</CardTitle><CardDescription>Endereço familiar opcional, compartilhado pelos cadastros vinculados.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
+          <CustomFieldInputs definitions={data.customFields} target="guardian" surface="portal" values={guardianCustomValues} onChange={setGuardianCustomValues} disabled={pending} />
+          <Button type="button" disabled={pending} onClick={() => void run(() => saveGuardianKidsProfile({ address: guardianAddress, customValues: guardianCustomValues }), "Dados atualizados")}>Salvar meus dados</Button>
+        </CardContent>
+      </Card>
 
       {data.children.length === 0 && !childForm && (
         <Card className="glass">
@@ -436,13 +450,9 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Nome *</Label>
-                <Input value={childForm.firstName} onChange={(event) => setChildForm({ ...childForm, firstName: event.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Sobrenome</Label>
-                <Input value={childForm.lastName} onChange={(event) => setChildForm({ ...childForm, lastName: event.target.value })} />
+              <div className="space-y-1 sm:col-span-2">
+                <Label>Nome completo *</Label>
+                <Input value={childForm.fullName} onChange={(event) => setChildForm({ ...childForm, fullName: event.target.value })} />
               </div>
               <div className="space-y-1">
                 <Label>Nascimento</Label>
@@ -462,6 +472,7 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
                 </select>
               </div>
             </div>
+            <CustomFieldInputs definitions={data.customFields} target="child" surface="portal" values={childForm.customValues} onChange={(customValues) => setChildForm({ ...childForm, customValues })} disabled={pending} />
             <div className="space-y-1">
               <Label>Observações gerais</Label>
               <Textarea rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
@@ -503,7 +514,7 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
               )}
             </div>
             <div className="flex gap-2">
-              <Button type="button" onClick={() => void submitChild()} disabled={pending || childForm.firstName.trim().length < 2}>
+              <Button type="button" onClick={() => void submitChild()} disabled={pending || childForm.fullName.trim().length < 2}>
                 {childForm.kidId ? "Salvar alterações" : "Cadastrar"}
               </Button>
               <Button type="button" variant="outline" onClick={() => setChildForm(null)}>Cancelar</Button>

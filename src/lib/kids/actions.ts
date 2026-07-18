@@ -52,6 +52,8 @@ import {
   buildIncidentCreatedPayload,
 } from "./events"
 import { getKidHealthDetails, resolveKidEffectiveSettings } from "./data"
+import { splitFullName } from "./form-model"
+import { listKidCustomFields, saveKidCustomValues, validateKidCustomValues } from "./custom-fields"
 import type {
   KidCheckinCandidate,
   KidConsentType,
@@ -267,7 +269,9 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
     const parsed = kidChildSchema.parse(input)
     const { user, companyId } = await context("kids.children.manage")
     const sql = getSql()
-    const fullName = fullNameOf(parsed.firstName, parsed.lastName)
+    const { fullName, firstName, lastName } = splitFullName(parsed.fullName)
+    const customFields = await listKidCustomFields(companyId, { surface: "internal" })
+    const childCustomValues = validateKidCustomValues(customFields, "child", "internal", parsed.customValues)
 
     // Apenas um responsável principal por criança.
     let primarySeen = false
@@ -299,8 +303,8 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
       if (personId) {
         await tx`
           update public.people
-          set first_name = ${parsed.firstName},
-              last_name = ${parsed.lastName},
+          set first_name = ${firstName},
+              last_name = ${lastName},
               full_name = ${fullName},
               birth_date = ${parsed.birthDate},
               congregation_id = coalesce(${parsed.congregationId}, congregation_id),
@@ -316,7 +320,7 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
             birth_date, status, person_type, is_active, created_by, updated_by
           )
           values (
-            ${companyId}, ${parsed.congregationId}, ${parsed.firstName}, ${parsed.lastName}, ${fullName},
+            ${companyId}, ${parsed.congregationId}, ${firstName}, ${lastName}, ${fullName},
             ${parsed.birthDate}, 'active', ${parsed.isVisitor ? "visitor" : "member"}, true, ${user.id}, ${user.id}
           )
           returning id
@@ -332,6 +336,7 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
       `
       const resolvedKidId = kidRows[0]?.id
       if (!resolvedKidId) throw new Error("Criança não foi salva")
+      await saveKidCustomValues(tx, companyId, resolvedPersonId, user.id, childCustomValues)
 
       // Saúde essencial: indicadores em claro, detalhes cifrados.
       await tx`
@@ -393,6 +398,7 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
       // Responsáveis: remove vínculos ausentes e faz upsert dos informados.
       const desiredPersonIds: string[] = []
       for (const guardian of guardians) {
+        const guardianCustomValues = validateKidCustomValues(customFields, "guardian", "internal", guardian.customValues)
         const guardianPersonId = await findPersonId(tx, companyId, {
           personId: guardian.personId,
           fullName: fullNameOf(guardian.firstName, guardian.lastName),
@@ -404,18 +410,37 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
           await tx<{ id: string }[]>`
             insert into public.people (
               company_id, first_name, last_name, full_name, email, phone,
+              postal_code, address, address_number, address_complement, neighborhood, city, state, country,
               status, person_type, is_active, created_by, updated_by
             )
             values (
               ${companyId}, ${guardian.firstName}, ${guardian.lastName},
               ${fullNameOf(guardian.firstName, guardian.lastName)}, ${guardian.email}, ${guardian.phone},
+              ${guardian.address.postalCode}, ${guardian.address.street}, ${guardian.address.number},
+              ${guardian.address.complement}, ${guardian.address.neighborhood}, ${guardian.address.city},
+              ${guardian.address.state}, ${guardian.address.country},
               'active', 'attendee', true, ${user.id}, ${user.id}
             )
             returning id
           `
         )[0].id
 
+        if (guardianPersonId) {
+          await tx`
+            update public.people set
+              first_name = ${guardian.firstName}, last_name = ${guardian.lastName},
+              full_name = ${fullNameOf(guardian.firstName, guardian.lastName)},
+              email = ${guardian.email}, phone = ${guardian.phone},
+              postal_code = ${guardian.address.postalCode}, address = ${guardian.address.street},
+              address_number = ${guardian.address.number}, address_complement = ${guardian.address.complement},
+              neighborhood = ${guardian.address.neighborhood}, city = ${guardian.address.city},
+              state = ${guardian.address.state}, country = ${guardian.address.country}, updated_by = ${user.id}
+            where id = ${guardianPersonId} and company_id = ${companyId} and deleted_at is null
+          `
+        }
+
         desiredPersonIds.push(resolvedGuardianPersonId)
+        await saveKidCustomValues(tx, companyId, resolvedGuardianPersonId, user.id, guardianCustomValues)
 
         await tx`
           insert into public.kid_guardians (

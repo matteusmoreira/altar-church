@@ -13,6 +13,10 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
+import { AddressFields } from "@/components/kids/address-fields"
+import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
+import { CustomFieldBuilder } from "@/components/kids/custom-field-builder"
+import { EMPTY_KID_ADDRESS } from "@/lib/kids/form-model"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,13 +115,14 @@ interface GuardianForm {
   photoUrl: string | null
   photoFile: File | null
   photoRemoved: boolean
+  address: import("@/lib/kids/types").KidAddress
+  customValues: import("@/lib/kids/types").KidCustomFieldValue[]
 }
 
 interface ChildForm {
   id: string | null
   personId: string | null
-  firstName: string
-  lastName: string
+  fullName: string
   birthDate: string
   congregationId: string
   isVisitor: boolean
@@ -138,6 +143,7 @@ interface ChildForm {
   photoUrl: string | null
   photoFile: File | null
   photoRemoved: boolean
+  customValues: import("@/lib/kids/types").KidCustomFieldValue[]
 }
 
 const emptyGuardian: GuardianForm = {
@@ -157,13 +163,14 @@ const emptyGuardian: GuardianForm = {
   photoUrl: null,
   photoFile: null,
   photoRemoved: false,
+  address: { ...EMPTY_KID_ADDRESS },
+  customValues: [],
 }
 
 const emptyChildForm: ChildForm = {
   id: null,
   personId: null,
-  firstName: "",
-  lastName: "",
+  fullName: "",
   birthDate: "",
   congregationId: "",
   isVisitor: false,
@@ -184,6 +191,7 @@ const emptyChildForm: ChildForm = {
   photoUrl: null,
   photoFile: null,
   photoRemoved: false,
+  customValues: [],
 }
 
 interface ClassroomForm {
@@ -273,6 +281,7 @@ export function KidsClient({
   const [deleteClassroomId, setDeleteClassroomId] = useState<string | null>(null)
   const [overviewMode, setOverviewMode] = useState<"list" | "grid">("list")
   const [selectedFamily, setSelectedFamily] = useState<KidListItem | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<{ url: string; name: string } | null>(null)
   const [selectedHealth, setSelectedHealth] = useState<ChildForm["health"] | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
   const healthRequestRef = useRef(0)
@@ -298,8 +307,7 @@ export function KidsClient({
     setChildForm({
       id: child.id,
       personId: child.personId,
-      firstName: child.firstName,
-      lastName: child.lastName,
+      fullName: child.fullName,
       birthDate: child.birthDate ?? "",
       congregationId: child.congregationId ?? "",
       isVisitor: child.isVisitor,
@@ -333,10 +341,13 @@ export function KidsClient({
         photoUrl: guardian.photoUrl,
         photoFile: null,
         photoRemoved: false,
+        address: { ...guardian.address },
+        customValues: guardian.customValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.isActive && field.targets.includes("guardian") && field.surfaces.includes("internal"))),
       })),
       photoUrl: child.photoUrl,
       photoFile: null,
       photoRemoved: false,
+      customValues: child.customValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.isActive && field.targets.includes("child") && field.surfaces.includes("internal"))),
     })
     if (canViewHealth) {
       void fetchKidHealthDetails(child.id).then((result) => {
@@ -369,14 +380,14 @@ export function KidsClient({
       const result = await saveKid({
           id: childForm.id,
           personId: childForm.personId,
-          firstName: childForm.firstName,
-          lastName: childForm.lastName,
+          fullName: childForm.fullName,
           birthDate: childForm.birthDate || null,
           congregationId: childForm.congregationId || null,
           isVisitor: childForm.isVisitor,
           notes: childForm.notes,
           consents: childForm.consents,
           health: childForm.health,
+          customValues: childForm.customValues,
           guardians: childForm.guardians,
         })
       if (!showResult(result)) return
@@ -558,10 +569,24 @@ export function KidsClient({
               {data.children.slice(0, 8).map((child) => (
                 <div key={child.id} className={`gap-2 rounded-lg border border-border/60 p-3 ${overviewMode === "grid" ? "flex min-h-28 flex-col justify-between" : "flex flex-wrap items-center justify-between"}`}>
                   <div className="flex items-center gap-3">
-                    <Avatar size="lg">
-                      {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
-                      <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
+                    {child.photoUrl ? (
+                      <button
+                        type="button"
+                        className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() => setPhotoPreview({ url: child.photoUrl!, name: child.fullName })}
+                        aria-label={`Ampliar foto de ${child.fullName}`}
+                        title="Ampliar foto"
+                      >
+                        <Avatar size="lg" className="cursor-zoom-in">
+                          <AvatarImage src={child.photoUrl} alt={child.fullName} />
+                          <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      </button>
+                    ) : (
+                      <Avatar size="lg">
+                        <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                    )}
                     <div>
                       <p className="font-medium">{child.fullName}</p>
                       <p className="text-xs text-muted-foreground">
@@ -593,13 +618,9 @@ export function KidsClient({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="kid-first-name">Nome *</Label>
-                    <Input id="kid-first-name" value={childForm.firstName} onChange={(event) => setChildForm({ ...childForm, firstName: event.target.value })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="kid-last-name">Sobrenome</Label>
-                    <Input id="kid-last-name" value={childForm.lastName} onChange={(event) => setChildForm({ ...childForm, lastName: event.target.value })} />
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label htmlFor="kid-full-name">Nome completo *</Label>
+                    <Input id="kid-full-name" value={childForm.fullName} onChange={(event) => setChildForm({ ...childForm, fullName: event.target.value })} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="kid-birth">Nascimento</Label>
@@ -629,6 +650,7 @@ export function KidsClient({
                   onChange={(file, removed = false) => setChildForm({ ...childForm, photoFile: file, photoRemoved: removed })}
                   onError={(message) => toast.error(message)}
                 />
+                <CustomFieldInputs definitions={data.customFields} target="child" surface="internal" values={childForm.customValues} onChange={(customValues) => setChildForm({ ...childForm, customValues })} disabled={pending} />
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={childForm.isVisitor} onChange={(event) => setChildForm({ ...childForm, isVisitor: event.target.checked })} />
                   Criança visitante
@@ -758,6 +780,8 @@ export function KidsClient({
                           onError={(message) => toast.error(message)}
                         />
                       )}
+                      <AddressFields value={guardian.address} disabled={pending} onChange={(address) => setChildForm({ ...childForm, guardians: childForm.guardians.map((item, itemIndex) => itemIndex === index ? { ...item, address } : item) })} />
+                      <CustomFieldInputs definitions={data.customFields} target="guardian" surface="internal" values={guardian.customValues} onChange={(customValues) => setChildForm({ ...childForm, guardians: childForm.guardians.map((item, itemIndex) => itemIndex === index ? { ...item, customValues } : item) })} disabled={pending} />
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                         <label className="flex items-center gap-1.5">
                           <input type="checkbox" checked={guardian.isPrimary} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, isPrimary: event.target.checked } : g)) })} />
@@ -1115,7 +1139,8 @@ export function KidsClient({
         )}
 
         {canManageSettings && (
-          <TabsContent value="configuracoes">
+          <TabsContent value="configuracoes" className="space-y-6">
+            <CustomFieldBuilder fields={data.customFields} />
             <Card className="glass max-w-2xl">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Settings2 className="h-5 w-5" />Configurações do Kids</CardTitle>
@@ -1221,16 +1246,34 @@ export function KidsClient({
               <div className="grid gap-4 sm:grid-cols-2">
                 <section className="space-y-2 rounded-lg border p-3">
                   <h3 className="font-medium">Criança</h3>
-                  <Avatar className="size-16">
-                    {selectedFamily.photoUrl && <AvatarImage src={selectedFamily.photoUrl} alt={selectedFamily.fullName} />}
-                    <AvatarFallback>{selectedFamily.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
+                  {selectedFamily.photoUrl ? (
+                    <button
+                      type="button"
+                      className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => setPhotoPreview({ url: selectedFamily.photoUrl!, name: selectedFamily.fullName })}
+                      aria-label={`Ampliar foto de ${selectedFamily.fullName}`}
+                      title="Ampliar foto"
+                    >
+                      <Avatar className="size-16 cursor-zoom-in">
+                        <AvatarImage src={selectedFamily.photoUrl} alt={selectedFamily.fullName} />
+                        <AvatarFallback>{selectedFamily.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                    </button>
+                  ) : (
+                    <Avatar className="size-16">
+                      <AvatarFallback>{selectedFamily.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  )}
                   <p><span className="text-muted-foreground">Nome:</span> {selectedFamily.fullName}</p>
                   <p><span className="text-muted-foreground">Nascimento:</span> {selectedFamily.birthDate ? selectedFamily.birthDate.split("-").reverse().join("/") : "não informado"} ({ageLabel(selectedFamily.ageMonths)})</p>
                   <p><span className="text-muted-foreground">Congregação:</span> {selectedFamily.congregationName ?? "não informada"}</p>
                   <p><span className="text-muted-foreground">Tipo:</span> {selectedFamily.isVisitor ? "Visitante" : "Cadastrada"}</p>
                   <p><span className="text-muted-foreground">Observações:</span> {selectedFamily.notes || "nenhuma"}</p>
                   <p><span className="text-muted-foreground">Cadastro:</span> {new Date(selectedFamily.createdAt).toLocaleDateString("pt-BR")}</p>
+                  {selectedFamily.customValues.map((item) => {
+                    const field = data.customFields.find((candidate) => candidate.id === item.fieldId)
+                    return field ? <p key={item.fieldId}><span className="text-muted-foreground">{field.name}:</span> {Array.isArray(item.value) ? item.value.join(", ") : item.value === true ? "Sim" : item.value === false ? "Não" : item.value || "—"}</p> : null
+                  })}
                 </section>
 
                 <section className="space-y-2 rounded-lg border p-3">
@@ -1247,10 +1290,24 @@ export function KidsClient({
                     {selectedFamily.guardians.map((guardian) => (
                       <div key={guardian.id} className="rounded-md bg-muted/40 p-3">
                         <div className="mb-2 flex items-center gap-2">
-                          <Avatar>
-                            {guardian.photoUrl && <AvatarImage src={guardian.photoUrl} alt={guardian.name} />}
-                            <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
+                          {guardian.photoUrl ? (
+                            <button
+                              type="button"
+                              className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              onClick={() => setPhotoPreview({ url: guardian.photoUrl!, name: guardian.name })}
+                              aria-label={`Ampliar foto de ${guardian.name}`}
+                              title="Ampliar foto"
+                            >
+                              <Avatar className="cursor-zoom-in">
+                                <AvatarImage src={guardian.photoUrl} alt={guardian.name} />
+                                <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                            </button>
+                          ) : (
+                            <Avatar>
+                              <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                          )}
                           <p className="font-medium">{guardian.name} {guardian.isPrimary && <Badge variant="outline">Principal</Badge>}</p>
                         </div>
                         <p>{RELATIONSHIP_LABELS[guardian.relationship]}</p>
@@ -1262,6 +1319,11 @@ export function KidsClient({
                         <p className="text-xs text-muted-foreground">
                           Comunicação: {[guardian.whatsappEnabled && "WhatsApp", guardian.emailEnabled && "e-mail"].filter(Boolean).join(" e ") || "desativada"}
                         </p>
+                        {(guardian.address.street || guardian.address.city || guardian.address.postalCode) && <p className="mt-2 text-xs text-muted-foreground">Endereço: {[guardian.address.postalCode, guardian.address.street, guardian.address.number, guardian.address.neighborhood, guardian.address.city, guardian.address.state].filter(Boolean).join(" · ")}</p>}
+                        {guardian.customValues.map((item) => {
+                          const field = data.customFields.find((candidate) => candidate.id === item.fieldId)
+                          return field ? <p key={item.fieldId} className="text-xs"><span className="text-muted-foreground">{field.name}:</span> {Array.isArray(item.value) ? item.value.join(", ") : item.value === true ? "Sim" : item.value === false ? "Não" : item.value || "—"}</p> : null
+                        })}
                       </div>
                     ))}
                   </div>
@@ -1288,6 +1350,26 @@ export function KidsClient({
                   )}
                 </section>
               </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={photoPreview !== null} onOpenChange={(open) => { if (!open) setPhotoPreview(null) }}>
+        <DialogContent className="w-auto max-w-[calc(100vw-2rem)] bg-black p-2 sm:max-w-4xl">
+          {photoPreview && (
+            <>
+              <DialogHeader className="sr-only">
+                <DialogTitle>Foto de {photoPreview.name}</DialogTitle>
+                <DialogDescription>Foto ampliada</DialogDescription>
+              </DialogHeader>
+              {/* A URL assinada pode vir de domínios variáveis do armazenamento privado. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photoPreview.url}
+                alt={photoPreview.name}
+                className="max-h-[calc(100dvh-4rem)] max-w-full rounded-lg object-contain"
+              />
             </>
           )}
         </DialogContent>

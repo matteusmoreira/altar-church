@@ -30,6 +30,10 @@ interface PersonRow {
   birth_date: Date | string | null
   gender: PersonGender | null
   address: string
+  postal_code: string
+  address_number: string
+  address_complement: string
+  neighborhood: string
   city: string
   state: string
   country: string
@@ -46,6 +50,7 @@ interface PersonRow {
   is_active: boolean
   created_at: Date | string
   updated_at: Date | string
+  kids_roles: string[] | null
 }
 
 interface PeopleCountRow {
@@ -60,11 +65,13 @@ interface PersonCustomFieldRow {
   id: string | null
   field_id: string
   name: string
-  field_type: "text" | "date" | "single" | "multiple"
+  field_type: "text" | "textarea" | "number" | "date" | "single" | "multiple" | "boolean"
   sort_order: number
   value_text: string | null
   value_date: Date | string | null
   value_json: unknown
+  source_module: "people" | "kids"
+  kids_targets: string[] | null
 }
 
 interface PersonActivityRow {
@@ -160,7 +167,7 @@ async function resolveCompanyId(companyId?: string | null) {
 }
 
 function jsonValueToText(value: unknown) {
-  if (!value) return ""
+  if (value == null) return ""
   if (typeof value === "string") return value
   if (typeof value === "number" || typeof value === "boolean") return String(value)
   if (Array.isArray(value)) return value.filter(Boolean).map(String).join(", ")
@@ -180,6 +187,8 @@ function toCustomField(row: PersonCustomFieldRow) {
     fieldType: row.field_type,
     value: row.value_text ?? toIsoDate(row.value_date) ?? jsonValueToText(row.value_json),
     sortOrder: row.sort_order,
+    sourceModule: row.source_module,
+    kidsTargets: (row.kids_targets ?? []).filter((target): target is "child" | "guardian" => target === "child" || target === "guardian"),
   }
 }
 
@@ -223,6 +232,10 @@ function toPerson(row: PersonRow): PersonListItem {
     birthDate: toIsoDate(row.birth_date),
     gender: row.gender,
     address: row.address,
+    postalCode: row.postal_code ?? "",
+    addressNumber: row.address_number ?? "",
+    addressComplement: row.address_complement ?? "",
+    neighborhood: row.neighborhood ?? "",
     city: row.city,
     state: row.state,
     country: row.country,
@@ -240,6 +253,7 @@ function toPerson(row: PersonRow): PersonListItem {
     isActive: row.is_active,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+    kidsRoles: (row.kids_roles ?? []).filter((role): role is "child" | "guardian" => role === "child" || role === "guardian"),
   }
 }
 
@@ -304,6 +318,10 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.birth_date,
         p.gender,
         p.address,
+        p.postal_code,
+        p.address_number,
+        p.address_complement,
+        p.neighborhood,
         p.city,
         p.state,
         p.country,
@@ -321,6 +339,10 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.is_active,
         p.created_at,
         p.updated_at
+        , array_remove(array[
+            case when exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null) then 'child' end,
+            case when exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null) then 'guardian' end
+          ], null)::text[] as kids_roles
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
@@ -336,6 +358,8 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         f.name,
         f.field_type,
         f.sort_order,
+        f.source_module,
+        f.kids_targets,
         v.value_text,
         v.value_date,
         v.value_json
@@ -459,6 +483,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
   const baptized = filters.baptized ?? null
   const emailValidated = filters.emailValidated ?? null
   const isActive = filters.isActive ?? null
+  const kidsRole = filters.kidsRole && filters.kidsRole !== "all" ? filters.kidsRole : null
 
   const [peopleRows, countRows] = await Promise.all([
     sql<PersonRow[]>`
@@ -476,6 +501,10 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.birth_date,
         p.gender,
         p.address,
+        p.postal_code,
+        p.address_number,
+        p.address_complement,
+        p.neighborhood,
         p.city,
         p.state,
         p.country,
@@ -490,7 +519,11 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.email_validated,
         p.is_active,
         p.created_at,
-        p.updated_at
+        p.updated_at,
+        array_remove(array[
+          case when exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null) then 'child' end,
+          case when exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null) then 'guardian' end
+        ], null)::text[] as kids_roles
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
@@ -503,6 +536,15 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         and (${baptized}::boolean is null or p.baptized = ${baptized})
         and (${emailValidated}::boolean is null or p.email_validated = ${emailValidated})
         and (${isActive}::boolean is null or p.is_active = ${isActive})
+        and (
+          ${kidsRole}::text is null
+          or (${kidsRole} = 'any' and (
+            exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null)
+            or exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null)
+          ))
+          or (${kidsRole} = 'child' and exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null))
+          or (${kidsRole} = 'guardian' and exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null))
+        )
       order by p.created_at desc
       limit ${pageSize}
       offset ${offset}
@@ -519,6 +561,15 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         and (${baptized}::boolean is null or p.baptized = ${baptized})
         and (${emailValidated}::boolean is null or p.email_validated = ${emailValidated})
         and (${isActive}::boolean is null or p.is_active = ${isActive})
+        and (
+          ${kidsRole}::text is null
+          or (${kidsRole} = 'any' and (
+            exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null)
+            or exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null)
+          ))
+          or (${kidsRole} = 'child' and exists (select 1 from public.kid_profiles kid where kid.person_id = p.id and kid.deleted_at is null))
+          or (${kidsRole} = 'guardian' and exists (select 1 from public.kid_guardians guardian where guardian.person_id = p.id and guardian.deleted_at is null))
+        )
     `,
   ])
 

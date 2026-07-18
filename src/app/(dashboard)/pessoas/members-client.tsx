@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale"
 import {
   Activity,
   AlertTriangle,
+  Baby,
   BarChart3,
   Cake,
   CheckCircle2,
@@ -95,6 +96,7 @@ interface FilterState {
   baptized: string
   emailValidated: string
   isActive: string
+  kidsRole: string
 }
 
 const statusColors: Record<PersonStatus, string> = {
@@ -271,6 +273,7 @@ export function MembersClient({
     baptized: toFilterChoice(filters.baptized),
     emailValidated: toFilterChoice(filters.emailValidated),
     isActive: toFilterChoice(filters.isActive),
+    kidsRole: filters.kidsRole ?? "all",
   })
 
   const updateRoute = (nextFilters: FilterState, page = 1) => {
@@ -282,6 +285,7 @@ export function MembersClient({
     if (nextFilters.baptized !== "all") params.set("baptized", nextFilters.baptized)
     if (nextFilters.emailValidated !== "all") params.set("emailValidated", nextFilters.emailValidated)
     if (nextFilters.isActive !== "all") params.set("isActive", nextFilters.isActive)
+    if (nextFilters.kidsRole !== "all") params.set("kidsRole", nextFilters.kidsRole)
     if (page > 1) params.set("page", String(page))
 
     const query = params.toString()
@@ -546,6 +550,18 @@ export function MembersClient({
                     </SelectContent>
                   </Select>
                   <Select
+                    value={filterState.kidsRole}
+                    onValueChange={(value) => value && setFilterState({ ...filterState, kidsRole: value })}
+                  >
+                    <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Vínculo Kids" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos vínculos</SelectItem>
+                      <SelectItem value="any">Qualquer Kids</SelectItem>
+                      <SelectItem value="child">Criança Kids</SelectItem>
+                      <SelectItem value="guardian">Responsável Kids</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
                     value={filterState.baptized}
                     onValueChange={(value) => value && setFilterState({ ...filterState, baptized: value })}
                   >
@@ -684,6 +700,11 @@ export function MembersClient({
                                   Com acesso
                                 </Badge>
                               ) : null}
+                              {person.kidsRoles.map((role) => (
+                                <Badge key={role} variant="outline" className="mt-1 mr-1 border-info/30 text-info">
+                                  <Baby className="mr-1 h-3 w-3" />{role === "child" ? "Criança Kids" : "Responsável Kids"}
+                                </Badge>
+                              ))}
                             </div>
                           </div>
                         </TableCell>
@@ -778,6 +799,11 @@ export function MembersClient({
                               Com acesso
                             </Badge>
                           ) : null}
+                          {person.kidsRoles.map((role) => (
+                            <Badge key={role} variant="outline" className="border-info/30 text-info">
+                              <Baby className="mr-1 h-3 w-3" />{role === "child" ? "Criança Kids" : "Responsável Kids"}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
                       <DropdownMenu>
