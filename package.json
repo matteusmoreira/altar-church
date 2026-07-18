@@ -18,7 +18,9 @@
     "integrations:verify": "node scripts/verify-integrations.mjs",
     "integrations:dispatch": "node scripts/dispatch-integrations.mjs",
     "integrations:echo": "node scripts/webhook-echo-server.mjs",
-    "db:migrate": "node scripts/apply-pending-migrations.mjs"
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/apply-pending-migrations.mjs",
+    "db:audit": "node --env-file-if-exists=.env.local scripts/audit-database.mjs",
+    "db:optimize": "node --env-file-if-exists=.env.local scripts/optimize-database.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -120,8 +120,12 @@ test("kids foundation: schema, RLS, policies, constraints e registro do módulo"
     assert.equal(moduleRows[0].required_permission, "kids.view")
     const planRows = await sql`select * from public.plan_modules where module_id = 'kids'`
     assert.equal(planRows.length, 0, "kids não deve estar em nenhum plano por padrão")
-    const companyModuleRows = await sql`select * from public.company_modules where module_id = 'kids' and enabled = true`
-    assert.equal(companyModuleRows.length, 0, "kids não deve estar ativo em empresas por padrão")
+    const kidsMigration = readFileSync("supabase/migrations/20260717120000_kids_module.sql", "utf8")
+    assert.doesNotMatch(
+      kidsMigration,
+      /insert\s+into\s+public\.company_modules[\s\S]*?['"]kids['"]/i,
+      "migration não deve ativar Kids automaticamente em empresas",
+    )
 
     // 5) Papel guardian aceito pelo check constraint de profiles
     const companies = await sql`select id from public.companies where active = true order by created_at limit 1`
