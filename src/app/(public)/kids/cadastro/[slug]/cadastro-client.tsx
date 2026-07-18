@@ -27,6 +27,15 @@ const RELATIONSHIP_LABELS: Record<KidRelationship, string> = {
   other: "Outro",
 }
 
+function formatPhoneMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+  if (digits.length === 0) return ""
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
 export function CadastroVisitanteClient({
   slug,
   info,
@@ -187,7 +196,7 @@ export function CadastroVisitanteClient({
             </div>
             <div className="space-y-1">
               <Label>Telefone (WhatsApp) *</Label>
-              <Input inputMode="tel" value={form.guardianPhone} onChange={(event) => setForm({ ...form, guardianPhone: event.target.value })} />
+              <Input type="tel" inputMode="tel" maxLength={15} value={form.guardianPhone} onChange={(event) => setForm({ ...form, guardianPhone: formatPhoneMask(event.target.value) })} />
             </div>
             <div className="space-y-1">
               <Label>E-mail</Label>

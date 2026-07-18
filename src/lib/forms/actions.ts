@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { afterResponse } from "@/lib/performance/after-response"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
@@ -803,7 +804,6 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
     // Outbound integrations (never fail the public submit)
     try {
       const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
-      const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
       const personPayload = {
         id: personId,
         name: personName,
@@ -882,20 +882,10 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
           source: `Formulário: ${form.title}`,
         },
       })
-      // Despacho imediato (Node) — não depender só do pg_cron/SQL worker
-      try {
+      afterResponse("integration outbox", async () => {
+        const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
         await processIntegrationOutbox(25)
-      } catch (dispatchError) {
-        console.error("[integrations] immediate dispatch failed", dispatchError)
-        try {
-          const { after } = await import("next/server")
-          after(() => {
-            void processIntegrationOutbox(25)
-          })
-        } catch {
-          /* cron / worker SQL still picks pending */
-        }
-      }
+      })
     } catch (integrationError) {
       console.error("[integrations] form submit emit failed", integrationError)
     }

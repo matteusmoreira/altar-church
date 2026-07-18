@@ -1,9 +1,9 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { toast } from "sonner"
-import { Baby, DoorOpen, HeartPulse, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
+import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState, MetricCard, PageHeader } from "@/components/shared"
 import { usePermission } from "@/lib/permissions"
 import {
@@ -79,6 +80,15 @@ function ageLabel(ageMonths: number | null) {
   if (years === 0) return `${months}m`
   if (months === 0) return `${years}a`
   return `${years}a ${months}m`
+}
+
+function formatPhoneMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+  if (digits.length === 0) return ""
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
 interface GuardianForm {
@@ -245,6 +255,12 @@ export function KidsClient({
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(defaultSettingsForm)
   const [deleteChildId, setDeleteChildId] = useState<string | null>(null)
   const [deleteClassroomId, setDeleteClassroomId] = useState<string | null>(null)
+  const [overviewMode, setOverviewMode] = useState<"list" | "grid">("list")
+  const [selectedFamily, setSelectedFamily] = useState<KidListItem | null>(null)
+  const [selectedHealth, setSelectedHealth] = useState<ChildForm["health"] | null>(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const healthRequestRef = useRef(0)
+  const [classroomAgeUnits, setClassroomAgeUnits] = useState<{ min: "months" | "years"; max: "months" | "years" }>({ min: "months", max: "months" })
   const [pending, setPending] = useState(false)
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string, after?: () => void) {
@@ -290,7 +306,7 @@ export function KidsClient({
         firstName: guardian.name.split(" ")[0] ?? guardian.name,
         lastName: guardian.name.split(" ").slice(1).join(" "),
         email: guardian.email ?? "",
-        phone: guardian.phone,
+        phone: formatPhoneMask(guardian.phone),
         relationship: guardian.relationship,
         isPrimary: guardian.isPrimary,
         canCheckin: guardian.canCheckin,
@@ -344,6 +360,21 @@ export function KidsClient({
       childForm.id ? "Criança atualizada" : "Criança cadastrada",
       () => setChildForm(emptyChildForm),
     )
+  }
+
+  function openFamilyDetails(child: KidListItem) {
+    const requestId = ++healthRequestRef.current
+    setSelectedFamily(child)
+    setSelectedHealth(null)
+    setHealthLoading(canViewHealth)
+    if (canViewHealth) {
+      void fetchKidHealthDetails(child.id).then((result) => {
+        if (healthRequestRef.current !== requestId) return
+        if (result.ok && result.details) setSelectedHealth({ ...child.health, ...result.details })
+      }).catch(() => undefined).finally(() => {
+        if (healthRequestRef.current === requestId) setHealthLoading(false)
+      })
+    }
   }
 
   // -------------------------------------------------------------- salas
@@ -452,11 +483,21 @@ export function KidsClient({
           </div>
 
           <Card className="glass">
-            <CardHeader>
-              <CardTitle>Crianças cadastradas</CardTitle>
-              <CardDescription>Cadastros mais recentes do ministério infantil.</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>Crianças cadastradas</CardTitle>
+                <CardDescription>Cadastros mais recentes do ministério infantil.</CardDescription>
+              </div>
+              <div className="flex rounded-md border p-1" aria-label="Modo de visualização">
+                <Button type="button" variant={overviewMode === "list" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setOverviewMode("list")} aria-label="Ver em lista" title="Lista">
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant={overviewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setOverviewMode("grid")} aria-label="Ver em grade" title="Grade">
+                  <Grid2X2 className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className={overviewMode === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
               {data.children.length === 0 && (
                 <EmptyState
                   icon={Baby}
@@ -465,18 +506,21 @@ export function KidsClient({
                 />
               )}
               {data.children.slice(0, 8).map((child) => (
-                <div key={child.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 p-3">
+                <div key={child.id} className={`gap-2 rounded-lg border border-border/60 p-3 ${overviewMode === "grid" ? "flex min-h-28 flex-col justify-between" : "flex flex-wrap items-center justify-between"}`}>
                   <div>
                     <p className="font-medium">{child.fullName}</p>
                     <p className="text-xs text-muted-foreground">
                       {ageLabel(child.ageMonths)} · {child.guardians[0]?.name ?? "sem responsável"}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     {child.isVisitor && <Badge variant="secondary">Visitante</Badge>}
                     {child.health.hasAllergy && <Badge variant="destructive">ALERGIA</Badge>}
                     {child.health.hasMedication && <Badge variant="destructive">MEDICAÇÃO</Badge>}
                     {child.health.hasSpecialNeeds && <Badge variant="destructive">ATENÇÃO</Badge>}
+                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => openFamilyDetails(child)} aria-label={`Ver família de ${child.fullName}`} title="Ver todas as informações da família">
+                      <Eye className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -623,7 +667,7 @@ export function KidsClient({
                       <div className="grid gap-2 sm:grid-cols-2">
                         <Input placeholder="Nome *" value={guardian.firstName} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, firstName: event.target.value } : g)) })} />
                         <Input placeholder="Sobrenome" value={guardian.lastName} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, lastName: event.target.value } : g)) })} />
-                        <Input placeholder="Telefone *" value={guardian.phone} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, phone: event.target.value } : g)) })} />
+                        <Input type="tel" inputMode="tel" maxLength={15} placeholder="Telefone *" value={guardian.phone} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, phone: formatPhoneMask(event.target.value) } : g)) })} />
                         <Input placeholder="E-mail" value={guardian.email} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, email: event.target.value } : g)) })} />
                         <select
                           className="h-9 rounded-md border bg-background px-2 text-sm"
@@ -738,7 +782,7 @@ export function KidsClient({
             <Card className="glass h-fit">
               <CardHeader>
                 <CardTitle>{classroomForm.id ? "Editar sala" : "Nova sala"}</CardTitle>
-                <CardDescription>Faixa etária em meses, capacidade e localização.</CardDescription>
+                <CardDescription>Faixa etária em meses ou anos, capacidade e localização.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -765,12 +809,24 @@ export function KidsClient({
                     <Input id="classroom-location" value={classroomForm.location} onChange={(event) => setClassroomForm({ ...classroomForm, location: event.target.value })} />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-min-age">Idade mín. (meses)</Label>
-                    <Input id="classroom-min-age" type="number" min={0} value={classroomForm.minAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, minAgeMonths: Number(event.target.value) })} />
+                    <Label htmlFor="classroom-min-age">Idade mínima</Label>
+                    <div className="flex gap-2">
+                      <Input id="classroom-min-age" type="number" min={0} value={classroomAgeUnits.min === "years" ? classroomForm.minAgeMonths / 12 : classroomForm.minAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, minAgeMonths: Number(event.target.value) * (classroomAgeUnits.min === "years" ? 12 : 1) })} />
+                      <select aria-label="Unidade da idade mínima" className="h-9 rounded-md border bg-background px-2 text-sm" value={classroomAgeUnits.min} onChange={(event) => setClassroomAgeUnits({ ...classroomAgeUnits, min: event.target.value as "months" | "years" })}>
+                        <option value="months">meses</option>
+                        <option value="years">anos</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-max-age">Idade máx. (meses)</Label>
-                    <Input id="classroom-max-age" type="number" min={0} value={classroomForm.maxAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, maxAgeMonths: Number(event.target.value) })} />
+                    <Label htmlFor="classroom-max-age">Idade máxima</Label>
+                    <div className="flex gap-2">
+                      <Input id="classroom-max-age" type="number" min={0} value={classroomAgeUnits.max === "years" ? classroomForm.maxAgeMonths / 12 : classroomForm.maxAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, maxAgeMonths: Number(event.target.value) * (classroomAgeUnits.max === "years" ? 12 : 1) })} />
+                      <select aria-label="Unidade da idade máxima" className="h-9 rounded-md border bg-background px-2 text-sm" value={classroomAgeUnits.max} onChange={(event) => setClassroomAgeUnits({ ...classroomAgeUnits, max: event.target.value as "months" | "years" })}>
+                        <option value="months">meses</option>
+                        <option value="years">anos</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="classroom-capacity">Capacidade</Label>
@@ -1067,6 +1123,80 @@ export function KidsClient({
           </TabsContent>
         )}
       </Tabs>
+
+      <Dialog open={selectedFamily !== null} onOpenChange={(open) => { if (!open) { healthRequestRef.current += 1; setSelectedFamily(null); setSelectedHealth(null); setHealthLoading(false) } }}>
+        <DialogContent className="sm:max-w-2xl">
+          {selectedFamily && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Família de {selectedFamily.fullName}</DialogTitle>
+                <DialogDescription>Informações da criança, responsáveis, autorizações e saúde.</DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <section className="space-y-2 rounded-lg border p-3">
+                  <h3 className="font-medium">Criança</h3>
+                  <p><span className="text-muted-foreground">Nome:</span> {selectedFamily.fullName}</p>
+                  <p><span className="text-muted-foreground">Nascimento:</span> {selectedFamily.birthDate ? selectedFamily.birthDate.split("-").reverse().join("/") : "não informado"} ({ageLabel(selectedFamily.ageMonths)})</p>
+                  <p><span className="text-muted-foreground">Congregação:</span> {selectedFamily.congregationName ?? "não informada"}</p>
+                  <p><span className="text-muted-foreground">Tipo:</span> {selectedFamily.isVisitor ? "Visitante" : "Cadastrada"}</p>
+                  <p><span className="text-muted-foreground">Observações:</span> {selectedFamily.notes || "nenhuma"}</p>
+                  <p><span className="text-muted-foreground">Cadastro:</span> {new Date(selectedFamily.createdAt).toLocaleDateString("pt-BR")}</p>
+                </section>
+
+                <section className="space-y-2 rounded-lg border p-3">
+                  <h3 className="font-medium">Consentimentos</h3>
+                  {CONSENT_TYPES.map((type) => (
+                    <p key={type}>{selectedFamily.grantedConsents.includes(type) ? "✓" : "—"} {CONSENT_LABELS[type]}</p>
+                  ))}
+                </section>
+
+                <section className="space-y-3 rounded-lg border p-3 sm:col-span-2">
+                  <h3 className="font-medium">Responsáveis</h3>
+                  {selectedFamily.guardians.length === 0 && <p className="text-muted-foreground">Nenhum responsável vinculado.</p>}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedFamily.guardians.map((guardian) => (
+                      <div key={guardian.id} className="rounded-md bg-muted/40 p-3">
+                        <p className="font-medium">{guardian.name} {guardian.isPrimary && <Badge variant="outline">Principal</Badge>}</p>
+                        <p>{RELATIONSHIP_LABELS[guardian.relationship]}</p>
+                        <p>{guardian.phone || "Telefone não informado"}</p>
+                        <p>{guardian.email || "E-mail não informado"}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {guardian.canCheckin ? "Check-in" : "Sem check-in"} · {guardian.canCheckout ? "Checkout" : "Sem checkout"} · {guardian.isEmergencyContact ? "Contato de emergência" : "Não emergencial"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Comunicação: {[guardian.whatsappEnabled && "WhatsApp", guardian.emailEnabled && "e-mail"].filter(Boolean).join(" e ") || "desativada"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="space-y-2 rounded-lg border p-3 sm:col-span-2">
+                  <h3 className="font-medium">Saúde</h3>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant={selectedFamily.health.hasAllergy ? "destructive" : "outline"}>Alergia: {selectedFamily.health.hasAllergy ? "sim" : "não"}</Badge>
+                    <Badge variant={selectedFamily.health.hasDietaryRestriction ? "destructive" : "outline"}>Restrição alimentar: {selectedFamily.health.hasDietaryRestriction ? "sim" : "não"}</Badge>
+                    <Badge variant={selectedFamily.health.hasMedication ? "destructive" : "outline"}>Medicação: {selectedFamily.health.hasMedication ? "sim" : "não"}</Badge>
+                    <Badge variant={selectedFamily.health.hasSpecialNeeds ? "destructive" : "outline"}>Necessidades específicas: {selectedFamily.health.hasSpecialNeeds ? "sim" : "não"}</Badge>
+                  </div>
+                  {healthLoading && <p className="text-muted-foreground">Carregando detalhes de saúde…</p>}
+                  {canViewHealth && !healthLoading && !selectedHealth && <p className="text-muted-foreground">Detalhes de saúde indisponíveis.</p>}
+                  {selectedHealth && (
+                    <div className="grid gap-2 pt-2 sm:grid-cols-2">
+                      <p><span className="text-muted-foreground">Alergias:</span> {selectedHealth.allergies || "nenhuma"}</p>
+                      <p><span className="text-muted-foreground">Restrições:</span> {selectedHealth.dietaryRestrictions || "nenhuma"}</p>
+                      <p><span className="text-muted-foreground">Medicação:</span> {selectedHealth.medication || "nenhuma"}</p>
+                      <p><span className="text-muted-foreground">Necessidades:</span> {selectedHealth.specialNeeds || "nenhuma"}</p>
+                      <p className="sm:col-span-2"><span className="text-muted-foreground">Instruções:</span> {selectedHealth.instructions || "nenhuma"}</p>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteChildId !== null} onOpenChange={(open) => !open && setDeleteChildId(null)}>
         <AlertDialogContent className="glass-strong">

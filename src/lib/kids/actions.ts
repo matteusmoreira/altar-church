@@ -8,6 +8,7 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { jsonbParam } from "@/lib/db/jsonb"
 import { createClient } from "@/lib/supabase/server"
+import { afterResponse } from "@/lib/performance/after-response"
 import { hasPermission, type Permission, type User } from "@/lib/types"
 import type { IntegrationEventType } from "@/lib/integrations/types"
 import {
@@ -149,13 +150,11 @@ async function insertAccessEvent(
 async function emitKidsEvent(companyId: string, eventType: IntegrationEventType, eventKey: string, data: object) {
   try {
     const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
-    const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
     await enqueueIntegrationEventSafe({ companyId, eventType, eventKey, data: { ...data } })
-    try {
+    afterResponse("integration outbox", async () => {
+      const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
       await processIntegrationOutbox(25)
-    } catch {
-      /* cron/worker SQL continua o despacho */
-    }
+    })
   } catch {
     /* integrações são best-effort por contrato */
   }
@@ -179,13 +178,12 @@ async function enqueueOperationalSafe(input: {
   createdBy?: string | null
 }) {
   try {
-    const { enqueueOperationalMessage, processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
+    const { enqueueOperationalMessage } = await import("@/lib/kids/delivery")
     await enqueueOperationalMessage(input)
-    try {
+    afterResponse("kids delivery outbox", async () => {
+      const { processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
       await processKidDeliveryOutbox(25)
-    } catch {
-      /* worker/cron continua o despacho */
-    }
+    })
   } catch {
     /* mensageria é best-effort por contrato */
   }
@@ -240,45 +238,27 @@ async function findPersonId(
   }
 
   const digits = input.phone ? phoneDigits(input.phone) : ""
-  if (digits.length >= 8) {
-    const rows = await tx<{ id: string }[]>`
-      select id from public.people
-      where company_id = ${companyId}
-        and deleted_at is null
-        and regexp_replace(phone, '\D', '', 'g') = ${digits}
-      order by created_at
-      limit 1
-    `
-    if (rows[0]?.id) return rows[0].id
-  }
-
-  if (input.email) {
-    const rows = await tx<{ id: string }[]>`
-      select id from public.people
-      where company_id = ${companyId}
-        and deleted_at is null
-        and email is not null
-        and lower(email) = lower(${input.email})
-      order by created_at
-      limit 1
-    `
-    if (rows[0]?.id) return rows[0].id
-  }
-
-  if (input.birthDate) {
-    const rows = await tx<{ id: string }[]>`
-      select id from public.people
-      where company_id = ${companyId}
-        and deleted_at is null
-        and lower(full_name) = lower(${input.fullName})
-        and birth_date = ${input.birthDate}
-      order by created_at
-      limit 1
-    `
-    if (rows[0]?.id) return rows[0].id
-  }
-
-  return null
+  const email = input.email?.trim() ?? ""
+  const birthDate = input.birthDate ?? ""
+  const rows = await tx<{ id: string }[]>`
+    select id from public.people
+    where company_id = ${companyId}
+      and deleted_at is null
+      and (
+        (${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits})
+        or (${email !== ""} and email is not null and lower(email) = lower(${email}))
+        or (${birthDate !== ""} and lower(full_name) = lower(${input.fullName}) and birth_date = nullif(${birthDate}, '')::date)
+      )
+    order by
+      case
+        when ${digits.length >= 8} and regexp_replace(phone, '\D', '', 'g') = ${digits} then 1
+        when ${email !== ""} and email is not null and lower(email) = lower(${email}) then 2
+        else 3
+      end,
+      created_at
+    limit 1
+  `
+  return rows[0]?.id ?? null
 }
 
 export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<KidsActionResult> {
@@ -375,29 +355,38 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
           updated_by = excluded.updated_by
       `
 
-      // Consentimentos versionados: revoga vigente e grava nova versão quando necessário.
-      for (const type of CONSENT_TYPES) {
-        const wanted = parsed.consents.includes(type)
-        const current = await tx<{ id: string; version: string }[]>`
-          select id, version from public.kid_consents
-          where kid_id = ${resolvedKidId} and consent_type = ${type} and status = 'granted'
-          limit 1
+      // Consentimentos versionados em lote: 1 leitura + até 2 escritas,
+      // independente da quantidade de tipos.
+      const currentConsents = await tx<{ id: string; consent_type: KidConsentType; version: string }[]>`
+        select id, consent_type, version
+        from public.kid_consents
+        where kid_id = ${resolvedKidId} and status = 'granted'
+      `
+      const wantedConsents = new Set(parsed.consents)
+      const revokeIds = currentConsents
+        .filter((row) => !wantedConsents.has(row.consent_type) || row.version !== KIDS_CONSENT_VERSION)
+        .map((row) => row.id)
+      const currentVersions = new Map(currentConsents.map((row) => [row.consent_type, row.version]))
+      const grantTypes = CONSENT_TYPES.filter(
+        (type) => wantedConsents.has(type) && currentVersions.get(type) !== KIDS_CONSENT_VERSION,
+      )
+
+      if (revokeIds.length > 0) {
+        await tx`
+          update public.kid_consents
+          set status = 'revoked', revoked_at = now(), actor_profile_id = ${user.id}
+          where id = any(${revokeIds}::uuid[])
         `
-        const currentRow = current[0]
-        if (wanted && currentRow?.version === KIDS_CONSENT_VERSION) continue
-        if (currentRow) {
-          await tx`
-            update public.kid_consents
-            set status = 'revoked', revoked_at = now(), actor_profile_id = ${user.id}
-            where id = ${currentRow.id}
-          `
-        }
-        if (wanted) {
-          await tx`
-            insert into public.kid_consents (company_id, kid_id, consent_type, version, status, source, actor_profile_id)
-            values (${companyId}, ${resolvedKidId}, ${type}, ${KIDS_CONSENT_VERSION}, 'granted', 'reception', ${user.id})
-          `
-        }
+      }
+      if (grantTypes.length > 0) {
+        await tx`
+          insert into public.kid_consents (
+            company_id, kid_id, consent_type, version, status, source, actor_profile_id
+          )
+          select
+            ${companyId}, ${resolvedKidId}, consent_type, ${KIDS_CONSENT_VERSION}, 'granted', 'reception', ${user.id}
+          from unnest(${grantTypes}::text[]) as consent_type
+        `
       }
 
       // Responsáveis: remove vínculos ausentes e faz upsert dos informados.
@@ -2250,7 +2239,7 @@ export async function saveKidLessonReport(input: z.input<typeof kidLessonReportS
 
     if (parsed.sharedWithGuardians) {
       try {
-        const { enqueueLessonReportNotification, processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
+        const { enqueueLessonReportNotification } = await import("@/lib/kids/delivery")
         await enqueueLessonReportNotification({
           companyId,
           reportId: id,
@@ -2261,11 +2250,10 @@ export async function saveKidLessonReport(input: z.input<typeof kidLessonReportS
           reportTitle: parsed.title,
           createdBy: user.id,
         })
-        try {
+        afterResponse("kids delivery outbox", async () => {
+          const { processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
           await processKidDeliveryOutbox(25)
-        } catch {
-          /* worker/cron continua o despacho */
-        }
+        })
       } catch {
         /* mensageria é best-effort por contrato */
       }
@@ -2286,7 +2274,7 @@ export async function sendKidCampaign(input: z.input<typeof kidCampaignSchema>):
   try {
     const parsed = kidCampaignSchema.parse(input)
     const { user, companyId } = await context("kids.communicate")
-    const { enqueueCampaignMessage, processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
+    const { enqueueCampaignMessage } = await import("@/lib/kids/delivery")
 
     const result = await enqueueCampaignMessage({
       companyId,
@@ -2307,11 +2295,10 @@ export async function sendKidCampaign(input: z.input<typeof kidCampaignSchema>):
       channel: parsed.channel,
       enqueued: result.enqueued,
     })
-    try {
+    afterResponse("kids delivery outbox", async () => {
+      const { processKidDeliveryOutbox } = await import("@/lib/kids/delivery")
       await processKidDeliveryOutbox(25)
-    } catch {
-      /* worker/cron continua o despacho */
-    }
+    })
     refresh()
     return { ok: true, id: result.messageId }
   } catch (error) {

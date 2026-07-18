@@ -1,5 +1,5 @@
 import { getSql } from "@/lib/db/client"
-import { csvResponse, type CsvCell } from "@/lib/export/csv"
+import { xlsResponse, type XlsCell } from "@/lib/export/xls"
 import { auditExport, requireExportContext, toExportErrorResponse } from "@/lib/export/server"
 
 export const runtime = "nodejs"
@@ -10,7 +10,7 @@ function dateParam(searchParams: URLSearchParams, key: string): string | null {
 }
 
 /**
- * Exportação CSV do módulo Kids — sempre auditada e com permissão kids.reports.export.
+ * Exportação XLS do módulo Kids — sempre auditada e com permissão kids.reports.export.
  * Nunca inclui detalhes clínicos (somente indicadores sim/não).
  */
 export async function GET(request: Request) {
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const sql = getSql()
 
     if (type === "presencas") {
-      const rows = await sql<CsvCell[][]>`
+      const rows = await sql<XlsCell[][]>`
         select
           session.title as "Sessão",
           to_char(attendance.checked_in_at at time zone 'America/Sao_Paulo', 'DD/MM/YYYY') as "Data",
@@ -57,14 +57,14 @@ export async function GET(request: Request) {
         limit 5000
       `
       await auditExport("kids.reports.export", "kid_attendances", companyId)
-      return csvResponse(`kids-presencas-${new Date().toISOString().slice(0, 10)}.csv`, [
+      return xlsResponse(`kids-presencas-${new Date().toISOString().slice(0, 10)}.xls`, [
         ["Sessão", "Data", "Criança", "Sala", "Status", "Entrada", "Saída", "Responsável", "Telefone"],
         ...rows,
       ])
     }
 
     if (type === "criancas") {
-      const rows = await sql<CsvCell[][]>`
+      const rows = await sql<XlsCell[][]>`
         select
           person.full_name as "Nome",
           coalesce(to_char(person.birth_date, 'DD/MM/YYYY'), '') as "Nascimento",
@@ -96,7 +96,7 @@ export async function GET(request: Request) {
         limit 5000
       `
       await auditExport("kids.reports.export", "kid_profiles", companyId)
-      return csvResponse(`kids-criancas-${new Date().toISOString().slice(0, 10)}.csv`, [
+      return xlsResponse(`kids-criancas-${new Date().toISOString().slice(0, 10)}.xls`, [
         ["Nome", "Nascimento", "Congregação", "Visitante", "Responsáveis", "Consentimentos", "Alergia", "Restrição alimentar", "Medicação", "Necessidades específicas", "Cadastro"],
         ...rows,
       ])

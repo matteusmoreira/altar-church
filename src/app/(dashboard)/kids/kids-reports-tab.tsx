@@ -50,10 +50,10 @@ export function KidsReportsTab({ data }: { data: KidsReportsData }) {
       {canExport && (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" render={<a href="/api/kids/export?type=presencas" download />}>
-            <Download className="mr-2 h-4 w-4" />Exportar presenças (CSV)
+            <Download className="mr-2 h-4 w-4" />Exportar presenças (XLS)
           </Button>
           <Button type="button" variant="outline" render={<a href="/api/kids/export?type=criancas" download />}>
-            <Download className="mr-2 h-4 w-4" />Exportar crianças (CSV)
+            <Download className="mr-2 h-4 w-4" />Exportar crianças (XLS)
           </Button>
         </div>
       )}

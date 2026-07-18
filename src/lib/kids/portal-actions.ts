@@ -8,6 +8,7 @@ import { getSql } from "@/lib/db/client"
 import { createClient } from "@/lib/supabase/server"
 import { jsonbParam } from "@/lib/db/jsonb"
 import type { IntegrationEventType } from "@/lib/integrations/types"
+import { afterResponse } from "@/lib/performance/after-response"
 import {
   KIDS_CONSENT_VERSION,
   guardianChildSchema,
@@ -47,13 +48,11 @@ function refresh() {
 async function emitKidsEvent(companyId: string, eventType: IntegrationEventType, eventKey: string, data: object) {
   try {
     const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
-    const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
     await enqueueIntegrationEventSafe({ companyId, eventType, eventKey, data: { ...data } })
-    try {
+    afterResponse("integration outbox", async () => {
+      const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
       await processIntegrationOutbox(25)
-    } catch {
-      /* cron/worker SQL continua o despacho */
-    }
+    })
   } catch {
     /* integrações são best-effort por contrato */
   }

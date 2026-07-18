@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { afterResponse } from "@/lib/performance/after-response"
 import { z } from "zod"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
@@ -499,7 +500,6 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     if (personId) {
       try {
         const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
-        const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
         const eventType = parsed.id ? "person.updated" : "person.created"
         await enqueueIntegrationEventSafe({
           companyId,
@@ -516,14 +516,10 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             },
           },
         })
-        try {
-          const { after } = await import("next/server")
-          after(() => {
-            void processIntegrationOutbox(25)
-          })
-        } catch {
-          void processIntegrationOutbox(25)
-        }
+        afterResponse("integration outbox", async () => {
+          const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
+          await processIntegrationOutbox(25)
+        })
       } catch (integrationError) {
         console.error("[integrations] person emit failed", integrationError)
       }
