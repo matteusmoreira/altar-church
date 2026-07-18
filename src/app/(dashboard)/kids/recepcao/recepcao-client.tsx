@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { EmptyState } from "@/components/shared"
 import { usePermission } from "@/lib/permissions"
 import {
@@ -305,13 +306,18 @@ export function RecepcaoClient({
                   return (
                     <div key={candidate.kidId} className="space-y-2 rounded-lg border border-border/60 p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="font-medium">{candidate.fullName}</p>
+                        <div className="flex items-center gap-3">
+                          <Avatar size="lg">
+                            {candidate.photoUrl && <AvatarImage src={candidate.photoUrl} alt={candidate.fullName} />}
+                            <AvatarFallback>{candidate.fullName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div><p className="font-medium">{candidate.fullName}</p>
                           <p className="text-xs text-muted-foreground">
                             {ageLabel(candidate.ageMonths)}
                             {candidate.congregationName ? ` · ${candidate.congregationName}` : ""}
                             {candidate.guardiansSummary ? ` · ${candidate.guardiansSummary}` : ""}
                           </p>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {candidate.isVisitor && <Badge variant="secondary">Visitante</Badge>}
@@ -472,12 +478,22 @@ export function RecepcaoClient({
                 {presentAttendances.map((attendance) => (
                   <div key={attendance.id} className="space-y-2 rounded-lg border border-border/60 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
+                      <div className="flex items-center gap-3">
+                        <Avatar size="lg">
+                          {attendance.childPhotoUrl && <AvatarImage src={attendance.childPhotoUrl} alt={attendance.childName} />}
+                          <AvatarFallback>{attendance.childName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <Avatar size="lg">
+                          {attendance.primaryGuardianPhotoUrl && <AvatarImage src={attendance.primaryGuardianPhotoUrl} alt={attendance.primaryGuardianName ?? "Responsável"} />}
+                          <AvatarFallback>{(attendance.primaryGuardianName ?? "RP").slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div>
                         <p className="font-medium">
                           {attendance.childName}
                           <span className="ml-2 text-xs font-normal text-muted-foreground">{attendance.classroomName} · {formatTime(attendance.checkedInAt)}</span>
                         </p>
                         <p className="text-xs text-muted-foreground">{attendance.primaryGuardianName ?? ""}</p>
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {attendance.status === "checkout_requested" && <Badge variant="default">Retirada solicitada</Badge>}

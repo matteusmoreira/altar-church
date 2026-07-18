@@ -12,15 +12,17 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoCapture } from "@/components/kids/photo-capture"
 import {
   deleteGuardianContact,
   generateGuardianPickupCode,
   requestGuardianCheckout,
-  saveGuardianChild,
   saveGuardianContact,
   signOutFamily,
   updateGuardianConsents,
 } from "@/lib/kids/portal-actions"
+import { saveGuardianChildWithPhotos } from "@/lib/kids/photo-actions"
 import type {
   GuardianChildItem,
   GuardianPickupCode,
@@ -136,6 +138,8 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
   const [contactForm, setContactForm] = useState<{ kidId: string; form: ContactFormState } | null>(null)
   const [pickupCode, setPickupCode] = useState<(GuardianPickupCode & { childName: string }) | null>(null)
   const [pending, setPending] = useState(false)
+  const [childPhoto, setChildPhoto] = useState<File | null>(null)
+  const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -166,21 +170,30 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
 
   async function submitChild() {
     if (!childForm) return
+    const payload = {
+      id: childForm.kidId,
+      personId: childForm.personId,
+      firstName: childForm.firstName,
+      lastName: childForm.lastName,
+      birthDate: childForm.birthDate || null,
+      congregationId: childForm.congregationId || null,
+      isVisitor: false,
+      notes: childForm.notes,
+      health: childForm.health,
+    }
+    const request = new FormData()
+    request.set("payload", JSON.stringify(payload))
+    if (childPhoto) request.set("childPhoto", childPhoto)
+    if (guardianPhoto) request.set("guardianPhoto", guardianPhoto)
     await run(
-      () =>
-        saveGuardianChild({
-          id: childForm.kidId,
-          personId: childForm.personId,
-          firstName: childForm.firstName,
-          lastName: childForm.lastName,
-          birthDate: childForm.birthDate || null,
-          congregationId: childForm.congregationId || null,
-          isVisitor: false,
-          notes: childForm.notes,
-          health: childForm.health,
-        }),
+      () => saveGuardianChildWithPhotos(request),
       childForm.kidId ? "Cadastro atualizado" : "Criança cadastrada",
-      () => setChildForm(null),
+      (result) => {
+        if (result.warning) toast.warning(result.warning)
+        setChildPhoto(null)
+        setGuardianPhoto(null)
+        setChildForm(null)
+      },
     )
   }
 
@@ -260,13 +273,19 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
         <Card key={child.kidId} className="glass">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
+              <div className="flex items-center gap-3">
+                <Avatar size="lg">
+                  {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
+                  <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div>
                 <CardTitle>{child.fullName}</CardTitle>
                 <CardDescription>
                   {ageLabel(child.ageMonths)}
                   {child.congregationName ? ` · ${child.congregationName}` : ""}
                   {child.isVisitor ? " · visitante" : ""}
                 </CardDescription>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-1">
                 {child.health.hasAllergy && <Badge variant="destructive">ALERGIA</Badge>}
@@ -334,7 +353,12 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
               <TabsContent value="autorizadas" className="space-y-2 pt-3">
                 {child.guardians.map((guardian) => (
                   <div key={guardian.id} className="flex items-center justify-between gap-2 rounded-md border border-border/50 p-3 text-sm">
-                    <div>
+                    <div className="flex items-center gap-2">
+                      <Avatar>
+                        {guardian.photoUrl && <AvatarImage src={guardian.photoUrl} alt={guardian.name} />}
+                        <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
                       <p className="font-medium">{guardian.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {RELATIONSHIP_LABELS[guardian.relationship]}
@@ -342,6 +366,7 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
                         {guardian.canCheckout ? " · pode retirar" : " · não retira"}
                         {guardian.isEmergencyContact ? " · emergência" : ""}
                       </p>
+                      </div>
                     </div>
                     {!guardian.isPrimary && (
                       <Button
@@ -441,6 +466,12 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
               <Label>Observações gerais</Label>
               <Textarea rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
             </div>
+            {!childForm.kidId && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PhotoCapture label="da criança" value={childPhoto} disabled={pending} onChange={(file) => setChildPhoto(file)} onError={(message) => toast.error(message)} />
+                <PhotoCapture label="do responsável" currentUrl={data.guardianPhotoUrl} value={guardianPhoto} allowRemove={false} disabled={pending} onChange={(file) => setGuardianPhoto(file)} onError={(message) => toast.error(message)} />
+              </div>
+            )}
             <div className="space-y-2 rounded-lg border border-border/60 p-3">
               <p className="text-sm font-medium">Saúde essencial</p>
               <div className="grid gap-2 sm:grid-cols-2">

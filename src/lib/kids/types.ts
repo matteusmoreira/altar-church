@@ -37,6 +37,7 @@ export interface KidGuardianItem {
   isEmergencyContact: boolean
   whatsappEnabled: boolean
   emailEnabled: boolean
+  photoUrl: string | null
 }
 
 export interface KidListItem {
@@ -56,6 +57,7 @@ export interface KidListItem {
   grantedConsents: KidConsentType[]
   guardians: KidGuardianItem[]
   createdAt: string
+  photoUrl: string | null
 }
 
 export interface KidClassroomRuleItem {
@@ -118,6 +120,11 @@ export interface KidsActionResult {
   ok: boolean
   id?: string
   error?: string
+  warning?: string
+  personId?: string
+  guardianPersonIds?: string[]
+  createdPerson?: boolean
+  createdGuardian?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +197,8 @@ export interface KidAttendanceItem {
   health: KidHealthIndicators
   primaryGuardianName: string | null
   primaryGuardianPhone: string | null
+  childPhotoUrl: string | null
+  primaryGuardianPhotoUrl: string | null
   checkedInAt: string
   checkoutRequestedAt: string | null
   checkedOutAt: string | null
@@ -256,6 +265,7 @@ export interface KidCheckinCandidate {
   /** Presença ativa nesta sessão, se houver (bloqueia duplicidade na UI). */
   activeAttendanceId: string | null
   activeClassroomName: string | null
+  photoUrl: string | null
 }
 
 export interface KidsReceptionData {
@@ -330,10 +340,12 @@ export interface GuardianChildItem {
   consents: KidConsentType[]
   guardians: KidGuardianItem[]
   activeAttendance: GuardianActiveAttendance | null
+  photoUrl: string | null
 }
 
 export interface GuardianPortalData {
   guardianName: string
+  guardianPhotoUrl: string | null
   companyName: string
   children: GuardianChildItem[]
   congregations: { id: string; name: string }[]
@@ -351,6 +363,11 @@ export interface KidsPortalActionResult {
   error?: string
   id?: string
   pickupCode?: GuardianPickupCode
+  warning?: string
+  personId?: string
+  guardianPersonIds?: string[]
+  createdPerson?: boolean
+  createdGuardian?: boolean
 }
 
 // ---------------------------------------------------------------------------

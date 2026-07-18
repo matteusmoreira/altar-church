@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoCapture } from "@/components/kids/photo-capture"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +36,7 @@ import {
   saveKidClassroomRule,
   saveKidSettings,
 } from "@/lib/kids/actions"
+import { saveKidsPersonPhoto } from "@/lib/kids/photo-actions"
 import type {
   KidConsentType,
   KidLabelPaper,
@@ -105,6 +108,9 @@ interface GuardianForm {
   isEmergencyContact: boolean
   whatsappEnabled: boolean
   emailEnabled: boolean
+  photoUrl: string | null
+  photoFile: File | null
+  photoRemoved: boolean
 }
 
 interface ChildForm {
@@ -129,6 +135,9 @@ interface ChildForm {
     instructions: string
   }
   guardians: GuardianForm[]
+  photoUrl: string | null
+  photoFile: File | null
+  photoRemoved: boolean
 }
 
 const emptyGuardian: GuardianForm = {
@@ -145,6 +154,9 @@ const emptyGuardian: GuardianForm = {
   isEmergencyContact: true,
   whatsappEnabled: true,
   emailEnabled: true,
+  photoUrl: null,
+  photoFile: null,
+  photoRemoved: false,
 }
 
 const emptyChildForm: ChildForm = {
@@ -169,6 +181,9 @@ const emptyChildForm: ChildForm = {
     instructions: "",
   },
   guardians: [{ ...emptyGuardian }],
+  photoUrl: null,
+  photoFile: null,
+  photoRemoved: false,
 }
 
 interface ClassroomForm {
@@ -244,6 +259,7 @@ export function KidsClient({
   const router = useRouter()
   const canManageSettings = usePermission("kids.settings.manage")
   const canManageChildren = usePermission("kids.children.manage")
+  const canManageGuardians = usePermission("kids.guardians.manage")
   const canManageClasses = usePermission("kids.classes.manage")
   const canViewHealth = usePermission("kids.health.view")
   const canCommunicate = usePermission("kids.communicate")
@@ -314,7 +330,13 @@ export function KidsClient({
         isEmergencyContact: guardian.isEmergencyContact,
         whatsappEnabled: guardian.whatsappEnabled,
         emailEnabled: guardian.emailEnabled,
+        photoUrl: guardian.photoUrl,
+        photoFile: null,
+        photoRemoved: false,
       })),
+      photoUrl: child.photoUrl,
+      photoFile: null,
+      photoRemoved: false,
     })
     if (canViewHealth) {
       void fetchKidHealthDetails(child.id).then((result) => {
@@ -342,9 +364,9 @@ export function KidsClient({
   }
 
   async function submitChild() {
-    await run(
-      () =>
-        saveKid({
+    setPending(true)
+    try {
+      const result = await saveKid({
           id: childForm.id,
           personId: childForm.personId,
           firstName: childForm.firstName,
@@ -356,10 +378,38 @@ export function KidsClient({
           consents: childForm.consents,
           health: childForm.health,
           guardians: childForm.guardians,
-        }),
-      childForm.id ? "Criança atualizada" : "Criança cadastrada",
-      () => setChildForm(emptyChildForm),
-    )
+        })
+      if (!showResult(result)) return
+
+      const photoJobs: Promise<{ ok: boolean; error?: string }>[] = []
+      if (result.personId && (childForm.photoFile || childForm.photoRemoved)) {
+        const payload = new FormData()
+        payload.set("personId", result.personId)
+        payload.set("subject", "child")
+        if (childForm.photoFile) payload.set("file", childForm.photoFile)
+        if (childForm.photoRemoved && !childForm.photoFile) payload.set("remove", "true")
+        photoJobs.push(saveKidsPersonPhoto(payload))
+      }
+      childForm.guardians.forEach((guardian, index) => {
+        const personId = result.guardianPersonIds?.[index]
+        if (!personId || (!guardian.photoFile && !guardian.photoRemoved)) return
+        const payload = new FormData()
+        payload.set("personId", personId)
+        payload.set("subject", "guardian")
+        if (guardian.photoFile) payload.set("file", guardian.photoFile)
+        if (guardian.photoRemoved && !guardian.photoFile) payload.set("remove", "true")
+        photoJobs.push(saveKidsPersonPhoto(payload))
+      })
+      const photoResults = await Promise.all(photoJobs)
+      if (photoResults.some((item) => !item.ok)) {
+        toast.warning("Cadastro salvo, mas algumas fotos não foram atualizadas.")
+      }
+      toast.success(childForm.id ? "Criança atualizada" : "Criança cadastrada")
+      setChildForm(emptyChildForm)
+      router.refresh()
+    } finally {
+      setPending(false)
+    }
   }
 
   function openFamilyDetails(child: KidListItem) {
@@ -507,11 +557,17 @@ export function KidsClient({
               )}
               {data.children.slice(0, 8).map((child) => (
                 <div key={child.id} className={`gap-2 rounded-lg border border-border/60 p-3 ${overviewMode === "grid" ? "flex min-h-28 flex-col justify-between" : "flex flex-wrap items-center justify-between"}`}>
-                  <div>
-                    <p className="font-medium">{child.fullName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {ageLabel(child.ageMonths)} · {child.guardians[0]?.name ?? "sem responsável"}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <Avatar size="lg">
+                      {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
+                      <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">{child.fullName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {ageLabel(child.ageMonths)} · {child.guardians[0]?.name ?? "sem responsável"}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
                     {child.isVisitor && <Badge variant="secondary">Visitante</Badge>}
@@ -564,6 +620,15 @@ export function KidsClient({
                     </select>
                   </div>
                 </div>
+                <PhotoCapture
+                  label="da criança"
+                  currentUrl={childForm.photoUrl}
+                  value={childForm.photoFile}
+                  removed={childForm.photoRemoved}
+                  disabled={pending}
+                  onChange={(file, removed = false) => setChildForm({ ...childForm, photoFile: file, photoRemoved: removed })}
+                  onError={(message) => toast.error(message)}
+                />
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={childForm.isVisitor} onChange={(event) => setChildForm({ ...childForm, isVisitor: event.target.checked })} />
                   Criança visitante
@@ -679,6 +744,20 @@ export function KidsClient({
                           ))}
                         </select>
                       </div>
+                      {canManageGuardians && (
+                        <PhotoCapture
+                          label={`do responsável ${index + 1}`}
+                          currentUrl={guardian.photoUrl}
+                          value={guardian.photoFile}
+                          removed={guardian.photoRemoved}
+                          disabled={pending}
+                          onChange={(file, removed = false) => setChildForm({
+                            ...childForm,
+                            guardians: childForm.guardians.map((item, itemIndex) => itemIndex === index ? { ...item, photoFile: file, photoRemoved: removed } : item),
+                          })}
+                          onError={(message) => toast.error(message)}
+                        />
+                      )}
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                         <label className="flex items-center gap-1.5">
                           <input type="checkbox" checked={guardian.isPrimary} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, isPrimary: event.target.checked } : g)) })} />
@@ -735,12 +814,18 @@ export function KidsClient({
               {data.children.map((child) => (
                 <div key={child.id} className="rounded-lg border border-border/60 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium">{child.fullName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {ageLabel(child.ageMonths)}
-                        {child.congregationName ? ` · ${child.congregationName}` : ""}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <Avatar size="lg">
+                        {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
+                        <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium">{child.fullName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {ageLabel(child.ageMonths)}
+                          {child.congregationName ? ` · ${child.congregationName}` : ""}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
                       {child.isVisitor && <Badge variant="secondary">Visitante</Badge>}
@@ -1136,6 +1221,10 @@ export function KidsClient({
               <div className="grid gap-4 sm:grid-cols-2">
                 <section className="space-y-2 rounded-lg border p-3">
                   <h3 className="font-medium">Criança</h3>
+                  <Avatar className="size-16">
+                    {selectedFamily.photoUrl && <AvatarImage src={selectedFamily.photoUrl} alt={selectedFamily.fullName} />}
+                    <AvatarFallback>{selectedFamily.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
                   <p><span className="text-muted-foreground">Nome:</span> {selectedFamily.fullName}</p>
                   <p><span className="text-muted-foreground">Nascimento:</span> {selectedFamily.birthDate ? selectedFamily.birthDate.split("-").reverse().join("/") : "não informado"} ({ageLabel(selectedFamily.ageMonths)})</p>
                   <p><span className="text-muted-foreground">Congregação:</span> {selectedFamily.congregationName ?? "não informada"}</p>
@@ -1157,7 +1246,13 @@ export function KidsClient({
                   <div className="grid gap-3 sm:grid-cols-2">
                     {selectedFamily.guardians.map((guardian) => (
                       <div key={guardian.id} className="rounded-md bg-muted/40 p-3">
-                        <p className="font-medium">{guardian.name} {guardian.isPrimary && <Badge variant="outline">Principal</Badge>}</p>
+                        <div className="mb-2 flex items-center gap-2">
+                          <Avatar>
+                            {guardian.photoUrl && <AvatarImage src={guardian.photoUrl} alt={guardian.name} />}
+                            <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <p className="font-medium">{guardian.name} {guardian.isPrimary && <Badge variant="outline">Principal</Badge>}</p>
+                        </div>
                         <p>{RELATIONSHIP_LABELS[guardian.relationship]}</p>
                         <p>{guardian.phone || "Telefone não informado"}</p>
                         <p>{guardian.email || "E-mail não informado"}</p>

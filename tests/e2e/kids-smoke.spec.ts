@@ -57,6 +57,9 @@ test("admin abre hub e recepção Kids sem erro ou overflow", async ({ page }) =
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Kids", exact: true })).toBeVisible()
   await expect(page.getByRole("tab", { name: /Visão geral/i })).toBeVisible()
+  await page.getByRole("tab", { name: "Famílias" }).click()
+  await expect(page.getByRole("button", { name: "Tirar foto" })).toHaveCount(2)
+  await expect(page.getByRole("button", { name: "Galeria" })).toHaveCount(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 
   await page.goto("/kids/recepcao", { waitUntil: "domcontentloaded" })

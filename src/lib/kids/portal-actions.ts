@@ -311,7 +311,7 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
       )
     }
     refresh()
-    return { ok: true, id: saved.kidId }
+    return { ok: true, id: saved.kidId, personId: saved.personId, guardianPersonIds: [guardianPersonId], createdPerson: !parsed.id }
   } catch (error) {
     return failure(error)
   }
@@ -660,9 +660,10 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
     const guardianFullName = `${parsed.guardianFirstName} ${parsed.guardianLastName}`.trim()
     const guardianDigits = parsed.guardianPhone.replace(/\D/g, "")
 
-    const kidId = await sql.begin(async (tx) => {
+    const saved = await sql.begin(async (tx) => {
       // Responsável: dedup por telefone normalizado, depois e-mail.
       let guardianPersonId: string | null = null
+      let createdGuardian = false
       if (guardianDigits.length >= 8) {
         const found = await tx<{ id: string }[]>`
           select id from public.people
@@ -690,11 +691,13 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
           returning id
         `
         guardianPersonId = inserted[0]?.id ?? null
+        createdGuardian = true
       }
       if (!guardianPersonId) throw new Error("Não foi possível concluir o cadastro")
 
       // Criança: dedup somente por nome+nascimento (vínculo final é decisão do operador).
       let childPersonId: string | null = null
+      let createdPerson = false
       if (parsed.childBirthDate) {
         const found = await tx<{ id: string }[]>`
           select id from public.people
@@ -713,6 +716,7 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
           returning id
         `
         childPersonId = inserted[0]?.id ?? null
+        createdPerson = true
       }
       if (!childPersonId) throw new Error("Não foi possível concluir o cadastro")
 
@@ -790,16 +794,23 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
         `
       }
 
-      return resolvedKidId
+      return { kidId: resolvedKidId, personId: childPersonId, guardianPersonId, createdPerson, createdGuardian }
     })
 
     await emitKidsEvent(
       company.id,
       "kids.child.registered",
-      `kids.child.registered:${kidId}`,
-      buildChildRegisteredPayload({ kidId, personId: "", childFullName, isVisitor: true }),
+      `kids.child.registered:${saved.kidId}`,
+      buildChildRegisteredPayload({ kidId: saved.kidId, personId: saved.personId, childFullName, isVisitor: true }),
     )
-    return { ok: true, id: kidId }
+    return {
+      ok: true,
+      id: saved.kidId,
+      personId: saved.personId,
+      guardianPersonIds: [saved.guardianPersonId],
+      createdPerson: saved.createdPerson,
+      createdGuardian: saved.createdGuardian,
+    }
   } catch (error) {
     return failure(error)
   }

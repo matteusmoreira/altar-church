@@ -6,6 +6,7 @@ import { z } from "zod"
 import { requireCompanyAccess, requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { jsonbParam } from "@/lib/db/jsonb"
 import { createClient } from "@/lib/supabase/server"
 import { afterResponse } from "@/lib/performance/after-response"
@@ -448,7 +449,12 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
           and person_id <> all (${desiredPersonIds}::uuid[])
       `
 
-      return { kidId: resolvedKidId, personId: resolvedPersonId }
+      return {
+        kidId: resolvedKidId,
+        personId: resolvedPersonId,
+        guardianPersonIds: desiredPersonIds,
+        createdPerson: !personId,
+      }
     })
 
     await audit("kids.child.save", "kid_profiles", saved.kidId, companyId, {
@@ -475,7 +481,13 @@ export async function saveKid(input: z.input<typeof kidChildSchema>): Promise<Ki
       )
     }
     refresh()
-    return { ok: true, id: saved.kidId }
+    return {
+      ok: true,
+      id: saved.kidId,
+      personId: saved.personId,
+      guardianPersonIds: saved.guardianPersonIds,
+      createdPerson: saved.createdPerson,
+    }
   } catch (error) {
     return failure(error)
   }
@@ -1164,6 +1176,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
       guardians_summary: string | null
       active_attendance_id: string | null
       active_classroom_name: string | null
+      photo_path: string | null
     }[]>`
       select
         kid.id as kid_id,
@@ -1173,6 +1186,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
         p.birth_date,
         p.congregation_id,
         congregation.name as congregation_name,
+        photo.storage_path as photo_path,
         hp.has_allergy, hp.has_dietary_restriction, hp.has_medication, hp.has_special_needs,
         (select array_agg(consent.consent_type) from public.kid_consents consent
           where consent.kid_id = kid.id and consent.status = 'granted') as granted_consents,
@@ -1191,6 +1205,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
       from public.kid_profiles kid
       join public.people p on p.id = kid.person_id and p.deleted_at is null
       left join public.congregations congregation on congregation.id = p.congregation_id
+      left join public.app_files photo on photo.id = p.photo_file_id and photo.is_active = true and photo.deleted_at is null
       left join public.kid_health_profiles hp on hp.kid_id = kid.id and hp.deleted_at is null
       where kid.company_id = ${companyId}
         and kid.deleted_at is null
@@ -1211,6 +1226,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
       limit 12
     `
 
+    const photoUrls = await createSignedUrlsByStoragePath(rows.map((row) => row.photo_path ?? ""))
     const candidates: KidCheckinCandidate[] = rows.map((row) => {
       const granted = (row.granted_consents ?? []) as KidConsentType[]
       return {
@@ -1232,6 +1248,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
         guardiansSummary: row.guardians_summary ?? "",
         activeAttendanceId: row.active_attendance_id,
         activeClassroomName: row.active_classroom_name,
+        photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
       }
     })
 

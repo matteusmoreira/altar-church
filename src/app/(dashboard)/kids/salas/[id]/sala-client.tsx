@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { usePermission } from "@/lib/permissions"
 import { maskPhone } from "@/lib/kids/security"
 import { callKidGuardian, resolveKidIncident, saveKidIncident, saveKidLessonReport } from "@/lib/kids/actions"
@@ -135,11 +136,16 @@ export function SalaClient({ data }: { data: KidRoomPanelData }) {
             <Card key={attendance.id} className="glass">
               <CardContent className="space-y-3 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="text-lg font-semibold">{attendance.childName}</p>
+                  <div className="flex items-center gap-3">
+                    <Avatar size="lg">
+                      {attendance.childPhotoUrl && <AvatarImage src={attendance.childPhotoUrl} alt={attendance.childName} />}
+                      <AvatarFallback>{attendance.childName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div><p className="text-lg font-semibold">{attendance.childName}</p>
                     <p className="text-xs text-muted-foreground">
                       {ageLabel(attendance.ageMonths)} · entrada {formatTime(attendance.checkedInAt)}
                     </p>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {attendance.status === "checkout_requested" && (
@@ -151,10 +157,13 @@ export function SalaClient({ data }: { data: KidRoomPanelData }) {
                     {attendance.health.hasSpecialNeeds && <Badge variant="destructive">ATENÇÃO</Badge>}
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Responsável: {attendance.primaryGuardianName ?? "—"}
-                  {attendance.primaryGuardianPhone ? ` · ${maskPhone(attendance.primaryGuardianPhone)}` : ""}
-                </p>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Avatar>
+                    {attendance.primaryGuardianPhotoUrl && <AvatarImage src={attendance.primaryGuardianPhotoUrl} alt={attendance.primaryGuardianName ?? "Responsável"} />}
+                    <AvatarFallback>{(attendance.primaryGuardianName ?? "RP").slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <p>Responsável: {attendance.primaryGuardianName ?? "—"}{attendance.primaryGuardianPhone ? ` · ${maskPhone(attendance.primaryGuardianPhone)}` : ""}</p>
+                </div>
                 <div className="flex gap-2">
                   <Input
                     placeholder="Motivo do chamado (ex.: troca, choro, saúde)"

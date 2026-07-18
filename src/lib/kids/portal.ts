@@ -3,6 +3,7 @@ import "server-only"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { createClient } from "@/lib/supabase/server"
 import { decryptHealthDetails, formatChildLabelName } from "./security"
 import { ageMonthsAt } from "./suggest"
@@ -130,7 +131,7 @@ const EMPTY_DETAILS: KidHealthDetails = {
   instructions: "",
 }
 
-function toGuardianItem(value: unknown): KidGuardianItem[] {
+function toGuardianItem(value: unknown, photoUrls = new Map<string, string>()): KidGuardianItem[] {
   if (!Array.isArray(value)) return []
   return value.map((row) => {
     const item = row as Record<string, unknown>
@@ -148,6 +149,7 @@ function toGuardianItem(value: unknown): KidGuardianItem[] {
       isEmergencyContact: Boolean(item.isEmergencyContact),
       whatsappEnabled: Boolean(item.whatsappEnabled),
       emailEnabled: Boolean(item.emailEnabled),
+      photoUrl: item.photoPath ? photoUrls.get(String(item.photoPath)) ?? null : null,
     }
   })
 }
@@ -183,6 +185,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     classroom_name: string | null
     checked_in_at: Date | string | null
     pin_expires_at: Date | string | null
+    photo_path: string | null
   }[]>`
     select
       kid.id as kid_id,
@@ -194,6 +197,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       p.full_name,
       p.birth_date,
       p.congregation_id,
+      child_photo.storage_path as photo_path,
       congregation.name as congregation_name,
       hp.has_allergy, hp.has_dietary_restriction, hp.has_medication, hp.has_special_needs,
       hp.details_encrypted,
@@ -214,9 +218,11 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
           'isEmergencyContact', guardian.is_emergency_contact,
           'whatsappEnabled', guardian.whatsapp_enabled,
           'emailEnabled', guardian.email_enabled
+          , 'photoPath', guardian_photo.storage_path
         ) order by guardian.is_primary desc, guardian_person.full_name)
         from public.kid_guardians guardian
         join public.people guardian_person on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
+        left join public.app_files guardian_photo on guardian_photo.id = guardian_person.photo_file_id and guardian_photo.is_active = true and guardian_photo.deleted_at is null
         where guardian.kid_id = kid.id and guardian.deleted_at is null
       ), '[]'::jsonb) as guardians,
       attendance.id as attendance_id,
@@ -229,6 +235,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     from public.kid_profiles kid
     join public.people p on p.id = kid.person_id and p.deleted_at is null
     left join public.congregations congregation on congregation.id = p.congregation_id
+    left join public.app_files child_photo on child_photo.id = p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
     left join public.kid_health_profiles hp on hp.kid_id = kid.id and hp.deleted_at is null
     left join lateral (
       select a.id, a.session_id, a.status, a.classroom_name, a.checked_in_at
@@ -251,7 +258,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     order by p.first_name, p.full_name
   `
 
-  const [congregations, companyRows, reportRows] = await Promise.all([
+  const [congregations, companyRows, reportRows, guardianPhotoRows] = await Promise.all([
     sql<{ id: string; name: string }[]>`
       select id, name from public.congregations
       where company_id = ${companyId} and deleted_at is null and is_active = true
@@ -302,7 +309,21 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       order by report.created_at desc
       limit 5
     `,
+    sql<{ storage_path: string | null }[]>`
+      select file.storage_path
+      from public.people person
+      left join public.app_files file on file.id = person.photo_file_id and file.is_active = true and file.deleted_at is null
+      where person.profile_id = ${user.id} and person.company_id = ${companyId} and person.deleted_at is null
+      limit 1
+    `,
   ])
+
+  const photoPaths = rows.flatMap((row) => [
+    row.photo_path ?? "",
+    ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
+  ])
+  photoPaths.push(guardianPhotoRows[0]?.storage_path ?? "")
+  const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
 
   const children: GuardianChildItem[] = rows.map((row) => {
     let details = { ...EMPTY_DETAILS }
@@ -334,7 +355,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       },
       healthDetails: details,
       consents: (row.granted_consents ?? []) as KidConsentType[],
-      guardians: toGuardianItem(row.guardians),
+      guardians: toGuardianItem(row.guardians, photoUrls),
       activeAttendance: row.attendance_id
         ? {
             attendanceId: row.attendance_id,
@@ -346,11 +367,13 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
             pinExpiresAt: row.pin_expires_at ? new Date(row.pin_expires_at).toISOString() : null,
           }
         : null,
+      photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
     }
   })
 
   return {
     guardianName: user.name,
+    guardianPhotoUrl: guardianPhotoRows[0]?.storage_path ? photoUrls.get(guardianPhotoRows[0].storage_path) ?? null : null,
     companyName: companyRows[0]?.name ?? "",
     children,
     congregations: congregations.map((row) => ({ id: row.id, name: row.name })),

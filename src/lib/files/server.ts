@@ -16,7 +16,7 @@ const allowedMimeTypes = new Set([
 type ManagedFileUploadInput = {
   file: File
   companyId: string
-  ownerProfileId: string
+  ownerProfileId?: string | null
   entityTable: string
   entityId?: string | null
   purpose: string
@@ -116,6 +116,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
 
   try {
     const sql = getSql()
+    const ownerProfileId = input.ownerProfileId ?? null
     const rows = await sql<{ id: string }[]>`
       insert into public.app_files (
         company_id,
@@ -139,7 +140,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
         ${input.file.type},
         ${input.file.size},
         ${input.visibility ?? "private"},
-        ${input.ownerProfileId},
+        ${ownerProfileId},
         ${input.entityTable},
         ${input.entityId ?? null},
         ${input.purpose},
@@ -211,4 +212,99 @@ export async function createSignedUrlsByStoragePath(paths: string[], expiresInSe
   }
 
   return urls
+}
+
+export async function deleteManagedFile(fileId: string, companyId: string) {
+  const sql = getSql()
+  const rows = await sql<{ bucket: string; storage_path: string }[]>`
+    select bucket, storage_path
+    from public.app_files
+    where id = ${fileId}
+      and company_id = ${companyId}
+      and is_active = true
+      and deleted_at is null
+    limit 1
+  `
+  const file = rows[0]
+  if (!file) return false
+
+  const storage = await getStorageClient()
+  const removed = await storage.storage.from(file.bucket).remove([file.storage_path])
+  if (removed.error) throw new Error(removed.error.message)
+
+  await sql`
+    update public.app_files
+    set is_active = false, deleted_at = now(), updated_at = now()
+    where id = ${fileId} and company_id = ${companyId}
+  `
+  return true
+}
+
+export async function replacePersonPhoto(input: {
+  personId: string
+  companyId: string
+  ownerProfileId?: string | null
+  file: File
+}) {
+  const sql = getSql()
+  const people = await sql<{ id: string; photo_file_id: string | null }[]>`
+    select id, photo_file_id
+    from public.people
+    where id = ${input.personId}
+      and company_id = ${input.companyId}
+      and deleted_at is null
+    limit 1
+  `
+  const person = people[0]
+  if (!person) throw new Error("Pessoa não encontrada")
+
+  const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"])
+  const uploaded = await uploadManagedFile({
+    file: input.file,
+    companyId: input.companyId,
+    ownerProfileId: input.ownerProfileId,
+    entityTable: "people",
+    entityId: input.personId,
+    purpose: "photo",
+    metadata: { target: "kids-person-photo" },
+    allowedMimeTypes: imageTypes,
+    allowedExtensions: new Set([".jpg", ".jpeg", ".png", ".webp"]),
+    maxSizeBytes: 5 * 1024 * 1024,
+  })
+
+  try {
+    await sql`
+      update public.people
+      set photo_file_id = ${uploaded.id}, updated_at = now()
+      where id = ${input.personId} and company_id = ${input.companyId}
+    `
+  } catch (error) {
+    await deleteManagedFile(uploaded.id, input.companyId).catch(() => undefined)
+    throw error
+  }
+
+  if (person.photo_file_id && person.photo_file_id !== uploaded.id) {
+    await deleteManagedFile(person.photo_file_id, input.companyId)
+  }
+  return uploaded
+}
+
+export async function removePersonPhoto(personId: string, companyId: string) {
+  const sql = getSql()
+  const rows = await sql<{ photo_file_id: string | null }[]>`
+    select photo_file_id from public.people
+    where id = ${personId} and company_id = ${companyId} and deleted_at is null
+    limit 1
+  `
+  const oldFileId = rows[0]?.photo_file_id ?? null
+  if (!rows[0]) throw new Error("Pessoa não encontrada")
+  await sql`
+    update public.people
+    set photo_file_id = null, updated_at = now()
+    where id = ${personId}
+      and company_id = ${companyId}
+      and deleted_at is null
+  `
+  if (oldFileId) await deleteManagedFile(oldFileId, companyId)
+  return oldFileId
 }

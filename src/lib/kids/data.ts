@@ -3,6 +3,7 @@ import "server-only"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { decryptHealthDetails, formatChildLabelName } from "./security"
 import { ageMonthsAt } from "./suggest"
 import { parseJsonbObject } from "@/lib/db/jsonb"
@@ -84,9 +85,10 @@ interface KidRow {
   granted_consents: string[] | null
   guardians: unknown
   created_at: Date | string
+  photo_path: string | null
 }
 
-function toGuardian(value: unknown): KidGuardianItem[] {
+function toGuardian(value: unknown, photoUrls = new Map<string, string>()): KidGuardianItem[] {
   if (!Array.isArray(value)) return []
   return value.map((row) => {
     const item = row as Record<string, unknown>
@@ -104,11 +106,12 @@ function toGuardian(value: unknown): KidGuardianItem[] {
       isEmergencyContact: Boolean(item.isEmergencyContact),
       whatsappEnabled: Boolean(item.whatsappEnabled),
       emailEnabled: Boolean(item.emailEnabled),
+      photoUrl: item.photoPath ? photoUrls.get(String(item.photoPath)) ?? null : null,
     }
   })
 }
 
-function toKid(row: KidRow): KidListItem {
+function toKid(row: KidRow, photoUrls = new Map<string, string>()): KidListItem {
   const birthDate = dateOnly(row.birth_date)
   return {
     id: row.id,
@@ -130,8 +133,9 @@ function toKid(row: KidRow): KidListItem {
       hasSpecialNeeds: Boolean(row.has_special_needs),
     },
     grantedConsents: (row.granted_consents ?? []) as KidConsentType[],
-    guardians: toGuardian(row.guardians),
+    guardians: toGuardian(row.guardians, photoUrls),
     createdAt: iso(row.created_at) ?? "",
+    photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
   }
 }
 
@@ -230,6 +234,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
         p.full_name,
         p.birth_date,
         p.congregation_id,
+        child_photo.storage_path as photo_path,
         congregation.name as congregation_name,
         hp.has_allergy,
         hp.has_dietary_restriction,
@@ -255,15 +260,18 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
             'isEmergencyContact', guardian.is_emergency_contact,
             'whatsappEnabled', guardian.whatsapp_enabled,
             'emailEnabled', guardian.email_enabled
+            , 'photoPath', guardian_photo.storage_path
           ) order by guardian.is_primary desc, guardian_person.full_name)
           from public.kid_guardians guardian
           join public.people guardian_person
             on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
+          left join public.app_files guardian_photo on guardian_photo.id = guardian_person.photo_file_id and guardian_photo.is_active = true and guardian_photo.deleted_at is null
           where guardian.kid_id = kp.id and guardian.deleted_at is null
         ), '[]'::jsonb) as guardians
       from public.kid_profiles kp
       join public.people p on p.id = kp.person_id and p.deleted_at is null
       left join public.congregations congregation on congregation.id = p.congregation_id
+      left join public.app_files child_photo on child_photo.id = p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
       left join public.kid_health_profiles hp on hp.kid_id = kp.id and hp.deleted_at is null
       where kp.company_id = ${resolvedCompanyId}
         and kp.deleted_at is null
@@ -348,9 +356,15 @@ export async function getKidsDashboardData(companyIdInput?: string | null): Prom
     childrenWithHealthAlerts: Number(metricRow?.children_with_health_alerts ?? 0),
   }
 
+  const photoPaths = kidRows.flatMap((row) => [
+    row.photo_path ?? "",
+    ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
+  ])
+  const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
+
   return {
     metrics,
-    children: kidRows.map(toKid),
+    children: kidRows.map((row) => toKid(row, photoUrls)),
     classrooms: classroomRows.map(toClassroom),
     settings: settingsRows.map(toSettings),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
@@ -654,9 +668,11 @@ interface AttendanceRow {
   has_special_needs: boolean | null
   primary_guardian_name: string | null
   primary_guardian_phone: string | null
+  child_photo_path: string | null
+  primary_guardian_photo_path: string | null
 }
 
-function toAttendance(row: AttendanceRow): KidAttendanceItem {
+function toAttendance(row: AttendanceRow, photoUrls = new Map<string, string>()): KidAttendanceItem {
   const birthDate = dateOnly(row.birth_date)
   return {
     id: row.id,
@@ -675,6 +691,8 @@ function toAttendance(row: AttendanceRow): KidAttendanceItem {
     },
     primaryGuardianName: row.primary_guardian_name,
     primaryGuardianPhone: row.primary_guardian_phone,
+    childPhotoUrl: row.child_photo_path ? photoUrls.get(row.child_photo_path) ?? null : null,
+    primaryGuardianPhotoUrl: row.primary_guardian_photo_path ? photoUrls.get(row.primary_guardian_photo_path) ?? null : null,
     checkedInAt: iso(row.checked_in_at) ?? "",
     checkoutRequestedAt: iso(row.checkout_requested_at),
     checkedOutAt: iso(row.checked_out_at),
@@ -686,7 +704,7 @@ const ATTENDANCE_SELECT = `
   select
     a.id, a.kid_id, a.status, a.session_classroom_id, a.classroom_name,
     a.checked_in_at, a.checkout_requested_at, a.checked_out_at, a.room_override_reason,
-    p.full_name, p.birth_date,
+    p.full_name, p.birth_date, child_photo.storage_path as child_photo_path,
     hp.has_allergy, hp.has_dietary_restriction, hp.has_medication, hp.has_special_needs,
     (select guardian_person.full_name
       from public.kid_guardians guardian
@@ -697,12 +715,25 @@ const ATTENDANCE_SELECT = `
       from public.kid_guardians guardian
       join public.people guardian_person on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
       where guardian.kid_id = a.kid_id and guardian.deleted_at is null and guardian.is_primary = true
-      limit 1) as primary_guardian_phone
+      limit 1) as primary_guardian_phone,
+    (select guardian_photo.storage_path
+      from public.kid_guardians guardian
+      join public.people guardian_person on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
+      join public.app_files guardian_photo on guardian_photo.id = guardian_person.photo_file_id and guardian_photo.is_active = true and guardian_photo.deleted_at is null
+      where guardian.kid_id = a.kid_id and guardian.deleted_at is null and guardian.is_primary = true
+      limit 1) as primary_guardian_photo_path
   from public.kid_attendances a
   join public.kid_profiles kid on kid.id = a.kid_id
   join public.people p on p.id = kid.person_id and p.deleted_at is null
+  left join public.app_files child_photo on child_photo.id = p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
   left join public.kid_health_profiles hp on hp.kid_id = a.kid_id and hp.deleted_at is null
 `
+
+async function mapAttendancesWithPhotos(rows: AttendanceRow[]) {
+  const paths = rows.flatMap((row) => [row.child_photo_path ?? "", row.primary_guardian_photo_path ?? ""])
+  const urls = await createSignedUrlsByStoragePath(paths)
+  return rows.map((row) => toAttendance(row, urls))
+}
 
 interface GuardianCallRow {
   id: string
@@ -759,9 +790,10 @@ export async function getKidsReceptionData(sessionId: string, companyIdInput?: s
     resolveKidEffectiveSettings(resolvedCompanyId, session.congregationId),
   ])
 
+  const attendances = await mapAttendancesWithPhotos(attendanceRows)
   return {
     session,
-    attendances: attendanceRows.map(toAttendance),
+    attendances,
     calls: callRows.map(toGuardianCall),
     settings,
   }
@@ -866,7 +898,7 @@ export async function getKidRoomPanelData(sessionClassroomId: string, companyIdI
     `,
   ])
 
-  const attendances = attendanceRows.map(toAttendance)
+  const attendances = await mapAttendancesWithPhotos(attendanceRows)
   return {
     sessionClassroomId,
     sessionId: sc.session_id,

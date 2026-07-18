@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { registerVisitorKid } from "@/lib/kids/portal-actions"
+import { PhotoCapture } from "@/components/kids/photo-capture"
+import { registerVisitorKidWithPhotos } from "@/lib/kids/photo-actions"
 import type { KidConsentType, KidRelationship } from "@/lib/kids/types"
 
 const CONSENT_LABELS: Record<KidConsentType, string> = {
@@ -59,11 +60,13 @@ export function CadastroVisitanteClient({
   const [consents, setConsents] = useState<KidConsentType[]>(["data_processing", "emergency_care"])
   const [done, setDone] = useState(false)
   const [pending, setPending] = useState(false)
+  const [childPhoto, setChildPhoto] = useState<File | null>(null)
+  const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
 
   async function submit() {
     setPending(true)
     try {
-      const result = await registerVisitorKid({
+      const payload = {
         slug,
         childFirstName: form.childFirstName,
         childLastName: form.childLastName,
@@ -82,7 +85,13 @@ export function CadastroVisitanteClient({
           instructions: form.instructions,
         },
         consents,
-      })
+      }
+      const request = new FormData()
+      request.set("payload", JSON.stringify(payload))
+      if (childPhoto) request.set("childPhoto", childPhoto)
+      if (guardianPhoto) request.set("guardianPhoto", guardianPhoto)
+      const result = await registerVisitorKidWithPhotos(request)
+      if (result.warning) toast.warning(result.warning)
       if (!result.ok) return toast.error(result.error ?? "Não foi possível concluir")
       setDone(true)
     } finally {
@@ -151,6 +160,7 @@ export function CadastroVisitanteClient({
             <Label>Nascimento</Label>
             <Input type="date" value={form.childBirthDate} onChange={(event) => setForm({ ...form, childBirthDate: event.target.value })} />
           </div>
+          <PhotoCapture label="da criança" value={childPhoto} disabled={pending} onChange={(file) => setChildPhoto(file)} onError={(message) => toast.error(message)} />
           <div className="space-y-2 rounded-lg border border-border/60 p-3">
             <p className="text-sm font-medium">Saúde essencial</p>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -215,6 +225,7 @@ export function CadastroVisitanteClient({
               </select>
             </div>
           </div>
+          <PhotoCapture label="do responsável" value={guardianPhoto} disabled={pending} onChange={(file) => setGuardianPhoto(file)} onError={(message) => toast.error(message)} />
         </CardContent>
       </Card>
 
