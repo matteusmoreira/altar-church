@@ -30,9 +30,15 @@ export async function POST(request: Request) {
     if (!inserted[0]?.provider_event_id) return NextResponse.json({ ok: true, duplicate: true })
 
     if ("data" in event && "email_id" in event.data) {
+      // Reconciliação por origem: cada provider_id existe em apenas uma das outboxes.
       if (event.type === "email.delivered") {
         await sql`
           update public.volunteer_delivery_outbox
+          set status = 'delivered', delivered_at = now(), updated_at = now()
+          where channel = 'email' and provider_id = ${event.data.email_id}
+        `
+        await sql`
+          update public.kid_delivery_outbox
           set status = 'delivered', delivered_at = now(), updated_at = now()
           where channel = 'email' and provider_id = ${event.data.email_id}
         `
@@ -40,6 +46,11 @@ export async function POST(request: Request) {
       if (["email.bounced", "email.complained", "email.failed", "email.suppressed"].includes(event.type)) {
         await sql`
           update public.volunteer_delivery_outbox
+          set status = 'failed', last_error = ${event.type}, updated_at = now()
+          where channel = 'email' and provider_id = ${event.data.email_id}
+        `
+        await sql`
+          update public.kid_delivery_outbox
           set status = 'failed', last_error = ${event.type}, updated_at = now()
           where channel = 'email' and provider_id = ${event.data.email_id}
         `

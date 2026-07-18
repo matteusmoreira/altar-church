@@ -24,7 +24,7 @@ await page.getByRole("button", { name: "Entrar" }).click()
 try {
   await page.waitForURL(/\/dashboard/, { timeout: 20_000 })
   console.log("dashboard ok", page.url())
-} catch (error) {
+} catch {
   console.log("dashboard fail", page.url())
   console.log("toast:", await page.locator("[data-sonner-toast]").allTextContents().catch(() => []))
   console.log("button:", await page.locator("form button[type='button']").last().textContent().catch(() => ""))

@@ -33,6 +33,30 @@ export const EVENT_CATALOG: Record<
     label: "Teste de webhook",
     description: "Evento sintético para validar a URL.",
   },
+  "kids.child.registered": {
+    label: "Criança cadastrada",
+    description: "Novo cadastro infantil no módulo Kids.",
+  },
+  "kids.checkin.created": {
+    label: "Check-in Kids realizado",
+    description: "Criança entrou em uma sessão Kids (sem dados sensíveis).",
+  },
+  "kids.checkout.requested": {
+    label: "Retirada solicitada",
+    description: "Responsável ou equipe solicitou a retirada da criança.",
+  },
+  "kids.checkout.completed": {
+    label: "Checkout Kids concluído",
+    description: "Criança retirada com credencial válida (ou exceção auditada).",
+  },
+  "kids.guardian.called": {
+    label: "Responsável chamado",
+    description: "Equipe chamou o responsável durante a sessão.",
+  },
+  "kids.incident.created": {
+    label: "Incidente Kids registrado",
+    description: "Incidente operacional registrado em sala/sessão.",
+  },
 }
 
 export function isIntegrationEventType(value: string): value is IntegrationEventType {

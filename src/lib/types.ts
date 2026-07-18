@@ -1,4 +1,4 @@
-export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_supervisor" | "cell_leader" | "communication" | "finance" | "volunteer" | "reader"
+export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_supervisor" | "cell_leader" | "communication" | "finance" | "volunteer" | "reader" | "guardian"
 
 export type ChurchStatus = "active" | "blocked" | "test"
 
@@ -95,6 +95,21 @@ export type Permission =
   | "volunteer_checkin.create"
   | "volunteer.self.view"
   | "volunteer.self.checkin"
+  | "kids.view"
+  | "kids.children.manage"
+  | "kids.guardians.manage"
+  | "kids.classes.manage"
+  | "kids.sessions.manage"
+  | "kids.checkin.create"
+  | "kids.checkout.create"
+  | "kids.checkout.override"
+  | "kids.room.view"
+  | "kids.health.view"
+  | "kids.communicate"
+  | "kids.reports.view"
+  | "kids.reports.export"
+  | "kids.settings.manage"
+  | "kids.guardian.self"
 
 export interface User {
   id: string
@@ -359,6 +374,16 @@ export interface DashboardMetrics {
   memberGrowth: { month: string; count: number }[]
 }
 
+// Kids: operação completa (líderes) e gestão completa (admin/pastor adicionam configurações sensíveis).
+// O papel guardian recebe apenas kids.guardian.self e nunca acessa o dashboard administrativo.
+const KIDS_OPERATION_PERMISSIONS: Permission[] = [
+  "kids.view", "kids.children.manage", "kids.guardians.manage", "kids.classes.manage",
+  "kids.sessions.manage", "kids.checkin.create", "kids.checkout.create", "kids.checkout.override",
+  "kids.room.view", "kids.health.view", "kids.communicate", "kids.reports.view", "kids.reports.export",
+]
+
+const KIDS_ADMIN_PERMISSIONS: Permission[] = [...KIDS_OPERATION_PERMISSIONS, "kids.settings.manage"]
+
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   superadmin: [],
   admin: [
@@ -385,6 +410,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
     "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
+    ...KIDS_ADMIN_PERMISSIONS,
   ],
   pastor: [
     "members.view", "members.create", "members.edit", "members.export",
@@ -406,6 +432,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
     "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
+    ...KIDS_ADMIN_PERMISSIONS,
   ],
   ministry_leader: [
     "members.view",
@@ -422,6 +449,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit",
     "schedules.view", "schedules.create", "schedules.edit",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_checkin.create",
+    ...KIDS_OPERATION_PERMISSIONS,
   ],
   cell_supervisor: [
     "members.view", "visitors.view", "visitors.create",
@@ -454,6 +482,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   volunteer: [
     "volunteer.self.view", "volunteer.self.checkin", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+    "kids.room.view",
   ],
   reader: [
     "members.view",
@@ -462,6 +491,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "prayer.view",
     "content.view",
     "reports.view", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+  ],
+  guardian: [
+    "kids.guardian.self",
   ],
 }
 

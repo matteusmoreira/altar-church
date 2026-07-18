@@ -31,6 +31,7 @@ const roleLabels: Record<UserRole, string> = {
   finance: "Financeiro",
   volunteer: "Voluntário",
   reader: "Leitor",
+  guardian: "Responsável",
 }
 
 const roleColors: Partial<Record<UserRole, string>> = {

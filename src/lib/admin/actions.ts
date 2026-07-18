@@ -53,6 +53,7 @@ const profileSchema = z
       "finance",
       "volunteer",
       "reader",
+      "guardian",
     ]),
     active: z.boolean(),
     password: z.string().optional().default(""),

@@ -7,6 +7,12 @@ export const INTEGRATION_EVENTS = [
   "person.created",
   "person.updated",
   "integration.test",
+  "kids.child.registered",
+  "kids.checkin.created",
+  "kids.checkout.requested",
+  "kids.checkout.completed",
+  "kids.guardian.called",
+  "kids.incident.created",
 ] as const
 
 export type IntegrationEventType = (typeof INTEGRATION_EVENTS)[number]

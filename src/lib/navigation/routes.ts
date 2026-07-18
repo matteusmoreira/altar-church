@@ -13,6 +13,7 @@ export const dashboardRoutes = {
   "events": "/eventos",
   "finance": "/financeiro",
   "inpeace-play": "/inpeace-play",
+  "kids": "/kids",
   "members": "/pessoas",
   "ministries": "/ministerios",
   "notifications": "/notificacao",

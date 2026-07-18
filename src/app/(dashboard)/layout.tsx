@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { getCompanyEnabledModuleIds } from "@/lib/admin/data"
 import { requireUser } from "@/lib/auth/server"
@@ -16,6 +17,10 @@ async function getChurchDisplayName(companyId?: string | null) {
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
+  // Responsável (guardian) nunca acessa o dashboard administrativo: vai para o portal da família.
+  if (user.role === "guardian") {
+    redirect("/familia/kids")
+  }
   const [initialEnabledModuleIds, churchName] = await Promise.all([
     user.role === "superadmin"
       ? Promise.resolve(null)
