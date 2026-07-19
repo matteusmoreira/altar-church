@@ -24,6 +24,7 @@ export interface AdminPlan {
   billingCycle: BillingCycle
   active: boolean
   sortOrder: number
+  uazapiInstanceLimit: number
   moduleIds: string[]
 }
 

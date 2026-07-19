@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
+import { PwaRegister } from "@/components/pwa-register"
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
           {children}
+          <PwaRegister />
           <Toaster richColors position="top-right" />
         </ThemeProvider>
       </body>

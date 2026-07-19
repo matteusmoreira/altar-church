@@ -94,6 +94,7 @@ interface PlanForm {
   description: string
   price: number
   billingCycle: BillingCycle
+  uazapiInstanceLimit: number
   active: boolean
   moduleIds: string[]
 }
@@ -168,6 +169,7 @@ function emptyPlanForm(): PlanForm {
     description: "",
     price: 0,
     billingCycle: "monthly",
+    uazapiInstanceLimit: 1,
     active: true,
     moduleIds: [],
   }
@@ -306,6 +308,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             description: plan.description,
             price: plan.price,
             billingCycle: plan.billingCycle,
+            uazapiInstanceLimit: plan.uazapiInstanceLimit,
             active: plan.active,
             moduleIds: plan.moduleIds,
           }
@@ -849,6 +852,22 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid gap-2 sm:max-w-xs">
+              <Label>Instâncias WhatsApp (Uazapi)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={planForm.uazapiInstanceLimit}
+                onChange={(event) =>
+                  setPlanForm({ ...planForm, uazapiInstanceLimit: Number(event.target.value) })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Limite de instâncias ativas que cada igreja deste plano pode conectar.
+              </p>
             </div>
             <ModulesPicker
               modules={data.modules.filter((module) => module.active)}

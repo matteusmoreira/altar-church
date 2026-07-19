@@ -387,10 +387,26 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
 }
 
-async function sendWhatsApp(recipient: string, body: string, trackId: string): Promise<string> {
-  const baseUrl = (process.env.UAZAPI_BASE_URL ?? "").replace(/\/$/, "")
-  const token = process.env.UAZAPI_INSTANCE_TOKEN ?? ""
-  if (!baseUrl || !token) throw new Error("Uazapi não configurado (UAZAPI_BASE_URL/UAZAPI_INSTANCE_TOKEN)")
+async function getCompanyUazapiCredential(companyId: string) {
+  const sql = getSql()
+  const rows = await sql<{ base_url: string; instance_token: string }[]>`
+    select base_url, instance_token
+    from public.get_company_uazapi_credential(${companyId})
+  `
+  const credential = rows[0]
+  if (!credential?.base_url || !credential.instance_token) {
+    throw new Error("Igreja sem instância Uazapi conectada")
+  }
+  return { baseUrl: credential.base_url.replace(/\/$/, ""), token: credential.instance_token }
+}
+
+async function sendWhatsApp(
+  companyId: string,
+  recipient: string,
+  body: string,
+  trackId: string,
+): Promise<string> {
+  const { baseUrl, token } = await getCompanyUazapiCredential(companyId)
 
   const response = await fetch(`${baseUrl}/send/text`, {
     method: "POST",
@@ -473,7 +489,7 @@ export async function processKidDeliveryOutbox(batchSize = 25): Promise<{ proces
   for (const row of rows) {
     try {
       if (row.channel === "whatsapp") {
-        const providerId = await sendWhatsApp(row.recipient, row.body, row.id)
+        const providerId = await sendWhatsApp(row.company_id, row.recipient, row.body, row.id)
         await sql`
           update public.kid_delivery_outbox
           set status = 'queued', provider_id = ${providerId || null}, last_error = null, updated_at = now()
@@ -517,10 +533,6 @@ export async function processKidDeliveryOutbox(batchSize = 25): Promise<{ proces
 
 /** Reconcilia WhatsApp assíncrono (queued → delivered/failed) via consulta ao provedor. */
 export async function reconcileKidWhatsApp(limit = 25): Promise<{ checked: number; delivered: number; failed: number }> {
-  const baseUrl = (process.env.UAZAPI_BASE_URL ?? "").replace(/\/$/, "")
-  const token = process.env.UAZAPI_INSTANCE_TOKEN ?? ""
-  if (!baseUrl || !token) return { checked: 0, delivered: 0, failed: 0 }
-
   const sql = getSql()
   const rows = await sql<DeliveryRow[]>`
     select * from public.kid_delivery_outbox
@@ -535,6 +547,7 @@ export async function reconcileKidWhatsApp(limit = 25): Promise<{ checked: numbe
 
   for (const row of rows) {
     try {
+      const { baseUrl, token } = await getCompanyUazapiCredential(row.company_id)
       const response = await fetch(`${baseUrl}/message/find`, {
         method: "POST",
         headers: { "Content-Type": "application/json", token },

@@ -9,22 +9,24 @@ Configure somente no Supabase. Nunca em arquivos versionados:
 ```bash
 supabase secrets set \
   VOLUNTEER_WORKER_SECRET=... \
-  UAZAPI_BASE_URL=https://... \
-  UAZAPI_INSTANCE_TOKEN=... \
   RESEND_API_KEY=re_... \
   RESEND_FROM_EMAIL='Altar Church <avisos@seu-dominio.com>'
 
 supabase functions deploy volunteer-delivery-worker
 ```
 
-## Cron a cada cinco minutos
+Os tokens Uazapi são cadastrados por administrador da igreja em
+`Configurações > Integrações` e ficam criptografados no Supabase Vault.
+O limite de instâncias é definido em cada plano pelo superadmin.
+
+## Cron a cada minuto
 
 No SQL Editor, habilite `pg_cron`, `pg_net` e Vault. Crie segredos `volunteer_worker_url`, `supabase_service_role_key` e `volunteer_worker_secret` no Vault. Valores: URL da função, service-role key, mesmo segredo do worker.
 
 ```sql
 select cron.schedule(
-  'volunteer-delivery-worker-every-5-minutes',
-  '*/5 * * * *',
+  'volunteer-delivery-worker-every-minute',
+  '* * * * *',
   $$
     select net.http_post(
       url := (select decrypted_secret from vault.decrypted_secrets where name = 'volunteer_worker_url'),

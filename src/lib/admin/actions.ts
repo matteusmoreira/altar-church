@@ -32,6 +32,7 @@ const planSchema = z.object({
   description: z.string().trim().optional().default(""),
   price: z.coerce.number().min(0),
   billingCycle: z.enum(["free", "monthly", "yearly", "custom"]),
+  uazapiInstanceLimit: z.coerce.number().int().min(0).max(100),
   active: z.boolean(),
   moduleIds: moduleIdsSchema,
 })
@@ -417,13 +418,19 @@ export async function savePlan(input: z.input<typeof planSchema>): Promise<Actio
               description = ${parsed.description},
               price = ${parsed.price},
               billing_cycle = ${parsed.billingCycle},
+              uazapi_instance_limit = ${parsed.uazapiInstanceLimit},
               active = ${parsed.active}
           where id = ${planId}
         `
       } else {
         const rows = await tx<{ id: string }[]>`
-          insert into public.system_plans (code, name, description, price, billing_cycle, active)
-          values (${parsed.code}, ${parsed.name}, ${parsed.description}, ${parsed.price}, ${parsed.billingCycle}, ${parsed.active})
+          insert into public.system_plans (
+            code, name, description, price, billing_cycle, uazapi_instance_limit, active
+          )
+          values (
+            ${parsed.code}, ${parsed.name}, ${parsed.description}, ${parsed.price},
+            ${parsed.billingCycle}, ${parsed.uazapiInstanceLimit}, ${parsed.active}
+          )
           returning id
         `
         planId = rows[0]?.id ?? null
@@ -447,7 +454,12 @@ export async function savePlan(input: z.input<typeof planSchema>): Promise<Actio
       action: "plan.save",
       entityTable: "system_plans",
       entityId: auditPlanId,
-      metadata: { code: parsed.code, active: parsed.active, moduleCount: parsed.moduleIds.length },
+      metadata: {
+        code: parsed.code,
+        active: parsed.active,
+        moduleCount: parsed.moduleIds.length,
+        uazapiInstanceLimit: parsed.uazapiInstanceLimit,
+      },
     })
     await refreshAdminPaths()
     return { ok: true }

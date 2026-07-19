@@ -13,6 +13,7 @@ import type {
   VolunteerShift,
   VolunteerTemplate,
 } from "./types"
+import { getVolunteerV2DashboardExtras, getVolunteerV2PortalExtras } from "./v2-data"
 
 type DateValue = Date | string | null
 
@@ -45,6 +46,10 @@ function toVolunteer(row: Record<string, unknown>): VolunteerListItem {
     assignments: Number(row.assignments ?? 0),
     checkins: Number(row.checkins ?? 0),
     lastParticipationAt: iso(row.last_participation_at as DateValue),
+    desiredServicesPerMonth: Number(row.desired_services_per_month ?? 2),
+    maxServicesPerMonth: Number(row.max_services_per_month ?? 4),
+    minimumRestHours: Number(row.minimum_rest_hours ?? 12),
+    validatedAt: iso(row.validated_at as DateValue),
   }
 }
 
@@ -76,11 +81,21 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   const resolvedCompanyId = await companyId(companyIdInput)
   await requirePermission("volunteers.view", resolvedCompanyId)
   const sql = getSql()
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Acesso negado")
+  const allDepartments = user.role === "superadmin" || user.role === "admin" || user.role === "pastor"
+  const accessRows = allDepartments ? [] : await sql<{ department_id: string }[]>`
+    select department_id from public.volunteer_department_access
+    where company_id = ${resolvedCompanyId} and profile_id = ${user.id}
+  `
+  const departmentScope = accessRows.map((row) => row.department_id)
+  if (!allDepartments && departmentScope.length === 0) throw new Error("Acesso negado")
 
   const [volunteerRows, departmentRows, templateRows, slotRows, scheduleRows, shiftRows, assignmentRows, feedRows, metricRows] = await Promise.all([
     sql<Record<string, unknown>[]>`
       select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
              vp.registration_status, person.is_active, vp.whatsapp_enabled, vp.email_enabled,
+             vp.desired_services_per_month, vp.max_services_per_month, vp.minimum_rest_hours, vp.validated_at,
              coalesce(string_agg(distinct department.name, '|' order by department.name), '') as department_names,
              count(distinct assignment.id) as assignments,
              count(distinct assignment.id) filter (where assignment.checked_in_at is not null) as checkins,
@@ -92,6 +107,9 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       left join public.volunteer_departments department on department.id = membership.department_id and department.deleted_at is null
       left join public.volunteer_assignments assignment on assignment.volunteer_id = vp.id
       where vp.company_id = ${resolvedCompanyId} and vp.deleted_at is null
+        and (${allDepartments} or exists(select 1 from public.volunteer_department_memberships scope_membership
+          where scope_membership.volunteer_id = vp.id and scope_membership.is_active
+            and scope_membership.department_id = any(${departmentScope}::uuid[])))
       group by vp.id, person.id, profile.id
       order by person.full_name
     `,
@@ -99,12 +117,15 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       select id, name, description, manager_profile_id, is_active
       from public.volunteer_departments
       where company_id = ${resolvedCompanyId} and deleted_at is null
+        and (${allDepartments} or id = any(${departmentScope}::uuid[]))
       order by is_active desc, name
     `,
     sql<Record<string, unknown>[]>`
       select id, name, description, is_active
       from public.volunteer_schedule_templates
       where company_id = ${resolvedCompanyId} and deleted_at is null
+        and (${allDepartments} or exists(select 1 from public.volunteer_schedule_template_slots scope_slot
+          where scope_slot.template_id = volunteer_schedule_templates.id and scope_slot.department_id = any(${departmentScope}::uuid[])))
       order by is_active desc, name
     `,
     sql<Record<string, unknown>[]>`
@@ -113,33 +134,40 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       from public.volunteer_schedule_template_slots slot
       join public.volunteer_departments department on department.id = slot.department_id
       where slot.company_id = ${resolvedCompanyId}
+        and (${allDepartments} or slot.department_id = any(${departmentScope}::uuid[]))
       order by slot.sort_order, slot.role_name
     `,
     sql<Record<string, unknown>[]>`
       select id, month, status, published_at
       from public.volunteer_schedules
       where company_id = ${resolvedCompanyId} and month >= date_trunc('month', now())::date - interval '1 month'
+        and (${allDepartments} or exists(select 1 from public.volunteer_shifts scope_shift
+          where scope_shift.schedule_id = volunteer_schedules.id and scope_shift.department_id = any(${departmentScope}::uuid[])))
       order by month
       limit 8
     `,
     sql<Record<string, unknown>[]>`
       select shift.id, shift.schedule_id, shift.event_id, coalesce(event.title, 'Escala avulsa') as event_title,
              shift.department_id, department.name as department_name, shift.role_name, shift.required_volunteers,
-             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at
+             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions
       from public.volunteer_shifts shift
       join public.volunteer_schedules schedule on schedule.id = shift.schedule_id
       join public.volunteer_departments department on department.id = shift.department_id
       left join public.events event on event.id = shift.event_id
       where shift.company_id = ${resolvedCompanyId} and schedule.month >= date_trunc('month', now())::date - interval '1 month'
+        and (${allDepartments} or shift.department_id = any(${departmentScope}::uuid[]))
       order by shift.starts_at, department.name, shift.role_name
     `,
     sql<Record<string, unknown>[]>`
       select assignment.id, assignment.shift_id, assignment.volunteer_id, person.full_name as volunteer_name,
-             assignment.status, assignment.checked_in_at
+             assignment.status, assignment.checked_in_at, assignment.checked_out_at, assignment.score,
+             assignment.score_reasons, assignment.is_locked, assignment.decline_reason
       from public.volunteer_assignments assignment
       join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
       join public.people person on person.id = volunteer.person_id
       where assignment.company_id = ${resolvedCompanyId}
+        and (${allDepartments} or exists(select 1 from public.volunteer_shifts scope_shift
+          where scope_shift.id = assignment.shift_id and scope_shift.department_id = any(${departmentScope}::uuid[])))
       order by person.full_name
     `,
     sql<Record<string, unknown>[]>`
@@ -170,6 +198,9 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
           and current_assignment.status not in ('declined', 'cancelled')
       ) assignment_counts on true
       where vp.company_id = ${resolvedCompanyId} and vp.deleted_at is null
+        and (${allDepartments} or exists(select 1 from public.volunteer_department_memberships scope_membership
+          where scope_membership.volunteer_id = vp.id and scope_membership.is_active
+            and scope_membership.department_id = any(${departmentScope}::uuid[])))
     `,
   ])
 
@@ -182,6 +213,11 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       volunteerName: String(row.volunteer_name),
       status: row.status as VolunteerAssignment["status"],
       checkedInAt: iso(row.checked_in_at as DateValue),
+      checkedOutAt: iso(row.checked_out_at as DateValue),
+      score: row.score === null || row.score === undefined ? null : Number(row.score),
+      scoreReasons: Array.isArray(row.score_reasons) ? row.score_reasons as VolunteerAssignment["scoreReasons"] : [],
+      locked: Boolean(row.is_locked),
+      declineReason: row.decline_reason ? String(row.decline_reason) : null,
     })
     assignmentsByShift.set(String(row.shift_id), current)
   }
@@ -201,6 +237,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       checkinOpensAt: iso(row.checkin_opens_at as DateValue) ?? "",
       checkinClosesAt: iso(row.checkin_closes_at as DateValue) ?? "",
       assignments: assignmentsByShift.get(String(row.id)) ?? [],
+      instructions: String(row.instructions ?? ""),
     }
     const current = shiftsBySchedule.get(String(row.schedule_id)) ?? []
     current.push(shift)
@@ -221,6 +258,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   }
 
   const metrics = metricRows[0] ?? {}
+  const extras = await getVolunteerV2DashboardExtras(resolvedCompanyId, departmentScope, allDepartments)
   return {
     volunteers: volunteerRows.map(toVolunteer),
     departments: departmentRows.map(toDepartment),
@@ -239,6 +277,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       shifts: shiftsBySchedule.get(String(row.id)) ?? [],
     })),
     feedPosts: feedRows.map(toFeedPost),
+    ...extras,
     metrics: {
       activeVolunteers: Number(metrics.active_volunteers ?? 0),
       assignedThisMonth: Number(metrics.assigned_this_month ?? 0),
@@ -268,6 +307,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
   const volunteerRows = await sql<Record<string, unknown>[]>`
     select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
            vp.registration_status, person.is_active, vp.whatsapp_enabled, vp.email_enabled,
+           vp.desired_services_per_month, vp.max_services_per_month, vp.minimum_rest_hours, vp.validated_at,
            coalesce(string_agg(distinct department.name, '|' order by department.name), '') as department_names,
            count(distinct assignment.id) as assignments,
            count(distinct assignment.id) filter (where assignment.checked_in_at is not null) as checkins,
@@ -290,8 +330,9 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
     sql<Record<string, unknown>[]>`
       select shift.id, shift.event_id, coalesce(event.title, 'Escala avulsa') as event_title,
              shift.department_id, department.name as department_name, shift.role_name, shift.required_volunteers,
-             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at,
-             assignment.id as assignment_id, assignment.status as assignment_status, assignment.checked_in_at
+             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions,
+             assignment.id as assignment_id, assignment.status as assignment_status, assignment.checked_in_at,
+             assignment.checked_out_at, assignment.score, assignment.score_reasons, assignment.is_locked, assignment.decline_reason
       from public.volunteer_assignments assignment
       join public.volunteer_shifts shift on shift.id = assignment.shift_id
       join public.volunteer_departments department on department.id = shift.department_id
@@ -329,6 +370,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
   ])
   const shiftRows = portalRows[0] as Record<string, unknown>[]
   const feedRows = portalRows[1] as Record<string, unknown>[]
+  const extras = await getVolunteerV2PortalExtras(user.churchId, volunteerId)
 
   return {
     volunteer: toVolunteer(volunteer),
@@ -350,8 +392,15 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
         volunteerName: String(volunteer.name),
         status: row.assignment_status as VolunteerAssignment["status"],
         checkedInAt: iso(row.checked_in_at as DateValue),
+        checkedOutAt: iso(row.checked_out_at as DateValue),
+        score: row.score === null || row.score === undefined ? null : Number(row.score),
+        scoreReasons: Array.isArray(row.score_reasons) ? row.score_reasons as VolunteerAssignment["scoreReasons"] : [],
+        locked: Boolean(row.is_locked),
+        declineReason: row.decline_reason ? String(row.decline_reason) : null,
       }],
+      instructions: String(row.instructions ?? ""),
     })),
     feedPosts: feedRows.map(toFeedPost),
+    ...extras,
   }
 }

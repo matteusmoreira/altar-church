@@ -37,7 +37,7 @@ test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao
     { path: "/ministerios", heading: /Minist/i },
     { path: "/congregacoes", heading: /Congrega/i },
     { path: "/pessoas", heading: /Pessoas/i },
-    { path: "/gceus", heading: /GCEUs/i },
+    { path: "/celulas", heading: /Células/i },
     { path: "/conteudo", heading: /Conte/i },
     { path: "/eventos", heading: /Eventos/i },
     { path: "/financeiro", heading: /Financeiro/i },
@@ -118,9 +118,9 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Informações da Igreja" })).toBeVisible()
 
-  const publicNameInput = page.getByPlaceholder("Nome exibido publicamente")
-  const websiteInput = page.getByPlaceholder("https://www.igreja.com.br")
-  const instagramInput = page.getByPlaceholder("URL do Instagram")
+  const publicNameInput = page.getByPlaceholder("Nome exibido publicamente").filter({ visible: true })
+  const websiteInput = page.getByPlaceholder("https://www.igreja.com.br").filter({ visible: true })
+  const instagramInput = page.getByPlaceholder("URL do Instagram").filter({ visible: true })
   const originalPublicName = await publicNameInput.inputValue()
   const originalWebsite = await websiteInput.inputValue()
   const originalInstagram = await instagramInput.inputValue()
@@ -132,13 +132,13 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
   await expect(page.getByText("Informações da igreja salvas com sucesso")).toBeVisible()
 
   await page.reload()
-  await expect(page.getByPlaceholder("Nome exibido publicamente")).toHaveValue(publicName)
-  await expect(page.getByPlaceholder("https://www.igreja.com.br")).toHaveValue(website)
-  await expect(page.getByPlaceholder("URL do Instagram")).toHaveValue(instagram)
+  await expect(publicNameInput).toHaveValue(publicName)
+  await expect(websiteInput).toHaveValue(website)
+  await expect(instagramInput).toHaveValue(instagram)
 
-  await page.getByPlaceholder("Nome exibido publicamente").fill(originalPublicName)
-  await page.getByPlaceholder("https://www.igreja.com.br").fill(originalWebsite)
-  await page.getByPlaceholder("URL do Instagram").fill(originalInstagram)
+  await publicNameInput.fill(originalPublicName)
+  await websiteInput.fill(originalWebsite)
+  await instagramInput.fill(originalInstagram)
   await page.getByRole("button", { name: "Salvar alterações" }).click()
   await expect(page.getByText("Informações da igreja salvas com sucesso")).toBeVisible()
 })
@@ -176,14 +176,14 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   const updatedDescription = `Grupo E2E atualizado pelo fluxo autenticado ${stamp}`
 
   await loginAs(page, e2e.accounts.admin)
-  await page.goto("/gceus")
+  await page.goto("/celulas")
   await expectNoDevError(page)
-  await expect(page.getByRole("heading", { name: "GCEUs e grupos" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Células" })).toBeVisible()
   await expect(page.getByRole("row").filter({ hasText: "GCEU Família Restaurada" })).toBeVisible()
   await expect(page.getByRole("row").filter({ hasText: "GCEU Jovens em Ação" })).toBeVisible()
 
-  await page.getByRole("button", { name: "Novo grupo" }).click()
-  await expect(page.getByRole("dialog", { name: "Novo grupo" })).toBeVisible()
+  await page.getByRole("button", { name: "Nova célula" }).click()
+  await expect(page.getByRole("dialog", { name: "Nova célula" })).toBeVisible()
   await page.getByTestId("group-name-input").fill(name)
   await page.getByTestId("group-description-input").fill(description)
   await page.getByTestId("group-category-select").click()
@@ -203,14 +203,16 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await page.getByTestId("group-ops-group-select").click()
   await page.getByRole("option", { name }).click()
   await page.getByTestId("group-member-person-select").click()
-  await page.getByRole("option", { name: "Ana Costa" }).click()
+  await page.getByRole("option", { name: "Ana Costa" }).filter({ visible: true }).first().click()
   await page.getByTestId("group-member-role-select").click()
-  await page.getByRole("option", { name: "Visitante" }).click()
+  await page.getByRole("option", { name: "Visitante" }).filter({ visible: true }).first().click()
   await page.getByTestId("group-member-save-button").click()
   await expect(page.getByRole("row").filter({ hasText: "Ana Costa" })).toBeVisible()
 
   const meetingTitle = `Relatório E2E ${stamp}`
   await page.getByRole("tab", { name: "Reuniões" }).click()
+  await page.getByTestId("group-meeting-study-select").click()
+  await page.getByRole("option").filter({ visible: true }).first().click()
   await page.getByTestId("group-meeting-title-input").fill(meetingTitle)
   await page.getByTestId("group-meeting-location-input").fill("Sala E2E")
   await page.getByTestId("group-meeting-present-input").fill("3")
@@ -224,7 +226,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await expect(groupActionsButton).toBeEnabled()
   await groupActionsButton.click()
   await page.getByRole("menuitem", { name: "Editar" }).click()
-  await expect(page.getByRole("dialog", { name: "Editar grupo" })).toBeVisible()
+  await expect(page.getByRole("dialog", { name: "Editar célula" })).toBeVisible()
   await page.getByTestId("group-description-input").fill(updatedDescription)
   await page.getByTestId("group-save-button").click()
   await expect(page.getByText(updatedDescription)).toBeVisible()

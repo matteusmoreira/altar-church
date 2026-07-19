@@ -17,7 +17,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { IntegrationsPanel } from "./integrations-panel"
+import { UazapiInstancesPanel } from "./uazapi-instances-panel"
 import type { SettingsData } from "@/lib/settings/data"
+import type { UazapiInstancesData } from "@/lib/uazapi/types"
 import type { UserRole } from "@/lib/types"
 
 const roleLabels: Record<UserRole, string> = {
@@ -45,7 +47,13 @@ function formatDate(value: string) {
   return format(parseISO(value), "dd/MM/yyyy", { locale: ptBR })
 }
 
-export function SettingsClient({ settingsData }: { settingsData: SettingsData }) {
+export function SettingsClient({
+  settingsData,
+  uazapiData,
+}: {
+  settingsData: SettingsData
+  uazapiData: UazapiInstancesData | null
+}) {
   const [accessSearch, setAccessSearch] = useState("")
   const query = accessSearch.trim().toLowerCase()
   const filteredProfiles = useMemo(() => {
@@ -174,7 +182,8 @@ export function SettingsClient({ settingsData }: { settingsData: SettingsData })
           </Card>
         </TabsContent>
 
-        <TabsContent value="integracoes" className="mt-4">
+        <TabsContent value="integracoes" className="mt-4 space-y-4">
+          {uazapiData && <UazapiInstancesPanel data={uazapiData} />}
           {settingsData.company && settingsData.integrations ? (
             <IntegrationsPanel
               companyId={settingsData.company.id}

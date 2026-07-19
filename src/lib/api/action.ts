@@ -5,6 +5,8 @@ export type ActionResultLike = {
   ok: boolean
   id?: string
   error?: string
+  data?: unknown
+  qrToken?: string
 }
 
 export function fromActionResult(
@@ -19,5 +21,7 @@ export function fromActionResult(
   if (result.id !== undefined) {
     data.id = result.id
   }
+  if (result.data !== undefined) data.result = result.data
+  if (result.qrToken !== undefined) data.qrToken = result.qrToken
   return jsonOk(data, { status: options?.successStatus ?? 200 })
 }

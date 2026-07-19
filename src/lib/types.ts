@@ -95,6 +95,19 @@ export type Permission =
   | "volunteer_checkin.create"
   | "volunteer.self.view"
   | "volunteer.self.checkin"
+  | "volunteer.self.respond"
+  | "volunteer.self.availability"
+  | "volunteer.self.swap"
+  | "volunteer.self.chat"
+  | "volunteer.self.feedback"
+  | "volunteer.self.preferences"
+  | "volunteer_chat.manage"
+  | "volunteer_swap.manage"
+  | "volunteer_recognition.manage"
+  | "volunteer_reports.view"
+  | "volunteer_reports.export"
+  | "volunteer_worship.manage"
+  | "volunteer_settings.manage"
   | "kids.view"
   | "kids.children.manage"
   | "kids.guardians.manage"
@@ -410,6 +423,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
     "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
+    "volunteer_chat.manage", "volunteer_swap.manage", "volunteer_recognition.manage",
+    "volunteer_reports.view", "volunteer_reports.export", "volunteer_worship.manage", "volunteer_settings.manage",
     ...KIDS_ADMIN_PERMISSIONS,
   ],
   pastor: [
@@ -432,6 +447,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
     "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_feed.publish", "volunteer_checkin.create",
+    "volunteer_chat.manage", "volunteer_swap.manage", "volunteer_recognition.manage",
+    "volunteer_reports.view", "volunteer_reports.export", "volunteer_worship.manage", "volunteer_settings.manage",
     ...KIDS_ADMIN_PERMISSIONS,
   ],
   ministry_leader: [
@@ -449,6 +466,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteers.view", "volunteers.create", "volunteers.edit",
     "schedules.view", "schedules.create", "schedules.edit",
     "volunteer_feed.view", "volunteer_feed.create", "volunteer_checkin.create",
+    "volunteer_chat.manage", "volunteer_swap.manage", "volunteer_recognition.manage",
+    "volunteer_reports.view", "volunteer_reports.export", "volunteer_worship.manage",
     ...KIDS_OPERATION_PERMISSIONS,
   ],
   cell_supervisor: [
@@ -482,6 +501,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   volunteer: [
     "volunteer.self.view", "volunteer.self.checkin", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+    "volunteer.self.respond", "volunteer.self.availability", "volunteer.self.swap", "volunteer.self.chat",
+    "volunteer.self.feedback", "volunteer.self.preferences",
     "kids.room.view",
   ],
   reader: [

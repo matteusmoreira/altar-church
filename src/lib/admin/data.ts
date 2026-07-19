@@ -32,6 +32,7 @@ interface PlanRow {
   billing_cycle: BillingCycle
   active: boolean
   sort_order: number
+  uazapi_instance_limit: number
 }
 
 interface PlanModuleRow {
@@ -118,7 +119,8 @@ export async function getAdminModules(): Promise<AdminModule[]> {
 export async function getAdminPlans(): Promise<AdminPlan[]> {
   const sql = getSql()
   const plans = await sql<PlanRow[]>`
-      select id, code, name, description, price::text, billing_cycle, active, sort_order
+      select id, code, name, description, price::text, billing_cycle, active, sort_order,
+             uazapi_instance_limit
       from public.system_plans
       order by sort_order, name
     `
@@ -139,6 +141,7 @@ export async function getAdminPlans(): Promise<AdminPlan[]> {
     billingCycle: plan.billing_cycle,
     active: plan.active,
     sortOrder: plan.sort_order,
+    uazapiInstanceLimit: plan.uazapi_instance_limit,
     moduleIds: moduleMap.get(plan.id) ?? [],
   }))
 }
