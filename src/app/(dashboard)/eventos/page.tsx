@@ -1,20 +1,13 @@
-import { CalendarDays, Clock, Globe, MapPin, Plus, Trash2, Users } from "lucide-react"
+import { CalendarDays, Clock, Globe, MapPin, Trash2, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { deleteEvent, saveEvent } from "@/lib/operational/actions"
+import { Card, CardContent } from "@/components/ui/card"
+import { deleteEvent } from "@/lib/operational/actions"
 import { listEvents } from "@/lib/operational/data"
+import { requireUser } from "@/lib/auth/server"
 import { listVolunteerTemplatesForEvents } from "@/lib/volunteers/data"
-import type { ChurchEvent } from "@/lib/types"
-
-async function saveEventForm(formData: FormData) {
-  "use server"
-  await saveEvent(formData)
-}
+import { hasPermission, type ChurchEvent } from "@/lib/types"
+import { EventCreateForm } from "./event-create-form"
 
 async function deleteEventForm(formData: FormData) {
   "use server"
@@ -46,7 +39,11 @@ function formatDateTime(value: string) {
 }
 
 export default async function EventsPage() {
-  const [events, volunteerTemplates] = await Promise.all([listEvents(), listVolunteerTemplatesForEvents()])
+  const [user, events, volunteerTemplates] = await Promise.all([
+    requireUser(),
+    listEvents(),
+    listVolunteerTemplatesForEvents(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -55,107 +52,10 @@ export default async function EventsPage() {
         <p className="text-muted-foreground">Cultos, reuniões e eventos especiais persistidos.</p>
       </div>
 
-      <Card className="glass">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Plus className="h-4 w-4 text-primary" />
-            Novo Evento
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form action={saveEventForm} className="grid gap-4 lg:grid-cols-6">
-            <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="title">Título *</Label>
-              <Input id="title" name="title" placeholder="Culto de domingo" required />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="type">Tipo</Label>
-              <Select name="type" defaultValue="service">
-                <SelectTrigger id="type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(typeLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="status">Status</Label>
-              <Select name="status" defaultValue="published">
-                <SelectTrigger id="status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="startDate">Início *</Label>
-              <Input id="startDate" name="startDate" type="datetime-local" required />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="endDate">Fim</Label>
-              <Input id="endDate" name="endDate" type="datetime-local" />
-            </div>
-            <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="location">Local</Label>
-              <Input id="location" name="location" placeholder="Templo principal" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="maxCapacity">Capacidade</Label>
-              <Input id="maxCapacity" name="maxCapacity" type="number" min="0" placeholder="0" />
-            </div>
-            <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="onlineLink">Link online</Label>
-              <Input id="onlineLink" name="onlineLink" placeholder="https://..." />
-            </div>
-            <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="volunteerTemplateId">Template de voluntariado</Label>
-              <Select name="volunteerTemplateId" defaultValue="none">
-                <SelectTrigger id="volunteerTemplateId"><SelectValue placeholder="Sem vagas de voluntariado" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem template</SelectItem>
-                  {volunteerTemplates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end gap-4">
-              <input type="hidden" name="isPublic" value="true" />
-              <label className="flex items-center gap-2 text-sm">
-                <input name="registrationEnabled" type="checkbox" className="h-4 w-4 rounded border-border" />
-                Inscrição
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input name="isOnline" type="checkbox" className="h-4 w-4 rounded border-border" />
-                Online
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input name="recurring" type="checkbox" className="h-4 w-4 rounded border-border" />
-                Recorrente
-              </label>
-            </div>
-            <div className="grid gap-2 lg:col-span-6">
-              <Label htmlFor="description">Descrição</Label>
-              <Textarea id="description" name="description" rows={3} placeholder="Detalhes do evento" />
-            </div>
-            <div className="lg:col-span-6">
-              <Button type="submit" className="gradient-primary">
-                <Plus className="mr-2 h-4 w-4" />
-                Criar Evento
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      <EventCreateForm
+        canCreate={hasPermission(user.role, "events.create")}
+        volunteerTemplates={volunteerTemplates}
+      />
 
       <div className="space-y-3">
         {events.map((event) => (

@@ -343,18 +343,29 @@ function refresh(paths: string[]) {
 }
 
 export async function saveEvent(formData: FormData): Promise<ActionResult> {
+  let stage = "validation"
   try {
     validateActionForm(formData, eventSchema)
     const id = uuid(formData, "id")
+    stage = "authorization"
     const { user, companyId } = await actionContext(formData, id ? "events.edit" : "events.create")
     const sql = getSql()
     const title = requiredText(formData, "title", "Título")
     const startsAt = requiredText(formData, "startDate", "Início")
     const endsAt = optionalText(formData, "endDate") ?? startsAt
+    const startsAtDate = new Date(startsAt)
+    const endsAtDate = new Date(endsAt)
+    if (Number.isNaN(startsAtDate.getTime()) || Number.isNaN(endsAtDate.getTime())) {
+      throw new Error("Data ou horário inválido")
+    }
+    if (endsAtDate < startsAtDate) {
+      throw new Error("Fim deve ser igual ou posterior ao início")
+    }
     const volunteerTemplateValue = text(formData, "volunteerTemplateId")
     const volunteerTemplateId = volunteerTemplateValue === "none" ? null : uuid(formData, "volunteerTemplateId")
     if (volunteerTemplateValue && !volunteerTemplateId) throw new Error("Template de voluntariado inválido")
     if (volunteerTemplateId) {
+      stage = "volunteer-template"
       const templates = await sql<{ id: string }[]>`
         select id from public.volunteer_schedule_templates
         where id = ${volunteerTemplateId} and company_id = ${companyId} and is_active and deleted_at is null
@@ -363,6 +374,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       if (!templates[0]?.id) throw new Error("Template de voluntariado não encontrado")
     }
 
+    stage = "persistence"
     const rows = id
       ? await sql<{ id: string }[]>`
           update public.events
@@ -404,10 +416,17 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
 
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Evento não foi salvo")
+    stage = "audit"
     await audit("event.save", "events", savedId, companyId)
     refresh(["/eventos", "/relatorios", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
+    console.error("[events.save] failed", {
+      stage,
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : "Erro inesperado",
+      code: typeof error === "object" && error && "code" in error ? String(error.code) : undefined,
+    })
     return toErrorResult(error)
   }
 }
