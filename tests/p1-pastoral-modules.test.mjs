@@ -70,7 +70,7 @@ test("P1 pastoral module pages do not import mock data", () => {
   }
 
   assert.match(read("src/app/(dashboard)/ministerios/page.tsx"), /listMinistries/)
-  assert.match(read("src/app/(dashboard)/programacao/page.tsx"), /listProgrammings/)
+  assert.match(read("src/app/(dashboard)/programacao/page.tsx"), /redirect\("\/voluntariado"\)/)
   assert.match(read("src/app/(dashboard)/louvor/page.tsx"), /listSongs/)
   assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /saveMinistry/)
   assert.match(read("src/app/(dashboard)/programacao/programming-client.tsx"), /saveProgramming/)

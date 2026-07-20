@@ -5,6 +5,9 @@ export type CheckinSource = "button" | "qr" | "manual"
 export type FeedStatus = "draft" | "published" | "archived"
 export type DepartmentAccessRole = "coordinator" | "leader" | "scheduler"
 export type VolunteerSwapStatus = "open" | "offered" | "accepted" | "approved" | "rejected" | "cancelled"
+export type VolunteerProgrammingKind = "service" | "cleaning" | "rehearsal" | "meeting" | "outreach" | "other"
+export type VolunteerRecurrenceFrequency = "none" | "weekly" | "monthly"
+export type VolunteerProgrammingStatus = "no_team" | "draft" | "incomplete" | "ready" | "published"
 
 export interface VolunteerDepartment {
   id: string
@@ -297,6 +300,35 @@ export interface VolunteerEventPlan {
   }[]
 }
 
+export interface VolunteerProgrammingOccurrence {
+  eventId: string
+  startsAt: string
+  endsAt: string | null
+  schedulePublishedAt: string | null
+  requiredVolunteers: number
+  assignedVolunteers: number
+  status: VolunteerProgrammingStatus
+}
+
+export interface VolunteerProgramming {
+  id: string
+  title: string
+  description: string
+  kind: VolunteerProgrammingKind
+  startsAt: string | null
+  durationMinutes: number
+  location: string
+  timezone: string
+  recurrenceFrequency: VolunteerRecurrenceFrequency
+  recurrenceWeekdays: number[]
+  recurrenceUntil: string | null
+  recurrenceNeedsReview: boolean
+  active: boolean
+  templateId: string | null
+  positions: TemplateSlot[]
+  occurrences: VolunteerProgrammingOccurrence[]
+}
+
 export interface VolunteerReportData {
   confirmationRate: number
   attendanceRate: number
@@ -316,6 +348,7 @@ export interface VolunteerDashboardData {
   schedules: VolunteerSchedule[]
   feedPosts: VolunteerFeedPost[]
   eventPlans: VolunteerEventPlan[]
+  programmings: VolunteerProgramming[]
   swaps: VolunteerSwapRequest[]
   reports: VolunteerReportData
   v2Enabled: boolean

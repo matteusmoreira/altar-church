@@ -85,6 +85,7 @@ import type {
   VolunteerShift,
 } from "@/lib/volunteers/types";
 import { VolunteerQrScanner } from "./volunteer-qr-scanner";
+import { VolunteerProgrammingWorkspace } from "./volunteer-programming-workspace";
 
 const fmt = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
@@ -2138,9 +2139,9 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Voluntariado 2.0</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Voluntariado</h1>
           <p className="text-muted-foreground">
-            Escalas justas, cuidado de pessoas, comunicação e culto.
+            Programações, equipes e pessoas. Simples e objetivo.
           </p>
         </div>
         <Badge variant={data.v2Enabled ? "default" : "secondary"}>
@@ -2148,42 +2149,37 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
           {data.v2Enabled ? "V2 ativo" : "V2 em validação"}
         </Badge>
       </div>
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="programmings">
         <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="overview">Visão geral</TabsTrigger>
-          <TabsTrigger value="volunteers">Voluntários</TabsTrigger>
+          <TabsTrigger value="programmings">Programações</TabsTrigger>
           <TabsTrigger value="teams">Equipes</TabsTrigger>
-          <TabsTrigger value="worship">Cultos e escalas</TabsTrigger>
-          <TabsTrigger value="communication">Comunicação</TabsTrigger>
+          <TabsTrigger value="volunteers">Voluntários</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview">
-          <ManagerOverview data={data} />
-          <div className="mt-4 space-y-3">
-            <details className="rounded-lg border p-4">
-              <summary className="cursor-pointer font-medium">Relatórios</summary>
-              <div className="mt-4">
-                <ManagerReports data={data} />
-              </div>
-            </details>
-            <details className="rounded-lg border p-4">
-              <summary className="cursor-pointer font-medium">Configurações</summary>
-              <div className="mt-4">
-                <ManagerSettings data={data} />
-              </div>
-            </details>
-          </div>
-        </TabsContent>
-        <TabsContent value="volunteers">
-          <ManagerVolunteers data={data} />
+        <TabsContent value="programmings" className="space-y-4">
+          <VolunteerProgrammingWorkspace data={data} />
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer font-medium">Ajustar pessoas da escala</summary>
+            <div className="mt-4"><ManagerSchedules data={data} /></div>
+          </details>
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer font-medium">Planejamento avançado legado</summary>
+            <div className="mt-4"><ManagerWorship data={data} /></div>
+          </details>
         </TabsContent>
         <TabsContent value="teams">
           <ManagerTeams data={data} />
         </TabsContent>
-        <TabsContent value="worship">
-          <ManagerWorship data={data} />
-        </TabsContent>
-        <TabsContent value="communication">
-          <ManagerCommunication data={data} />
+        <TabsContent value="volunteers" className="space-y-4">
+          <ManagerVolunteers data={data} />
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer font-medium">Mais opções</summary>
+            <div className="mt-4 space-y-6">
+              <ManagerOverview data={data} />
+              <ManagerCommunication data={data} />
+              <ManagerReports data={data} />
+              <ManagerSettings data={data} />
+            </div>
+          </details>
         </TabsContent>
       </Tabs>
     </div>

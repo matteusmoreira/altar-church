@@ -41,15 +41,19 @@ test("event schedule generation is draft-only and idempotent", () => {
   assert.match(v2Actions, /'proposed'/)
 })
 
-test("manager UI uses five operational areas and no worship catalog", () => {
+test("manager UI uses three simple areas and keeps advanced operations secondary", () => {
   const manager = workspace.slice(
     workspace.indexOf("export function VolunteerManagerV2"),
     workspace.indexOf("function urlBase64ToUint8Array"),
   )
-  assert.equal((manager.match(/<TabsTrigger/g) ?? []).length, 5)
+  assert.equal((manager.match(/<TabsTrigger/g) ?? []).length, 3)
+  assert.match(manager, /Programações/)
+  assert.match(manager, /Equipes/)
+  assert.match(manager, /Voluntários/)
   assert.match(workspace, /Digite ao menos 3 letras para buscar em Pessoas/)
   assert.match(workspace, /Gerar rascunho/)
   assert.match(workspace, /Roteiro do culto/)
+  assert.match(manager, /Planejamento avançado legado/)
   assert.doesNotMatch(workspace, /Adicionar música do catálogo/)
   assert.doesNotMatch(workspace, /Culto e Louvor/)
 })

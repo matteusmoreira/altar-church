@@ -63,7 +63,6 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
     items: [
       { href: dashboardRoutes["church-info"], label: "Informações", icon: Church, moduleId: "church-info" },
       { href: dashboardRoutes.ministries, label: "Ministérios", icon: Heart, moduleId: "ministries" },
-      { href: dashboardRoutes.programming, label: "Programação", icon: CalendarDays, moduleId: "programming" },
       { href: dashboardRoutes.songs, label: "Louvor", icon: Music, moduleId: "songs" },
       { href: dashboardRoutes.congregations, label: "Congregações", icon: Building2, moduleId: "congregations" },
     ],

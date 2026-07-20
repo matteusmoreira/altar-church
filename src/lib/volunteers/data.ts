@@ -8,6 +8,7 @@ import type {
   VolunteerFeedPost,
   VolunteerListItem,
   VolunteerPortalData,
+  VolunteerProgramming,
   VolunteerSchedule,
   VolunteerShift,
   VolunteerTemplate,
@@ -91,7 +92,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   const departmentScope = accessRows.map((row) => row.department_id)
   if (!allDepartments && departmentScope.length === 0) throw new Error("Acesso negado")
 
-  const [volunteerRows, departmentRows, templateRows, slotRows, scheduleRows, shiftRows, assignmentRows, feedRows, metricRows] = await Promise.all([
+  const [volunteerRows, departmentRows, templateRows, slotRows, scheduleRows, shiftRows, assignmentRows, feedRows, metricRows, programmingRows, occurrenceRows] = await Promise.all([
     sql<Record<string, unknown>[]>`
       select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
              vp.registration_status, person.is_active, vp.whatsapp_enabled, vp.email_enabled,
@@ -124,6 +125,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       select id, name, description, is_active
       from public.volunteer_schedule_templates
       where company_id = ${resolvedCompanyId} and deleted_at is null
+        and owner_programming_id is null
         and (${allDepartments} or exists(select 1 from public.volunteer_schedule_template_slots scope_slot
           where scope_slot.template_id = volunteer_schedule_templates.id and scope_slot.department_id = any(${departmentScope}::uuid[])))
       order by is_active desc, name
@@ -201,6 +203,65 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
         and (${allDepartments} or exists(select 1 from public.volunteer_department_memberships scope_membership
           where scope_membership.volunteer_id = vp.id and scope_membership.is_active
             and scope_membership.department_id = any(${departmentScope}::uuid[])))
+    `,
+    sql<Record<string, unknown>[]>`
+      select programming.id, programming.title, programming.description, programming.kind,
+             programming.starts_at, programming.duration_minutes, programming.location,
+             programming.timezone, programming.recurrence_frequency,
+             programming.recurrence_weekdays, programming.recurrence_until,
+             programming.recurrence_needs_review, programming.is_active,
+             programming.volunteer_template_id
+      from public.programmings programming
+      where programming.company_id = ${resolvedCompanyId}
+        and programming.deleted_at is null
+        and (
+          ${allDepartments}
+          or exists (
+            select 1 from public.volunteer_schedule_template_slots scope_slot
+            where scope_slot.template_id = programming.volunteer_template_id
+              and scope_slot.department_id = any(${departmentScope}::uuid[])
+          )
+          or exists (
+            select 1 from public.events event
+            join public.volunteer_event_positions scope_position on scope_position.event_id = event.id
+            where event.programming_id = programming.id
+              and scope_position.department_id = any(${departmentScope}::uuid[])
+          )
+        )
+      order by programming.is_active desc, programming.starts_at, programming.title
+    `,
+    sql<Record<string, unknown>[]>`
+      select event.id as event_id, event.programming_id, event.starts_at, event.ends_at,
+             event.volunteer_schedule_published_at,
+             coalesce((
+               select sum(position.required_volunteers)::integer
+               from public.volunteer_event_positions position
+               where position.event_id = event.id
+                 and (${allDepartments} or position.department_id = any(${departmentScope}::uuid[]))
+             ), 0)::integer as required_volunteers,
+             coalesce((
+               select count(distinct assignment.id)::integer
+               from public.volunteer_shifts shift
+               join public.volunteer_assignments assignment on assignment.shift_id = shift.id
+               where shift.event_id = event.id
+                 and assignment.status not in ('declined', 'cancelled')
+                 and (${allDepartments} or shift.department_id = any(${departmentScope}::uuid[]))
+             ), 0)::integer as assigned_volunteers
+      from public.events event
+      where event.company_id = ${resolvedCompanyId}
+        and event.programming_id is not null
+        and event.deleted_at is null
+        and event.starts_at >= date_trunc('month', now()) - interval '1 month'
+        and event.starts_at <= now() + interval '100 days'
+        and (
+          ${allDepartments}
+          or exists (
+            select 1 from public.volunteer_event_positions scope_position
+            where scope_position.event_id = event.id
+              and scope_position.department_id = any(${departmentScope}::uuid[])
+          )
+        )
+      order by event.starts_at
     `,
   ])
 
@@ -313,6 +374,33 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
 
   const metrics = metricRows[0] ?? {}
   const extras = await getVolunteerV2DashboardExtras(resolvedCompanyId, departmentScope, allDepartments)
+  const occurrencesByProgramming = new Map<string, VolunteerProgramming["occurrences"]>()
+  for (const row of occurrenceRows) {
+    const programmingId = String(row.programming_id)
+    const required = Number(row.required_volunteers ?? 0)
+    const assigned = Number(row.assigned_volunteers ?? 0)
+    const publishedAt = iso(row.volunteer_schedule_published_at as DateValue)
+    const status = publishedAt
+      ? "published"
+      : required === 0
+        ? "no_team"
+        : assigned === 0
+          ? "draft"
+          : assigned < required
+            ? "incomplete"
+            : "ready"
+    const current = occurrencesByProgramming.get(programmingId) ?? []
+    current.push({
+      eventId: String(row.event_id),
+      startsAt: iso(row.starts_at as DateValue) ?? "",
+      endsAt: iso(row.ends_at as DateValue),
+      schedulePublishedAt: publishedAt,
+      requiredVolunteers: required,
+      assignedVolunteers: assigned,
+      status,
+    })
+    occurrencesByProgramming.set(programmingId, current)
+  }
   return {
     volunteers: volunteerRows.map((row) => ({
       ...toVolunteer(row),
@@ -337,6 +425,28 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       shifts: shiftsBySchedule.get(String(row.id)) ?? [],
     })),
     feedPosts: feedRows.map(toFeedPost),
+    programmings: programmingRows.map((row): VolunteerProgramming => ({
+      id: String(row.id),
+      title: String(row.title),
+      description: String(row.description ?? ""),
+      kind: row.kind as VolunteerProgramming["kind"],
+      startsAt: iso(row.starts_at as DateValue),
+      durationMinutes: Number(row.duration_minutes ?? 60),
+      location: String(row.location ?? ""),
+      timezone: String(row.timezone ?? "America/Sao_Paulo"),
+      recurrenceFrequency: row.recurrence_frequency as VolunteerProgramming["recurrenceFrequency"],
+      recurrenceWeekdays: Array.isArray(row.recurrence_weekdays)
+        ? row.recurrence_weekdays.map(Number)
+        : [],
+      recurrenceUntil: iso(row.recurrence_until as DateValue)?.slice(0, 10) ?? null,
+      recurrenceNeedsReview: Boolean(row.recurrence_needs_review),
+      active: Boolean(row.is_active),
+      templateId: row.volunteer_template_id ? String(row.volunteer_template_id) : null,
+      positions: row.volunteer_template_id
+        ? slotsByTemplate.get(String(row.volunteer_template_id)) ?? []
+        : [],
+      occurrences: occurrencesByProgramming.get(String(row.id)) ?? [],
+    })),
     ...extras,
     metrics: {
       activeVolunteers: Number(metrics.active_volunteers ?? 0),
