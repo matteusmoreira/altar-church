@@ -1584,10 +1584,7 @@ function urlBase64ToUint8Array(base64String: string) {
   );
 }
 
-function PwaControls() {
-  const [installPrompt, setInstallPrompt] = useState<
-    (Event & { prompt: () => Promise<void> }) | null
-  >(null);
+function PushControls() {
   const [pushReady, setPushReady] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -1595,14 +1592,6 @@ function PwaControls() {
       "PushManager" in window &&
       Notification.permission === "granted",
   );
-  useEffect(() => {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as Event & { prompt: () => Promise<void> });
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
   async function enablePush() {
     const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
     if (!key) return toast.error("Chave Web Push não configurada");
@@ -1627,15 +1616,6 @@ function PwaControls() {
   }
   return (
     <div className="flex flex-wrap gap-2">
-      {installPrompt && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => installPrompt.prompt()}
-        >
-          Instalar app
-        </Button>
-      )}
       <Button
         size="sm"
         variant="outline"
@@ -2088,7 +2068,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
             Olá, {data.volunteer.name}. Tudo para servir bem.
           </p>
         </div>
-        <PwaControls />
+        <PushControls />
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Metric

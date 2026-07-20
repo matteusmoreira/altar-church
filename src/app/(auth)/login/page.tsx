@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { PwaInstallButton } from "@/components/pwa-install"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -126,6 +127,7 @@ export default function LoginPage() {
                 Criar conta
               </Link>
             </p>
+            <PwaInstallButton className="w-full" />
           </form>
         </CardContent>
       </Card>

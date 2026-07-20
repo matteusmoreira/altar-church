@@ -1,13 +1,13 @@
 import type { MetadataRoute } from "next"
 
-// PWA instalável (portal da família e dashboard). Sem service worker:
-// dados sensíveis nunca ficam em cache persistente no dispositivo.
+// PWA instalável para portal, voluntariado e dashboard.
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: "/",
     name: "Altar Church",
     short_name: "Altar",
     description: "Gestão inteligente para sua igreja, incluindo o Portal da Família Kids.",
-    start_url: "/voluntariado",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#0a0a0a",
@@ -18,18 +18,24 @@ export default function manifest(): MetadataRoute.Manifest {
         name: "Minha escala",
         short_name: "Escala",
         url: "/voluntariado",
-        icons: [{ src: "/icons/logo.png", sizes: "512x512" }],
+        icons: [{ src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" }],
       },
     ],
     icons: [
       {
-        src: "/icons/logo.png",
-        sizes: "1254x1254",
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/logo.png",
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

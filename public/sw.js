@@ -1,8 +1,11 @@
-const STATIC_CACHE = "altar-static-v2";
+const STATIC_CACHE = "altar-static-v3";
 const VOLUNTEER_CACHE_PREFIX = "altar-volunteer-readonly-v2-";
 const STATIC_ASSETS = [
   "/offline.html",
-  "/icons/logo.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
   "/manifest.webmanifest",
 ];
 let activeUserId = null;

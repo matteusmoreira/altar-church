@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
 import { AddressFields } from "@/components/kids/address-fields"
 import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
+import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
 import {
   deleteGuardianContact,
   generateGuardianPickupCode,
@@ -281,10 +282,15 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
             <p className="text-xs text-muted-foreground">{data.companyName} · {data.guardianName}</p>
           </div>
         </div>
-        <Button type="button" variant="ghost" size="icon" onClick={() => void logout()} title="Sair">
-          <LogOut className="h-5 w-5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <PwaInstallButton iconOnly variant="ghost" />
+          <Button type="button" variant="ghost" size="icon" onClick={() => void logout()} title="Sair">
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
+
+      <PwaInstallBanner />
 
       <Card className="glass">
         <CardHeader><CardTitle className="text-base">Meu endereço e dados adicionais</CardTitle><CardDescription>Endereço familiar opcional, compartilhado pelos cadastros vinculados.</CardDescription></CardHeader>

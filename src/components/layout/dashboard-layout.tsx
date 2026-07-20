@@ -44,6 +44,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
 
 type NavigationItem = {
   href: string
@@ -218,24 +219,31 @@ function SidebarContent({
 
       <Separator className="opacity-50" />
 
-      <div className={cn("flex items-center gap-1 p-4", collapsed ? "flex-col" : "justify-between")}>
-        <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
-          <ThemeToggle />
-          <Button variant="ghost" size="icon" onClick={logout} className="h-9 w-9">
-            <LogOut className="h-4 w-4" />
-          </Button>
+      <div className={cn("p-4", collapsed ? "flex flex-col items-center gap-1" : "space-y-2")}>
+        <PwaInstallButton
+          iconOnly={collapsed}
+          variant="ghost"
+          className={cn(!collapsed && "w-full")}
+        />
+        <div className={cn("flex items-center gap-1", !collapsed && "justify-between")}>
+          <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" onClick={logout} className="h-9 w-9">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+          {onToggle && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggle}
+              className={cn("h-9 w-9 shrink-0", collapsed && "mt-2")}
+              title={collapsed ? "Expandir menu" : "Recolher menu"}
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
+          )}
         </div>
-        {onToggle && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggle}
-            className={cn("h-9 w-9 shrink-0", collapsed && "mt-2")}
-            title={collapsed ? "Expandir menu" : "Recolher menu"}
-          >
-            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </Button>
-        )}
       </div>
     </div>
   )
@@ -354,6 +362,7 @@ export function DashboardLayout({
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">
+            <PwaInstallBanner className="mb-4" />
             {adminBlocked ? (
               <div className="flex min-h-[55vh] items-center justify-center">
                 <div className="max-w-md rounded-lg border border-border/40 p-6 text-center">
