@@ -212,6 +212,29 @@
   .animate-glow {
     animation: glow-pulse 5s ease-in-out infinite;
   }
+  .animate-aurora {
+    animation: aurora-drift 16s ease-in-out infinite alternate;
+  }
+  .auth-grid {
+    background-image:
+      linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 75% 65% at 50% 40%, black 25%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 40%, black 25%, transparent 72%);
+  }
+  .btn-shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 40%, oklch(1 0 0 / 22%) 50%, transparent 60%);
+    transform: translateX(-130%);
+    transition: transform 0.7s ease;
+    pointer-events: none;
+  }
+  .btn-shine:hover::after {
+    transform: translateX(130%);
+  }
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: oklch(0.3 0.02 260) transparent;
@@ -262,10 +285,16 @@
   50% { opacity: 1; }
 }
 
+@keyframes aurora-drift {
+  from { transform: translate3d(-5%, -4%, 0) scale(1); }
+  to { transform: translate3d(5%, 6%, 0) scale(1.15); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee,
   .animate-spin-slow,
   .animate-float,
+  .animate-aurora,
   .animate-glow {
     animation: none;
   }

@@ -3,14 +3,17 @@
 import Link from "next/link"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
-import { Church, Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, Lock, Mail } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AuthCard } from "@/components/auth/auth-card"
 import { PwaInstallButton } from "@/components/pwa-install"
+
+const inputClasses =
+  "h-11 md:h-11 rounded-xl border-white/10 bg-white/[0.04] pl-10 md:pl-10 text-[15px] md:text-[15px] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/20"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -53,84 +56,84 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 gradient-hero">
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 h-80 w-80 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary/5 blur-3xl" />
-      </div>
-
-      <Card className="relative w-full max-w-md glass-strong shadow-glow">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary shadow-glow">
-            <Church className="h-7 w-7 text-white" />
+    <AuthCard
+      title="Altar Church"
+      subtitle="Gestão inteligente para sua igreja"
+      below={
+        <PwaInstallButton className="h-10 w-full rounded-xl border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07] hover:text-white" />
+      }
+    >
+      <form
+        data-testid="login-form"
+        data-ready={ready ? "true" : "false"}
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!ready || loading) return
+          void handleSubmit()
+        }}
+      >
+        <div className="space-y-2">
+          <Label htmlFor="email" className="text-[13px] font-medium text-slate-300">
+            E-mail
+          </Label>
+          <div className="group relative">
+            <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="seu@email.com"
+              className={inputClasses}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
           </div>
-          <CardTitle className="text-2xl font-bold">Altar Church</CardTitle>
-          <CardDescription>Gestão inteligente para sua igreja</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            data-testid="login-form"
-            data-ready={ready ? "true" : "false"}
-            className="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (!ready || loading) return
-              void handleSubmit()
-            }}
-          >
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="seu@email.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="Senha"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
-                  onClick={() => setShowPassword((current) => !current)}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="password" className="text-[13px] font-medium text-slate-300">
+            Senha
+          </Label>
+          <div className="group relative">
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="Sua senha"
+              className={`${inputClasses} pr-11 md:pr-11`}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
             <Button
-              type="submit"
-              data-testid="login-submit"
-              className="w-full gradient-primary"
-              disabled={loading || !ready}
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              className="absolute right-1.5 top-1/2 h-8 w-8 -translate-y-1/2 text-slate-400 hover:bg-white/5 hover:text-white"
+              onClick={() => setShowPassword((current) => !current)}
             >
-              {loading ? "Entrando..." : "Entrar"}
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Não tem conta?{" "}
-              <Link href="/register" className="font-medium text-primary hover:underline">
-                Criar conta
-              </Link>
-            </p>
-            <PwaInstallButton className="w-full" />
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          </div>
+        </div>
+        <Button
+          type="submit"
+          data-testid="login-submit"
+          className="btn-shine relative h-11 w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 text-[15px] font-semibold text-white shadow-[0_10px_36px_-10px_rgba(59,130,246,0.65)] transition-all duration-300 hover:shadow-[0_14px_44px_-8px_rgba(59,130,246,0.8)] hover:brightness-110 active:scale-[0.99]"
+          disabled={loading || !ready}
+        >
+          {loading ? "Entrando..." : "Entrar"}
+        </Button>
+        <p className="pt-1 text-center text-sm text-slate-400">
+          Não tem conta?{" "}
+          <Link href="/register" className="font-medium text-sky-400 transition-colors hover:text-sky-300">
+            Criar conta
+          </Link>
+        </p>
+      </form>
+    </AuthCard>
   )
 }
