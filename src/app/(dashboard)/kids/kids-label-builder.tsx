@@ -45,6 +45,8 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
   const canvasElement = useRef<HTMLCanvasElement | null>(null)
   const canvasRef = useRef<Canvas | null>(null)
   const rebuilding = useRef(false)
+  const rebuildIdRef = useRef(0)
+  const selectedIdsRef = useRef<string[]>([])
   const historyRef = useRef<KidLabelDesign[]>([])
   const futureRef = useRef<KidLabelDesign[]>([])
   const clipboardRef = useRef<KidLabelElement[]>([])
@@ -66,6 +68,7 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
   const [previewLabel, setPreviewLabel] = useState("Dados fictícios")
   const selected = design.elements.find((item) => item.id === selectedIds[0]) ?? null
   useEffect(() => { designRef.current = design }, [design])
+  useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds])
 
   const applyDesign = useCallback((next: KidLabelDesign, remember = true) => {
     setDesign((current) => {
@@ -115,19 +118,29 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
       if (!object.labelElementId) return
       const current = designRef.current
       const moved = current.elements.find((item) => item.id === object.labelElementId)
-      const nextX = Math.max(0, (object.left ?? 0) / EDITOR_PX_PER_MM)
-      const nextY = Math.max(0, (object.top ?? 0) / EDITOR_PX_PER_MM)
+      const objectWidth = Math.max(0.5, (object.width ?? 0) * Math.abs(object.scaleX ?? 1) / EDITOR_PX_PER_MM)
+      const objectHeight = Math.max(0.5, (object.height ?? 0) * Math.abs(object.scaleY ?? 1) / EDITOR_PX_PER_MM)
+      const nextX = Math.max(0, Math.min(widthMm - objectWidth, (object.left ?? 0) / EDITOR_PX_PER_MM))
+      const nextY = Math.max(0, Math.min(heightMm - objectHeight, (object.top ?? 0) / EDITOR_PX_PER_MM))
       const deltaX = moved ? nextX - moved.x : 0
       const deltaY = moved ? nextY - moved.y : 0
       applyDesign({ ...current, elements: current.elements.map((item) => item.id === object.labelElementId ? { ...item,
         x: nextX, y: nextY,
-        width: Math.max(0.5, item.width * (object.scaleX ?? 1)), height: Math.max(0.5, item.height * (object.scaleY ?? 1)), rotation: object.angle ?? 0,
+        width: objectWidth, height: objectHeight, rotation: object.angle ?? 0,
       } : moved?.groupId && item.groupId === moved.groupId ? { ...item, x: item.x + deltaX, y: item.y + deltaY } : item) }, true)
     }
     const moving = (event: { target?: FabricObject }) => {
-      if (!event.target || !designRef.current.snapToGrid) return
+      if (!event.target) return
+      const target = event.target
       const step = designRef.current.gridSizeMm * EDITOR_PX_PER_MM
-      event.target.set({ left: Math.round((event.target.left ?? 0) / step) * step, top: Math.round((event.target.top ?? 0) / step) * step })
+      const objectWidth = (target.width ?? 0) * Math.abs(target.scaleX ?? 1)
+      const objectHeight = (target.height ?? 0) * Math.abs(target.scaleY ?? 1)
+      const rawLeft = designRef.current.snapToGrid ? Math.round((target.left ?? 0) / step) * step : target.left ?? 0
+      const rawTop = designRef.current.snapToGrid ? Math.round((target.top ?? 0) / step) * step : target.top ?? 0
+      target.set({
+        left: Math.max(0, Math.min(canvas.width - objectWidth, rawLeft)),
+        top: Math.max(0, Math.min(canvas.height - objectHeight, rawTop)),
+      })
       const id = (event.target as FabricObject & { labelElementId?: string }).labelElementId
       const source = designRef.current.elements.find((item) => item.id === id)
       if (source?.groupId) {
@@ -148,14 +161,17 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const rebuildId = ++rebuildIdRef.current
     rebuilding.current = true
-    void populateLabelCanvas(canvas, design, SAMPLE_LABEL_CONTEXT, EDITOR_PX_PER_MM, true).finally(() => {
+    void populateLabelCanvas(canvas, design, SAMPLE_LABEL_CONTEXT, EDITOR_PX_PER_MM, true, () => rebuildId === rebuildIdRef.current).finally(() => {
+      if (rebuildId !== rebuildIdRef.current) return
       rebuilding.current = false
-      const objects = canvas.getObjects().filter((object) => selectedIds.includes((object as FabricObject & { labelElementId?: string }).labelElementId ?? ""))
+      const objects = canvas.getObjects().filter((object) => selectedIdsRef.current.includes((object as FabricObject & { labelElementId?: string }).labelElementId ?? ""))
       if (objects.length === 1) canvas.setActiveObject(objects[0])
       canvas.requestRenderAll()
     })
-  }, [design, selectedIds, widthMm, heightMm])
+    return () => { rebuildIdRef.current += 1 }
+  }, [design, widthMm, heightMm])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -282,7 +298,7 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
               <div className="absolute -left-6 top-0 h-full w-5 border-r text-[8px] text-muted-foreground">{Array.from({ length: Math.ceil(heightMm / 10) + 1 }, (_, i) => <span key={i} className="absolute right-1" style={{ top: i * 10 * EDITOR_PX_PER_MM * zoom }}>{i * 10}</span>)}</div>
               <div className="absolute -top-6 left-0 h-5 w-full border-b text-[8px] text-muted-foreground">{Array.from({ length: Math.ceil(widthMm / 10) + 1 }, (_, i) => <span key={i} className="absolute" style={{ left: i * 10 * EDITOR_PX_PER_MM * zoom }}>{i * 10}</span>)}</div>
               {design.showGrid && <div className="pointer-events-none absolute inset-0 z-10" style={{ backgroundImage: "linear-gradient(to right, rgba(100,116,139,.15) 1px, transparent 1px),linear-gradient(to bottom, rgba(100,116,139,.15) 1px, transparent 1px)", backgroundSize: `${design.gridSizeMm * EDITOR_PX_PER_MM * zoom}px ${design.gridSizeMm * EDITOR_PX_PER_MM * zoom}px` }} />}
-              <div className="absolute z-20 border border-dashed border-red-400/70" style={{ inset: design.bleedMm * EDITOR_PX_PER_MM * zoom }} />
+              <div className="pointer-events-none absolute z-20 border border-dashed border-red-400/70" style={{ inset: design.bleedMm * EDITOR_PX_PER_MM * zoom }} />
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}><canvas ref={canvasElement} /></div>
             </div>
           </div>

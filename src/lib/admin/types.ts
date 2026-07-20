@@ -72,4 +72,5 @@ export interface ActionResult {
   ok: boolean
   error?: string
   resetLink?: string
+  warning?: string
 }

@@ -225,7 +225,12 @@ function SidebarContent({
           variant="ghost"
           className={cn(!collapsed && "w-full")}
         />
-        <div className={cn("flex items-center gap-1", !collapsed && "justify-between")}>
+        <div
+          className={cn(
+            "flex items-center gap-1",
+            collapsed ? "flex-col" : "justify-between"
+          )}
+        >
           <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
             <ThemeToggle />
             <Button variant="ghost" size="icon" onClick={logout} className="h-9 w-9">

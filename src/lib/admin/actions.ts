@@ -80,6 +80,7 @@ const profileSchema = z
   })
 
 const profileIdSchema = z.string().uuid()
+const companyIdSchema = z.string().uuid()
 const passwordSchema = z.string().min(8, "Senha deve ter no mínimo 8 caracteres")
 
 function slugify(value: string) {
@@ -400,6 +401,108 @@ export async function saveCompany(input: z.input<typeof companySchema>): Promise
   }
 }
 
+async function removeAuthUsers(authUserIds: string[]) {
+  if (authUserIds.length === 0) return []
+
+  const supabase = createSupabaseAdminClient()
+  if (!supabase) return authUserIds
+
+  const failedIds: string[] = []
+  for (const authUserId of authUserIds) {
+    const result = await supabase.auth.admin.deleteUser(authUserId)
+    if (result.error) failedIds.push(authUserId)
+  }
+  return failedIds
+}
+
+export async function deleteCompany(companyId: string): Promise<ActionResult> {
+  try {
+    const actor = await assertSuperadmin()
+    const id = companyIdSchema.parse(companyId)
+    const db = getSql()
+
+    const companies = await db<{ id: string; name: string }[]>`
+      select id, name
+      from public.companies
+      where id = ${id}
+      limit 1
+    `
+    const company = companies[0]
+    if (!company) throw new Error("Empresa não encontrada")
+
+    const profiles = await db<{ id: string; auth_user_id: string | null }[]>`
+      select id, auth_user_id
+      from public.profiles
+      where company_id = ${id}
+        and id <> ${actor.id}
+    `
+    const files = await db<{ bucket: string; storage_path: string }[]>`
+      select bucket, storage_path
+      from public.app_files
+      where company_id = ${id}
+        and is_active = true
+        and deleted_at is null
+    `
+
+    await db.begin(async (tx) => {
+      await tx`
+        delete from public.profiles
+        where company_id = ${id}
+          and id <> ${actor.id}
+      `
+      const deleted = await tx<{ id: string }[]>`
+        delete from public.companies
+        where id = ${id}
+        returning id
+      `
+      if (!deleted[0]) throw new Error("Empresa não encontrada")
+    })
+
+    const cleanupFailures: string[] = []
+    const failedAuthIds = await removeAuthUsers(
+      profiles.flatMap((profile) => (profile.auth_user_id ? [profile.auth_user_id] : []))
+    )
+    if (failedAuthIds.length > 0) cleanupFailures.push(`${failedAuthIds.length} conta(s) Auth`)
+
+    const supabase = createSupabaseAdminClient()
+    if (supabase) {
+      const filesByBucket = new Map<string, string[]>()
+      for (const file of files) {
+        filesByBucket.set(file.bucket, [...(filesByBucket.get(file.bucket) ?? []), file.storage_path])
+      }
+      for (const [bucket, paths] of filesByBucket) {
+        const removed = await supabase.storage.from(bucket).remove(paths)
+        if (removed.error) cleanupFailures.push(`arquivos do bucket ${bucket}`)
+      }
+    } else if (files.length > 0) {
+      cleanupFailures.push(`${files.length} arquivo(s) no Storage`)
+    }
+
+    await writeAuditLog({
+      action: "company.delete",
+      entityTable: "companies",
+      entityId: id,
+      companyId: null,
+      metadata: {
+        name: company.name,
+        deletedProfileCount: profiles.length,
+        deletedFileCount: files.length,
+        cleanupFailures,
+      },
+    })
+    await refreshAdminPaths()
+    return {
+      ok: true,
+      warning:
+        cleanupFailures.length > 0
+          ? `Empresa excluída. Limpeza pendente: ${cleanupFailures.join(", ")}.`
+          : undefined,
+    }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function savePlan(input: z.input<typeof planSchema>): Promise<ActionResult> {
   try {
     await assertSuperadmin()
@@ -542,6 +645,79 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
     })
     await refreshAdminPaths()
     return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteProfile(profileId: string): Promise<ActionResult> {
+  try {
+    const actor = await assertSuperadmin()
+    const id = profileIdSchema.parse(profileId)
+    if (actor.id === id) {
+      throw new Error("Você não pode excluir seu próprio usuário")
+    }
+
+    const db = getSql()
+    const profiles = await db<{
+      id: string
+      company_id: string | null
+      auth_user_id: string | null
+      email: string
+      name: string
+      role: string
+    }[]>`
+      select id, company_id, auth_user_id, email, name, role
+      from public.profiles
+      where id = ${id}
+      limit 1
+    `
+    const profile = profiles[0]
+    if (!profile) throw new Error("Usuário não encontrado")
+
+    await db.begin(async (tx) => {
+      const deleted = await tx<{ id: string }[]>`
+        delete from public.profiles
+        where id = ${id}
+        returning id
+      `
+      if (!deleted[0]) throw new Error("Usuário não encontrado")
+
+      if (profile.company_id) {
+        await tx`
+          update public.companies
+          set user_count = (
+            select count(*)::integer
+            from public.profiles
+            where company_id = ${profile.company_id}
+              and active = true
+          )
+          where id = ${profile.company_id}
+        `
+      }
+    })
+
+    const failedAuthIds = await removeAuthUsers(profile.auth_user_id ? [profile.auth_user_id] : [])
+    await writeAuditLog({
+      action: "profile.delete",
+      entityTable: "profiles",
+      entityId: id,
+      companyId: profile.company_id,
+      metadata: {
+        email: profile.email,
+        name: profile.name,
+        role: profile.role,
+        authDeleted: Boolean(profile.auth_user_id) && failedAuthIds.length === 0,
+      },
+    })
+    await refreshAdminPaths()
+    return {
+      ok: true,
+      warning:
+        failedAuthIds.length > 0
+          ? "Perfil excluído, mas a conta Auth precisa de limpeza manual."
+          : undefined,
+    }
   } catch (error) {
     return toErrorResult(error)
   }

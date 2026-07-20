@@ -27,6 +27,7 @@ async function loadImage(url: string) {
 function common(element: KidLabelElement, scale: number, interactive: boolean) {
   return {
     left: element.x * scale, top: element.y * scale, angle: element.rotation, opacity: element.opacity,
+    originX: "left" as const, originY: "top" as const,
     visible: element.visible, selectable: interactive && !element.locked, evented: interactive && !element.locked,
     lockMovementX: element.locked, lockMovementY: element.locked,
     shadow: element.shadowBlur ? new Shadow({ color: element.shadowColor ?? "#00000055", blur: element.shadowBlur * scale, offsetX: 0, offsetY: 1 * scale }) : undefined,
@@ -86,18 +87,27 @@ export async function createFabricObject(element: KidLabelElement, context: KidL
   return object
 }
 
-export async function populateLabelCanvas(canvas: StaticCanvas, design: KidLabelDesign, context: KidLabelRenderContext, scale: number, interactive = false) {
+export async function populateLabelCanvas(
+  canvas: StaticCanvas,
+  design: KidLabelDesign,
+  context: KidLabelRenderContext,
+  scale: number,
+  interactive = false,
+  shouldContinue: () => boolean = () => true,
+) {
   canvas.clear()
   canvas.backgroundColor = design.backgroundGradientFrom && design.backgroundGradientTo ? new Gradient({ type: "linear", coords: { x1: 0, y1: 0, x2: canvas.width, y2: canvas.height }, colorStops: [{ offset: 0, color: design.backgroundGradientFrom }, { offset: 1, color: design.backgroundGradientTo }] }) : design.backgroundColor || "#ffffff"
   if (design.backgroundAssetUrl) {
     const background = await loadImage(design.backgroundAssetUrl)
+    if (!shouldContinue()) return
     fitImage(background, canvas.width, canvas.height, design.backgroundFit)
-    background.set({ selectable: false, evented: false })
+    background.set({ originX: "left", originY: "top", selectable: false, evented: false })
     canvas.backgroundImage = background
   }
   const elements = [...design.elements].sort((a, b) => a.zIndex - b.zIndex)
   for (const element of elements) {
     const object = await createFabricObject(element, context, scale, interactive)
+    if (!shouldContinue()) return
     if (object) canvas.add(object)
   }
   canvas.requestRenderAll()

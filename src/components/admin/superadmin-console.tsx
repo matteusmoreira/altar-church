@@ -8,16 +8,27 @@ import {
   Check,
   DollarSign,
   Edit,
+  Grid2X2,
   KeyRound,
   Layers3,
+  List,
   MoreVertical,
   Plus,
   Search,
   Shield,
+  Trash2,
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
-import { saveCompany, savePlan, saveProfile, setModuleActive, setProfilePassword } from "@/lib/admin/actions"
+import {
+  deleteCompany,
+  deleteProfile,
+  saveCompany,
+  savePlan,
+  saveProfile,
+  setModuleActive,
+  setProfilePassword,
+} from "@/lib/admin/actions"
 import type {
   AdminCompany,
   AdminDashboardData,
@@ -66,6 +77,11 @@ import {
 } from "@/components/ui/table"
 
 type AdminTab = "overview" | "companies" | "users" | "plans" | "modules"
+type ViewMode = "list" | "grid"
+
+type DeleteTarget =
+  | { kind: "company"; id: string; label: string; confirmation: string }
+  | { kind: "profile"; id: string; label: string; confirmation: string }
 
 interface SuperAdminConsoleProps {
   initialData: AdminDashboardData
@@ -143,6 +159,13 @@ const statusLabels: Record<CompanyStatus, string> = {
   test: "Teste",
 }
 
+const billingCycleLabels: Record<BillingCycle, string> = {
+  free: "Grátis",
+  monthly: "Mensal",
+  yearly: "Anual",
+  custom: "Personalizada",
+}
+
 function emptyCompanyForm(plans: AdminPlan[]): CompanyForm {
   const firstPlan = plans[0]
   return {
@@ -189,6 +212,41 @@ function emptyProfileForm(companies: AdminCompany[]): ProfileForm {
 
 function toggleId(ids: string[], id: string) {
   return ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id]
+}
+
+function ViewModeToggle({
+  value,
+  onChange,
+}: {
+  value: ViewMode
+  onChange: (value: ViewMode) => void
+}) {
+  return (
+    <div className="flex rounded-lg border border-border/60 p-0.5" aria-label="Modo de visualização">
+      <Button
+        type="button"
+        variant={value === "list" ? "secondary" : "ghost"}
+        size="icon"
+        className="h-8 w-8"
+        aria-label="Modo lista"
+        aria-pressed={value === "list"}
+        onClick={() => onChange("list")}
+      >
+        <List className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant={value === "grid" ? "secondary" : "ghost"}
+        size="icon"
+        className="h-8 w-8"
+        aria-label="Modo grade"
+        aria-pressed={value === "grid"}
+        onClick={() => onChange("grid")}
+      >
+        <Grid2X2 className="h-4 w-4" />
+      </Button>
+    </div>
+  )
 }
 
 function ModulesPicker({
@@ -245,10 +303,16 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
   const data = initialData
   const [activeTab, setActiveTab] = useState<AdminTab>(initialTab)
   const [search, setSearch] = useState("")
+  const [companyView, setCompanyView] = useState<ViewMode>("list")
+  const [userView, setUserView] = useState<ViewMode>("list")
+  const [planView, setPlanView] = useState<ViewMode>("grid")
+  const [moduleView, setModuleView] = useState<ViewMode>("grid")
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false)
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState("")
   const [companyForm, setCompanyForm] = useState<CompanyForm>(() => emptyCompanyForm(initialData.plans))
   const [planForm, setPlanForm] = useState<PlanForm>(() => emptyPlanForm())
   const [profileForm, setProfileForm] = useState<ProfileForm>(() => emptyProfileForm(initialData.companies))
@@ -344,6 +408,26 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
     setPasswordDialogOpen(true)
   }
 
+  const openCompanyDelete = (company: AdminCompany) => {
+    setDeleteConfirmation("")
+    setDeleteTarget({
+      kind: "company",
+      id: company.id,
+      label: company.name,
+      confirmation: company.name,
+    })
+  }
+
+  const openProfileDelete = (profile: AdminProfile) => {
+    setDeleteConfirmation("")
+    setDeleteTarget({
+      kind: "profile",
+      id: profile.id,
+      label: profile.name,
+      confirmation: profile.email,
+    })
+  }
+
   const refresh = () => {
     router.refresh()
   }
@@ -402,6 +486,26 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
       toast.success("Senha redefinida com sucesso")
       setPasswordDialogOpen(false)
       setPasswordForm({ profileId: "", name: "", email: "", password: "" })
+    })
+  }
+
+  const handleDelete = () => {
+    if (!deleteTarget || deleteConfirmation !== deleteTarget.confirmation) return
+
+    startTransition(async () => {
+      const result =
+        deleteTarget.kind === "company"
+          ? await deleteCompany(deleteTarget.id)
+          : await deleteProfile(deleteTarget.id)
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível excluir")
+        return
+      }
+      if (result.warning) toast.warning(result.warning)
+      else toast.success(deleteTarget.kind === "company" ? "Empresa excluída" : "Usuário excluído")
+      setDeleteTarget(null)
+      setDeleteConfirmation("")
+      refresh()
     })
   }
 
@@ -550,11 +654,12 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base">Empresas</CardTitle>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar..." className="pl-9 md:pl-9" />
                   </div>
+                  <ViewModeToggle value={companyView} onChange={setCompanyView} />
                   <Button onClick={() => openCompany()}>
                     <Plus className="mr-2 h-4 w-4" />
                     Nova
@@ -563,7 +668,8 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              {companyView === "list" ? (
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Empresa</TableHead>
@@ -597,13 +703,49 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => openCompanyDelete(company)}>
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+                </Table>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredCompanies.map((company) => (
+                    <div key={company.id} className="rounded-lg border border-border/40 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{company.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{company.email || company.slug}</p>
+                        </div>
+                        <Badge variant={company.active ? "default" : "secondary"}>{statusLabels[company.status]}</Badge>
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                        <Badge variant="outline">
+                          {company.planCode ? planLabels[company.planCode] ?? company.planName : "Sem plano"}
+                        </Badge>
+                        <span className="text-muted-foreground">{company.moduleIds.length} módulos</span>
+                      </div>
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {company.city || "Cidade não informada"}{company.state ? `, ${company.state}` : ""}
+                      </p>
+                      <div className="mt-4 flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar empresa" onClick={() => openCompany(company)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Excluir empresa" onClick={() => openCompanyDelete(company)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -613,14 +755,22 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base">Usuários</CardTitle>
-                <Button onClick={() => openProfile()}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo Usuário
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar..." className="pl-9 md:pl-9" />
+                  </div>
+                  <ViewModeToggle value={userView} onChange={setUserView} />
+                  <Button onClick={() => openProfile()}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Novo Usuário
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
+              {userView === "list" ? (
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Usuário</TableHead>
@@ -660,78 +810,237 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                             <KeyRound className="h-4 w-4" />
                             <span className="sr-only">Redefinir senha</span>
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive"
+                            title="Excluir usuário"
+                            disabled={isPending}
+                            onClick={() => openProfileDelete(user)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Excluir usuário</span>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+                </Table>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredUsers.map((user) => (
+                    <div key={user.id} className="rounded-lg border border-border/40 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{user.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                        </div>
+                        <Badge variant={user.active ? "default" : "secondary"}>{user.active ? "Ativo" : "Inativo"}</Badge>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Badge variant="outline">{roleLabels[user.role]}</Badge>
+                        <span className="text-sm text-muted-foreground">{user.companyName ?? "Sistema"}</span>
+                      </div>
+                      <div className="mt-4 flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar usuário" onClick={() => openProfile(user)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Redefinir senha" disabled={isPending} onClick={() => openPasswordReset(user)}>
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Excluir usuário" disabled={isPending} onClick={() => openProfileDelete(user)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="plans" className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <ViewModeToggle value={planView} onChange={setPlanView} />
             <Button onClick={() => openPlan()}>
               <Plus className="mr-2 h-4 w-4" />
               Novo Plano
             </Button>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {data.plans.map((plan) => (
-              <div key={plan.id} className="rounded-lg border border-border/40 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{plan.name}</p>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">{plan.code}</p>
+          {planView === "grid" ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {data.plans.map((plan) => (
+                <div key={plan.id} className="rounded-lg border border-border/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{plan.name}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">{plan.code}</p>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openPlan(plan)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openPlan(plan)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
+                  <p className="mt-3 text-2xl font-bold">
+                    {plan.price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{plan.description}</p>
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {plan.moduleIds.slice(0, 7).map((moduleId) => {
+                      const systemModule = data.modules.find((item) => item.id === moduleId)
+                      return systemModule ? (
+                        <Badge key={moduleId} variant="outline" className="text-xs">
+                          {systemModule.label}
+                        </Badge>
+                      ) : null
+                    })}
+                  </div>
                 </div>
-                <p className="mt-3 text-2xl font-bold">
-                  {plan.price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">{plan.description}</p>
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {plan.moduleIds.slice(0, 7).map((moduleId) => {
-                    const systemModule = data.modules.find((item) => item.id === moduleId)
-                    return systemModule ? (
-                      <Badge key={moduleId} variant="outline" className="text-xs">
-                        {systemModule.label}
-                      </Badge>
-                    ) : null
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Plano</TableHead>
+                  <TableHead>Preço</TableHead>
+                  <TableHead>Cobrança</TableHead>
+                  <TableHead>Módulos</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-12" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.plans.map((plan) => (
+                  <TableRow key={plan.id}>
+                    <TableCell>
+                      <p className="font-medium">{plan.name}</p>
+                      <p className="text-xs text-muted-foreground">{plan.code}</p>
+                    </TableCell>
+                    <TableCell>{plan.price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{billingCycleLabels[plan.billingCycle]}</TableCell>
+                    <TableCell>{plan.moduleIds.length}</TableCell>
+                    <TableCell><Badge variant={plan.active ? "default" : "secondary"}>{plan.active ? "Ativo" : "Inativo"}</Badge></TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar plano" onClick={() => openPlan(plan)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         <TabsContent value="modules" className="space-y-4">
           <Card className="glass">
             <CardHeader>
-              <CardTitle className="text-base">Módulos do sistema</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-base">Módulos do sistema</CardTitle>
+                <ViewModeToggle value={moduleView} onChange={setModuleView} />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 md:grid-cols-2">
-                {data.modules.map((module) => (
-                  <div key={module.id} className="flex items-center justify-between gap-4 rounded-lg border border-border/40 p-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{module.label}</p>
-                        <Badge variant="outline" className="text-xs">{module.route}</Badge>
+              {moduleView === "grid" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {data.modules.map((module) => (
+                    <div key={module.id} className="flex items-center justify-between gap-4 rounded-lg border border-border/40 p-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{module.label}</p>
+                          <Badge variant="outline" className="text-xs">{module.route}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
                       </div>
-                      <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
+                      <Switch checked={module.active} onCheckedChange={(checked) => handleModuleActive(module, !!checked)} />
                     </div>
-                    <Switch checked={module.active} onCheckedChange={(checked) => handleModuleActive(module, !!checked)} />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Módulo</TableHead>
+                      <TableHead>Grupo</TableHead>
+                      <TableHead>Rota</TableHead>
+                      <TableHead className="w-24">Ativo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.modules.map((module) => (
+                      <TableRow key={module.id}>
+                        <TableCell>
+                          <p className="font-medium">{module.label}</p>
+                          <p className="text-xs text-muted-foreground">{module.description}</p>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{module.menuGroup}</TableCell>
+                        <TableCell><Badge variant="outline">{module.route}</Badge></TableCell>
+                        <TableCell>
+                          <Switch checked={module.active} onCheckedChange={(checked) => handleModuleActive(module, !!checked)} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            setDeleteTarget(null)
+            setDeleteConfirmation("")
+          }
+        }}
+      >
+        <DialogContent className="glass-strong">
+          <DialogHeader>
+            <DialogTitle>
+              Excluir {deleteTarget?.kind === "company" ? "empresa" : "usuário"}?
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.kind === "company"
+                ? "Esta ação apaga permanentemente a empresa, seus usuários e todos os dados vinculados."
+                : "Esta ação apaga permanentemente o perfil e impede novo acesso ao sistema."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-2">
+            <Label htmlFor="delete-confirmation">
+              Digite <strong>{deleteTarget?.confirmation}</strong> para confirmar
+            </Label>
+            <Input
+              id="delete-confirmation"
+              value={deleteConfirmation}
+              autoComplete="off"
+              onChange={(event) => setDeleteConfirmation(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && deleteConfirmation === deleteTarget?.confirmation) {
+                  handleDelete()
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isPending}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isPending || !deleteTarget || deleteConfirmation !== deleteTarget.confirmation}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Excluir permanentemente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={companyDialogOpen} onOpenChange={setCompanyDialogOpen}>
         <DialogContent className="glass-strong max-h-[90vh] overflow-y-auto sm:max-w-3xl">

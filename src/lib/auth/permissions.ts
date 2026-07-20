@@ -45,7 +45,9 @@ export async function writeAuditLog(input: AuditLogInput) {
   const user = await getCurrentUser()
   assertAuthenticated(user)
 
-  const companyId = input.companyId ?? user.churchId ?? null
+  const companyId = Object.prototype.hasOwnProperty.call(input, "companyId")
+    ? input.companyId ?? null
+    : user.churchId ?? null
   if (user.role !== "superadmin" && (!companyId || companyId !== user.churchId)) {
     throw new Error("Acesso negado")
   }

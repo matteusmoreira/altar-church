@@ -60,3 +60,11 @@ test("reception keeps QZ direct printing and browser fallback contracts", async 
   assert.match(reception, /window\.print/)
   assert.match(reception, /printKidLabelsDirect/)
 })
+
+test("editor uses top-left coordinates and non-blocking canvas guides", async () => {
+  const renderer = await readFile(new URL("../src/lib/kids/label-renderer.ts", import.meta.url), "utf8")
+  const builder = await readFile(new URL("../src/app/(dashboard)/kids/kids-label-builder.tsx", import.meta.url), "utf8")
+  assert.match(renderer, /originX: "left" as const, originY: "top" as const/)
+  assert.match(builder, /pointer-events-none absolute z-20 border border-dashed/)
+  assert.doesNotMatch(builder, /\[design, selectedIds, widthMm, heightMm\]/)
+})
