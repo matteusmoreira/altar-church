@@ -402,6 +402,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     occurrencesByProgramming.set(programmingId, current)
   }
   return {
+    canAdminDelete: ["superadmin", "admin"].includes(user.role),
     volunteers: volunteerRows.map((row) => ({
       ...toVolunteer(row),
       memberships: membershipsByVolunteer.get(String(row.id)) ?? [],

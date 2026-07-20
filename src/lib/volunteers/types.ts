@@ -342,6 +342,7 @@ export interface VolunteerReportData {
 }
 
 export interface VolunteerDashboardData {
+  canAdminDelete?: boolean
   volunteers: VolunteerListItem[]
   departments: VolunteerDepartment[]
   templates: VolunteerTemplate[]

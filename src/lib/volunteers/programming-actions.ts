@@ -356,3 +356,51 @@ export async function publishVolunteerProgrammingEvents(eventIdsInput: string[])
     return failure(error);
   }
 }
+
+export async function deleteVolunteerProgramming(programmingIdInput: string): Promise<VolunteerActionResult> {
+  try {
+    const programmingId = uuid.parse(programmingIdInput);
+    const { user, companyId } = await context("schedules.edit");
+    if (!["superadmin", "admin"].includes(user.role))
+      throw new Error("Somente administrador pode excluir programação");
+    const sql = getSql();
+    const rows = await sql<{ id: string }[]>`
+      select id from public.programmings
+      where id = ${programmingId} and company_id = ${companyId} and deleted_at is null
+    `;
+    if (!rows[0]?.id) throw new Error("Programação não encontrada");
+    const published = await sql<{ count: number }[]>`
+      select count(*)::integer as count from public.events
+      where programming_id = ${programmingId}
+        and volunteer_schedule_published_at is not null
+        and deleted_at is null
+    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        delete from public.events
+        where programming_id = ${programmingId}
+          and volunteer_schedule_published_at is null
+      `;
+      await tx`
+        update public.programmings
+        set is_active = false, deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+        where id = ${programmingId} and company_id = ${companyId}
+      `;
+    });
+    await writeAuditLog({
+      action: "volunteer_programming.delete",
+      entityTable: "programmings",
+      entityId: programmingId,
+      companyId,
+      metadata: { preservedPublishedOccurrences: Number(published[0]?.count ?? 0) },
+    });
+    refresh();
+    return {
+      ok: true,
+      id: programmingId,
+      data: { preservedPublishedOccurrences: Number(published[0]?.count ?? 0) },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}

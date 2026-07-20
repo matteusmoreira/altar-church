@@ -49,3 +49,24 @@ test("wizard requires teams and keeps publishing explicit", () => {
   assert.match(workspace, /Nenhum aviso será enviado antes da publicação/);
   assert.match(workspace, /Programações/);
 });
+
+test("only admins delete programming, team and volunteer while preserving history and People", () => {
+  const programmingActions = read("src/lib/volunteers/programming-actions.ts");
+  const volunteerActions = read("src/lib/volunteers/v2-actions.ts");
+  const workspace = read("src/app/(dashboard)/voluntariado/volunteer-v2-workspace.tsx");
+  const programmingWorkspace = read("src/app/(dashboard)/voluntariado/volunteer-programming-workspace.tsx");
+  assert.match(programmingActions, /export async function deleteVolunteerProgramming/);
+  assert.match(programmingActions, /Somente administrador pode excluir programação/);
+  assert.match(programmingActions, /volunteer_schedule_published_at is null/);
+  assert.match(volunteerActions, /export async function softDeleteVolunteerDepartment/);
+  assert.match(volunteerActions, /Somente administrador pode excluir equipe/);
+  assert.match(volunteerActions, /Somente administrador pode excluir voluntário/);
+  const deleteVolunteerBlock = volunteerActions.slice(
+    volunteerActions.indexOf("export async function softDeleteVolunteer("),
+    volunteerActions.indexOf("export async function softDeleteVolunteerDepartment("),
+  );
+  assert.doesNotMatch(deleteVolunteerBlock, /update public\.people/);
+  assert.match(workspace, /Cadastro em Pessoas e histórico serão preservados/);
+  assert.match(programmingWorkspace, /Todas as programações/);
+  assert.match(programmingWorkspace, /data\.canAdminDelete/);
+});

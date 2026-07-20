@@ -71,6 +71,7 @@ import {
   saveVolunteerModuleSettings,
   saveVolunteerPushSubscription,
   sendVolunteerShiftMessage,
+  softDeleteVolunteerDepartment,
   softDeleteVolunteer,
   uploadVolunteerShiftFile,
 } from "@/lib/volunteers/v2-actions";
@@ -592,9 +593,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
     }
   }
   async function remove(id: string) {
-    if (!window.confirm("Inativar este voluntário? Histórico será preservado."))
+    if (!window.confirm("Excluir este voluntário? Cadastro em Pessoas e histórico serão preservados."))
       return;
-    if (ok(await softDeleteVolunteer(id), "Voluntário inativado"))
+    if (ok(await softDeleteVolunteer(id), "Voluntário excluído"))
       router.refresh();
   }
   async function recognize(id: string, name: string) {
@@ -848,13 +849,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                   <Award className="mr-1 h-4 w-4" />
                   Agradecer
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => remove(volunteer.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {data.canAdminDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(volunteer.id)}><Trash2 className="mr-1 h-4 w-4" />Excluir</Button>}
               </div>
             </CardContent>
           </Card>
@@ -941,6 +936,13 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     )
       router.refresh();
   }
+  async function removeDepartment(item: VolunteerDashboardData["departments"][number]) {
+    if (!window.confirm(`Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`)) return;
+    if (ok(await softDeleteVolunteerDepartment(item.id), "Equipe excluída")) {
+      if (department.id === item.id) setDepartment({ id: null, name: "", description: "", active: true });
+      router.refresh();
+    }
+  }
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card>
@@ -1005,6 +1007,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                   <Button size="sm" variant="ghost" onClick={() => toggleDepartment(item)}>
                     {item.active ? "Inativar" : "Reativar"}
                   </Button>
+                  {data.canAdminDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeDepartment(item)}><Trash2 className="mr-1 h-4 w-4" />Excluir</Button>}
                 </div>
                 {(item.roles ?? []).length > 0 && (
                   <div className="mt-3 space-y-2 border-t pt-3">

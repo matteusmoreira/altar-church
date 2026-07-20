@@ -14,6 +14,8 @@ test("admin usa três áreas e abre assistente de programação", async ({ page 
   for (const tab of ["Programações", "Equipes", "Voluntários"]) {
     await expect(page.getByRole("tab", { name: tab })).toBeVisible()
   }
+  await expect(page.getByText("Todas as programações")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Excluir" }).first()).toBeVisible()
 
   await page.getByRole("button", { name: "Nova programação" }).click()
   await expect(page.locator('[data-testid="programming-wizard"]')).toBeVisible()

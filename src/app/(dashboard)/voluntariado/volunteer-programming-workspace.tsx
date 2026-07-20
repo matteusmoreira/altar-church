@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  deleteVolunteerProgramming,
   prepareVolunteerProgrammingMonth,
   publishVolunteerProgrammingEvents,
   saveVolunteerProgramming,
@@ -470,6 +471,18 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
     router.refresh();
   }
 
+  async function removeProgramming(programming: VolunteerProgramming) {
+    if (!window.confirm(`Excluir "${programming.title}"? Rascunhos futuros serão removidos. Escalas publicadas e histórico serão preservados.`)) return;
+    setWorking(true);
+    const result = await deleteVolunteerProgramming(programming.id);
+    setWorking(false);
+    if (!result.ok) return toast.error(result.error ?? "Programação não foi excluída");
+    const info = result.data as { preservedPublishedOccurrences?: number } | undefined;
+    toast.success("Programação excluída");
+    if (info?.preservedPublishedOccurrences) toast.info(`${info.preservedPublishedOccurrences} ocorrência(s) publicada(s) preservada(s)`);
+    router.refresh();
+  }
+
   const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(month);
   return (
     <div className="space-y-5">
@@ -517,7 +530,7 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
                   <div className="flex flex-wrap items-center gap-2"><p className="font-medium">{programming.title}</p><Badge variant={occurrence.status === "published" ? "default" : "secondary"}>{STATUS_LABELS[occurrence.status]}</Badge>{programming.recurrenceFrequency !== "none" && <Repeat className="h-3.5 w-3.5 text-muted-foreground" />}</div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDate(occurrence.startsAt)}</span>{programming.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{programming.location}</span>}<span className="flex items-center gap-1"><Users className="h-3 w-3" />{occurrence.assignedVolunteers}/{occurrence.requiredVolunteers}</span></div>
                 </div>
-                <div className="flex gap-2"><Button variant="outline" size="sm" disabled={occurrence.status === "published"} onClick={() => openEdit(programming, occurrence)}><Edit className="mr-1 h-3.5 w-3.5" />Esta</Button><Button variant="ghost" size="sm" onClick={() => openEdit(programming, occurrence, "series")}><Repeat className="mr-1 h-3.5 w-3.5" />Esta e próximas</Button></div>
+                <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={occurrence.status === "published"} onClick={() => openEdit(programming, occurrence)}><Edit className="mr-1 h-3.5 w-3.5" />Esta</Button><Button variant="ghost" size="sm" onClick={() => openEdit(programming, occurrence, "series")}><Repeat className="mr-1 h-3.5 w-3.5" />Esta e próximas</Button>{data.canAdminDelete && <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeProgramming(programming)}><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</Button>}</div>
               </div>
             );
           })}
@@ -525,11 +538,19 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
         </CardContent>
       </Card>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {data.programmings.filter((item) => item.recurrenceNeedsReview).map((programming) => (
-          <Card key={programming.id}><CardHeader><CardTitle className="text-base">{programming.title}</CardTitle><CardDescription>Recorrência antiga não configurada.</CardDescription></CardHeader><CardContent><Button variant="outline" onClick={() => openEdit(programming)}><Edit className="mr-2 h-4 w-4" />Configurar recorrência</Button></CardContent></Card>
-        ))}
-      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Todas as programações</CardTitle><CardDescription>Gerencie séries mesmo quando não existem ocorrências no mês aberto.</CardDescription></CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {data.programmings.map((programming) => (
+            <div key={programming.id} className="rounded-lg border p-3">
+              <div className="flex flex-wrap items-center gap-2"><strong>{programming.title}</strong><Badge variant="secondary">{KIND_LABELS[programming.kind]}</Badge>{programming.recurrenceNeedsReview && <Badge variant="outline">Revisar recorrência</Badge>}</div>
+              <p className="mt-1 text-xs text-muted-foreground">{programming.recurrenceFrequency === "none" ? "Uma vez" : programming.recurrenceFrequency === "weekly" ? "Semanal" : "Mensal"} · {programming.occurrences.length} ocorrência(s) visível(is)</p>
+              <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => openEdit(programming)}><Edit className="mr-1 h-3.5 w-3.5" />Editar</Button>{data.canAdminDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeProgramming(programming)}><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</Button>}</div>
+            </div>
+          ))}
+          {data.programmings.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma programação cadastrada.</p>}
+        </CardContent>
+      </Card>
 
       {working && <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm"><div className="flex items-center gap-2 rounded-lg border bg-background p-4 shadow-lg"><Loader2 className="h-5 w-5 animate-spin" />Processando...</div></div>}
       <Wizard key={wizardKey} data={data} open={wizardOpen} initial={wizardForm} onOpenChange={setWizardOpen} />

@@ -1655,9 +1655,10 @@ export async function softDeleteVolunteer(
       access = await managerContext("volunteers.edit", departmentId);
     }
     const { user, companyId } = access;
+    if (!["superadmin", "admin"].includes(user.role))
+      throw new Error("Somente administrador pode excluir voluntário");
     await sql.begin(async (tx) => {
       await tx`update public.volunteer_profiles set registration_status = 'inactive', deleted_at = now(), updated_by = ${user.id} where id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`update public.people set is_active = false, status = 'inactive', updated_by = ${user.id} where id = ${row.person_id} and company_id = ${companyId}`;
       await tx`update public.volunteer_department_memberships set is_active = false, updated_at = now() where volunteer_id = ${volunteerId}`;
     });
     await audit(
@@ -1668,6 +1669,46 @@ export async function softDeleteVolunteer(
     );
     refreshVolunteerPaths();
     return { ok: true, id: volunteerId };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+export async function softDeleteVolunteerDepartment(
+  departmentIdInput: string,
+): Promise<VolunteerActionResult> {
+  try {
+    const departmentId = uuid.parse(departmentIdInput);
+    const { user, companyId } = await managerContext("volunteers.edit", departmentId);
+    if (!["superadmin", "admin"].includes(user.role))
+      throw new Error("Somente administrador pode excluir equipe");
+    const sql = getSql();
+    const departments = await sql<{ id: string }[]>`
+      select id from public.volunteer_departments
+      where id = ${departmentId} and company_id = ${companyId} and deleted_at is null
+    `;
+    if (!departments[0]?.id) throw new Error("Equipe não encontrada");
+    await sql.begin(async (tx) => {
+      await tx`
+        delete from public.volunteer_event_positions position
+        using public.events event
+        where position.event_id = event.id
+          and position.department_id = ${departmentId}
+          and event.volunteer_schedule_published_at is null
+      `;
+      await tx`delete from public.volunteer_schedule_template_slots where department_id = ${departmentId}`;
+      await tx`delete from public.volunteer_department_access where department_id = ${departmentId}`;
+      await tx`update public.volunteer_department_memberships set is_active = false, updated_at = now() where department_id = ${departmentId}`;
+      await tx`update public.volunteer_department_roles set is_active = false, deleted_at = now(), updated_at = now() where department_id = ${departmentId} and deleted_at is null`;
+      await tx`
+        update public.volunteer_departments
+        set is_active = false, deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+        where id = ${departmentId} and company_id = ${companyId}
+      `;
+    });
+    await audit("volunteer_department.delete", "volunteer_departments", departmentId, companyId);
+    refreshVolunteerPaths();
+    return { ok: true, id: departmentId };
   } catch (error) {
     return resultError(error);
   }
