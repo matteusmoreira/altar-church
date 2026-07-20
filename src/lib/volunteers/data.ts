@@ -1,7 +1,6 @@
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
-import { hasPermission } from "@/lib/types"
 import type {
   VolunteerAssignment,
   VolunteerDashboardData,
@@ -14,6 +13,7 @@ import type {
   VolunteerTemplate,
 } from "./types"
 import { getVolunteerV2DashboardExtras, getVolunteerV2PortalExtras } from "./v2-data"
+import { requireVolunteerSelfContext } from "./access"
 
 type DateValue = Date | string | null
 
@@ -130,7 +130,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     `,
     sql<Record<string, unknown>[]>`
       select slot.id, slot.template_id, slot.department_id, department.name as department_name,
-             slot.role_name, slot.required_volunteers
+             slot.role_id, slot.role_name, slot.required_volunteers, slot.instructions
       from public.volunteer_schedule_template_slots slot
       join public.volunteer_departments department on department.id = slot.department_id
       where slot.company_id = ${resolvedCompanyId}
@@ -204,6 +204,58 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     `,
   ])
 
+  const [roleRows, membershipRows] = await Promise.all([
+    sql<Record<string, unknown>[]>`
+      select id, department_id, name, description, instructions, is_active
+      from public.volunteer_department_roles
+      where company_id = ${resolvedCompanyId}
+        and deleted_at is null
+        and (${allDepartments} or department_id = any(${departmentScope}::uuid[]))
+      order by name
+    `,
+    sql<Record<string, unknown>[]>`
+      select membership.id, membership.volunteer_id, membership.department_id,
+             department.name as department_name, membership.role_id,
+             membership.role_name, membership.preferred, membership.is_active
+      from public.volunteer_department_memberships membership
+      join public.volunteer_departments department on department.id = membership.department_id
+      where membership.company_id = ${resolvedCompanyId}
+        and membership.is_active
+        and (${allDepartments} or membership.department_id = any(${departmentScope}::uuid[]))
+      order by department.name, membership.role_name
+    `,
+  ])
+
+  const rolesByDepartment = new Map<string, VolunteerDepartment["roles"]>()
+  for (const row of roleRows) {
+    const departmentId = String(row.department_id)
+    const current = rolesByDepartment.get(departmentId) ?? []
+    current.push({
+      id: String(row.id),
+      departmentId,
+      name: String(row.name),
+      description: String(row.description ?? ""),
+      instructions: String(row.instructions ?? ""),
+      active: Boolean(row.is_active),
+    })
+    rolesByDepartment.set(departmentId, current)
+  }
+  const membershipsByVolunteer = new Map<string, VolunteerListItem["memberships"]>()
+  for (const row of membershipRows) {
+    const volunteerId = String(row.volunteer_id)
+    const current = membershipsByVolunteer.get(volunteerId) ?? []
+    current.push({
+      id: String(row.id),
+      departmentId: String(row.department_id),
+      departmentName: String(row.department_name),
+      roleId: row.role_id ? String(row.role_id) : null,
+      roleName: String(row.role_name),
+      preferred: Boolean(row.preferred),
+      active: Boolean(row.is_active),
+    })
+    membershipsByVolunteer.set(volunteerId, current)
+  }
+
   const assignmentsByShift = new Map<string, VolunteerAssignment[]>()
   for (const row of assignmentRows) {
     const current = assignmentsByShift.get(String(row.shift_id)) ?? []
@@ -251,8 +303,10 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       id: String(row.id),
       departmentId: String(row.department_id),
       departmentName: String(row.department_name),
+      roleId: String(row.role_id),
       roleName: String(row.role_name),
       requiredVolunteers: Number(row.required_volunteers),
+      instructions: String(row.instructions ?? ""),
     })
     slotsByTemplate.set(String(row.template_id), current)
   }
@@ -260,8 +314,14 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   const metrics = metricRows[0] ?? {}
   const extras = await getVolunteerV2DashboardExtras(resolvedCompanyId, departmentScope, allDepartments)
   return {
-    volunteers: volunteerRows.map(toVolunteer),
-    departments: departmentRows.map(toDepartment),
+    volunteers: volunteerRows.map((row) => ({
+      ...toVolunteer(row),
+      memberships: membershipsByVolunteer.get(String(row.id)) ?? [],
+    })),
+    departments: departmentRows.map((row) => ({
+      ...toDepartment(row),
+      roles: rolesByDepartment.get(String(row.id)) ?? [],
+    })),
     templates: templateRows.map((row) => ({
       id: String(row.id),
       name: String(row.name),
@@ -300,9 +360,7 @@ export async function listVolunteerTemplatesForEvents(companyIdInput?: string | 
 }
 
 export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
-  const user = await getCurrentUser()
-  if (!user || !user.churchId) throw new Error("Acesso negado")
-  if (!hasPermission(user.role, "volunteer.self.view")) throw new Error("Acesso negado")
+  const { user, companyId, personId, volunteerId } = await requireVolunteerSelfContext()
   const sql = getSql()
   const volunteerRows = await sql<Record<string, unknown>[]>`
     select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
@@ -312,19 +370,22 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
            count(distinct assignment.id) as assignments,
            count(distinct assignment.id) filter (where assignment.checked_in_at is not null) as checkins,
            max(assignment.checked_in_at) as last_participation_at
-    from public.profiles profile
-    join public.volunteer_profiles vp on vp.person_id = profile.person_id and vp.deleted_at is null
+    from public.volunteer_profiles vp
     join public.people person on person.id = vp.person_id and person.deleted_at is null
+    left join public.profiles profile on profile.id = ${user.id}
     left join public.volunteer_department_memberships membership on membership.volunteer_id = vp.id and membership.is_active
     left join public.volunteer_departments department on department.id = membership.department_id and department.deleted_at is null
     left join public.volunteer_assignments assignment on assignment.volunteer_id = vp.id
-    where profile.id = ${user.id} and vp.company_id = ${user.churchId}
+    where vp.id = ${volunteerId}
+      and vp.person_id = ${personId}
+      and vp.company_id = ${companyId}
+      and vp.registration_status = 'active'
+      and vp.deleted_at is null
     group by vp.id, person.id, profile.id
     limit 1
   `
   const volunteer = volunteerRows[0] as Record<string, unknown> | undefined
   if (!volunteer) throw new Error("Perfil de voluntário não vinculado")
-  const volunteerId = String(volunteer.id)
 
   const portalRows = await Promise.all([
     sql<Record<string, unknown>[]>`
@@ -350,7 +411,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
       from public.volunteer_feed_posts post
       left join public.volunteer_feed_post_departments target on target.post_id = post.id
        left join public.volunteer_feed_reads read on read.post_id = post.id and read.volunteer_id = ${volunteerId}
-      where post.company_id = ${user.churchId}
+      where post.company_id = ${companyId}
         and post.status = 'published'
         and (
           post.audience = 'all'
@@ -370,7 +431,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
   ])
   const shiftRows = portalRows[0] as Record<string, unknown>[]
   const feedRows = portalRows[1] as Record<string, unknown>[]
-  const extras = await getVolunteerV2PortalExtras(user.churchId, volunteerId)
+  const extras = await getVolunteerV2PortalExtras(companyId, volunteerId)
 
   return {
     volunteer: toVolunteer(volunteer),

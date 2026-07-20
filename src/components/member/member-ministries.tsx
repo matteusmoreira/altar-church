@@ -1,14 +1,30 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { CheckCircle2, Clock3, HeartHandshake, RotateCcw, UserRound } from "lucide-react"
+import { CheckCircle2, Clock3, HeartHandshake, RotateCcw, Settings2, UserRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { cancelMinistryMembershipRequest, requestMinistryMembership } from "@/lib/member/actions"
+import {
+  cancelMinistryMembershipRequest,
+  requestMinistryMembership,
+  updateOwnMinistrySettings,
+} from "@/lib/member/actions"
 import type { MemberMinistryItem } from "@/lib/member/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 
 const statusLabel = {
   active: "Participando",
@@ -20,6 +36,13 @@ const statusLabel = {
 export function MemberMinistries({ ministries }: { ministries: MemberMinistryItem[] }) {
   const router = useRouter()
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<MemberMinistryItem | null>(null)
+  const [settings, setSettings] = useState({
+    name: "",
+    description: "",
+    contact: "",
+    isActive: true,
+  })
   const [isPending, startTransition] = useTransition()
 
   function run(ministryId: string, cancel = false) {
@@ -35,6 +58,35 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
         toast.success(cancel ? "Solicitação cancelada" : "Solicitação enviada")
         router.refresh()
       }
+    })
+  }
+
+  function openSettings(ministry: MemberMinistryItem) {
+    setEditing(ministry)
+    setSettings({
+      name: ministry.name,
+      description: ministry.description,
+      contact: ministry.contact,
+      isActive: ministry.isActive,
+    })
+  }
+
+  function saveSettings() {
+    if (!editing) return
+    setPendingId(editing.id)
+    startTransition(async () => {
+      const result = await updateOwnMinistrySettings({
+        ministryId: editing.id,
+        ...settings,
+      })
+      setPendingId(null)
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível salvar")
+        return
+      }
+      toast.success("Configurações salvas")
+      setEditing(null)
+      router.refresh()
     })
   }
 
@@ -66,13 +118,15 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                   <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-1"><UserRound className="h-3 w-3" />{ministry.leaderName || ministry.contact || "Liderança da igreja"}</span>
                   <span className="rounded-full bg-muted px-2.5 py-1">{ministry.memberCount} participantes</span>
                 </div>
-                {ministry.membershipStatus && (
+                {ministry.membershipRole === "leader" ? (
+                  <Badge><UserRound className="mr-1 h-3 w-3" />Líder</Badge>
+                ) : ministry.membershipStatus && (
                   <Badge variant={ministry.membershipStatus === "active" ? "default" : "secondary"}>
                     {ministry.membershipStatus === "active" ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <Clock3 className="mr-1 h-3 w-3" />}
                     {statusLabel[ministry.membershipStatus]}
                   </Badge>
                 )}
-                {ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
+                {ministry.membershipRole === "leader" || ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
                   <Button type="button" variant="outline" className="min-h-11 w-full rounded-xl" disabled={loading} onClick={() => run(ministry.id, true)}>
                     Cancelar solicitação
                   </Button>
@@ -82,6 +136,17 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     {loading ? "Enviando..." : "Quero participar"}
                   </Button>
                 )}
+                {ministry.canManage ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-11 w-full rounded-xl"
+                    onClick={() => openSettings(ministry)}
+                  >
+                    <Settings2 className="mr-2 h-4 w-4" />
+                    Configurar ministério
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
           )
@@ -90,6 +155,68 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
       {ministries.length === 0 && (
         <div className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">Nenhum ministério ativo no momento.</div>
       )}
+      <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurar ministério</DialogTitle>
+            <DialogDescription>
+              Você pode alterar dados e ativação. Responsável e exclusão ficam com administração.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ministry-name">Nome</Label>
+              <Input
+                id="ministry-name"
+                value={settings.name}
+                maxLength={120}
+                onChange={(event) => setSettings({ ...settings, name: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ministry-description">Descrição</Label>
+              <Textarea
+                id="ministry-description"
+                value={settings.description}
+                maxLength={2000}
+                onChange={(event) => setSettings({ ...settings, description: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ministry-contact">Contato</Label>
+              <Input
+                id="ministry-contact"
+                value={settings.contact}
+                maxLength={200}
+                onChange={(event) => setSettings({ ...settings, contact: event.target.value })}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-xl border p-3">
+              <div>
+                <Label htmlFor="ministry-active">Ministério ativo</Label>
+                <p className="text-xs text-muted-foreground">Inativos deixam de aparecer para demais membros.</p>
+              </div>
+              <Switch
+                id="ministry-active"
+                checked={settings.isActive}
+                onCheckedChange={(checked) => setSettings({ ...settings, isActive: checked })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={isPending || settings.name.trim().length < 2}
+              onClick={saveSettings}
+            >
+              {isPending && pendingId === editing?.id ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

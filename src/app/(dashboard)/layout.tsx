@@ -4,6 +4,7 @@ import { getCompanyEnabledModuleIds } from "@/lib/admin/data"
 import { requireUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { AuthProvider } from "@/lib/auth/context"
+import { isPortalRole } from "@/lib/member/access"
 
 async function getChurchDisplayName(companyId?: string | null) {
   if (!companyId) return "Altar Church"
@@ -18,9 +19,7 @@ async function getChurchDisplayName(companyId?: string | null) {
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
-  if (user.role === "member") {
-    redirect("/membro")
-  }
+  if (isPortalRole(user.role)) redirect("/membro")
   const [initialEnabledModuleIds, churchName] = await Promise.all([
     user.role === "superadmin"
       ? Promise.resolve(null)

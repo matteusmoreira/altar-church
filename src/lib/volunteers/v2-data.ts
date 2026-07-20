@@ -20,11 +20,15 @@ function eventPlans(
   eventRows: Record<string, unknown>[],
   itemRows: Record<string, unknown>[],
   timelineRows: Record<string, unknown>[],
+  positionRows: Record<string, unknown>[],
 ): VolunteerEventPlan[] {
   return eventRows.map((event) => ({
     eventId: String(event.event_id),
     eventTitle: String(event.event_title),
     startsAt: iso(event.starts_at as DateValue) ?? "",
+    schedulePublishedAt: iso(
+      event.volunteer_schedule_published_at as DateValue,
+    ),
     setlistId: event.setlist_id ? String(event.setlist_id) : null,
     setlistTitle: String(event.setlist_title ?? "Repertório"),
     setlistNotes: String(event.setlist_notes ?? ""),
@@ -57,6 +61,17 @@ function eventPlans(
           : null,
         instructions: String(item.instructions ?? ""),
         sortOrder: Number(item.sort_order),
+      })),
+    positions: positionRows
+      .filter((item) => item.event_id === event.event_id)
+      .map((item) => ({
+        id: String(item.id),
+        departmentId: String(item.department_id),
+        departmentName: String(item.department_name),
+        roleId: String(item.role_id),
+        roleName: String(item.role_name),
+        requiredVolunteers: Number(item.required_volunteers),
+        instructions: String(item.instructions ?? ""),
       })),
   }));
 }
@@ -93,6 +108,7 @@ export async function getVolunteerV2DashboardExtras(
     eventRows,
     setlistRows,
     timelineRows,
+    positionRows,
     reportRows,
     coverageRows,
     songRows,
@@ -111,7 +127,8 @@ export async function getVolunteerV2DashboardExtras(
       order by swap.created_at desc limit 100
     `,
     sql<Record<string, unknown>[]>`
-      select event.id as event_id, event.title as event_title, event.starts_at, setlist.id as setlist_id,
+      select event.id as event_id, event.title as event_title, event.starts_at,
+        event.volunteer_schedule_published_at, setlist.id as setlist_id,
         setlist.title as setlist_title, setlist.notes as setlist_notes
       from public.events event left join public.volunteer_event_setlists setlist on setlist.event_id = event.id
       where event.company_id = ${companyId} and event.deleted_at is null and event.starts_at >= now() - interval '1 day'
@@ -128,6 +145,16 @@ export async function getVolunteerV2DashboardExtras(
     sql<Record<string, unknown>[]>`
       select * from public.volunteer_event_timeline_items
       where company_id = ${companyId} and planned_at >= now() - interval '1 day' order by event_id, sort_order
+    `,
+    sql<Record<string, unknown>[]>`
+      select position.*, department.name as department_name
+      from public.volunteer_event_positions position
+      join public.volunteer_departments department on department.id = position.department_id
+      join public.events event on event.id = position.event_id
+      where position.company_id = ${companyId}
+        and event.deleted_at is null
+        and event.starts_at >= now() - interval '1 day'
+      order by position.event_id, position.sort_order
     `,
     sql<Record<string, unknown>[]>`
       select
@@ -215,7 +242,7 @@ export async function getVolunteerV2DashboardExtras(
     })),
     swaps: swaps(swapRows),
     reports,
-    eventPlans: eventPlans(eventRows, setlistRows, timelineRows),
+    eventPlans: eventPlans(eventRows, setlistRows, timelineRows, positionRows),
   };
 }
 
@@ -271,7 +298,8 @@ export async function getVolunteerV2PortalExtras(
       Record<string, unknown>[]
     >`select * from public.volunteer_notification_preferences where volunteer_id = ${volunteerId}`,
     sql<Record<string, unknown>[]>`
-      select distinct event.id as event_id, event.title as event_title, event.starts_at, setlist.id as setlist_id,
+      select distinct event.id as event_id, event.title as event_title, event.starts_at,
+        event.volunteer_schedule_published_at, setlist.id as setlist_id,
         setlist.title as setlist_title, setlist.notes as setlist_notes
       from public.volunteer_assignments assignment join public.volunteer_shifts shift on shift.id = assignment.shift_id
       join public.events event on event.id = shift.event_id left join public.volunteer_event_setlists setlist on setlist.event_id = event.id
@@ -362,7 +390,7 @@ export async function getVolunteerV2PortalExtras(
       milestone: row.milestone === null ? null : Number(row.milestone),
       grantedAt: iso(row.granted_at as DateValue) ?? "",
     })),
-    eventPlans: eventPlans(eventRows, setlistRows, timelineRows),
+    eventPlans: eventPlans(eventRows, setlistRows, timelineRows, []),
   };
 }
 
@@ -382,8 +410,10 @@ export async function listVolunteerShiftMessages(
     left join public.app_files file on file.id = link.file_id and file.deleted_at is null
     where conversation.shift_id = ${shiftId} and conversation.company_id = ${companyId}
       and (exists(select 1 from public.volunteer_assignments assignment join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-        join public.profiles current_profile on current_profile.person_id = volunteer.person_id
-        where assignment.shift_id = conversation.shift_id and current_profile.id = ${user.id}
+        join public.profiles current_profile on current_profile.id = ${user.id}
+        join public.people identity on identity.id = volunteer.person_id
+          and (current_profile.person_id = identity.id or identity.profile_id = current_profile.id)
+        where assignment.shift_id = conversation.shift_id
           and assignment.status not in ('declined','cancelled'))
         or exists(select 1 from public.volunteer_department_access access join public.volunteer_shifts shift on shift.department_id = access.department_id
           where shift.id = conversation.shift_id and access.profile_id = ${user.id})

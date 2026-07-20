@@ -2,14 +2,14 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Baby, Church, HeartHandshake, Home, LogOut, Network } from "lucide-react"
+import { Baby, CalendarCheck2, Church, HeartHandshake, Home, LogOut, Network } from "lucide-react"
 import { signOutMember } from "@/lib/member/actions"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
 import { Button } from "@/components/ui/button"
 
-const navigation = [
+const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
   { href: "/membro/celulas", label: "Células", icon: Network },
   { href: "/membro/ministerios", label: "Ministérios", icon: HeartHandshake },
@@ -20,13 +20,18 @@ export function MemberShell({
   children,
   memberName,
   churchName,
+  hasVolunteerPortal,
 }: {
   children: React.ReactNode
   memberName: string
   churchName: string
+  hasVolunteerPortal: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const navigation = hasVolunteerPortal
+    ? [...baseNavigation, { href: "/membro/voluntariado", label: "Voluntariado", icon: CalendarCheck2 }]
+    : baseNavigation
 
   async function logout() {
     await signOutMember()
@@ -60,7 +65,10 @@ export function MemberShell({
       </main>
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-50 border-t border-border/50 bg-background/88 px-2 py-2 backdrop-blur-2xl lg:hidden" aria-label="Navegação do Portal do Membro">
-        <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
+        <div
+          className="mx-auto grid max-w-lg gap-1"
+          style={{ gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))` }}
+        >
           {navigation.map((item) => {
             const active = item.href === "/membro" ? pathname === item.href : pathname.startsWith(item.href)
             return (

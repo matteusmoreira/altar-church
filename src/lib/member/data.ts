@@ -2,18 +2,39 @@ import "server-only"
 
 import { getSql } from "@/lib/db/client"
 import { requireMemberContext } from "./access"
-import type { MemberMinistryItem, MemberPortalSummary, MinistryMembershipAdminItem } from "./types"
+import type { MemberMinistryItem, MemberPortalCapabilities, MemberPortalSummary, MinistryMembershipAdminItem } from "./types"
 import type { User } from "@/lib/types"
 
 type DateValue = Date | string
 const iso = (value: DateValue | null) => value instanceof Date ? value.toISOString() : value
 
 export async function getMemberShellData() {
-  const { user, companyId } = await requireMemberContext()
-  const rows = await getSql()<{ name: string }[]>`
-    select name from public.companies where id = ${companyId} and active = true limit 1
-  `
-  return { user, churchName: rows[0]?.name ?? "Altar Church" }
+  const { user, companyId, personId } = await requireMemberContext()
+  const sql = getSql()
+  const [companyRows, capabilityRows] = await Promise.all([
+    sql<{ name: string }[]>`
+      select name from public.companies where id = ${companyId} and active = true limit 1
+    `,
+    sql<{ has_volunteer_portal: boolean }[]>`
+      select exists(
+        select 1
+        from public.volunteer_profiles volunteer
+        join public.people person
+          on person.id = volunteer.person_id
+          and person.company_id = volunteer.company_id
+          and person.deleted_at is null
+          and person.is_active = true
+        where volunteer.company_id = ${companyId}
+          and volunteer.person_id = ${personId}
+          and volunteer.registration_status = 'active'
+          and volunteer.deleted_at is null
+      ) as has_volunteer_portal
+    `,
+  ])
+  const capabilities: MemberPortalCapabilities = {
+    hasVolunteerPortal: capabilityRows[0]?.has_volunteer_portal ?? false,
+  }
+  return { user, churchName: companyRows[0]?.name ?? "Altar Church", capabilities }
 }
 
 export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
@@ -106,21 +127,27 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
     leader_name: string | null
     member_count: number
     membership_id: string | null
+    membership_role: MemberMinistryItem["membershipRole"]
     membership_status: MemberMinistryItem["membershipStatus"]
+    is_active: boolean
+    can_manage: boolean
   }[]>`
     select ministry.id, ministry.name, ministry.description, ministry.contact,
       leader.full_name as leader_name,
       count(active_member.id) filter (where active_member.status = 'active')::integer as member_count,
-      own.id as membership_id, own.status as membership_status
+      own.id as membership_id, own.role as membership_role, own.status as membership_status,
+      ministry.is_active,
+      ministry.leader_person_id = ${personId} as can_manage
     from public.ministries ministry
     left join public.people leader on leader.id = ministry.leader_person_id
     left join public.ministry_memberships active_member on active_member.ministry_id = ministry.id
     left join public.ministry_memberships own
       on own.ministry_id = ministry.id and own.person_id = ${personId}
     where ministry.company_id = ${companyId}
-      and ministry.deleted_at is null and ministry.is_active = true
-    group by ministry.id, leader.full_name, own.id, own.status
-    order by (own.status = 'active') desc, ministry.name
+      and ministry.deleted_at is null
+      and (ministry.is_active = true or ministry.leader_person_id = ${personId})
+    group by ministry.id, leader.full_name, own.id, own.role, own.status
+    order by (ministry.leader_person_id = ${personId}) desc, (own.status = 'active') desc, ministry.name
   `
   return rows.map((row) => ({
     id: row.id,
@@ -130,12 +157,15 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
     leaderName: row.leader_name,
     memberCount: row.member_count,
     membershipId: row.membership_id,
+    membershipRole: row.membership_role,
     membershipStatus: row.membership_status,
+    isActive: row.is_active,
+    canManage: row.can_manage,
   }))
 }
 
 export async function listManagedMinistryMemberships(user: User): Promise<MinistryMembershipAdminItem[]> {
-  if (!user.churchId || !["superadmin", "admin", "pastor", "ministry_leader"].includes(user.role)) return []
+  if (!user.churchId || !["superadmin", "admin", "pastor"].includes(user.role)) return []
   const rows = await getSql()<{
     id: string
     ministry_id: string
@@ -153,13 +183,8 @@ export async function listManagedMinistryMemberships(user: User): Promise<Minist
     from public.ministry_memberships membership
     join public.ministries ministry on ministry.id = membership.ministry_id
     join public.people person on person.id = membership.person_id
-    left join public.profiles profile on profile.id = ${user.id}
     where membership.company_id = ${user.churchId}
       and ministry.deleted_at is null
-      and (
-        ${user.role} <> 'ministry_leader'
-        or ministry.leader_person_id = profile.person_id
-      )
     order by (membership.status = 'pending') desc, membership.updated_at desc
   `
   return rows.map((row) => ({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,7 +12,6 @@ import {
   ClipboardCheck,
   Download,
   HeartHandshake,
-  ListMusic,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -44,26 +43,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   checkInVolunteerAssignment,
-  generateMonthlyVolunteerSchedule,
-  publishVolunteerSchedule,
   saveVolunteer,
   saveVolunteerAssignment,
   saveVolunteerDepartment,
   saveVolunteerFeedPost,
+  searchVolunteerPeople,
 } from "@/lib/volunteers/actions";
 import {
   acceptVolunteerSwap,
   checkOutVolunteerAssignment,
+  generateVolunteerScheduleForEvent,
   generateSmartVolunteerSchedule,
   getVolunteerShiftCandidates,
   grantVolunteerRecognition,
+  publishVolunteerEventSchedule,
   requestVolunteerSwap,
   respondVolunteerAssignment,
   reviewVolunteerSwap,
   saveMyVolunteerAvailability,
   saveMyVolunteerNotificationPreferences,
   saveVolunteerDepartmentRole,
-  saveVolunteerEventPlan,
+  saveVolunteerServicePlan,
   saveVolunteerFeedback,
   saveVolunteerModuleSettings,
   saveVolunteerPushSubscription,
@@ -78,6 +78,7 @@ import type {
   VolunteerEventPlan,
   VolunteerNotificationPreferences,
   VolunteerPortalData,
+  VolunteerPersonSuggestion,
   VolunteerShift,
 } from "@/lib/volunteers/types";
 import { VolunteerQrScanner } from "./volunteer-qr-scanner";
@@ -87,7 +88,6 @@ const fmt = (value: string) =>
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
-const monthValue = () => new Date().toISOString().slice(0, 7);
 const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 function ok(result: VolunteerActionResult, success: string) {
@@ -189,7 +189,7 @@ function CandidatePanel({
     const result = await saveVolunteerAssignment({
       shiftId: shift.id,
       volunteerId,
-      status: "notified",
+      status: "proposed",
     });
     if (ok(result, "Voluntário escalado")) {
       setItems(null);
@@ -487,41 +487,102 @@ function ManagerOverview({ data }: { data: VolunteerDashboardData }) {
 function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    departmentId: "",
-    roleName: "Voluntário",
-    invite: false,
-  });
+  const [personQuery, setPersonQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<VolunteerPersonSuggestion[]>([]);
+  const [selectedPerson, setSelectedPerson] =
+    useState<VolunteerPersonSuggestion | null>(null);
+  const [form, setForm] = useState<{
+    id: string | null;
+    personId: string;
+    memberships: {
+      departmentId: string;
+      roleId: string;
+      preferred: boolean;
+    }[];
+    invite: boolean;
+  }>({ id: null, personId: "", memberships: [], invite: false });
+  useEffect(() => {
+    const query = personQuery.trim();
+    if (selectedPerson || query.length < 3) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void searchVolunteerPeople(query).then((result) => {
+        if (active) setSuggestions(result.people ?? []);
+      });
+    }, 300);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [personQuery, selectedPerson]);
   const visible = data.volunteers.filter((item) =>
     `${item.name} ${item.email ?? ""} ${item.phone}`
       .toLocaleLowerCase("pt-BR")
       .includes(search.toLocaleLowerCase("pt-BR")),
   );
+  function choosePerson(person: VolunteerPersonSuggestion) {
+    const volunteer = data.volunteers.find(
+      (item) => item.personId === person.id,
+    );
+    setSelectedPerson(person);
+    setPersonQuery(person.fullName);
+    setForm({
+      id: volunteer?.id ?? null,
+      personId: person.id,
+      memberships:
+        volunteer?.memberships
+          ?.filter((item) => item.roleId)
+          .map((item) => ({
+            departmentId: item.departmentId,
+            roleId: item.roleId ?? "",
+            preferred: Boolean(item.preferred),
+          })) ?? [],
+      invite: false,
+    });
+  }
+  function resetForm() {
+    setSelectedPerson(null);
+    setPersonQuery("");
+    setSuggestions([]);
+    setForm({ id: null, personId: "", memberships: [], invite: false });
+  }
+  function addMembership() {
+    const department = data.departments.find(
+      (item) => item.active && (item.roles ?? []).some((role) => role.active),
+    );
+    const role = department?.roles?.find((item) => item.active);
+    if (!department || !role)
+      return toast.error("Crie uma equipe e uma função primeiro");
+    if (
+      form.memberships.some(
+        (membership) => membership.roleId === role.id,
+      )
+    )
+      return toast.error("Esta função já foi adicionada");
+    setForm({
+      ...form,
+      memberships: [
+        ...form.memberships,
+        {
+          departmentId: department.id,
+          roleId: role.id,
+          preferred: form.memberships.length === 0,
+        },
+      ],
+    });
+  }
   async function create() {
+    if (!form.personId) return toast.error("Selecione uma Pessoa");
+    if (form.memberships.length === 0)
+      return toast.error("Adicione ao menos uma equipe e função");
     const result = await saveVolunteer({
-      id: null,
       ...form,
       registrationStatus: "active",
       whatsappEnabled: true,
       emailEnabled: true,
-      memberships: form.departmentId
-        ? [{ departmentId: form.departmentId, roleName: form.roleName }]
-        : [],
     });
-    if (ok(result, "Voluntário salvo")) {
-      setForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phone: "",
-        departmentId: "",
-        roleName: "Voluntário",
-        invite: false,
-      });
+    if (ok(result, form.id ? "Voluntário atualizado" : "Voluntário salvo")) {
+      resetForm();
       router.refresh();
     }
   }
@@ -552,48 +613,160 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
         <CardHeader>
           <CardTitle>Novo voluntário</CardTitle>
           <CardDescription>
-            Cria pessoa, vínculo, função e acesso opcional.
+            Selecione uma Pessoa já cadastrada e defina onde ela serve.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <Input
-            placeholder="Nome"
-            value={form.firstName}
-            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-          />
-          <Input
-            placeholder="Sobrenome"
-            value={form.lastName}
-            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-          />
-          <Input
-            type="email"
-            placeholder="E-mail"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-          <Input
-            placeholder="WhatsApp"
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
-          <select
-            className="h-10 rounded-md border bg-background px-3"
-            value={form.departmentId}
-            onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-          >
-            <option value="">Sem equipe</option>
-            {data.departments.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="Função"
-            value={form.roleName}
-            onChange={(e) => setForm({ ...form, roleName: e.target.value })}
-          />
+        <CardContent className="space-y-4">
+          <div className="relative max-w-2xl">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Digite ao menos 3 letras para buscar em Pessoas"
+              value={personQuery}
+              onChange={(e) => {
+                setPersonQuery(e.target.value);
+                if (e.target.value.trim().length < 3) setSuggestions([]);
+                if (selectedPerson) {
+                  setSelectedPerson(null);
+                  setForm({ id: null, personId: "", memberships: [], invite: false });
+                }
+              }}
+            />
+            {suggestions.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-lg">
+                {suggestions.map((person) => (
+                  <button
+                    type="button"
+                    key={person.id}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
+                    onClick={() => choosePerson(person)}
+                  >
+                    <span>
+                      <strong>{person.fullName}</strong>
+                      <span className="block text-xs text-muted-foreground">
+                        {(person.email ?? person.phone) || "Sem contato"}
+                      </span>
+                    </span>
+                    <Badge variant={person.volunteerId ? "default" : "secondary"}>
+                      {person.volunteerId ? "Já voluntário" : person.personType}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedPerson && (
+            <div className="rounded-lg border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-medium">{selectedPerson.fullName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(selectedPerson.email ?? selectedPerson.phone) || "Sem contato"} ·{" "}
+                    {selectedPerson.personType}
+                  </p>
+                </div>
+                {form.id && <Badge>Vínculo existente</Badge>}
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            {form.memberships.map((membership, index) => {
+              const department = data.departments.find(
+                (item) => item.id === membership.departmentId,
+              );
+              return (
+                <div
+                  key={`${membership.roleId}-${index}`}
+                  className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto_auto]"
+                >
+                  <select
+                    className="h-10 rounded-md border bg-background px-3"
+                    value={membership.departmentId}
+                    onChange={(e) => {
+                      const nextDepartment = data.departments.find(
+                        (item) => item.id === e.target.value,
+                      );
+                      const nextRole = nextDepartment?.roles?.find((role) => role.active);
+                      setForm({
+                        ...form,
+                        memberships: form.memberships.map((item, current) =>
+                          current === index
+                            ? {
+                                ...item,
+                                departmentId: e.target.value,
+                                roleId: nextRole?.id ?? "",
+                              }
+                            : item,
+                        ),
+                      });
+                    }}
+                  >
+                    {data.departments
+                      .filter((item) => item.active)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3"
+                    value={membership.roleId}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        memberships: form.memberships.map((item, current) =>
+                          current === index ? { ...item, roleId: e.target.value } : item,
+                        ),
+                      })
+                    }
+                  >
+                    {(department?.roles ?? [])
+                      .filter((role) => role.active)
+                      .map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
+                  </select>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="preferredMembership"
+                      checked={membership.preferred}
+                      onChange={() =>
+                        setForm({
+                          ...form,
+                          memberships: form.memberships.map((item, current) => ({
+                            ...item,
+                            preferred: current === index,
+                          })),
+                        })
+                      }
+                    />
+                    Preferida
+                  </label>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        memberships: form.memberships.filter((_, current) => current !== index),
+                      })
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+            <Button type="button" variant="outline" onClick={addMembership}>
+              <Plus className="mr-2 h-4 w-4" />
+              Adicionar equipe e função
+            </Button>
+          </div>
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -602,10 +775,17 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
             />
             Convidar para portal
           </label>
-          <Button onClick={create}>
-            <Plus className="mr-2 h-4 w-4" />
-            Salvar
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={create}>
+              <Plus className="mr-2 h-4 w-4" />
+              {form.id ? "Atualizar vínculo" : "Salvar voluntário"}
+            </Button>
+            {selectedPerson && (
+              <Button variant="ghost" onClick={resetForm}>
+                Cancelar
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
       <div className="relative max-w-lg">
@@ -642,6 +822,22 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() =>
+                    choosePerson({
+                      id: volunteer.personId,
+                      fullName: volunteer.name,
+                      email: volunteer.email,
+                      phone: volunteer.phone,
+                      personType: "pessoa",
+                      volunteerId: volunteer.id,
+                    })
+                  }
+                >
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => recognize(volunteer.id, volunteer.name)}
                 >
                   <Award className="mr-1 h-4 w-4" />
@@ -665,35 +861,80 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
-  const [department, setDepartment] = useState({ name: "", description: "" });
+  const [department, setDepartment] = useState<{
+    id: string | null;
+    name: string;
+    description: string;
+    active: boolean;
+  }>({ id: null, name: "", description: "", active: true });
   const [role, setRole] = useState({
+    id: null as string | null,
     departmentId: data.departments[0]?.id ?? "",
     name: "",
     description: "",
     instructions: "",
+    active: true,
   });
   async function addDepartment() {
     const result = await saveVolunteerDepartment({
-      id: null,
       managerProfileId: null,
-      active: true,
       ...department,
     });
-    if (ok(result, "Equipe criada")) {
-      setDepartment({ name: "", description: "" });
+    if (ok(result, department.id ? "Equipe atualizada" : "Equipe criada")) {
+      if (result.id) setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
+      setDepartment({ id: null, name: "", description: "", active: true });
       router.refresh();
     }
   }
   async function addRole() {
+    if (!role.departmentId) return toast.error("Selecione uma equipe");
     const result = await saveVolunteerDepartmentRole({
-      id: null,
-      active: true,
       ...role,
     });
-    if (ok(result, "Função criada")) {
-      setRole({ ...role, name: "", description: "", instructions: "" });
+    if (ok(result, role.id ? "Função atualizada" : "Função criada")) {
+      setRole({
+        ...role,
+        id: null,
+        name: "",
+        description: "",
+        instructions: "",
+        active: true,
+      });
       router.refresh();
     }
+  }
+  async function toggleDepartment(item: VolunteerDashboardData["departments"][number]) {
+    if (
+      ok(
+        await saveVolunteerDepartment({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          managerProfileId: item.managerProfileId,
+          active: !item.active,
+        }),
+        item.active ? "Equipe inativada" : "Equipe reativada",
+      )
+    )
+      router.refresh();
+  }
+  async function toggleRole(
+    item: NonNullable<VolunteerDashboardData["departments"][number]["roles"]>[number],
+  ) {
+    if (
+      ok(
+        await saveVolunteerDepartmentRole({
+          id: item.id,
+          departmentId: item.departmentId,
+          name: item.name,
+          description: item.description,
+          instructions: item.instructions,
+          active: !item.active,
+        }),
+        item.active ? "Função inativada" : "Função reativada",
+      )
+    )
+      router.refresh();
   }
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -716,7 +957,21 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
               setDepartment({ ...department, description: e.target.value })
             }
           />
-          <Button onClick={addDepartment}>Criar equipe</Button>
+          <div className="flex gap-2">
+            <Button onClick={addDepartment}>
+              {department.id ? "Salvar equipe" : "Criar equipe"}
+            </Button>
+            {department.id && (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setDepartment({ id: null, name: "", description: "", active: true })
+                }
+              >
+                Cancelar
+              </Button>
+            )}
+          </div>
           <div className="space-y-2 pt-3">
             {data.departments.map((item) => (
               <div key={item.id} className="rounded-lg border p-3">
@@ -727,6 +982,63 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                 <p className="text-sm text-muted-foreground">
                   {item.description || "Sem descrição"}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setDepartment({
+                        id: item.id,
+                        name: item.name,
+                        description: item.description,
+                        active: item.active,
+                      })
+                    }
+                  >
+                    Editar
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => toggleDepartment(item)}>
+                    {item.active ? "Inativar" : "Reativar"}
+                  </Button>
+                </div>
+                {(item.roles ?? []).length > 0 && (
+                  <div className="mt-3 space-y-2 border-t pt-3">
+                    {(item.roles ?? []).map((itemRole) => (
+                      <div key={itemRole.id} className="rounded-md bg-muted/50 p-2 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>
+                            <strong>{itemRole.name}</strong>
+                            {!itemRole.active && " · inativa"}
+                          </span>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                setRole({
+                                  id: itemRole.id,
+                                  departmentId: itemRole.departmentId,
+                                  name: itemRole.name,
+                                  description: itemRole.description,
+                                  instructions: itemRole.instructions,
+                                  active: itemRole.active,
+                                })
+                              }
+                            >
+                              Editar
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => toggleRole(itemRole)}>
+                              {itemRole.active ? "Inativar" : "Reativar"}
+                            </Button>
+                          </div>
+                        </div>
+                        {itemRole.instructions && (
+                          <p className="text-xs text-muted-foreground">{itemRole.instructions}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -766,7 +1078,28 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
             value={role.instructions}
             onChange={(e) => setRole({ ...role, instructions: e.target.value })}
           />
-          <Button onClick={addRole}>Criar função</Button>
+          <div className="flex gap-2">
+            <Button onClick={addRole} disabled={!role.departmentId}>
+              {role.id ? "Salvar função" : "Criar função"}
+            </Button>
+            {role.id && (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  setRole({
+                    id: null,
+                    departmentId: role.departmentId,
+                    name: "",
+                    description: "",
+                    instructions: "",
+                    active: true,
+                  })
+                }
+              >
+                Cancelar
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -775,16 +1108,6 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
-  const [month, setMonth] = useState(monthValue());
-  async function base() {
-    if (
-      ok(
-        await generateMonthlyVolunteerSchedule({ month: `${month}-01` }),
-        "Vagas geradas",
-      )
-    )
-      router.refresh();
-  }
   async function smart(id: string) {
     const result = await generateSmartVolunteerSchedule(id);
     if (
@@ -795,35 +1118,36 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
     )
       router.refresh();
   }
-  async function publish(id: string) {
+  async function publish(eventId: string) {
     if (
       ok(
-        await publishVolunteerSchedule(id),
-        "Escala publicada e avisos enfileirados",
+        await publishVolunteerEventSchedule(eventId),
+        "Escala do culto publicada e avisos enfileirados",
+      )
+    )
+      router.refresh();
+  }
+  async function removeAssignment(shiftId: string, volunteerId: string) {
+    if (
+      ok(
+        await saveVolunteerAssignment({
+          shiftId,
+          volunteerId,
+          status: "cancelled",
+        }),
+        "Pessoa removida da vaga",
       )
     )
       router.refresh();
   }
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Escala justa e explicável</CardTitle>
-          <CardDescription>
-            Eventos com template geram vagas; algoritmo respeita
-            disponibilidade, função, conflitos, descanso e carga.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Input
-            className="w-48"
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-          />
-          <Button onClick={base}>1. Gerar vagas</Button>
-        </CardContent>
-      </Card>
+      <div>
+        <h3 className="text-lg font-semibold">Rascunhos e escalas publicadas</h3>
+        <p className="text-sm text-muted-foreground">
+          Revise sugestões, faça trocas e publique quando estiver pronto.
+        </p>
+      </div>
       {data.schedules.map((schedule) => (
         <Card key={schedule.id}>
           <CardHeader>
@@ -834,30 +1158,23 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                   {schedule.shifts.length} posições
                 </CardDescription>
               </div>
-              <div className="flex gap-2">
-                <StatusBadge status={schedule.status} />
-                {schedule.status !== "published" && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => smart(schedule.id)}
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      2. Preencher
-                    </Button>
-                    <Button onClick={() => publish(schedule.id)}>
-                      3. Publicar
-                    </Button>
-                  </>
-                )}
-              </div>
+              <Button variant="outline" onClick={() => smart(schedule.id)}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Recalcular vagas abertas
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {schedule.shifts.map((shift) => {
+            {schedule.shifts.map((shift, shiftIndex) => {
               const active = shift.assignments.filter(
                 (item) => !["declined", "cancelled"].includes(item.status),
               );
+              const eventPlan = data.eventPlans.find(
+                (plan) => plan.eventId === shift.eventId,
+              );
+              const firstForEvent =
+                schedule.shifts.findIndex((item) => item.eventId === shift.eventId) ===
+                shiftIndex;
               return (
                 <div key={shift.id} className="rounded-lg border p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -881,7 +1198,12 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                     </Badge>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {shift.assignments.map((assignment) => (
+                    {shift.assignments
+                      .filter(
+                        (assignment) =>
+                          !["declined", "cancelled"].includes(assignment.status),
+                      )
+                      .map((assignment) => (
                       <div
                         key={assignment.id}
                         className="rounded-md bg-muted px-2 py-1 text-xs"
@@ -891,10 +1213,31 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                         {assignment.score !== null &&
                           ` · ${assignment.score} pts`}
                         {assignment.locked && " · travado"}
+                        {!["declined", "cancelled"].includes(assignment.status) && (
+                          <button
+                            type="button"
+                            className="ml-2 text-destructive"
+                            aria-label={`Remover ${assignment.volunteerName}`}
+                            onClick={() =>
+                              removeAssignment(shift.id, assignment.volunteerId)
+                            }
+                          >
+                            <X className="inline h-3 w-3" />
+                          </button>
+                        )}
                       </div>
-                    ))}
+                      ))}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
+                    {firstForEvent && shift.eventId && (
+                      eventPlan?.schedulePublishedAt ? (
+                        <Badge>Escala do culto publicada</Badge>
+                      ) : (
+                        <Button onClick={() => publish(shift.eventId ?? "")}>
+                          Publicar escala deste culto
+                        </Button>
+                      )
+                    )}
                     <CandidatePanel
                       shift={shift}
                       onAssigned={() => router.refresh()}
@@ -915,88 +1258,104 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
   const [eventId, setEventId] = useState(data.eventPlans[0]?.eventId ?? "");
   const selected = data.eventPlans.find((item) => item.eventId === eventId);
-  const [title, setTitle] = useState(selected?.setlistTitle ?? "Repertório");
-  const [notes, setNotes] = useState(selected?.setlistNotes ?? "");
-  const [setlist, setSetlist] = useState<
+  const [modelId, setModelId] = useState("");
+  const [modelName, setModelName] = useState("");
+  const [positions, setPositions] = useState<
     {
-      songId: string | null;
-      title: string;
-      tone: string;
-      responsibleProfileId: null;
-      notes: string;
-      spotifyUrl: string;
-      deezerUrl: string;
-      cifraClubUrl: string;
+      departmentId: string;
+      roleId: string;
+      requiredVolunteers: number;
+      instructions: string;
     }[]
   >([]);
   const [timeline, setTimeline] = useState<
     {
       title: string;
       plannedAt: string;
-      actualStartedAt: null;
       durationMinutes: number;
-      responsibleProfileId: null;
+      responsibleProfileId: string | null;
       instructions: string;
     }[]
   >([]);
   /* eslint-disable react-hooks/set-state-in-effect -- reset the editor when the selected event changes */
   useEffect(() => {
-    if (!selected) return;
-    setTitle(selected.setlistTitle);
-    setNotes(selected.setlistNotes);
-    setSetlist(
-      selected.setlistItems.map((item) => ({
-        songId: item.songId,
-        title: item.title,
-        tone: item.tone,
-        responsibleProfileId: null,
-        notes: item.notes,
-        spotifyUrl: item.spotifyUrl,
-        deezerUrl: item.deezerUrl,
-        cifraClubUrl: item.cifraClubUrl,
-      })),
+    setPositions(
+      selected?.positions.map((item) => ({
+        departmentId: item.departmentId,
+        roleId: item.roleId,
+        requiredVolunteers: item.requiredVolunteers,
+        instructions: item.instructions,
+      })) ?? [],
     );
     setTimeline(
-      selected.timeline.map((item) => ({
+      selected?.timeline.map((item) => ({
         title: item.title,
         plannedAt: item.plannedAt,
-        actualStartedAt: null,
         durationMinutes: item.durationMinutes,
-        responsibleProfileId: null,
+        responsibleProfileId: item.responsibleProfileId,
         instructions: item.instructions,
-      })),
+      })) ?? [],
     );
   }, [selected]);
   /* eslint-enable react-hooks/set-state-in-effect */
-  function addSong(songId: string) {
-    const song = data.songs.find((item) => item.id === songId);
-    if (song)
-      setSetlist([
-        ...setlist,
-        {
-          songId: song.id,
-          title: song.title,
-          tone: song.tone,
-          responsibleProfileId: null,
-          notes: "",
-          spotifyUrl: "",
-          deezerUrl: "",
-          cifraClubUrl: "",
-        },
-      ]);
+  function addPosition() {
+    const department = data.departments.find(
+      (item) => item.active && (item.roles ?? []).some((role) => role.active),
+    );
+    const role = department?.roles?.find((item) => item.active);
+    if (!department || !role)
+      return toast.error("Crie uma equipe e uma função primeiro");
+    if (positions.some((item) => item.roleId === role.id))
+      return toast.error("Esta função já está no culto");
+    setPositions([
+      ...positions,
+      {
+        departmentId: department.id,
+        roleId: role.id,
+        requiredVolunteers: 1,
+        instructions: role.instructions,
+      },
+    ]);
   }
-  async function save() {
+  function applyModel() {
+    const model = data.templates.find((item) => item.id === modelId);
+    if (!model) return toast.error("Selecione um modelo");
+    setPositions(
+      model.slots.map((slot) => ({
+        departmentId: slot.departmentId,
+        roleId: slot.roleId,
+        requiredVolunteers: slot.requiredVolunteers,
+        instructions: slot.instructions,
+      })),
+    );
+    toast.success("Modelo aplicado. Revise antes de salvar.");
+  }
+  async function save(showSuccess = true) {
     if (!eventId) return toast.error("Selecione culto");
+    if (positions.length === 0)
+      return toast.error("Inclua ao menos uma equipe e função");
+    const result = await saveVolunteerServicePlan({
+      eventId,
+      positions,
+      timeline,
+      modelName,
+    });
+    if (!result.ok) {
+      toast.error(result.error ?? "Plano não foi salvo");
+      return false;
+    }
+    if (showSuccess) toast.success("Planejamento salvo");
+    setModelName("");
+    router.refresh();
+    return true;
+  }
+  async function generate() {
+    if (!(await save(false))) return;
+    const result = await generateVolunteerScheduleForEvent(eventId);
     if (
       ok(
-        await saveVolunteerEventPlan({
-          eventId,
-          title,
-          notes,
-          setlist,
-          timeline,
-        }),
-        "Plano do culto salvo",
+        result,
+        `Rascunho gerado: ${(result.data as { created?: number })?.created ?? 0} voluntários sugeridos`,
       )
     )
       router.refresh();
@@ -1005,12 +1364,12 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Culto, cronograma e Louvor</CardTitle>
+          <CardTitle>Cultos e escalas</CardTitle>
           <CardDescription>
-            Usa catálogo Louvor existente. Sem duplicar músicas.
+            Escolha um culto, defina quem precisa servir e gere um rascunho para revisão.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-5">
           <select
             className="h-10 w-full rounded-md border bg-background px-3"
             value={eventId}
@@ -1023,197 +1382,289 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
               </option>
             ))}
           </select>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Título do repertório"
-            />
-            <Input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notas gerais"
-            />
-          </div>
-          <div className="flex gap-2">
+          {data.eventPlans.length === 0 && (
+            <div className="rounded-lg border border-dashed p-4 text-sm">
+              Nenhum culto futuro.{" "}
+              <Link href="/eventos" className="font-medium text-primary underline">
+                Criar em Eventos
+              </Link>
+            </div>
+          )}
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
             <select
-              className="h-10 flex-1 rounded-md border bg-background px-3"
-              defaultValue=""
-              onChange={(e) => {
-                addSong(e.target.value);
-                e.target.value = "";
-              }}
+              className="h-10 rounded-md border bg-background px-3"
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
             >
-              <option value="">Adicionar música do catálogo</option>
-              {data.songs.map((song) => (
-                <option key={song.id} value={song.id}>
-                  {song.title} · {song.tone}
+              <option value="">Aplicar modelo de equipes e funções</option>
+              {data.templates.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
                 </option>
               ))}
             </select>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setTimeline([
-                  ...timeline,
-                  {
-                    title: "Novo momento",
-                    plannedAt: selected?.startsAt ?? new Date().toISOString(),
-                    actualStartedAt: null,
-                    durationMinutes: 5,
-                    responsibleProfileId: null,
-                    instructions: "",
-                  },
-                ])
-              }
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Momento
+            <Button variant="outline" onClick={applyModel} disabled={!modelId}>
+              Aplicar modelo
             </Button>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <h3 className="mb-2 font-medium">Setlist</h3>
-              {setlist.map((item, index) => (
-                <div
-                  key={`${item.songId}-${index}`}
-                  className="mb-2 rounded-lg border p-3"
-                >
-                  <div className="flex justify-between">
-                    <strong>
-                      {index + 1}. {item.title}
-                    </strong>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        setSetlist(setlist.filter((_, i) => i !== index))
-                      }
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Input
-                      placeholder="Tom"
-                      value={item.tone}
-                      onChange={(e) =>
-                        setSetlist(
-                          setlist.map((current, i) =>
-                            i === index
-                              ? { ...current, tone: e.target.value }
-                              : current,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      placeholder="Spotify URL"
-                      value={item.spotifyUrl}
-                      onChange={(e) =>
-                        setSetlist(
-                          setlist.map((current, i) =>
-                            i === index
-                              ? { ...current, spotifyUrl: e.target.value }
-                              : current,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      placeholder="Deezer URL"
-                      value={item.deezerUrl}
-                      onChange={(e) =>
-                        setSetlist(
-                          setlist.map((current, i) =>
-                            i === index
-                              ? { ...current, deezerUrl: e.target.value }
-                              : current,
-                          ),
-                        )
-                      }
-                    />
-                    <Input
-                      placeholder="Cifra Club URL"
-                      value={item.cifraClubUrl}
-                      onChange={(e) =>
-                        setSetlist(
-                          setlist.map((current, i) =>
-                            i === index
-                              ? { ...current, cifraClubUrl: e.target.value }
-                              : current,
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-medium">Equipes e funções necessárias</h3>
+                <p className="text-xs text-muted-foreground">
+                  Instruções da função são preenchidas automaticamente.
+                </p>
+              </div>
+              <Button variant="outline" onClick={addPosition}>
+                <Plus className="mr-2 h-4 w-4" />
+                Função
+              </Button>
             </div>
-            <div>
-              <h3 className="mb-2 font-medium">Cronograma</h3>
-              {timeline.map((item, index) => (
+            {positions.map((position, index) => {
+              const department = data.departments.find(
+                (item) => item.id === position.departmentId,
+              );
+              return (
                 <div
-                  key={index}
-                  className="mb-2 grid gap-2 rounded-lg border p-3 sm:grid-cols-3"
+                  key={`${position.roleId}-${index}`}
+                  className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_120px_auto]"
                 >
-                  <Input
-                    value={item.title}
-                    onChange={(e) =>
-                      setTimeline(
-                        timeline.map((current, i) =>
-                          i === index
-                            ? { ...current, title: e.target.value }
-                            : current,
-                        ),
-                      )
-                    }
-                  />
-                  <Input
-                    type="datetime-local"
-                    value={item.plannedAt.slice(0, 16)}
-                    onChange={(e) =>
-                      setTimeline(
-                        timeline.map((current, i) =>
-                          i === index
+                  <select
+                    className="h-10 rounded-md border bg-background px-3"
+                    value={position.departmentId}
+                    onChange={(e) => {
+                      const nextDepartment = data.departments.find(
+                        (item) => item.id === e.target.value,
+                      );
+                      const nextRole = nextDepartment?.roles?.find((role) => role.active);
+                      setPositions(
+                        positions.map((item, current) =>
+                          current === index
                             ? {
-                                ...current,
-                                plannedAt: new Date(
-                                  e.target.value,
-                                ).toISOString(),
+                                ...item,
+                                departmentId: e.target.value,
+                                roleId: nextRole?.id ?? "",
+                                instructions: nextRole?.instructions ?? "",
                               }
-                            : current,
+                            : item,
                         ),
-                      )
-                    }
-                  />
+                      );
+                    }}
+                  >
+                    {data.departments
+                      .filter((item) => item.active)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3"
+                    value={position.roleId}
+                    onChange={(e) => {
+                      const nextRole = department?.roles?.find(
+                        (role) => role.id === e.target.value,
+                      );
+                      setPositions(
+                        positions.map((item, current) =>
+                          current === index
+                            ? {
+                                ...item,
+                                roleId: e.target.value,
+                                instructions: nextRole?.instructions ?? item.instructions,
+                              }
+                            : item,
+                        ),
+                      );
+                    }}
+                  >
+                    {(department?.roles ?? [])
+                      .filter((role) => role.active)
+                      .map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
+                  </select>
                   <Input
                     type="number"
                     min="1"
-                    value={item.durationMinutes}
+                    max="100"
+                    aria-label="Quantidade necessária"
+                    value={position.requiredVolunteers}
                     onChange={(e) =>
-                      setTimeline(
-                        timeline.map((current, i) =>
-                          i === index
-                            ? {
-                                ...current,
-                                durationMinutes: Number(e.target.value),
-                              }
-                            : current,
+                      setPositions(
+                        positions.map((item, current) =>
+                          current === index
+                            ? { ...item, requiredVolunteers: Number(e.target.value) }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() =>
+                      setPositions(positions.filter((_, current) => current !== index))
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  <Textarea
+                    className="md:col-span-4"
+                    placeholder="Instruções para quem servir"
+                    value={position.instructions}
+                    onChange={(e) =>
+                      setPositions(
+                        positions.map((item, current) =>
+                          current === index
+                            ? { ...item, instructions: e.target.value }
+                            : item,
                         ),
                       )
                     }
                   />
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-          <Button onClick={save}>
-            <ListMusic className="mr-2 h-4 w-4" />
-            Salvar plano
-          </Button>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-medium">Roteiro do culto</h3>
+                <p className="text-xs text-muted-foreground">
+                  Opcional. Organize momentos, horários e responsáveis.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setTimeline([
+                    ...timeline,
+                    {
+                      title: "Novo momento",
+                      plannedAt: selected?.startsAt ?? new Date().toISOString(),
+                      durationMinutes: 5,
+                      responsibleProfileId: null,
+                      instructions: "",
+                    },
+                  ])
+                }
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Momento
+              </Button>
+            </div>
+            {timeline.map((item, index) => (
+              <div
+                key={index}
+                className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_190px_100px_1fr_auto]"
+              >
+                <Input
+                  placeholder="Momento"
+                  value={item.title}
+                  onChange={(e) =>
+                    setTimeline(
+                      timeline.map((current, i) =>
+                        i === index ? { ...current, title: e.target.value } : current,
+                      ),
+                    )
+                  }
+                />
+                <Input
+                  type="datetime-local"
+                  value={item.plannedAt.slice(0, 16)}
+                  onChange={(e) =>
+                    setTimeline(
+                      timeline.map((current, i) =>
+                        i === index
+                          ? { ...current, plannedAt: new Date(e.target.value).toISOString() }
+                          : current,
+                      ),
+                    )
+                  }
+                />
+                <Input
+                  type="number"
+                  min="1"
+                  value={item.durationMinutes}
+                  onChange={(e) =>
+                    setTimeline(
+                      timeline.map((current, i) =>
+                        i === index
+                          ? { ...current, durationMinutes: Number(e.target.value) }
+                          : current,
+                      ),
+                    )
+                  }
+                />
+                <select
+                  className="h-10 rounded-md border bg-background px-3"
+                  value={item.responsibleProfileId ?? ""}
+                  onChange={(e) =>
+                    setTimeline(
+                      timeline.map((current, i) =>
+                        i === index
+                          ? { ...current, responsibleProfileId: e.target.value || null }
+                          : current,
+                      ),
+                    )
+                  }
+                >
+                  <option value="">Sem responsável</option>
+                  {data.volunteers
+                    .filter((volunteer) => volunteer.profileId)
+                    .map((volunteer) => (
+                      <option key={volunteer.id} value={volunteer.profileId ?? ""}>
+                        {volunteer.name}
+                      </option>
+                    ))}
+                </select>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() =>
+                    setTimeline(timeline.filter((_, current) => current !== index))
+                  }
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <Textarea
+                  className="md:col-span-5"
+                  placeholder="Instruções do momento"
+                  value={item.instructions}
+                  onChange={(e) =>
+                    setTimeline(
+                      timeline.map((current, i) =>
+                        i === index
+                          ? { ...current, instructions: e.target.value }
+                          : current,
+                      ),
+                    )
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+            <Input
+              placeholder="Nome para salvar como modelo (opcional)"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+            />
+            <Button variant="outline" onClick={() => void save()}>
+              Salvar planejamento
+            </Button>
+            <Button onClick={generate}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Gerar rascunho
+            </Button>
+          </div>
         </CardContent>
       </Card>
+      <ManagerSchedules data={data} />
     </div>
   );
 }
@@ -1520,8 +1971,18 @@ function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
 }
 
 export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
+  const ready = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      data-testid="volunteer-manager"
+      data-ready={ready ? "true" : "false"}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold md:text-3xl">Voluntariado 2.0</h1>
@@ -1539,14 +2000,25 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
           <TabsTrigger value="overview">Visão geral</TabsTrigger>
           <TabsTrigger value="volunteers">Voluntários</TabsTrigger>
           <TabsTrigger value="teams">Equipes</TabsTrigger>
-          <TabsTrigger value="schedules">Escalas</TabsTrigger>
-          <TabsTrigger value="worship">Cultos</TabsTrigger>
+          <TabsTrigger value="worship">Cultos e escalas</TabsTrigger>
           <TabsTrigger value="communication">Comunicação</TabsTrigger>
-          <TabsTrigger value="reports">Relatórios</TabsTrigger>
-          <TabsTrigger value="settings">Configurações</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
           <ManagerOverview data={data} />
+          <div className="mt-4 space-y-3">
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer font-medium">Relatórios</summary>
+              <div className="mt-4">
+                <ManagerReports data={data} />
+              </div>
+            </details>
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer font-medium">Configurações</summary>
+              <div className="mt-4">
+                <ManagerSettings data={data} />
+              </div>
+            </details>
+          </div>
         </TabsContent>
         <TabsContent value="volunteers">
           <ManagerVolunteers data={data} />
@@ -1554,20 +2026,11 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
         <TabsContent value="teams">
           <ManagerTeams data={data} />
         </TabsContent>
-        <TabsContent value="schedules">
-          <ManagerSchedules data={data} />
-        </TabsContent>
         <TabsContent value="worship">
           <ManagerWorship data={data} />
         </TabsContent>
         <TabsContent value="communication">
           <ManagerCommunication data={data} />
-        </TabsContent>
-        <TabsContent value="reports">
-          <ManagerReports data={data} />
-        </TabsContent>
-        <TabsContent value="settings">
-          <ManagerSettings data={data} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1985,58 +2448,11 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
         <Card key={plan.eventId}>
           <CardHeader>
             <CardTitle>{plan.eventTitle}</CardTitle>
-            <CardDescription>
-              {fmt(plan.startsAt)} · {plan.setlistTitle}
-            </CardDescription>
+            <CardDescription>{fmt(plan.startsAt)} · roteiro do culto</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-2">
+          <CardContent>
             <div>
-              <h3 className="mb-2 font-medium">Setlist</h3>
-              <ol className="space-y-2">
-                {plan.setlistItems.map((item, index) => (
-                  <li key={item.id} className="rounded-md border p-2 text-sm">
-                    <strong>
-                      {index + 1}. {item.title}
-                    </strong>{" "}
-                    {item.tone && `· ${item.tone}`}
-                    <div className="mt-1 flex gap-2 text-xs">
-                      {item.spotifyUrl && (
-                        <a
-                          className="text-primary underline"
-                          href={item.spotifyUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Spotify
-                        </a>
-                      )}
-                      {item.deezerUrl && (
-                        <a
-                          className="text-primary underline"
-                          href={item.deezerUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Deezer
-                        </a>
-                      )}
-                      {item.cifraClubUrl && (
-                        <a
-                          className="text-primary underline"
-                          href={item.cifraClubUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Cifra
-                        </a>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <div>
-              <h3 className="mb-2 font-medium">Cronograma</h3>
+              <h3 className="mb-2 font-medium">Roteiro</h3>
               <ol className="space-y-2">
                 {plan.timeline.map((item) => (
                   <li key={item.id} className="rounded-md border p-2 text-sm">
@@ -2049,6 +2465,9 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
                   </li>
                 ))}
               </ol>
+              {plan.timeline.length === 0 && (
+                <p className="text-sm text-muted-foreground">Roteiro ainda não informado.</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -2091,7 +2510,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="schedule">Escalas</TabsTrigger>
           <TabsTrigger value="availability">Disponibilidade</TabsTrigger>
-          <TabsTrigger value="worship">Culto e Louvor</TabsTrigger>
+          <TabsTrigger value="worship">Roteiro do culto</TabsTrigger>
           <TabsTrigger value="updates">Atualizações</TabsTrigger>
           <TabsTrigger value="recognition">Reconhecimento</TabsTrigger>
           <TabsTrigger value="settings">Avisos</TabsTrigger>

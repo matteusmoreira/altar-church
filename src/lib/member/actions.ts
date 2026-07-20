@@ -10,6 +10,13 @@ import { requireMemberContext } from "./access"
 
 type Result = { ok: boolean; error?: string }
 const ministrySchema = z.object({ ministryId: z.string().uuid() })
+const ownMinistrySettingsSchema = z.object({
+  ministryId: z.string().uuid(),
+  name: z.string().trim().min(2, "Nome obrigatório").max(120),
+  description: z.string().trim().max(2000).default(""),
+  contact: z.string().trim().max(200).default(""),
+  isActive: z.boolean(),
+})
 const reviewSchema = z.object({
   membershipId: z.string().uuid(),
   decision: z.enum(["approve", "reject", "remove"]),
@@ -88,20 +95,57 @@ export async function cancelMinistryMembershipRequest(input: z.input<typeof mini
   }
 }
 
+export async function updateOwnMinistrySettings(
+  input: z.input<typeof ownMinistrySettingsSchema>,
+): Promise<Result> {
+  try {
+    const parsed = ownMinistrySettingsSchema.parse(input)
+    const { user, companyId, personId } = await requireMemberContext()
+    const rows = await getSql()<{ id: string }[]>`
+      update public.ministries
+      set name = ${parsed.name},
+          description = ${parsed.description},
+          contact = ${parsed.contact},
+          is_active = ${parsed.isActive},
+          updated_by = ${user.id}
+      where id = ${parsed.ministryId}
+        and company_id = ${companyId}
+        and leader_person_id = ${personId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]) throw new Error("Você só pode configurar ministérios que lidera")
+    await writeAuditLog({
+      action: "ministry.self.settings.update",
+      entityTable: "ministries",
+      entityId: parsed.ministryId,
+      companyId,
+      metadata: {
+        fields: ["name", "description", "contact", "is_active"],
+        isActive: parsed.isActive,
+      },
+    })
+    revalidatePath("/membro")
+    revalidatePath("/membro/ministerios")
+    revalidatePath("/ministerios")
+    return { ok: true }
+  } catch (error) {
+    return errorResult(error)
+  }
+}
+
 export async function reviewMinistryMembership(input: z.input<typeof reviewSchema>): Promise<Result> {
   try {
     const parsed = reviewSchema.parse(input)
     const user = await getCurrentUser()
-    if (!user?.churchId || !["superadmin", "admin", "pastor", "ministry_leader"].includes(user.role)) {
+    if (!user?.churchId || !["superadmin", "admin", "pastor"].includes(user.role)) {
       throw new Error("Acesso negado")
     }
     const sql = getSql()
-    const memberships = await sql<{ id: string; ministry_id: string; status: string; leader_person_id: string | null; profile_person_id: string | null }[]>`
-      select membership.id, membership.ministry_id, membership.status, ministry.leader_person_id,
-        profile.person_id as profile_person_id
+    const memberships = await sql<{ id: string; ministry_id: string; status: string }[]>`
+      select membership.id, membership.ministry_id, membership.status
       from public.ministry_memberships membership
       join public.ministries ministry on ministry.id = membership.ministry_id
-      left join public.profiles profile on profile.id = ${user.id}
       where membership.id = ${parsed.membershipId}
         and membership.company_id = ${user.churchId}
         and ministry.deleted_at is null
@@ -109,9 +153,6 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
     `
     const membership = memberships[0]
     if (!membership) throw new Error("Participação não encontrada")
-    if (user.role === "ministry_leader" && membership.leader_person_id !== membership.profile_person_id) {
-      throw new Error("Você só pode revisar seu próprio ministério")
-    }
     if (parsed.decision !== "remove" && membership.status !== "pending") {
       throw new Error("Solicitação já foi revisada")
     }

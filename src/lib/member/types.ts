@@ -27,7 +27,14 @@ export interface MemberMinistryItem {
   leaderName: string | null
   memberCount: number
   membershipId: string | null
+  membershipRole: "member" | "leader" | null
   membershipStatus: MinistryMembershipStatus | null
+  isActive: boolean
+  canManage: boolean
+}
+
+export interface MemberPortalCapabilities {
+  hasVolunteerPortal: boolean
 }
 
 export interface MinistryMembershipAdminItem {

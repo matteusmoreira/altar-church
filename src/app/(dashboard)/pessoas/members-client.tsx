@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Edit,
   Eye,
+  EyeOff,
   FileText,
   List,
   MoreVertical,
@@ -178,6 +179,15 @@ function splitFullName(fullName: string) {
   }
 }
 
+function formatPhoneMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+  if (digits.length === 0) return ""
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
 function toFilterChoice(value: boolean | null | undefined) {
   if (value === true) return "yes"
   if (value === false) return "no"
@@ -190,7 +200,7 @@ function personToForm(person: PersonListItem): PersonFormState {
     companyId: person.companyId,
     fullName: person.fullName,
     email: person.email ?? "",
-    phone: person.phone,
+    phone: formatPhoneMask(person.phone),
     birthDate: person.birthDate ?? "",
     gender: person.gender ?? "not_informed",
     congregationId: person.congregationId ?? "none",
@@ -261,6 +271,7 @@ export function MembersClient({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false)
   const [resolvingDuplicateId, setResolvingDuplicateId] = useState<string | null>(null)
   const [deletingPerson, setDeletingPerson] = useState<PersonListItem | null>(null)
   const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set())
@@ -319,11 +330,13 @@ export function MembersClient({
 
   const openCreateDialog = () => {
     setFormData(emptyForm)
+    setShowTemporaryPassword(false)
     setDialogOpen(true)
   }
 
   const openEditDialog = (person: PersonListItem) => {
     setFormData(personToForm(person))
+    setShowTemporaryPassword(false)
     setDialogOpen(true)
   }
 
@@ -1045,8 +1058,13 @@ export function MembersClient({
               <div className="grid gap-2">
                 <Label>Telefone</Label>
                 <Input
+                  type="tel"
+                  inputMode="tel"
+                  maxLength={15}
                   value={formData.phone}
-                  onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
+                  onChange={(event) =>
+                    setFormData({ ...formData, phone: formatPhoneMask(event.target.value) })
+                  }
                   placeholder="(11) 99999-9999"
                 />
               </div>
@@ -1118,7 +1136,18 @@ export function MembersClient({
                 <Label>Tipo pastoral</Label>
                 <Select
                   value={formData.personType}
-                  onValueChange={(value) => value && setFormData({ ...formData, personType: value as PersonType })}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    const personType = value as PersonType
+                    setFormData({
+                      ...formData,
+                      personType,
+                      accessRole:
+                        personType === "visitor" || personType === "attendee"
+                          ? "member"
+                          : formData.accessRole,
+                    })
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -1205,6 +1234,7 @@ export function MembersClient({
                       <Label>Perfil de acesso</Label>
                       <Select
                         value={formData.accessRole}
+                        disabled={formData.personType === "visitor" || formData.personType === "attendee"}
                         onValueChange={(value) =>
                           value && setFormData({ ...formData, accessRole: value as PersonAccessRole })
                         }
@@ -1220,18 +1250,40 @@ export function MembersClient({
                           ))}
                         </SelectContent>
                       </Select>
+                      {formData.personType === "visitor" || formData.personType === "attendee" ? (
+                        <p className="text-xs text-muted-foreground">
+                          Visitante e frequentador usam Portal do Membro.
+                        </p>
+                      ) : null}
                     </div>
                     <div className="grid gap-2">
                       <Label>Senha temporária</Label>
-                      <Input
-                        type="password"
-                        autoComplete="new-password"
-                        value={formData.temporaryPassword}
-                        onChange={(event) =>
-                          setFormData({ ...formData, temporaryPassword: event.target.value })
-                        }
-                        placeholder="Mínimo 8 caracteres"
-                      />
+                      <div className="relative">
+                        <Input
+                          type={showTemporaryPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          className="pr-10"
+                          value={formData.temporaryPassword}
+                          onChange={(event) =>
+                            setFormData({ ...formData, temporaryPassword: event.target.value })
+                          }
+                          placeholder="Mínimo 8 caracteres"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={showTemporaryPassword ? "Ocultar senha" : "Mostrar senha"}
+                          className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                          onClick={() => setShowTemporaryPassword((current) => !current)}
+                        >
+                          {showTemporaryPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : null}

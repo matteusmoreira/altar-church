@@ -7,8 +7,12 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Permission } from "@/lib/types";
-import type { VolunteerActionResult } from "./types";
+import type {
+  VolunteerActionResult,
+  VolunteerPersonSuggestion,
+} from "./types";
 import { getVolunteerShiftCandidates } from "./v2-actions";
+import { requireVolunteerSelfContext } from "./access";
 
 const uuid = z.string().uuid();
 const nullableUuid = z
@@ -19,12 +23,7 @@ const status = z.enum(["pending", "active", "inactive", "suspended"]);
 
 const volunteerSchema = z.object({
   id: nullableUuid,
-  firstName: z.string().trim().min(2, "Nome obrigatório"),
-  lastName: z.string().trim().optional().default(""),
-  email: z
-    .union([z.string().trim().email("E-mail inválido"), z.literal("")])
-    .transform((value) => value || null),
-  phone: z.string().trim().optional().default(""),
+  personId: uuid,
   registrationStatus: status.default("pending"),
   whatsappEnabled: z.boolean().default(false),
   emailEnabled: z.boolean().default(false),
@@ -32,9 +31,11 @@ const volunteerSchema = z.object({
     .array(
       z.object({
         departmentId: uuid,
-        roleName: z.string().trim().min(1).max(80),
+        roleId: uuid,
+        preferred: z.boolean().default(false),
       }),
     )
+    .max(100)
     .default([]),
   invite: z.boolean().default(false),
 });
@@ -56,8 +57,9 @@ const templateSchema = z.object({
     .array(
       z.object({
         departmentId: uuid,
-        roleName: z.string().trim().min(1).max(80),
+        roleId: uuid,
         requiredVolunteers: z.number().int().min(1).max(100),
+        instructions: z.string().trim().max(2000).default(""),
       }),
     )
     .min(1, "Inclua ao menos uma vaga"),
@@ -134,6 +136,7 @@ async function audit(
 
 function refresh() {
   revalidatePath("/voluntariado");
+  revalidatePath("/membro/voluntariado");
   revalidatePath("/eventos");
   revalidatePath("/dashboard");
 }
@@ -212,6 +215,66 @@ async function inviteVolunteer(input: {
   return profileId;
 }
 
+export async function searchVolunteerPeople(
+  input: unknown,
+): Promise<{
+  ok: boolean;
+  people?: VolunteerPersonSuggestion[];
+  error?: string;
+}> {
+  try {
+    const query = z.string().trim().max(120).parse(input);
+    const { companyId } = await context("volunteers.view");
+    if (query.length < 3) return { ok: true, people: [] };
+    const like = `%${query}%`;
+    const digits = query.replace(/\D/g, "");
+    const rows = await getSql()<
+      {
+        id: string;
+        full_name: string;
+        email: string | null;
+        phone: string;
+        person_type: string;
+        volunteer_id: string | null;
+      }[]
+    >`
+      select person.id, person.full_name, person.email, person.phone, person.person_type,
+             volunteer.id as volunteer_id
+      from public.people person
+      left join public.volunteer_profiles volunteer
+        on volunteer.person_id = person.id
+       and volunteer.company_id = person.company_id
+       and volunteer.deleted_at is null
+      where person.company_id = ${companyId}
+        and person.deleted_at is null
+        and person.is_active
+        and (
+          person.full_name ilike ${like}
+          or coalesce(person.email, '') ilike ${like}
+          or (${digits} <> '' and regexp_replace(coalesce(person.phone, ''), '\\D', '', 'g') like ${`%${digits}%`})
+        )
+      order by person.full_name
+      limit 12
+    `;
+    return {
+      ok: true,
+      people: rows.map((row) => ({
+        id: row.id,
+        fullName: row.full_name,
+        email: row.email,
+        phone: row.phone ?? "",
+        personType: row.person_type,
+        volunteerId: row.volunteer_id,
+      })),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Erro inesperado",
+    };
+  }
+}
+
 export async function saveVolunteer(
   input: z.input<typeof volunteerSchema>,
 ): Promise<VolunteerActionResult> {
@@ -220,11 +283,40 @@ export async function saveVolunteer(
     const { user, companyId } = await context(
       parsed.id ? "volunteers.edit" : "volunteers.create",
     );
-    await assertDepartments(
-      companyId,
-      parsed.memberships.map((membership) => membership.departmentId),
-    );
     const sql = getSql();
+    const people = await sql<
+      { id: string; full_name: string; email: string | null }[]
+    >`
+      select id, full_name, email
+      from public.people
+      where id = ${parsed.personId}
+        and company_id = ${companyId}
+        and deleted_at is null
+        and is_active
+    `;
+    const person = people[0];
+    if (!person) throw new Error("Pessoa não encontrada ou inativa");
+
+    const roleIds = [...new Set(parsed.memberships.map((item) => item.roleId))];
+    const roles = roleIds.length
+      ? await sql<{ id: string; department_id: string; name: string }[]>`
+          select id, department_id, name
+          from public.volunteer_department_roles
+          where company_id = ${companyId}
+            and id = any(${roleIds}::uuid[])
+            and is_active
+            and deleted_at is null
+        `
+      : [];
+    if (roles.length !== roleIds.length)
+      throw new Error("Uma ou mais funções são inválidas");
+    const rolesById = new Map(roles.map((role) => [role.id, role]));
+    for (const membership of parsed.memberships) {
+      const role = rolesById.get(membership.roleId);
+      if (!role || role.department_id !== membership.departmentId)
+        throw new Error("Função não pertence à equipe selecionada");
+    }
+
     const existingDepartments = parsed.id
       ? await sql<{ department_id: string }[]>`
           select department_id from public.volunteer_department_memberships
@@ -235,66 +327,78 @@ export async function saveVolunteer(
       ...existingDepartments.map((row) => row.department_id),
       ...parsed.memberships.map((membership) => membership.departmentId),
     ]);
-    const fullName = [parsed.firstName, parsed.lastName]
-      .filter(Boolean)
-      .join(" ");
-    let volunteerId = parsed.id;
-    let personId: string | null = null;
 
+    let volunteerId = parsed.id;
     await sql.begin(async (tx) => {
+      const existing = await tx<{ id: string }[]>`
+        select id
+        from public.volunteer_profiles
+        where person_id = ${parsed.personId}
+          and company_id = ${companyId}
+          and deleted_at is null
+        limit 1
+      `;
       if (parsed.id) {
-        const existing = await tx<{ person_id: string }[]>`
-          select person_id from public.volunteer_profiles where id = ${parsed.id} and company_id = ${companyId} and deleted_at is null
-        `;
-        personId = existing[0]?.person_id ?? null;
-        if (!personId) throw new Error("Voluntário não encontrado");
-        await tx`
-          update public.people
-          set first_name = ${parsed.firstName}, last_name = ${parsed.lastName}, full_name = ${fullName},
-              email = ${parsed.email}, phone = ${parsed.phone}, person_type = 'volunteer', updated_by = ${user.id}
-          where id = ${personId} and company_id = ${companyId} and deleted_at is null
-        `;
-        await tx`
+        if (existing[0]?.id !== parsed.id)
+          throw new Error("Voluntário não corresponde à Pessoa selecionada");
+        const updated = await tx<{ id: string }[]>`
           update public.volunteer_profiles
-          set registration_status = ${parsed.registrationStatus}, whatsapp_enabled = ${parsed.whatsappEnabled},
-              email_enabled = ${parsed.emailEnabled}, updated_by = ${user.id}
-          where id = ${parsed.id} and company_id = ${companyId}
-        `;
-      } else {
-        const people = await tx<{ id: string }[]>`
-          insert into public.people (company_id, first_name, last_name, full_name, email, phone, status, person_type, is_active, created_by, updated_by)
-          values (${companyId}, ${parsed.firstName}, ${parsed.lastName}, ${fullName}, ${parsed.email}, ${parsed.phone}, 'active', 'volunteer', true, ${user.id}, ${user.id})
+          set registration_status = ${parsed.registrationStatus},
+              whatsapp_enabled = ${parsed.whatsappEnabled},
+              email_enabled = ${parsed.emailEnabled},
+              updated_by = ${user.id}
+          where id = ${parsed.id}
+            and person_id = ${parsed.personId}
+            and company_id = ${companyId}
+            and deleted_at is null
           returning id
         `;
-        personId = people[0]?.id ?? null;
-        if (!personId) throw new Error("Pessoa não foi salva");
+        volunteerId = updated[0]?.id ?? null;
+      } else {
+        if (existing[0]?.id)
+          throw new Error("Esta Pessoa já está vinculada como voluntária");
         const volunteers = await tx<{ id: string }[]>`
-          insert into public.volunteer_profiles (company_id, person_id, registration_status, whatsapp_enabled, email_enabled, created_by, updated_by)
-          values (${companyId}, ${personId}, ${parsed.registrationStatus}, ${parsed.whatsappEnabled}, ${parsed.emailEnabled}, ${user.id}, ${user.id})
+          insert into public.volunteer_profiles (
+            company_id, person_id, registration_status, whatsapp_enabled,
+            email_enabled, created_by, updated_by
+          )
+          values (
+            ${companyId}, ${parsed.personId}, ${parsed.registrationStatus},
+            ${parsed.whatsappEnabled}, ${parsed.emailEnabled}, ${user.id}, ${user.id}
+          )
           returning id
         `;
         volunteerId = volunteers[0]?.id ?? null;
       }
-      if (!volunteerId || !personId)
-        throw new Error("Voluntário não foi salvo");
-      await tx`delete from public.volunteer_department_memberships where volunteer_id = ${volunteerId}`;
+      if (!volunteerId) throw new Error("Voluntário não foi salvo");
+      await tx`
+        delete from public.volunteer_department_memberships
+        where volunteer_id = ${volunteerId}
+      `;
       for (const membership of parsed.memberships) {
+        const role = rolesById.get(membership.roleId);
+        if (!role) throw new Error("Função inválida");
         await tx`
-          insert into public.volunteer_department_memberships (company_id, department_id, volunteer_id, role_name)
-          values (${companyId}, ${membership.departmentId}, ${volunteerId}, ${membership.roleName})
+          insert into public.volunteer_department_memberships (
+            company_id, department_id, volunteer_id, role_id, role_name, preferred
+          )
+          values (
+            ${companyId}, ${membership.departmentId}, ${volunteerId},
+            ${membership.roleId}, ${role.name}, ${membership.preferred}
+          )
         `;
       }
     });
 
     if (parsed.invite) {
-      if (!parsed.email || !personId)
-        throw new Error("E-mail obrigatório para convite");
+      if (!person.email)
+        throw new Error("Pessoa precisa ter e-mail para receber convite");
       await requirePermission("volunteers.invite", companyId);
       await inviteVolunteer({
         companyId,
-        personId,
-        name: fullName,
-        email: parsed.email,
+        personId: parsed.personId,
+        name: person.full_name,
+        email: person.email,
         actorId: user.id,
       });
     }
@@ -303,7 +407,7 @@ export async function saveVolunteer(
       "volunteer_profiles",
       volunteerId ?? "",
       companyId,
-      { invite: parsed.invite },
+      { invite: parsed.invite, personId: parsed.personId },
     );
     refresh();
     return { ok: true, id: volunteerId ?? undefined };
@@ -369,6 +473,22 @@ export async function saveVolunteerTemplate(
       parsed.slots.map((slot) => slot.departmentId),
     );
     const sql = getSql();
+    const roleIds = [...new Set(parsed.slots.map((slot) => slot.roleId))];
+    const roles = await sql<
+      { id: string; department_id: string; name: string }[]
+    >`
+      select id, department_id, name
+      from public.volunteer_department_roles
+      where company_id = ${companyId}
+        and id = any(${roleIds}::uuid[])
+        and is_active
+        and deleted_at is null
+    `;
+    const rolesById = new Map(roles.map((role) => [role.id, role]));
+    for (const slot of parsed.slots) {
+      if (rolesById.get(slot.roleId)?.department_id !== slot.departmentId)
+        throw new Error("Função inválida para a equipe selecionada");
+    }
     let templateId = parsed.id;
     await sql.begin(async (tx) => {
       if (parsed.id) {
@@ -388,9 +508,17 @@ export async function saveVolunteerTemplate(
       }
       if (!templateId) throw new Error("Template não foi salvo");
       for (const [sortOrder, slot] of parsed.slots.entries()) {
+        const role = rolesById.get(slot.roleId);
+        if (!role) throw new Error("Função inválida");
         await tx`
-          insert into public.volunteer_schedule_template_slots (company_id, template_id, department_id, role_name, required_volunteers, sort_order)
-          values (${companyId}, ${templateId}, ${slot.departmentId}, ${slot.roleName}, ${slot.requiredVolunteers}, ${sortOrder})
+          insert into public.volunteer_schedule_template_slots (
+            company_id, template_id, department_id, role_id, role_name,
+            required_volunteers, instructions, sort_order
+          )
+          values (
+            ${companyId}, ${templateId}, ${slot.departmentId}, ${slot.roleId},
+            ${role.name}, ${slot.requiredVolunteers}, ${slot.instructions}, ${sortOrder}
+          )
         `;
       }
     });
@@ -454,11 +582,13 @@ export async function generateMonthlyVolunteerSchedule(
         {
           id: string;
           department_id: string;
+          role_id: string | null;
           role_name: string;
           required_volunteers: number;
+          instructions: string;
         }[]
       >`
-        select id, department_id, role_name, required_volunteers
+        select id, department_id, role_id, role_name, required_volunteers, instructions
         from public.volunteer_schedule_template_slots
         where company_id = ${companyId} and template_id = ${event.volunteer_template_id}
       `;
@@ -470,10 +600,12 @@ export async function generateMonthlyVolunteerSchedule(
         const closesAt = new Date(endsAt.getTime() + 30 * 60 * 1000);
         await sql`
           insert into public.volunteer_shifts (
-            company_id, schedule_id, event_id, template_slot_id, department_id, role_name, required_volunteers,
+            company_id, schedule_id, event_id, template_slot_id, department_id,
+            role_id, role_name, required_volunteers, instructions,
             starts_at, ends_at, checkin_opens_at, checkin_closes_at
           ) values (
-            ${companyId}, ${scheduleId}, ${event.id}, ${slot.id}, ${slot.department_id}, ${slot.role_name}, ${slot.required_volunteers},
+            ${companyId}, ${scheduleId}, ${event.id}, ${slot.id}, ${slot.department_id},
+            ${slot.role_id}, ${slot.role_name}, ${slot.required_volunteers}, ${slot.instructions},
             ${startsAt}, ${endsAt}, ${opensAt}, ${closesAt}
           ) on conflict (schedule_id, event_id, template_slot_id) do nothing
         `;
@@ -790,17 +922,16 @@ export async function checkInVolunteerAssignment(
 ): Promise<VolunteerActionResult> {
   try {
     const parsed = checkinSchema.parse(input);
-    const user = await getCurrentUser();
-    if (!user || !user.churchId) throw new Error("Acesso negado");
-    await requirePermission("volunteer.self.checkin", user.churchId);
+    const { user, companyId, volunteerId } = await requireVolunteerSelfContext();
+    await requirePermission("volunteer.self.checkin", companyId);
     const sql = getSql();
     const rows = await sql<{ id: string; shift_id: string }[]>`
       select assignment.id, assignment.shift_id
       from public.volunteer_assignments assignment
-      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-      join public.profiles profile on profile.person_id = volunteer.person_id
       join public.volunteer_shifts shift on shift.id = assignment.shift_id
-      where assignment.id = ${parsed.assignmentId} and profile.id = ${user.id} and assignment.company_id = ${user.churchId}
+      where assignment.id = ${parsed.assignmentId}
+        and assignment.volunteer_id = ${volunteerId}
+        and assignment.company_id = ${companyId}
         and assignment.status in ('notified', 'confirmed')
         and now() between shift.checkin_opens_at and shift.checkin_closes_at
       limit 1
@@ -811,7 +942,7 @@ export async function checkInVolunteerAssignment(
     if (parsed.qrToken) {
       const sessions = await sql<{ token: string }[]>`
         select token from public.volunteer_checkin_qr_sessions
-        where token = ${parsed.qrToken} and shift_id = ${assignment.shift_id} and company_id = ${user.churchId} and expires_at > now()
+        where token = ${parsed.qrToken} and shift_id = ${assignment.shift_id} and company_id = ${companyId} and expires_at > now()
       `;
       if (!sessions[0]) throw new Error("QR inválido ou expirado");
     }
@@ -824,7 +955,7 @@ export async function checkInVolunteerAssignment(
       "volunteer_checkin.create",
       "volunteer_assignments",
       assignment.id,
-      user.churchId,
+      companyId,
       { source },
     );
     refresh();
@@ -839,23 +970,13 @@ export async function markVolunteerFeedRead(
 ): Promise<VolunteerActionResult> {
   try {
     const id = uuid.parse(postId);
-    const user = await getCurrentUser();
-    if (!user || !user.churchId) throw new Error("Acesso negado");
-    await requirePermission("volunteer.self.view", user.churchId);
-    const sql = getSql();
-    const rows = await sql<{ id: string }[]>`
-      select volunteer.id
-      from public.volunteer_profiles volunteer
-      join public.profiles profile on profile.person_id = volunteer.person_id
-      where profile.id = ${user.id} and volunteer.company_id = ${user.churchId} and volunteer.deleted_at is null
-      limit 1
-    `;
-    if (!rows[0]?.id) throw new Error("Perfil de voluntário não vinculado");
-    await sql`
-      insert into public.volunteer_feed_reads (post_id, volunteer_id) values (${id}, ${rows[0].id})
+    const { volunteerId } = await requireVolunteerSelfContext();
+    await getSql()`
+      insert into public.volunteer_feed_reads (post_id, volunteer_id) values (${id}, ${volunteerId})
       on conflict (post_id, volunteer_id) do nothing
     `;
     revalidatePath("/voluntariado");
+    revalidatePath("/membro/voluntariado");
     return { ok: true, id };
   } catch (error) {
     return failure(error);

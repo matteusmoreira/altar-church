@@ -17,9 +17,20 @@ export interface E2EAccountDocument {
   supabaseUrl: string
   companyLegacyId: string
   accounts: Record<E2ERole, E2EAccount>
+  portalAccounts?: Partial<Record<"visitor" | "attendee" | "volunteer" | "ministryLeader" | "ministryLeaderVolunteer", E2EAccount>>
 }
 
 const defaultDocPath = path.join(process.cwd(), "docs", "testing", "e2e-accounts.local.md")
+
+function buildPortalAccounts(password: string, companyLegacyId: string): NonNullable<E2EAccountDocument["portalAccounts"]> {
+  return {
+    visitor: { email: process.env.E2E_VISITOR_EMAIL ?? "e2e.visitante@altar-church.test", password, role: "member", name: "Visitante E2E", companyLegacyId },
+    attendee: { email: process.env.E2E_ATTENDEE_EMAIL ?? "e2e.frequentador@altar-church.test", password, role: "member", name: "Frequentador E2E", companyLegacyId },
+    volunteer: { email: process.env.E2E_VOLUNTEER_EMAIL ?? "e2e.voluntario@altar-church.test", password, role: "volunteer", name: "Voluntário E2E", companyLegacyId },
+    ministryLeader: { email: process.env.E2E_MINISTRY_LEADER_EMAIL ?? "e2e.lider-ministerio@altar-church.test", password, role: "ministry_leader", name: "Líder Ministério E2E", companyLegacyId },
+    ministryLeaderVolunteer: { email: process.env.E2E_MINISTRY_LEADER_VOLUNTEER_EMAIL ?? "e2e.lider-voluntario@altar-church.test", password, role: "ministry_leader", name: "Líder Voluntário E2E", companyLegacyId },
+  }
+}
 
 function buildDefaultAccountDocument(): E2EAccountDocument {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
@@ -59,6 +70,7 @@ function buildDefaultAccountDocument(): E2EAccountDocument {
         companyLegacyId,
       },
     },
+    portalAccounts: buildPortalAccounts(password, companyLegacyId),
   }
 }
 
@@ -74,5 +86,6 @@ export function readE2EAccounts(docPath = process.env.E2E_ACCOUNTS_DOC ?? defaul
 
   const document = JSON.parse(match[1]) as E2EAccountDocument
   document.accounts.member.role = "member"
+  document.portalAccounts ??= buildPortalAccounts(document.accounts.member.password, document.companyLegacyId)
   return document
 }

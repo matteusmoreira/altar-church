@@ -3,21 +3,28 @@ import "server-only"
 import { redirect } from "next/navigation"
 import { getSql } from "@/lib/db/client"
 import { requireUser } from "@/lib/auth/server"
+import type { UserRole } from "@/lib/types"
+
+export const PORTAL_ROLES: readonly UserRole[] = ["member", "volunteer", "ministry_leader"]
+
+export function isPortalRole(role: UserRole) {
+  return PORTAL_ROLES.includes(role)
+}
 
 export async function requireMemberContext() {
   const user = await requireUser()
-  if (user.role !== "member") {
-    if (user.role === "volunteer") redirect("/voluntariado")
-    redirect("/dashboard")
-  }
+  if (!isPortalRole(user.role)) redirect("/dashboard")
   if (!user.churchId) redirect("/login")
 
   const rows = await getSql()<{ person_id: string | null }[]>`
     select coalesce(profile.person_id, person.id) as person_id
     from public.profiles profile
     left join public.people person
-      on person.profile_id = profile.id and person.deleted_at is null
+      on person.company_id = profile.company_id
+      and person.profile_id = profile.id
+      and person.deleted_at is null
     where profile.id = ${user.id}
+      and profile.company_id = ${user.churchId}
     limit 1
   `
   const personId = rows[0]?.person_id

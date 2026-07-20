@@ -43,6 +43,15 @@ export interface VolunteerMembership {
   active: boolean
 }
 
+export interface VolunteerPersonSuggestion {
+  id: string
+  fullName: string
+  email: string | null
+  phone: string
+  personType: string
+  volunteerId: string | null
+}
+
 export interface VolunteerListItem {
   id: string
   personId: string
@@ -104,8 +113,10 @@ export interface TemplateSlot {
   id: string
   departmentId: string
   departmentName: string
+  roleId: string
   roleName: string
   requiredVolunteers: number
+  instructions: string
 }
 
 export interface VolunteerTemplate {
@@ -269,11 +280,21 @@ export interface VolunteerEventPlan {
   eventId: string
   eventTitle: string
   startsAt: string
+  schedulePublishedAt: string | null
   setlistId: string | null
   setlistTitle: string
   setlistNotes: string
   setlistItems: VolunteerSetlistItem[]
   timeline: VolunteerTimelineItem[]
+  positions: {
+    id: string
+    departmentId: string
+    departmentName: string
+    roleId: string
+    roleName: string
+    requiredVolunteers: number
+    instructions: string
+  }[]
 }
 
 export interface VolunteerReportData {

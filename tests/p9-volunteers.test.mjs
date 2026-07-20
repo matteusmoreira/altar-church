@@ -5,6 +5,7 @@ import { test } from "node:test"
 const read = (path) => readFileSync(path, "utf8")
 const migration = read("supabase/migrations/20260710130000_volunteer_management.sql")
 const actions = read("src/lib/volunteers/actions.ts")
+const access = read("src/lib/volunteers/access.ts")
 const data = read("src/lib/volunteers/data.ts")
 const worker = read("supabase/functions/volunteer-delivery-worker/index.ts")
 const webhook = read("src/app/api/webhooks/resend/route.ts")
@@ -32,8 +33,9 @@ test("P9 actions validate, authorize, audit and scope self check-in", () => {
   for (const action of ["saveVolunteer", "generateMonthlyVolunteerSchedule", "publishVolunteerSchedule", "saveVolunteerFeedPost", "checkInVolunteerAssignment"]) {
     assert.match(actions, new RegExp(`export async function ${action}`))
   }
+  assert.match(actions, /requireVolunteerSelfContext/)
   assert.match(actions, /requirePermission\("volunteer\.self\.checkin"/)
-  assert.match(actions, /profile\.id = \$\{user\.id\}/)
+  assert.match(access, /volunteer\.person_id = \$\{context\.personId\}/)
   assert.match(actions, /writeAuditLog/)
   assert.match(data, /listVolunteerTemplatesForEvents/)
 })

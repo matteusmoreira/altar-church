@@ -13,6 +13,7 @@ import {
   type SchedulerCandidateInput,
 } from "./scheduler";
 import type { VolunteerActionResult } from "./types";
+import { requireVolunteerSelfContext } from "./access";
 
 const uuid = z.string().uuid();
 const optionalUuid = z
@@ -31,6 +32,7 @@ function resultError(error: unknown): VolunteerActionResult {
 
 function refreshVolunteerPaths() {
   revalidatePath("/voluntariado");
+  revalidatePath("/membro/voluntariado");
   revalidatePath("/eventos");
   revalidatePath("/louvor");
   revalidatePath("/dashboard");
@@ -65,17 +67,8 @@ async function managerContext(
 }
 
 async function volunteerContext(permission: Permission) {
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Acesso negado");
-  const companyId = requireUserCompanyId(user);
-  await requirePermission(permission, companyId);
-  const rows = await getSql()<{ id: string }[]>`
-    select volunteer.id from public.volunteer_profiles volunteer
-    join public.profiles profile on profile.person_id = volunteer.person_id
-    where profile.id = ${user.id} and volunteer.company_id = ${companyId} and volunteer.deleted_at is null limit 1
-  `;
-  if (!rows[0]?.id) throw new Error("Perfil de voluntário não vinculado");
-  return { user, companyId, volunteerId: rows[0].id };
+  void permission;
+  return requireVolunteerSelfContext();
 }
 
 async function audit(
@@ -90,7 +83,7 @@ async function audit(
 
 const roleSchema = z.object({
   id: optionalUuid,
-  departmentId: uuid,
+  departmentId: z.string().uuid("Selecione uma equipe"),
   name: z.string().trim().min(2).max(80),
   description: z.string().trim().max(500).default(""),
   instructions: z.string().trim().max(3000).default(""),
@@ -794,8 +787,10 @@ export async function uploadVolunteerShiftFile(
       select shift.department_id, exists(
         select 1 from public.volunteer_assignments assignment
         join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-        join public.profiles profile on profile.person_id = volunteer.person_id
-        where assignment.shift_id = shift.id and profile.id = ${user.id}
+        join public.profiles profile on profile.id = ${user.id}
+        join public.people identity on identity.id = volunteer.person_id
+          and (profile.person_id = identity.id or identity.profile_id = profile.id)
+        where assignment.shift_id = shift.id
           and assignment.status not in ('declined', 'cancelled')
       ) as is_participant
       from public.volunteer_shifts shift where shift.id = ${shiftId} and shift.company_id = ${companyId}
@@ -869,8 +864,10 @@ export async function sendVolunteerShiftMessage(
     >`
       select shift.department_id, exists(select 1 from public.volunteer_assignments assignment
         join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-        join public.profiles profile on profile.person_id = volunteer.person_id
-        where assignment.shift_id = shift.id and profile.id = ${user.id} and assignment.status not in ('declined', 'cancelled')) as is_participant
+        join public.profiles profile on profile.id = ${user.id}
+        join public.people identity on identity.id = volunteer.person_id
+          and (profile.person_id = identity.id or identity.profile_id = profile.id)
+        where assignment.shift_id = shift.id and assignment.status not in ('declined', 'cancelled')) as is_participant
       from public.volunteer_shifts shift where shift.id = ${parsed.shiftId} and shift.company_id = ${companyId}
     `;
     if (!access[0]) throw new Error("Escala não encontrada");
@@ -1062,6 +1059,433 @@ export async function saveVolunteerPushSubscription(
     `;
     await getSql()`update public.volunteer_notification_preferences set push_enabled = true where volunteer_id = ${volunteerId}`;
     return { ok: true, id: rows[0]?.id };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+const servicePlanSchema = z.object({
+  eventId: uuid,
+  positions: z
+    .array(
+      z.object({
+        departmentId: uuid,
+        roleId: uuid,
+        requiredVolunteers: z.number().int().min(1).max(100),
+        instructions: z.string().trim().max(2000).default(""),
+      }),
+    )
+    .min(1, "Inclua ao menos uma função")
+    .max(100),
+  timeline: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1).max(200),
+        plannedAt: z.string().datetime(),
+        durationMinutes: z.number().int().min(1).max(1440),
+        responsibleProfileId: optionalUuid,
+        instructions: z.string().trim().max(2000).default(""),
+      }),
+    )
+    .max(200)
+    .default([]),
+  modelName: z
+    .union([z.string().trim().min(2).max(120), z.literal("")])
+    .default(""),
+});
+
+export async function saveVolunteerServicePlan(
+  input: z.input<typeof servicePlanSchema>,
+): Promise<VolunteerActionResult> {
+  try {
+    const parsed = servicePlanSchema.parse(input);
+    const { user, companyId } = await managerContext("schedules.edit");
+    const sql = getSql();
+    const events = await sql<
+      { id: string; volunteer_schedule_published_at: Date | null }[]
+    >`
+      select id, volunteer_schedule_published_at from public.events
+      where id = ${parsed.eventId}
+        and company_id = ${companyId}
+        and deleted_at is null
+    `;
+    if (!events[0]?.id) throw new Error("Culto não encontrado");
+    if (events[0].volunteer_schedule_published_at)
+      throw new Error("Escala publicada; planejamento está bloqueado");
+    const roleIds = [...new Set(parsed.positions.map((item) => item.roleId))];
+    const roles = await sql<
+      { id: string; department_id: string; name: string; instructions: string }[]
+    >`
+      select id, department_id, name, instructions
+      from public.volunteer_department_roles
+      where company_id = ${companyId}
+        and id = any(${roleIds}::uuid[])
+        and is_active
+        and deleted_at is null
+    `;
+    const rolesById = new Map(roles.map((role) => [role.id, role]));
+    for (const position of parsed.positions) {
+      const role = rolesById.get(position.roleId);
+      if (!role || role.department_id !== position.departmentId)
+        throw new Error("Função não pertence à equipe selecionada");
+      await managerContext("schedules.edit", position.departmentId);
+    }
+
+    let modelId: string | null = null;
+    await sql.begin(async (tx) => {
+      const keptPositionIds: string[] = [];
+      for (const [index, position] of parsed.positions.entries()) {
+        const role = rolesById.get(position.roleId);
+        if (!role) throw new Error("Função inválida");
+        const saved = await tx<{ id: string }[]>`
+          insert into public.volunteer_event_positions (
+            company_id, event_id, department_id, role_id, role_name,
+            required_volunteers, instructions, sort_order, created_by, updated_by
+          )
+          values (
+            ${companyId}, ${parsed.eventId}, ${position.departmentId},
+            ${position.roleId}, ${role.name}, ${position.requiredVolunteers},
+            ${position.instructions || role.instructions}, ${index}, ${user.id}, ${user.id}
+          )
+          on conflict (event_id, department_id, role_id) do update
+          set role_name = excluded.role_name,
+              required_volunteers = excluded.required_volunteers,
+              instructions = excluded.instructions,
+              sort_order = excluded.sort_order,
+              updated_by = excluded.updated_by,
+              updated_at = now()
+          returning id
+        `;
+        if (saved[0]?.id) keptPositionIds.push(saved[0].id);
+      }
+      await tx`
+        delete from public.volunteer_event_positions
+        where event_id = ${parsed.eventId}
+          and company_id = ${companyId}
+          and id <> all(${keptPositionIds}::uuid[])
+      `;
+      await tx`
+        delete from public.volunteer_event_timeline_items
+        where event_id = ${parsed.eventId} and company_id = ${companyId}
+      `;
+      for (const [index, item] of parsed.timeline.entries()) {
+        await tx`
+          insert into public.volunteer_event_timeline_items (
+            company_id, event_id, title, planned_at, duration_minutes,
+            responsible_profile_id, instructions, sort_order
+          )
+          values (
+            ${companyId}, ${parsed.eventId}, ${item.title}, ${item.plannedAt},
+            ${item.durationMinutes}, ${item.responsibleProfileId},
+            ${item.instructions}, ${index}
+          )
+        `;
+      }
+      if (parsed.modelName) {
+        const templates = await tx<{ id: string }[]>`
+          insert into public.volunteer_schedule_templates (
+            company_id, name, description, is_active, created_by, updated_by
+          )
+          values (
+            ${companyId}, ${parsed.modelName}, 'Modelo criado em Cultos e escalas',
+            true, ${user.id}, ${user.id}
+          )
+          on conflict (company_id, name) do update
+          set is_active = true, deleted_at = null, updated_by = excluded.updated_by, updated_at = now()
+          returning id
+        `;
+        modelId = templates[0]?.id ?? null;
+        if (!modelId) throw new Error("Modelo não foi salvo");
+        await tx`
+          delete from public.volunteer_schedule_template_slots
+          where template_id = ${modelId}
+        `;
+        for (const [index, position] of parsed.positions.entries()) {
+          const role = rolesById.get(position.roleId);
+          if (!role) throw new Error("Função inválida");
+          await tx`
+            insert into public.volunteer_schedule_template_slots (
+              company_id, template_id, department_id, role_id, role_name,
+              required_volunteers, instructions, sort_order
+            )
+            values (
+              ${companyId}, ${modelId}, ${position.departmentId}, ${position.roleId},
+              ${role.name}, ${position.requiredVolunteers},
+              ${position.instructions || role.instructions}, ${index}
+            )
+          `;
+        }
+      }
+    });
+    await audit(
+      "volunteer_service_plan.save",
+      "events",
+      parsed.eventId,
+      companyId,
+      { positions: parsed.positions.length, timeline: parsed.timeline.length, modelId },
+    );
+    refreshVolunteerPaths();
+    return { ok: true, id: parsed.eventId, data: { modelId } };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+export async function generateVolunteerScheduleForEvent(
+  eventIdInput: string,
+): Promise<VolunteerActionResult> {
+  try {
+    const eventId = uuid.parse(eventIdInput);
+    const { user, companyId } = await managerContext("schedules.create");
+    const sql = getSql();
+    const events = await sql<
+      {
+        id: string;
+        starts_at: Date;
+        ends_at: Date | null;
+        status: string;
+        month: string;
+        volunteer_schedule_published_at: Date | null;
+      }[]
+    >`
+      select event.id, event.starts_at, event.ends_at, event.status,
+             event.volunteer_schedule_published_at,
+             to_char(
+               event.starts_at at time zone coalesce(settings.timezone, 'America/Sao_Paulo'),
+               'YYYY-MM-01'
+             ) as month
+      from public.events event
+      left join public.volunteer_module_settings settings on settings.company_id = event.company_id
+      where event.id = ${eventId}
+        and event.company_id = ${companyId}
+        and event.deleted_at is null
+    `;
+    const event = events[0];
+    if (!event) throw new Error("Culto não encontrado");
+    if (event.status !== "published")
+      throw new Error("Publique o culto em Eventos antes de gerar a escala");
+    if (event.volunteer_schedule_published_at)
+      throw new Error("Escala deste culto já foi publicada");
+    const positions = await sql<
+      {
+        id: string;
+        department_id: string;
+        role_id: string;
+        role_name: string;
+        required_volunteers: number;
+        instructions: string;
+      }[]
+    >`
+      select id, department_id, role_id, role_name, required_volunteers, instructions
+      from public.volunteer_event_positions
+      where event_id = ${eventId} and company_id = ${companyId}
+      order by sort_order
+    `;
+    if (positions.length === 0)
+      throw new Error("Configure equipes e funções antes de gerar a escala");
+    for (const departmentId of new Set(
+      positions.map((position) => position.department_id),
+    ))
+      await managerContext("schedules.create", departmentId);
+
+    const scheduleRows = await sql<{ id: string; status: string }[]>`
+      insert into public.volunteer_schedules (company_id, month, created_by, updated_by)
+      values (${companyId}, ${event.month}::date, ${user.id}, ${user.id})
+      on conflict (company_id, month) do update
+      set updated_by = excluded.updated_by, updated_at = now()
+      returning id, status
+    `;
+    const schedule = scheduleRows[0];
+    if (!schedule?.id) throw new Error("Escala não foi criada");
+
+    const startsAt = event.starts_at;
+    const endsAt =
+      event.ends_at ?? new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+    const opensAt = new Date(startsAt.getTime() - 30 * 60 * 1000);
+    const closesAt = new Date(endsAt.getTime() + 30 * 60 * 1000);
+    const positionIds = positions.map((position) => position.id);
+    await sql.begin(async (tx) => {
+      await tx`
+        delete from public.volunteer_shifts
+        where schedule_id = ${schedule.id}
+          and event_id = ${eventId}
+          and (
+            event_position_id is null
+            or event_position_id <> all(${positionIds}::uuid[])
+          )
+      `;
+      for (const position of positions) {
+        await tx`
+          insert into public.volunteer_shifts (
+            company_id, schedule_id, event_id, event_position_id,
+            department_id, role_id, role_name, required_volunteers, instructions,
+            starts_at, ends_at, checkin_opens_at, checkin_closes_at
+          )
+          values (
+            ${companyId}, ${schedule.id}, ${eventId}, ${position.id},
+            ${position.department_id}, ${position.role_id}, ${position.role_name},
+            ${position.required_volunteers}, ${position.instructions},
+            ${startsAt}, ${endsAt}, ${opensAt}, ${closesAt}
+          )
+          on conflict (schedule_id, event_id, event_position_id)
+            where event_position_id is not null
+          do update set
+            department_id = excluded.department_id,
+            role_id = excluded.role_id,
+            role_name = excluded.role_name,
+            required_volunteers = excluded.required_volunteers,
+            instructions = excluded.instructions,
+            starts_at = excluded.starts_at,
+            ends_at = excluded.ends_at,
+            checkin_opens_at = excluded.checkin_opens_at,
+            checkin_closes_at = excluded.checkin_closes_at,
+            updated_at = now()
+        `;
+      }
+    });
+    const generated = await generateSmartVolunteerSchedule(schedule.id);
+    if (!generated.ok) return generated;
+    await audit(
+      "volunteer_schedule.event_generate",
+      "events",
+      eventId,
+      companyId,
+      { scheduleId: schedule.id, positions: positions.length },
+    );
+    return {
+      ok: true,
+      id: schedule.id,
+      data: generated.data,
+    };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+export async function publishVolunteerEventSchedule(
+  eventIdInput: string,
+): Promise<VolunteerActionResult> {
+  try {
+    const eventId = uuid.parse(eventIdInput);
+    const { user, companyId } = await managerContext("schedules.publish");
+    const sql = getSql();
+    const events = await sql<
+      { id: string; volunteer_schedule_published_at: Date | null }[]
+    >`
+      select id, volunteer_schedule_published_at
+      from public.events
+      where id = ${eventId}
+        and company_id = ${companyId}
+        and deleted_at is null
+    `;
+    const event = events[0];
+    if (!event) throw new Error("Culto não encontrado");
+    const departments = await sql<{ department_id: string }[]>`
+      select distinct department_id
+      from public.volunteer_shifts
+      where event_id = ${eventId} and company_id = ${companyId}
+    `;
+    if (departments.length === 0)
+      throw new Error("Gere o rascunho antes de publicar");
+    for (const row of departments)
+      await managerContext("schedules.publish", row.department_id);
+
+    await sql`
+      update public.volunteer_assignments assignment
+      set status = 'notified',
+          notified_at = coalesce(notified_at, now()),
+          updated_by = ${user.id},
+          updated_at = now()
+      from public.volunteer_shifts shift
+      where assignment.shift_id = shift.id
+        and shift.event_id = ${eventId}
+        and shift.company_id = ${companyId}
+        and assignment.status = 'proposed'
+    `;
+    const recipients = await sql<
+      {
+        assignment_id: string;
+        volunteer_id: string;
+        email: string | null;
+        phone: string;
+        email_enabled: boolean;
+        whatsapp_enabled: boolean;
+        push_enabled: boolean;
+        event_title: string;
+        starts_at: Date;
+      }[]
+    >`
+      select assignment.id as assignment_id, volunteer.id as volunteer_id,
+             person.email, person.phone,
+             coalesce(preference.email_enabled, volunteer.email_enabled) as email_enabled,
+             coalesce(preference.whatsapp_enabled, volunteer.whatsapp_enabled) as whatsapp_enabled,
+             coalesce(preference.push_enabled, false) as push_enabled,
+             event.title as event_title, shift.starts_at
+      from public.volunteer_assignments assignment
+      join public.volunteer_shifts shift on shift.id = assignment.shift_id
+      join public.events event on event.id = shift.event_id
+      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
+      join public.people person on person.id = volunteer.person_id
+      left join public.volunteer_notification_preferences preference
+        on preference.volunteer_id = volunteer.id
+      where shift.event_id = ${eventId}
+        and shift.company_id = ${companyId}
+        and assignment.status not in ('declined', 'cancelled')
+    `;
+    for (const recipient of recipients) {
+      const content = `Sua escala foi publicada: ${recipient.event_title} em ${recipient.starts_at.toLocaleString("pt-BR")}.`;
+      if (recipient.whatsapp_enabled && recipient.phone)
+        await sql`
+          insert into public.volunteer_delivery_outbox (
+            company_id, volunteer_id, assignment_id, channel, recipient, subject, content
+          )
+          values (
+            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
+            'whatsapp', ${recipient.phone}, 'Sua escala', ${content}
+          )
+          on conflict (assignment_id, volunteer_id, channel) do nothing
+        `;
+      if (recipient.email_enabled && recipient.email)
+        await sql`
+          insert into public.volunteer_delivery_outbox (
+            company_id, volunteer_id, assignment_id, channel, recipient, subject, content
+          )
+          values (
+            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
+            'email', ${recipient.email}, 'Sua escala foi publicada', ${content}
+          )
+          on conflict (assignment_id, volunteer_id, channel) do nothing
+        `;
+      if (recipient.push_enabled)
+        await sql`
+          insert into public.volunteer_delivery_outbox (
+            company_id, volunteer_id, assignment_id, channel, recipient,
+            subject, content, event_kind, payload
+          )
+          values (
+            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
+            'push', '', 'Nova escala', ${content}, 'schedule',
+            ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb
+          )
+          on conflict (assignment_id, volunteer_id, channel) do nothing
+        `;
+    }
+    await sql`
+      update public.events
+      set volunteer_schedule_published_at = coalesce(volunteer_schedule_published_at, now()),
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${eventId} and company_id = ${companyId}
+    `;
+    await audit(
+      "volunteer_schedule.event_publish",
+      "events",
+      eventId,
+      companyId,
+      { recipients: recipients.length },
+    );
+    refreshVolunteerPaths();
+    return { ok: true, id: eventId };
   } catch (error) {
     return resultError(error);
   }

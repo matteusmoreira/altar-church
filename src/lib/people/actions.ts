@@ -237,8 +237,9 @@ async function provisionPersonAccess(input: {
     full_name: string
     email: string | null
     profile_id: string | null
+    person_type: "visitor" | "attendee" | "member" | "leader" | "volunteer"
   }[]>`
-    select id, company_id, full_name, email, profile_id
+    select id, company_id, full_name, email, profile_id, person_type
     from public.people
     where id = ${input.personId}
       and company_id = ${input.companyId}
@@ -250,6 +251,10 @@ async function provisionPersonAccess(input: {
   if (!person) {
     throw new Error("Pessoa não encontrada")
   }
+  const effectiveRole: PersonAccessRole =
+    person.person_type === "visitor" || person.person_type === "attendee"
+      ? "member"
+      : input.role
 
   const email = person.email?.trim().toLowerCase() ?? ""
   if (!email) {
@@ -277,7 +282,7 @@ async function provisionPersonAccess(input: {
     email,
     password: input.temporaryPassword,
     name: person.full_name,
-    role: input.role,
+    role: effectiveRole,
     companyId: input.companyId,
   })
 
@@ -292,7 +297,7 @@ async function provisionPersonAccess(input: {
           auth_user_id = coalesce(${authUserId}, auth_user_id),
           name = ${person.full_name},
           email = ${email},
-          role = ${input.role},
+          role = ${effectiveRole},
           person_id = ${person.id},
           active = true
       where id = ${profileId}
@@ -300,7 +305,7 @@ async function provisionPersonAccess(input: {
   } else {
     const rows = await sql<{ id: string }[]>`
       insert into public.profiles (company_id, auth_user_id, person_id, name, email, role, active)
-      values (${input.companyId}, ${authUserId}, ${person.id}, ${person.full_name}, ${email}, ${input.role}, true)
+      values (${input.companyId}, ${authUserId}, ${person.id}, ${person.full_name}, ${email}, ${effectiveRole}, true)
       returning id
     `
     profileId = rows[0]?.id ?? null
@@ -324,7 +329,7 @@ async function provisionPersonAccess(input: {
   await sql`
     update public.people
     set profile_id = ${profileId},
-        access_profile = ${input.role},
+        access_profile = ${effectiveRole},
         email_validated = true,
         updated_by = ${input.actorProfileId}
     where id = ${person.id}
@@ -340,7 +345,7 @@ async function provisionPersonAccess(input: {
     companyId: input.companyId,
     metadata: {
       profileId,
-      role: input.role,
+      role: effectiveRole,
       email,
       authUserLinked: Boolean(authUserId),
     },
