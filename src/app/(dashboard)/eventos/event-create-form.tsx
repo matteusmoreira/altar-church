@@ -125,18 +125,6 @@ export function EventCreateForm({ canCreate, volunteerTemplates }: EventCreateFo
             <Label htmlFor="onlineLink">Link online</Label>
             <Input id="onlineLink" name="onlineLink" placeholder="https://..." disabled={isPending} />
           </div>
-          <div className="grid gap-2 lg:col-span-2">
-            <Label htmlFor="volunteerTemplateId">Template de voluntariado</Label>
-            <Select name="volunteerTemplateId" defaultValue="none" disabled={isPending}>
-              <SelectTrigger id="volunteerTemplateId"><SelectValue placeholder="Sem vagas de voluntariado" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sem template</SelectItem>
-                {volunteerTemplates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="flex items-end gap-4">
             <input type="hidden" name="isPublic" value="true" />
             <label className="flex items-center gap-2 text-sm">
@@ -155,6 +143,26 @@ export function EventCreateForm({ canCreate, volunteerTemplates }: EventCreateFo
           <div className="grid gap-2 lg:col-span-6">
             <Label htmlFor="description">Descrição</Label>
             <Textarea id="description" name="description" rows={3} placeholder="Detalhes do evento" disabled={isPending} />
+          </div>
+          <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 lg:col-span-6">
+            <div>
+              <p className="text-sm font-medium">Voluntariado — opcional</p>
+              <p className="text-xs text-muted-foreground">
+                Aplique modelo de equipes e funções somente quando quiser preparar escala deste evento.
+              </p>
+            </div>
+            <div className="grid max-w-md gap-2">
+              <Label htmlFor="volunteerTemplateId">Modelo de escala</Label>
+              <Select name="volunteerTemplateId" defaultValue="none" disabled={isPending}>
+                <SelectTrigger id="volunteerTemplateId"><SelectValue placeholder="Não aplicar modelo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não aplicar modelo</SelectItem>
+                  {volunteerTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="lg:col-span-6">
             <Button type="submit" className="gradient-primary" disabled={isPending}>

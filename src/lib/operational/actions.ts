@@ -363,7 +363,9 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     }
     const volunteerTemplateValue = text(formData, "volunteerTemplateId")
     const volunteerTemplateId = volunteerTemplateValue === "none" ? null : uuid(formData, "volunteerTemplateId")
-    if (volunteerTemplateValue && !volunteerTemplateId) throw new Error("Template de voluntariado inválido")
+    if (volunteerTemplateValue && volunteerTemplateValue !== "none" && !volunteerTemplateId) {
+      throw new Error("Template de voluntariado inválido")
+    }
     if (volunteerTemplateId) {
       stage = "volunteer-template"
       const templates = await sql<{ id: string }[]>`
