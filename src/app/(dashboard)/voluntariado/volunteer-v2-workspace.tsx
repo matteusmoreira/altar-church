@@ -1052,7 +1052,9 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
         <CardHeader>
           <CardTitle>Funções e instruções</CardTitle>
           <CardDescription>
-            Funções habilitam escala inteligente.
+            {role.id
+              ? `Editando a função "${role.name}". Ajuste e clique em Salvar, ou clique em Cancelar para criar uma nova função.`
+              : "Selecione a equipe, preencha e clique em Criar função."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
