@@ -55,7 +55,7 @@ function buildDefaultAccountDocument() {
       member: {
         email: process.env.E2E_MEMBER_EMAIL ?? "e2e.membro@altar-church.test",
         password,
-        role: "reader",
+        role: "member",
         name: "Membro E2E",
         companyLegacyId: process.env.E2E_COMPANY_LEGACY_ID ?? "c1",
       },

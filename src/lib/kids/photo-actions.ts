@@ -18,7 +18,7 @@ function text(formData: FormData, key: string) {
 function refreshKids() {
   revalidatePath("/kids")
   revalidatePath("/kids/recepcao")
-  revalidatePath("/familia/kids")
+  revalidatePath("/membro/kids")
 }
 
 async function uploadPhoto(input: { file: File; personId: string; companyId: string; ownerProfileId?: string | null; source: string }) {

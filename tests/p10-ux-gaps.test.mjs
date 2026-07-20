@@ -54,6 +54,6 @@ test("self-service registration is available for church slug onboarding", () => 
   assert.match(registerPage, /registerSelfServiceUser/)
   assert.match(registerPage, /companySlug/)
   assert.match(registerAction, /createUser/)
-  assert.match(registerAction, /role.*reader|reader/)
+  assert.match(registerAction, /role.*member|member/)
   assert.match(loginPage, /\/register/)
 })

@@ -165,7 +165,8 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
         m.contact,
         m.leader_person_id,
         p.full_name as leader_name,
-        0 as member_count,
+        (select count(*)::integer from public.ministry_memberships membership
+          where membership.ministry_id = m.id and membership.status = 'active') as member_count,
         m.is_active,
         m.created_at,
         m.updated_at

@@ -2559,7 +2559,7 @@ export async function listKidConversations(): Promise<{ ok: boolean; conversatio
     const user = await getCurrentUser()
     if (!user) throw new Error("Acesso negado")
     const companyId = requireUserCompanyId(user)
-    if (user.role === "guardian") return { ok: true, conversations: await listKidConversationsForGuardian(companyId, user.id) }
+    if (user.role === "member") return { ok: true, conversations: await listKidConversationsForGuardian(companyId, user.id) }
     await context("kids.communicate")
     return { ok: true, conversations: await listKidConversationsForStaff(companyId) }
   } catch (error) {
@@ -2592,7 +2592,7 @@ export async function sendKidInternalMessage(input: unknown): Promise<KidsAction
     if (!user) throw new Error("Acesso negado")
     const companyId = requireUserCompanyId(user)
     const sql = getSql()
-    const senderKind = user.role === "guardian" ? "guardian" : "staff"
+    const senderKind = user.role === "member" ? "guardian" : "staff"
     if (senderKind === "staff") await context("kids.communicate")
 
     let conversationId = parsed.conversationId
@@ -2651,7 +2651,7 @@ export async function sendKidInternalMessage(input: unknown): Promise<KidsAction
       where id = ${conversationId} and company_id = ${companyId}
     `
     await audit("kids.chat.send", "kid_conversation_messages", rows[0]?.id ?? conversationId, companyId, { conversationId, senderKind })
-    revalidatePath(senderKind === "guardian" ? "/familia/kids" : "/kids")
+    revalidatePath(senderKind === "guardian" ? "/membro/kids" : "/kids")
     return { ok: true, id: conversationId }
   } catch (error) {
     return failure(error)
@@ -2665,7 +2665,7 @@ export async function markKidConversationRead(input: unknown): Promise<KidsActio
     if (!user) throw new Error("Acesso negado")
     const companyId = requireUserCompanyId(user)
     const sql = getSql()
-    if (user.role === "guardian") {
+    if (user.role === "member") {
       await sql`
         update public.kid_conversations conversation set guardian_read_at = now()
         where conversation.id = ${conversationId} and conversation.company_id = ${companyId}

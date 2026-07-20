@@ -73,7 +73,7 @@ async function autoLinkGuardian(userId: string, email: string) {
 
 /**
  * Usuário do portal familiar. Se o login (OTP) ainda não tem perfil, cria o perfil
- * guardian a partir do vínculo existente de responsável (cadastro feito na recepção
+ * member a partir do vínculo existente de responsável (cadastro feito na recepção
  * ou no formulário de visitante). Redireciona para /familia/login quando não autenticado.
  */
 export async function requireGuardianUser() {
@@ -105,7 +105,7 @@ export async function requireGuardianUser() {
 
   await sql`
     insert into public.profiles (company_id, name, email, role, active, auth_user_id)
-    values (${link.company_id}, ${link.guardian_name}, ${authUser.email.toLowerCase()}, 'guardian', true, ${authUser.id})
+    values (${link.company_id}, ${link.guardian_name}, ${authUser.email.toLowerCase()}, 'member', true, ${authUser.id})
     on conflict (email) do update
     set auth_user_id = coalesce(public.profiles.auth_user_id, excluded.auth_user_id),
         updated_at = now()

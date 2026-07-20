@@ -136,7 +136,7 @@ const emptyContactForm: ContactFormState = {
   isEmergencyContact: true,
 }
 
-export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
+export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPortalData; embedded?: boolean }) {
   const router = useRouter()
   const [childForm, setChildForm] = useState<ChildFormState | null>(null)
   const [contactForm, setContactForm] = useState<{ kidId: string; form: ContactFormState } | null>(null)
@@ -271,8 +271,8 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-3xl space-y-6 p-4 pb-16">
-      <header className="flex items-center justify-between gap-3 pt-4">
+    <main className={embedded ? "mx-auto w-full max-w-3xl space-y-6 lg:pt-12" : "mx-auto min-h-screen w-full max-w-3xl space-y-6 p-4 pb-16"}>
+      {!embedded && <header className="flex items-center justify-between gap-3 pt-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-primary">
             <Church className="h-5 w-5 text-white" />
@@ -288,9 +288,9 @@ export function FamiliaKidsClient({ data }: { data: GuardianPortalData }) {
             <LogOut className="h-5 w-5" />
           </Button>
         </div>
-      </header>
+      </header>}
 
-      <PwaInstallBanner />
+      {!embedded && <PwaInstallBanner />}
 
       <Card className="glass">
         <CardHeader><CardTitle className="text-base">Meu endereço e dados adicionais</CardTitle><CardDescription>Endereço familiar opcional, compartilhado pelos cadastros vinculados.</CardDescription></CardHeader>

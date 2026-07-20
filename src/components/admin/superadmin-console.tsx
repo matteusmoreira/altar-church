@@ -149,8 +149,7 @@ const roleLabels: Record<UserRole, string> = {
   communication: "Comunicação",
   finance: "Financeiro",
   volunteer: "Voluntário",
-  reader: "Leitor",
-  guardian: "Responsável",
+  member: "Membro",
 }
 
 const statusLabels: Record<CompanyStatus, string> = {
@@ -204,7 +203,7 @@ function emptyProfileForm(companies: AdminCompany[]): ProfileForm {
     companyId: companies[0]?.id ?? null,
     name: "",
     email: "",
-    role: "reader",
+    role: "member",
     active: true,
     password: "",
   }

@@ -46,7 +46,7 @@ export default function RegisterPage() {
   return (
     <AuthCard
       title="Criar conta"
-      subtitle="Cadastre-se com o slug da sua igreja. O perfil inicia como leitor até um administrador ampliar o acesso."
+      subtitle="Cadastre-se com o slug da sua igreja para acessar seu Portal do Membro."
     >
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <div className="space-y-2">

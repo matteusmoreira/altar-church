@@ -1,4 +1,4 @@
-export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_supervisor" | "cell_leader" | "communication" | "finance" | "volunteer" | "reader" | "guardian"
+export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "cell_supervisor" | "cell_leader" | "communication" | "finance" | "volunteer" | "member"
 
 export type ChurchStatus = "active" | "blocked" | "test"
 
@@ -27,6 +27,8 @@ export type Permission =
   | "ministries.view"
   | "ministries.create"
   | "ministries.edit"
+  | "ministries.self.view"
+  | "ministries.self.request"
   | "events.view"
   | "events.create"
   | "events.edit"
@@ -388,7 +390,7 @@ export interface DashboardMetrics {
 }
 
 // Kids: operação completa (líderes) e gestão completa (admin/pastor adicionam configurações sensíveis).
-// O papel guardian recebe apenas kids.guardian.self e nunca acessa o dashboard administrativo.
+// O papel member usa apenas superfícies próprias e nunca acessa o dashboard administrativo.
 const KIDS_OPERATION_PERMISSIONS: Permission[] = [
   "kids.view", "kids.children.manage", "kids.guardians.manage", "kids.classes.manage",
   "kids.sessions.manage", "kids.checkin.create", "kids.checkout.create", "kids.checkout.override",
@@ -505,16 +507,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "volunteer.self.feedback", "volunteer.self.preferences",
     "kids.room.view",
   ],
-  reader: [
-    "members.view",
-    "events.view",
-    "attendance.view",
-    "prayer.view",
-    "content.view",
-    "reports.view", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
-  ],
-  guardian: [
-    "kids.guardian.self",
+  member: [
+    "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+    "ministries.self.view", "ministries.self.request", "kids.guardian.self",
   ],
 }
 

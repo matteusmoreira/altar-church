@@ -54,7 +54,7 @@ function buildDefaultAccountDocument(): E2EAccountDocument {
       member: {
         email: process.env.E2E_MEMBER_EMAIL ?? "e2e.membro@altar-church.test",
         password,
-        role: "reader",
+        role: "member",
         name: "Membro E2E",
         companyLegacyId,
       },
@@ -72,5 +72,7 @@ export function readE2EAccounts(docPath = process.env.E2E_ACCOUNTS_DOC ?? defaul
     throw new Error(`Bloco JSON nao encontrado no doc E2E: ${docPath}`)
   }
 
-  return JSON.parse(match[1]) as E2EAccountDocument
+  const document = JSON.parse(match[1]) as E2EAccountDocument
+  document.accounts.member.role = "member"
+  return document
 }

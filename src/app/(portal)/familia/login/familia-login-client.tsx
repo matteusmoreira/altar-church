@@ -35,7 +35,7 @@ export function FamiliaLoginClient({ error }: { error: string }) {
       const result = await verifyFamilyLoginCode({ email: email.trim(), code: code.trim() })
       if (!result.ok) return toast.error(result.error ?? "Código inválido")
       toast.success("Bem-vindo(a)!")
-      router.push("/familia/kids")
+      router.push("/membro/kids")
       router.refresh()
     } finally {
       setPending(false)

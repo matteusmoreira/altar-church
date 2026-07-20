@@ -100,7 +100,7 @@ test("kids portal: bootstrap guardian, auto-vínculo, rate limit, escopo e retir
     profileId = (
       await sql`
         insert into public.profiles (company_id, name, email, role, active)
-        values (${companyId}, ${'Portal Responsavel ' + stamp}, ${email}, 'guardian', true)
+        values (${companyId}, ${'Portal Responsavel ' + stamp}, ${email}, 'member', true)
         returning id
       `
     )[0].id

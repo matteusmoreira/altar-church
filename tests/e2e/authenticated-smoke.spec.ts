@@ -10,7 +10,7 @@ for (const role of roles) {
   test(`${role} faz login no Chrome e abre dashboard`, async ({ page }) => {
     await loginAs(page, e2e.accounts[role])
     await expectNoDevError(page)
-    await expect(page.getByRole("heading", { name: /Dashboard|Visao geral|Visão geral/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: role === "member" ? /Olá|Portal do Membro/i : /Dashboard|Visao geral|Visão geral/i })).toBeVisible()
   })
 }
 

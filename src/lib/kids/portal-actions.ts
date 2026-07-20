@@ -42,7 +42,7 @@ function failure(error: unknown): KidsPortalActionResult {
 }
 
 function refresh() {
-  revalidatePath("/familia/kids")
+  revalidatePath("/membro/kids")
   revalidatePath("/kids/recepcao")
   revalidatePath("/kids")
 }

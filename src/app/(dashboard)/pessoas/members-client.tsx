@@ -114,7 +114,7 @@ const accessRoleLabels: Record<PersonAccessRole, string> = {
   communication: "Comunicação",
   finance: "Financeiro",
   volunteer: "Voluntário",
-  reader: "Leitor",
+  member: "Membro",
 }
 
 const statusLabels: Record<PersonStatus, string> = {
@@ -150,7 +150,7 @@ const emptyForm: PersonFormState = {
   isActive: true,
   internalNotes: "",
   inviteAccess: false,
-  accessRole: "reader",
+  accessRole: "member",
   temporaryPassword: "",
   hasSystemAccess: false,
 }
@@ -204,7 +204,7 @@ function personToForm(person: PersonListItem): PersonFormState {
     isActive: person.isActive,
     internalNotes: "",
     inviteAccess: false,
-    accessRole: person.accessRole ?? "reader",
+    accessRole: person.accessRole ?? "member",
     temporaryPassword: "",
     hasSystemAccess: person.hasSystemAccess,
   }

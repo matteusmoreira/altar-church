@@ -33,7 +33,7 @@ function result(error: unknown): KidsActionResult {
 
 function refresh() {
   revalidatePath("/kids")
-  revalidatePath("/familia/kids")
+  revalidatePath("/membro/kids")
 }
 
 export async function saveKidCustomField(input: z.input<typeof fieldSchema>): Promise<KidsActionResult> {

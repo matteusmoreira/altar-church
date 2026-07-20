@@ -1,4 +1,7 @@
 import { MinistriesClient } from "./ministries-client"
+import { MinistryMembershipManager } from "@/components/member/ministry-membership-manager"
+import { getCurrentUser } from "@/lib/auth/server"
+import { listManagedMinistryMemberships } from "@/lib/member/data"
 import { listMinistries, listMinistryLeaderCandidates } from "@/lib/pastoral/data"
 import type { PastoralListFilters } from "@/lib/pastoral/types"
 
@@ -32,7 +35,17 @@ export default async function MinistriesPage({ searchParams }: { searchParams?: 
     page: numberFilter(params.page, 1),
     pageSize: 10,
   }
-  const [ministriesResult, leaderCandidates] = await Promise.all([listMinistries(filters), listMinistryLeaderCandidates()])
+  const user = await getCurrentUser()
+  const [ministriesResult, leaderCandidates, memberships] = await Promise.all([
+    listMinistries(filters),
+    listMinistryLeaderCandidates(),
+    user ? listManagedMinistryMemberships(user) : Promise.resolve([]),
+  ])
 
-  return <MinistriesClient ministriesResult={ministriesResult} filters={filters} leaderCandidates={leaderCandidates} />
+  return (
+    <div className="space-y-6">
+      <MinistriesClient ministriesResult={ministriesResult} filters={filters} leaderCandidates={leaderCandidates} />
+      <MinistryMembershipManager memberships={memberships} />
+    </div>
+  )
 }

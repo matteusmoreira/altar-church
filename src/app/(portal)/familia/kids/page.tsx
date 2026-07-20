@@ -1,7 +1,5 @@
-import { getGuardianPortalData } from "@/lib/kids/portal"
-import { FamiliaKidsClient } from "./familia-kids-client"
+import { redirect } from "next/navigation"
 
 export default async function FamiliaKidsPage() {
-  const data = await getGuardianPortalData()
-  return <FamiliaKidsClient data={data} />
+  redirect("/membro/kids")
 }

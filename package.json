@@ -23,6 +23,7 @@
     "db:migrate": "node --env-file-if-exists=.env.local scripts/apply-pending-migrations.mjs",
     "db:audit": "node --env-file-if-exists=.env.local scripts/audit-database.mjs",
     "db:optimize": "node --env-file-if-exists=.env.local scripts/optimize-database.mjs",
+    "member:verify": "node --env-file-if-exists=.env.local scripts/verify-member-portal.mjs",
     "kids:configure-pin": "node scripts/configure-kids-pin-pepper.mjs"
   },
   "dependencies": {

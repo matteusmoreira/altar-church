@@ -80,7 +80,7 @@ const accessRoleLabels: Record<PersonAccessRole, string> = {
   communication: "Comunicação",
   finance: "Financeiro",
   volunteer: "Voluntário",
-  reader: "Leitor",
+  member: "Membro",
 }
 
 const activityCategoryLabels: Record<string, string> = {
@@ -149,7 +149,7 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
   const [inviteOpen, setInviteOpen] = useState(false)
   const [isInviting, setIsInviting] = useState(false)
-  const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "reader")
+  const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "member")
   const [temporaryPassword, setTemporaryPassword] = useState("")
 
   const completedSteps = person.journeySteps.filter((step) => step.completedAt).length
@@ -452,7 +452,7 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                   className="mt-2 w-full"
                   variant={person.hasSystemAccess ? "outline" : "default"}
                   onClick={() => {
-                    setAccessRole(person.accessRole ?? "reader")
+                    setAccessRole(person.accessRole ?? "member")
                     setTemporaryPassword("")
                     setInviteOpen(true)
                   }}

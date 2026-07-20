@@ -42,6 +42,7 @@ const emptyContent: ContentDashboardData = {
 
 export default async function DashboardPage() {
   const user = await getCurrentUser()
+  if (user?.role === "member") redirect("/membro")
   if (user?.role === "volunteer") redirect("/voluntariado")
   const [people, groups, content] = await Promise.all([
     safeRead(getPeopleDashboardData, emptyPeople),

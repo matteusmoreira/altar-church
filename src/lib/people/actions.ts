@@ -35,7 +35,7 @@ const accessRoleSchema = z.enum([
   "communication",
   "finance",
   "volunteer",
-  "reader",
+  "member",
 ])
 
 const personSchema = z.object({

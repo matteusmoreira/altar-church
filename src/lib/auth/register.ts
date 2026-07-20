@@ -56,7 +56,7 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
       email_confirm: true,
       user_metadata: {
         name: parsed.name,
-        role: "reader",
+        role: "member",
         company_id: company.id,
       },
     })
@@ -68,11 +68,53 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
     const authUserId = created.data.user.id
 
     try {
-      const rows = await sql<{ id: string }[]>`
-        insert into public.profiles (company_id, auth_user_id, name, email, role, active)
-        values (${company.id}, ${authUserId}, ${parsed.name}, ${email}, 'reader', true)
-        returning id
-      `
+      const profileId = await sql.begin(async (tx) => {
+        const rows = await tx<{ id: string }[]>`
+          insert into public.profiles (company_id, auth_user_id, name, email, role, active)
+          values (${company.id}, ${authUserId}, ${parsed.name}, ${email}, 'member', true)
+          returning id
+        `
+        const id = rows[0]?.id
+        if (!id) throw new Error("Perfil não foi criado")
+
+        const nameParts = parsed.name.trim().split(/\s+/)
+        const firstName = nameParts[0] ?? parsed.name
+        const lastName = nameParts.slice(1).join(" ")
+        const people = await tx<{ id: string }[]>`
+          select id
+          from public.people
+          where company_id = ${company.id}
+            and lower(coalesce(email, '')) = ${email}
+            and deleted_at is null
+            and profile_id is null
+          order by created_at
+          limit 1
+        `
+        const personId = people[0]?.id ?? (
+          await tx<{ id: string }[]>`
+            insert into public.people (
+              company_id, first_name, last_name, full_name, email, access_profile,
+              status, person_type, is_active, profile_id, created_by, updated_by
+            )
+            values (
+              ${company.id}, ${firstName}, ${lastName}, ${parsed.name}, ${email}, 'member',
+              'active', 'member', true, ${id}, ${id}, ${id}
+            )
+            returning id
+          `
+        )[0]?.id
+        if (!personId) throw new Error("Identidade do membro não foi criada")
+
+        await tx`
+          update public.people
+          set profile_id = ${id}, access_profile = 'member', updated_at = now()
+          where id = ${personId} and (profile_id is null or profile_id = ${id})
+        `
+        await tx`
+          update public.profiles set person_id = ${personId}, updated_at = now() where id = ${id}
+        `
+        return id
+      })
 
       await sql`
         update public.companies c
@@ -90,9 +132,9 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
       await writeAuditLog({
         action: "auth.self_register",
         entityTable: "profiles",
-        entityId: rows[0]?.id ?? null,
+        entityId: profileId,
         companyId: company.id,
-        metadata: { email, role: "reader", companySlug: parsed.companySlug },
+        metadata: { email, role: "member", companySlug: parsed.companySlug },
       }).catch(() => {
         // Audit may fail without session; registration should still succeed.
       })

@@ -13,7 +13,7 @@ export type PersonAccessRole =
   | "communication"
   | "finance"
   | "volunteer"
-  | "reader"
+  | "member"
 
 export interface PeopleListFilters {
   companyId?: string | null

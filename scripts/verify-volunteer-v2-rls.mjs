@@ -30,7 +30,7 @@ try {
       ) admin on true
       join lateral (
         select id, auth_user_id from public.profiles
-        where company_id = volunteer.company_id and role = 'reader' and auth_user_id is not null limit 1
+        where company_id = volunteer.company_id and role = 'member' and auth_user_id is not null limit 1
       ) leader on true
       join lateral (
         select auth_user_id from public.profiles

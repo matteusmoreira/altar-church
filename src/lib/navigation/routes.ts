@@ -66,6 +66,7 @@ legacyDashboardRedirects.push(
 )
 
 export const protectedDashboardPrefixes = [
+  "/membro",
   ...new Set([
     ...Object.values(dashboardRoutes),
     ...Object.values(legacyDashboardRoutes),

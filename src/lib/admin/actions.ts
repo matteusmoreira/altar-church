@@ -53,8 +53,7 @@ const profileSchema = z
       "communication",
       "finance",
       "volunteer",
-      "reader",
-      "guardian",
+      "member",
     ]),
     active: z.boolean(),
     password: z.string().optional().default(""),
@@ -614,6 +613,52 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
           returning id
         `
         auditProfileId = rows[0]?.id ?? null
+      }
+
+      if (auditProfileId && parsed.companyId) {
+        await tx`
+          update public.people person
+          set profile_id = ${auditProfileId},
+              access_profile = ${parsed.role},
+              updated_at = now()
+          where person.id = (
+            select candidate.id
+            from public.people candidate
+            where candidate.company_id = ${parsed.companyId}
+              and lower(coalesce(candidate.email, '')) = lower(${parsed.email})
+              and candidate.deleted_at is null
+              and (candidate.profile_id is null or candidate.profile_id = ${auditProfileId})
+            order by candidate.created_at
+            limit 1
+          )
+        `
+        await tx`
+          insert into public.people (
+            company_id, first_name, last_name, full_name, email, access_profile,
+            status, person_type, is_active, profile_id, created_by, updated_by
+          )
+          select ${parsed.companyId},
+            split_part(${parsed.name}, ' ', 1),
+            case when position(' ' in ${parsed.name}) > 0
+              then substring(${parsed.name} from position(' ' in ${parsed.name}) + 1)
+              else '' end,
+            ${parsed.name}, ${parsed.email}, ${parsed.role}, 'active',
+            case when ${parsed.role} in ('pastor', 'ministry_leader', 'cell_supervisor', 'cell_leader') then 'leader'
+              when ${parsed.role} = 'volunteer' then 'volunteer' else 'member' end,
+            ${parsed.active}, ${auditProfileId}, ${auditProfileId}, ${auditProfileId}
+          where not exists (
+            select 1 from public.people person
+            where person.profile_id = ${auditProfileId} and person.deleted_at is null
+          )
+        `
+        await tx`
+          update public.profiles profile
+          set person_id = person.id
+          from public.people person
+          where profile.id = ${auditProfileId}
+            and person.profile_id = profile.id
+            and person.deleted_at is null
+        `
       }
 
       await tx`

@@ -118,16 +118,19 @@ test("kids foundation: schema, RLS, policies, constraints e registro do módulo"
     assert.equal(moduleRows[0].route, "/kids")
     assert.equal(moduleRows[0].menu_group, "Cuidar")
     assert.equal(moduleRows[0].required_permission, "kids.view")
-    const planRows = await sql`select * from public.plan_modules where module_id = 'kids'`
-    assert.equal(planRows.length, 0, "kids não deve estar em nenhum plano por padrão")
     const kidsMigration = readFileSync("supabase/migrations/20260717120000_kids_module.sql", "utf8")
+    assert.doesNotMatch(
+      kidsMigration,
+      /insert\s+into\s+public\.plan_modules[\s\S]*?['"]kids['"]/i,
+      "migration não deve ativar Kids automaticamente em planos",
+    )
     assert.doesNotMatch(
       kidsMigration,
       /insert\s+into\s+public\.company_modules[\s\S]*?['"]kids['"]/i,
       "migration não deve ativar Kids automaticamente em empresas",
     )
 
-    // 5) Papel guardian aceito pelo check constraint de profiles
+    // 5) Papel member aceito pelo check constraint de profiles
     const companies = await sql`select id from public.companies where active = true order by created_at limit 1`
     assert.ok(companies[0]?.id, "precisa de ao menos uma empresa ativa")
     const companyId = companies[0].id
@@ -135,7 +138,7 @@ test("kids foundation: schema, RLS, policies, constraints e registro do módulo"
     const guardianEmail = `kids-guardian-${Date.now()}@teste.local`
     const guardianProfiles = await sql`
       insert into public.profiles (company_id, name, email, role, active)
-      values (${companyId}, 'Responsável Teste Kids', ${guardianEmail}, 'guardian', true)
+      values (${companyId}, 'Responsável Teste Kids', ${guardianEmail}, 'member', true)
       returning id
     `
     cleanup.profileIds.push(guardianProfiles[0].id)
@@ -223,12 +226,20 @@ test("kids foundation: schema, RLS, policies, constraints e registro do módulo"
     )
 
     // 6e) configurações: um padrão por empresa e um por congregação
-    const settingsRows = await sql`
-      insert into public.kid_settings (company_id)
-      values (${companyId})
-      returning id
+    const existingSettings = await sql`
+      select id
+      from public.kid_settings
+      where company_id = ${companyId} and congregation_id is null
+      limit 1
     `
-    cleanup.settingsIds.push(settingsRows[0].id)
+    if (existingSettings.length === 0) {
+      const settingsRows = await sql`
+        insert into public.kid_settings (company_id)
+        values (${companyId})
+        returning id
+      `
+      cleanup.settingsIds.push(settingsRows[0].id)
+    }
     await assert.rejects(
       sql`insert into public.kid_settings (company_id) values (${companyId})`,
       /kid_settings_company_default_unique_idx/,
