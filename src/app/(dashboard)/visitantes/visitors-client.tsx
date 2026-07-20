@@ -47,7 +47,7 @@ import {
 } from "@/components/ui/select"
 
 type VisitorStage = "new" | "contacted" | "following" | "converted" | "inactive"
-type VisitorSource = "event" | "cell" | "online" | "referral" | "walk-in"
+type VisitorSource = "event" | "service" | "cell" | "online" | "referral" | "walk-in"
 
 interface VisitorsClientProps {
   visitorsResult: PeopleListResult
@@ -97,6 +97,7 @@ const statusLabels: Record<VisitorStage, string> = {
 
 const sourceLabels: Record<VisitorSource, string> = {
   event: "Evento",
+  service: "Culto",
   cell: "Célula",
   online: "Online",
   referral: "Indicação",
@@ -104,7 +105,7 @@ const sourceLabels: Record<VisitorSource, string> = {
 }
 
 const stageValues: VisitorStage[] = ["new", "contacted", "following", "converted", "inactive"]
-const sourceValues: VisitorSource[] = ["event", "cell", "online", "referral", "walk-in"]
+const sourceValues: VisitorSource[] = ["event", "service", "cell", "online", "referral", "walk-in"]
 
 const emptyForm: VisitorFormState = {
   id: null,
@@ -132,6 +133,15 @@ function splitName(name: string) {
     firstName: parts[0] ?? "",
     lastName: parts.slice(1).join(" "),
   }
+}
+
+function formatPhoneMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 11)
+  if (digits.length === 0) return ""
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
 function initials(name: string) {
@@ -163,7 +173,7 @@ function visitorToForm(visitor: PersonListItem): VisitorFormState {
     congregationId: visitor.congregationId,
     name: visitor.fullName,
     email: visitor.email ?? "",
-    phone: visitor.phone,
+    phone: formatPhoneMask(visitor.phone),
     source: normalizeSource(visitor.accessProfile),
     stage: normalizeStage(visitor),
     birthDate: visitor.birthDate ?? "",
@@ -495,8 +505,11 @@ export function VisitorsClient({ visitorsResult, filters }: VisitorsClientProps)
               <div className="grid gap-2">
                 <Label>Telefone</Label>
                 <Input
+                  type="tel"
+                  inputMode="tel"
+                  maxLength={15}
                   value={formData.phone}
-                  onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
+                  onChange={(event) => setFormData({ ...formData, phone: formatPhoneMask(event.target.value) })}
                   placeholder="(11) 99999-9999"
                 />
               </div>

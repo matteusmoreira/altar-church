@@ -1146,6 +1146,71 @@ export async function saveCrmCard(formData: FormData): Promise<ActionResult> {
   }
 }
 
+const movePersonToKanbanSchema = z.object({
+  personId: requiredUuidField,
+  stageId: optionalUuidField,
+})
+
+export async function movePersonToKanbanStage(input: {
+  personId: string
+  stageId?: string | null
+}): Promise<ActionResult> {
+  try {
+    const parsed = movePersonToKanbanSchema.parse({
+      personId: input.personId,
+      stageId: input.stageId ?? undefined,
+    })
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, null)
+    await requirePermission("crm.edit", companyId)
+
+    const person = await resolvePersonReference(companyId, parsed.personId, "")
+    const stageId = await resolveCrmStageId(companyId, parsed.stageId || null)
+    const sql = getSql()
+    const existing = await sql<{ id: string }[]>`
+      select id
+      from public.crm_cards
+      where company_id = ${companyId}
+        and person_id = ${parsed.personId}
+        and deleted_at is null
+      order by created_at desc
+      limit 1
+    `
+    const existingId = existing[0]?.id
+    const rows = existingId
+      ? await sql<{ id: string }[]>`
+          update public.crm_cards
+          set stage_id = ${stageId},
+              person_name = ${person.personName},
+              person_phone = ${person.personPhone},
+              person_email = ${person.personEmail},
+              updated_by = ${user.id}
+          where id = ${existingId}
+            and company_id = ${companyId}
+          returning id
+        `
+      : await sql<{ id: string }[]>`
+          insert into public.crm_cards (
+            company_id, person_id, person_name, person_phone, person_email, stage_id, source,
+            assigned_to_name, last_contact, notes, created_by, updated_by
+          )
+          values (
+            ${companyId}, ${parsed.personId}, ${person.personName}, ${person.personPhone}, ${person.personEmail},
+            ${stageId}, 'pessoas', '', null, '', ${user.id}, ${user.id}
+          )
+          returning id
+        `
+    const savedId = rows[0]?.id
+    if (!savedId) throw new Error("Card não foi salvo")
+    await audit("crm_card.save", "crm_cards", savedId, companyId)
+    refresh(["/crm", "/dashboard"])
+    return { ok: true, id: savedId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function deleteCrmCard(formData: FormData): Promise<ActionResult> {
   try {
     validateActionForm(formData, deleteEntitySchema)

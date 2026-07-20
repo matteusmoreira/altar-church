@@ -100,18 +100,32 @@ export async function saveVolunteerDepartmentRole(
       parsed.departmentId,
     );
     const sql = getSql();
+    const duplicates = await sql<{ id: string }[]>`
+      select id from public.volunteer_department_roles
+      where company_id = ${companyId}
+        and department_id = ${parsed.departmentId}
+        and lower(name) = lower(${parsed.name})
+        and deleted_at is null
+        and (${parsed.id}::uuid is null or id <> ${parsed.id}::uuid)
+      limit 1
+    `;
+    if (duplicates[0]?.id)
+      throw new Error("Já existe uma função com este nome nesta equipe");
     const rows = parsed.id
       ? await sql<{ id: string }[]>`
-          update public.volunteer_department_roles set name = ${parsed.name}, description = ${parsed.description},
-            instructions = ${parsed.instructions}, is_active = ${parsed.active}
-          where id = ${parsed.id} and company_id = ${companyId} and department_id = ${parsed.departmentId}
+          update public.volunteer_department_roles set department_id = ${parsed.departmentId}, name = ${parsed.name},
+            description = ${parsed.description}, instructions = ${parsed.instructions}, is_active = ${parsed.active}
+          where id = ${parsed.id} and company_id = ${companyId}
             and deleted_at is null returning id
         `
       : await sql<{ id: string }[]>`
           insert into public.volunteer_department_roles(company_id, department_id, name, description, instructions)
           values (${companyId}, ${parsed.departmentId}, ${parsed.name}, ${parsed.description}, ${parsed.instructions}) returning id
         `;
-    if (!rows[0]?.id) throw new Error("Função não encontrada");
+    if (!rows[0]?.id)
+      throw new Error(
+        "Função não encontrada. Recarregue a página e tente novamente",
+      );
     await audit(
       "volunteer_department_role.save",
       "volunteer_department_roles",

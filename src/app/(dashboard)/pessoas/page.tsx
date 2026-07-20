@@ -5,7 +5,9 @@ import {
   listDuplicateCandidates,
   listPeople,
 } from "@/lib/people/data"
+import { listCrmStages } from "@/lib/operational/data"
 import type { PeopleListFilters, PersonStatus, PersonType } from "@/lib/people/types"
+import type { CRMStage } from "@/lib/types"
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -62,15 +64,17 @@ export default async function MembersPage({
     pageSize: 20,
   }
 
-  const [peopleResult, dashboard, formOptions, duplicateCandidates] = await Promise.all([
+  const [peopleResult, dashboard, formOptions, duplicateCandidates, crmStages] = await Promise.all([
     listPeople(filters),
     getPeopleDashboardData(),
     getPersonFormOptions(),
     listDuplicateCandidates(),
+    listCrmStages().catch((): CRMStage[] => []),
   ])
 
   return (
     <MembersClient
+      crmStages={crmStages}
       dashboard={dashboard}
       duplicateCandidates={duplicateCandidates}
       filters={filters}

@@ -25,3 +25,8 @@ export async function invitePersonAccess(input: InvitePersonAccessInput) {
   const { invitePersonAccess: invitePersonAccessAction } = await import("@/lib/people/actions")
   return invitePersonAccessAction(input)
 }
+
+export async function movePersonToKanban(input: { personId: string; stageId?: string | null }) {
+  const { movePersonToKanbanStage } = await import("@/lib/operational/actions")
+  return movePersonToKanbanStage(input)
+}

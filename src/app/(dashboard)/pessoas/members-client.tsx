@@ -16,6 +16,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  Kanban,
   List,
   MoreVertical,
   Plus,
@@ -29,7 +30,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
-import { deletePerson, resolveDuplicateCandidate, savePerson } from "./actions"
+import { deletePerson, movePersonToKanban, resolveDuplicateCandidate, savePerson } from "./actions"
 import type {
   DuplicateCandidateItem,
   DuplicateCandidateResolution,
@@ -43,6 +44,7 @@ import type {
   PersonStatus,
   PersonType,
 } from "@/lib/people/types"
+import type { CRMStage } from "@/lib/types"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -58,6 +60,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface MembersClientProps {
+  crmStages: CRMStage[]
   dashboard: PeopleDashboardData
   duplicateCandidates: DuplicateCandidateItem[]
   filters: PeopleListFilters
@@ -87,6 +90,8 @@ interface PersonFormState {
   accessRole: PersonAccessRole
   temporaryPassword: string
   hasSystemAccess: boolean
+  moveToKanban: boolean
+  kanbanStageId: string
 }
 
 interface FilterState {
@@ -154,6 +159,8 @@ const emptyForm: PersonFormState = {
   accessRole: "member",
   temporaryPassword: "",
   hasSystemAccess: false,
+  moveToKanban: false,
+  kanbanStageId: "default",
 }
 
 function initials(name: string) {
@@ -217,6 +224,8 @@ function personToForm(person: PersonListItem): PersonFormState {
     accessRole: person.accessRole ?? "member",
     temporaryPassword: "",
     hasSystemAccess: person.hasSystemAccess,
+    moveToKanban: false,
+    kanbanStageId: "default",
   }
 }
 
@@ -256,6 +265,7 @@ function DuplicatePersonPanel({
 }
 
 export function MembersClient({
+  crmStages,
   dashboard,
   duplicateCandidates,
   filters,
@@ -395,6 +405,23 @@ export function MembersClient({
       return
     }
 
+    let kanbanMoved = false
+    if (formData.moveToKanban && result.id) {
+      const kanbanResult = await movePersonToKanban({
+        personId: result.id,
+        stageId: formData.kanbanStageId === "default" ? null : formData.kanbanStageId,
+      })
+      if (!kanbanResult.ok) {
+        toast.error(
+          kanbanResult.error
+            ? `Pessoa salva, mas não foi movida para o Kanban: ${kanbanResult.error}`
+            : "Pessoa salva, mas não foi movida para o Kanban",
+        )
+      } else {
+        kanbanMoved = true
+      }
+    }
+
     if (formData.inviteAccess) {
       toast.success(
         formData.hasSystemAccess
@@ -402,7 +429,13 @@ export function MembersClient({
           : "Pessoa salva e acesso criado. Informe a senha temporária à pessoa.",
       )
     } else {
-      toast.success(formData.id ? "Pessoa atualizada com sucesso" : "Pessoa cadastrada com sucesso")
+      toast.success(
+        kanbanMoved
+          ? "Pessoa salva e movida para o Kanban"
+          : formData.id
+            ? "Pessoa atualizada com sucesso"
+            : "Pessoa cadastrada com sucesso",
+      )
     }
     setDialogOpen(false)
     setFormData(emptyForm)
@@ -1212,6 +1245,46 @@ export function MembersClient({
                 />
               </div>
             </div>
+            {crmStages.length > 0 ? (
+              <div className="space-y-3 rounded-lg border border-border/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label className="flex items-center gap-2">
+                      <Kanban className="h-4 w-4 text-primary" />
+                      Mover para Kanban
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Cria (ou move) o card desta pessoa no funil do CRM.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.moveToKanban}
+                    onCheckedChange={(checked) => setFormData({ ...formData, moveToKanban: checked })}
+                  />
+                </div>
+                {formData.moveToKanban ? (
+                  <div className="grid gap-2">
+                    <Label>Coluna do Kanban</Label>
+                    <Select
+                      value={formData.kanbanStageId}
+                      onValueChange={(value) => value && setFormData({ ...formData, kanbanStageId: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">Coluna padrão</SelectItem>
+                        {crmStages.map((stage) => (
+                          <SelectItem key={stage.id} value={stage.id}>
+                            {stage.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {canInviteAccess ? (
               <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
                 <div className="flex items-center justify-between gap-3">

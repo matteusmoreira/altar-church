@@ -9,6 +9,8 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Download,
   HeartHandshake,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { saveEvent } from "@/lib/operational/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -526,6 +529,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
     );
     setSelectedPerson(person);
     setPersonQuery(person.fullName);
+    setSuggestions([]);
     setForm({
       id: volunteer?.id ?? null,
       personId: person.id,
@@ -618,7 +622,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative max-w-2xl">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
               placeholder="Digite ao menos 3 letras para buscar em Pessoas"
@@ -789,7 +793,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
         </CardContent>
       </Card>
       <div className="relative max-w-lg">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
           placeholder="Buscar nome, e-mail ou telefone"
@@ -1254,12 +1258,30 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
   );
 }
 
+function buildCalendarCells(month: Date) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstWeekday = new Date(year, monthIndex, 1).getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let index = 0; index < firstWeekday; index += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
+  return cells;
+}
+
 function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
   const [eventId, setEventId] = useState(data.eventPlans[0]?.eventId ?? "");
   const selected = data.eventPlans.find((item) => item.eventId === eventId);
   const [modelId, setModelId] = useState("");
   const [modelName, setModelName] = useState("");
+  const [newServiceTitle, setNewServiceTitle] = useState("");
+  const [newServiceStartsAt, setNewServiceStartsAt] = useState("");
+  const [creatingService, setCreatingService] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [positions, setPositions] = useState<
     {
       departmentId: string;
@@ -1330,6 +1352,30 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
     );
     toast.success("Modelo aplicado. Revise antes de salvar.");
   }
+  async function createService() {
+    if (!newServiceTitle.trim()) return toast.error("Informe o nome do culto");
+    if (!newServiceStartsAt) return toast.error("Informe a data e o horário");
+    setCreatingService(true);
+    const formData = new FormData();
+    formData.set("title", newServiceTitle.trim());
+    formData.set("startDate", newServiceStartsAt);
+    formData.set("type", "service");
+    formData.set("status", "published");
+    formData.set("isPublic", "true");
+    const result = await saveEvent(formData);
+    setCreatingService(false);
+    if (!result.ok) return toast.error(result.error ?? "Não foi possível criar o culto");
+    toast.success("Culto criado. Defina as equipes abaixo.");
+    setNewServiceTitle("");
+    setNewServiceStartsAt("");
+    if (result.id) {
+      setEventId(result.id);
+      const startsAt = new Date(newServiceStartsAt);
+      if (!Number.isNaN(startsAt.getTime()))
+        setCalendarMonth(new Date(startsAt.getFullYear(), startsAt.getMonth(), 1));
+    }
+    router.refresh();
+  }
   async function save(showSuccess = true) {
     if (!eventId) return toast.error("Selecione culto");
     if (positions.length === 0)
@@ -1370,26 +1416,131 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <p className="text-sm font-medium">Novo culto</p>
+            <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
+              <Input
+                placeholder="Nome do culto (ex.: Culto Domingo Manhã)"
+                value={newServiceTitle}
+                onChange={(e) => setNewServiceTitle(e.target.value)}
+              />
+              <Input
+                type="datetime-local"
+                aria-label="Data e horário do culto"
+                value={newServiceStartsAt}
+                onChange={(e) => setNewServiceStartsAt(e.target.value)}
+              />
+              <Button onClick={createService} disabled={creatingService}>
+                {creatingService ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-4 w-4" />
+                )}
+                Criar culto
+              </Button>
+            </div>
+          </div>
+          {(() => {
+            const eventsByDay = new Map<number, VolunteerEventPlan[]>();
+            for (const plan of data.eventPlans) {
+              const date = new Date(plan.startsAt);
+              if (
+                date.getFullYear() === calendarMonth.getFullYear() &&
+                date.getMonth() === calendarMonth.getMonth()
+              ) {
+                const list = eventsByDay.get(date.getDate()) ?? [];
+                list.push(plan);
+                eventsByDay.set(date.getDate(), list);
+              }
+            }
+            const monthLabel = new Intl.DateTimeFormat("pt-BR", {
+              month: "long",
+              year: "numeric",
+            }).format(calendarMonth);
+            return (
+              <div className="space-y-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Mês anterior"
+                    onClick={() =>
+                      setCalendarMonth(
+                        new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1),
+                      )
+                    }
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <p className="text-sm font-medium capitalize">{monthLabel}</p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Próximo mês"
+                    onClick={() =>
+                      setCalendarMonth(
+                        new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1),
+                      )
+                    }
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
+                  {weekdayNames.map((day) => (
+                    <span key={day}>{day}</span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {buildCalendarCells(calendarMonth).map((day, index) => {
+                    if (day === null) return <div key={`empty-${index}`} />;
+                    const dayEvents = eventsByDay.get(day) ?? [];
+                    const isSelected = dayEvents.some((plan) => plan.eventId === eventId);
+                    return (
+                      <button
+                        type="button"
+                        key={day}
+                        disabled={dayEvents.length === 0}
+                        onClick={() => setEventId(dayEvents[0]?.eventId ?? "")}
+                        title={dayEvents.map((plan) => plan.eventTitle).join(", ")}
+                        className={`flex h-9 flex-col items-center justify-center rounded-md text-sm transition-colors ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : dayEvents.length > 0
+                              ? "bg-primary/10 font-medium hover:bg-primary/20"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {day}
+                        {dayEvents.length > 0 && (
+                          <span
+                            className={`h-1 w-1 rounded-full ${isSelected ? "bg-primary-foreground" : "bg-primary"}`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {data.eventPlans.length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Nenhum culto cadastrado. Crie o primeiro acima.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
           <select
             className="h-10 w-full rounded-md border bg-background px-3"
             value={eventId}
             onChange={(e) => setEventId(e.target.value)}
           >
-            <option value="">Selecione evento</option>
+            <option value="">Selecione o culto para planejar</option>
             {data.eventPlans.map((event) => (
               <option key={event.eventId} value={event.eventId}>
                 {event.eventTitle} · {fmt(event.startsAt)}
               </option>
             ))}
           </select>
-          {data.eventPlans.length === 0 && (
-            <div className="rounded-lg border border-dashed p-4 text-sm">
-              Nenhum culto futuro.{" "}
-              <Link href="/eventos" className="font-medium text-primary underline">
-                Criar em Eventos
-              </Link>
-            </div>
-          )}
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
             <select
               className="h-10 rounded-md border bg-background px-3"
