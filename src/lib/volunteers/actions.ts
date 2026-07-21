@@ -283,22 +283,18 @@ export async function saveVolunteer(
       parsed.id ? "volunteers.edit" : "volunteers.create",
     );
     const sql = getSql();
-    const people = await sql<
-      { id: string; full_name: string; email: string | null }[]
-    >`
-      select id, full_name, email
-      from public.people
-      where id = ${parsed.personId}
-        and company_id = ${companyId}
-        and deleted_at is null
-        and is_active
-    `;
-    const person = people[0];
-    if (!person) throw new Error("Pessoa não encontrada ou inativa");
-
     const roleIds = [...new Set(parsed.memberships.map((item) => item.roleId))];
-    const roles = roleIds.length
-      ? await sql<{ id: string; department_id: string; name: string }[]>`
+    const [people, roles, existingDepartments, existingProfiles] = await Promise.all([
+      sql<{ id: string; full_name: string; email: string | null }[]>`
+        select id, full_name, email
+        from public.people
+        where id = ${parsed.personId}
+          and company_id = ${companyId}
+          and deleted_at is null
+          and is_active
+      `,
+      roleIds.length
+        ? sql<{ id: string; department_id: string; name: string }[]>`
           select id, department_id, name
           from public.volunteer_department_roles
           where company_id = ${companyId}
@@ -306,7 +302,23 @@ export async function saveVolunteer(
             and is_active
             and deleted_at is null
         `
-      : [];
+        : Promise.resolve([]),
+      parsed.id
+        ? sql<{ department_id: string }[]>`
+            select department_id from public.volunteer_department_memberships
+            where volunteer_id = ${parsed.id} and company_id = ${companyId} and is_active
+          `
+        : Promise.resolve([]),
+      sql<{ id: string }[]>`
+        select id from public.volunteer_profiles
+        where person_id = ${parsed.personId}
+          and company_id = ${companyId}
+          and deleted_at is null
+        limit 1
+      `,
+    ]);
+    const person = people[0];
+    if (!person) throw new Error("Pessoa não encontrada ou inativa");
     if (roles.length !== roleIds.length)
       throw new Error("Uma ou mais funções são inválidas");
     const rolesById = new Map(roles.map((role) => [role.id, role]));
@@ -316,31 +328,27 @@ export async function saveVolunteer(
         throw new Error("Função não pertence à equipe selecionada");
     }
 
-    const existingDepartments = parsed.id
-      ? await sql<{ department_id: string }[]>`
-          select department_id from public.volunteer_department_memberships
-          where volunteer_id = ${parsed.id} and company_id = ${companyId} and is_active
-        `
-      : [];
     await assertManagerDepartments(user, companyId, [
       ...existingDepartments.map((row) => row.department_id),
       ...parsed.memberships.map((membership) => membership.departmentId),
     ]);
 
-    let volunteerId = parsed.id;
-    await sql.begin(async (tx) => {
-      const existing = await tx<{ id: string }[]>`
-        select id
-        from public.volunteer_profiles
-        where person_id = ${parsed.personId}
-          and company_id = ${companyId}
-          and deleted_at is null
-        limit 1
-      `;
-      if (parsed.id) {
-        if (existing[0]?.id !== parsed.id)
+    const existingId = existingProfiles[0]?.id;
+    if (parsed.id) {
+        if (existingId !== parsed.id)
           throw new Error("Voluntário não corresponde à Pessoa selecionada");
-        const updated = await tx<{ id: string }[]>`
+    } else if (existingId) {
+      throw new Error("Esta Pessoa já está vinculada como voluntária");
+    }
+
+    const departmentIds = parsed.memberships.map((membership) => membership.departmentId);
+    const membershipRoleIds = parsed.memberships.map((membership) => membership.roleId);
+    const roleNames = parsed.memberships.map((membership) => rolesById.get(membership.roleId)?.name ?? "");
+    const preferred = parsed.memberships.map((membership) => membership.preferred);
+    const auditMetadata = JSON.stringify({ invite: parsed.invite, personId: parsed.personId });
+    const saved = parsed.id
+      ? await sql<{ id: string }[]>`
+        with saved as (
           update public.volunteer_profiles
           set registration_status = ${parsed.registrationStatus},
               whatsapp_enabled = ${parsed.whatsappEnabled},
@@ -351,12 +359,37 @@ export async function saveVolunteer(
             and company_id = ${companyId}
             and deleted_at is null
           returning id
-        `;
-        volunteerId = updated[0]?.id ?? null;
-      } else {
-        if (existing[0]?.id)
-          throw new Error("Esta Pessoa já está vinculada como voluntária");
-        const volunteers = await tx<{ id: string }[]>`
+        ), disabled as (
+          update public.volunteer_department_memberships
+          set is_active = false, updated_at = now()
+          where volunteer_id = (select id from saved)
+          returning id
+        ), memberships as (
+          insert into public.volunteer_department_memberships (
+            company_id, department_id, volunteer_id, role_id, role_name, preferred, is_active
+          )
+          select ${companyId}, input.department_id, saved.id, input.role_id, input.role_name, input.preferred, true
+          from saved
+          cross join (select count(*) from disabled) as disabled_gate
+          cross join unnest(
+            ${sql.array(departmentIds)}::uuid[],
+            ${sql.array(membershipRoleIds)}::uuid[],
+            ${sql.array(roleNames)}::text[],
+            ${sql.array(preferred)}::boolean[]
+          ) as input(department_id, role_id, role_name, preferred)
+          on conflict (department_id, volunteer_id, role_name) do update
+          set role_id = excluded.role_id, preferred = excluded.preferred, is_active = true, updated_at = now()
+          returning id
+        ), audited as (
+          insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+          select ${companyId}, ${user.id}, 'volunteer.save', 'volunteer_profiles', saved.id, ${auditMetadata}::jsonb
+          from saved cross join (select count(*) from memberships) as membership_gate
+          returning id
+        )
+        select id from saved
+      `
+      : await sql<{ id: string }[]>`
+        with saved as (
           insert into public.volunteer_profiles (
             company_id, person_id, registration_status, whatsapp_enabled,
             email_enabled, created_by, updated_by
@@ -366,33 +399,28 @@ export async function saveVolunteer(
             ${parsed.whatsappEnabled}, ${parsed.emailEnabled}, ${user.id}, ${user.id}
           )
           returning id
-        `;
-        volunteerId = volunteers[0]?.id ?? null;
-      }
-      if (!volunteerId) throw new Error("Voluntário não foi salvo");
-      await tx`
-        delete from public.volunteer_department_memberships
-        where volunteer_id = ${volunteerId}
-      `;
-      if (parsed.memberships.length > 0) {
-        const departmentIds = parsed.memberships.map((membership) => membership.departmentId);
-        const membershipRoleIds = parsed.memberships.map((membership) => membership.roleId);
-        const roleNames = parsed.memberships.map((membership) => rolesById.get(membership.roleId)?.name ?? "");
-        const preferred = parsed.memberships.map((membership) => membership.preferred);
-        await tx`
+        ), memberships as (
           insert into public.volunteer_department_memberships (
-            company_id, department_id, volunteer_id, role_id, role_name, preferred
+            company_id, department_id, volunteer_id, role_id, role_name, preferred, is_active
           )
-          select ${companyId}, input.department_id, ${volunteerId}, input.role_id, input.role_name, input.preferred
-          from unnest(
-            ${tx.array(departmentIds)}::uuid[],
-            ${tx.array(membershipRoleIds)}::uuid[],
-            ${tx.array(roleNames)}::text[],
-            ${tx.array(preferred)}::boolean[]
+          select ${companyId}, input.department_id, saved.id, input.role_id, input.role_name, input.preferred, true
+          from saved cross join unnest(
+            ${sql.array(departmentIds)}::uuid[],
+            ${sql.array(membershipRoleIds)}::uuid[],
+            ${sql.array(roleNames)}::text[],
+            ${sql.array(preferred)}::boolean[]
           ) as input(department_id, role_id, role_name, preferred)
-        `;
-      }
-    });
+          returning id
+        ), audited as (
+          insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+          select ${companyId}, ${user.id}, 'volunteer.save', 'volunteer_profiles', saved.id, ${auditMetadata}::jsonb
+          from saved cross join (select count(*) from memberships) as membership_gate
+          returning id
+        )
+        select id from saved
+      `;
+    const volunteerId = saved[0]?.id ?? null;
+    if (!volunteerId) throw new Error("Voluntário não foi salvo");
 
     if (parsed.invite) {
       if (!person.email)
@@ -406,13 +434,6 @@ export async function saveVolunteer(
         actorId: user.id,
       });
     }
-    await audit(
-      "volunteer.save",
-      "volunteer_profiles",
-      volunteerId ?? "",
-      companyId,
-      { invite: parsed.invite, personId: parsed.personId },
-    );
     refresh();
     return { ok: true, id: volunteerId ?? undefined };
     } catch (error) {

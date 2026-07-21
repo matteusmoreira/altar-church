@@ -16,8 +16,8 @@ test("acoes principais possuem medicao e trabalho derivado pos-resposta", async 
   assert.match(people, /afterResponse\("people member count"/)
   assert.match(pastoral, /withActionTiming\("ministries\.save"/)
   assert.match(volunteers, /withActionTiming\("volunteers\.save"/)
-  assert.match(volunteers, /from unnest\(/)
-  assert.match(volunteers, /tx\.array\(preferred\)/)
+  assert.match(volunteers, /(?:from|cross join) unnest\(/)
+  assert.match(volunteers, /(?:tx|sql)\.array\(preferred\)/)
 })
 
 test("Pessoas evita N Server Actions e carrega duplicidades sob demanda", async () => {
