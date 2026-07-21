@@ -86,6 +86,7 @@ test("mutacoes comuns ficam abaixo da meta em producao", async ({ page }, testIn
       volunteers: p95(timings.volunteers),
     },
   }
+  console.log(`ACTION_PERFORMANCE ${JSON.stringify(result)}`)
   await testInfo.attach("action-performance.json", { body: JSON.stringify(result, null, 2), contentType: "application/json" })
 
   expect(result.p95Ms.people).toBeLessThanOrEqual(1_500)

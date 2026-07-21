@@ -88,8 +88,6 @@ function startsAtFromDate(date: string) {
 
 function refreshMinistryPaths() {
   revalidatePath("/ministerios")
-  revalidatePath("/informacoes")
-  revalidatePath("/dashboard")
 }
 
 function refreshProgrammingPaths() {

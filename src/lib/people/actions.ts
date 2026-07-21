@@ -125,8 +125,6 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 
 async function refreshPeoplePaths(personId?: string | null) {
   revalidatePath("/pessoas")
-  revalidatePath("/visitantes")
-  revalidatePath("/dashboard")
   if (personId) {
     revalidatePath(`/pessoas/${personId}`)
   }
@@ -510,7 +508,8 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     })
 
     if (personId) {
-      try {
+      afterResponse("person integration event", async () => {
+        try {
         const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
         const eventType = parsed.id ? "person.updated" : "person.created"
         await enqueueIntegrationEventSafe({
@@ -528,13 +527,12 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             },
           },
         })
-        afterResponse("integration outbox", async () => {
           const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
           await processIntegrationOutbox(25)
-        })
-      } catch (integrationError) {
-        console.error("[integrations] person emit failed", integrationError)
-      }
+        } catch (integrationError) {
+          console.error("[integrations] person emit failed", integrationError)
+        }
+      })
     }
 
     await refreshPeoplePaths(personId)

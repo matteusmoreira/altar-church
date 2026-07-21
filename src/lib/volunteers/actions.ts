@@ -137,9 +137,6 @@ async function audit(
 
 function refresh() {
   revalidatePath("/voluntariado");
-  revalidatePath("/membro/voluntariado");
-  revalidatePath("/eventos");
-  revalidatePath("/dashboard");
 }
 
 async function assertDepartments(companyId: string, ids: string[]) {
