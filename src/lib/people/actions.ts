@@ -383,11 +383,15 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
 
     const fullName = parsed.fullName || [parsed.firstName, parsed.lastName].filter(Boolean).join(" ")
     const sql = getSql()
-    let personId = parsed.id
-
-    await sql.begin(async (tx) => {
-      if (parsed.id) {
-        const rows = await tx<{ id: string }[]>`
+    const auditMetadata = JSON.stringify({
+      status: parsed.status,
+      personType: parsed.personType,
+      isActive: parsed.isActive,
+      inviteAccess: Boolean(parsed.inviteAccess),
+    })
+    const rows = parsed.id
+      ? await sql<{ id: string }[]>`
+          with saved as (
           update public.people
           set congregation_id = ${parsed.congregationId},
               first_name = ${parsed.firstName},
@@ -415,10 +419,16 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             and company_id = ${companyId}
             and deleted_at is null
           returning id
+          ), audited as (
+            insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+            select ${companyId}, ${user.id}, 'person.save', 'people', saved.id, ${auditMetadata}::jsonb
+            from saved
+            returning id
+          )
+          select saved.id from saved cross join audited
         `
-        personId = rows[0]?.id ?? null
-      } else {
-        const rows = await tx<{ id: string }[]>`
+      : await sql<{ id: string }[]>`
+          with saved as (
           insert into public.people (
             company_id,
             congregation_id,
@@ -472,14 +482,16 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             ${user.id}
           )
           returning id
+          ), audited as (
+            insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+            select ${companyId}, ${user.id}, 'person.save', 'people', saved.id, ${auditMetadata}::jsonb
+            from saved
+            returning id
+          )
+          select saved.id from saved cross join audited
         `
-        personId = rows[0]?.id ?? null
-      }
-
-      if (!personId) {
-        throw new Error("Pessoa não foi salva")
-      }
-    })
+    const personId = rows[0]?.id ?? null
+    if (!personId) throw new Error("Pessoa não foi salva")
 
     if (parsed.inviteAccess && personId && parsed.accessRole && parsed.temporaryPassword) {
       await provisionPersonAccess({
@@ -492,18 +504,6 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     }
 
     afterResponse("people member count", () => refreshMemberCount(companyId))
-    await writeAuditLog({
-      action: "person.save",
-      entityTable: "people",
-      entityId: personId,
-      companyId,
-      metadata: {
-        status: parsed.status,
-        personType: parsed.personType,
-        isActive: parsed.isActive,
-        inviteAccess: Boolean(parsed.inviteAccess),
-      },
-    })
 
     if (personId) {
       afterResponse("person integration event", async () => {
