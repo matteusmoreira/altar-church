@@ -123,11 +123,9 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
   return { user, companyId }
 }
 
-async function refreshPeoplePaths(personId?: string | null) {
-  revalidatePath("/pessoas")
-  if (personId) {
-    revalidatePath(`/pessoas/${personId}`)
-  }
+async function refreshPeoplePaths(visitor = false) {
+  if (visitor) revalidatePath("/visitantes")
+  else revalidatePath("/pessoas")
 }
 
 async function refreshMemberCount(companyId: string) {
@@ -535,7 +533,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       })
     }
 
-    await refreshPeoplePaths(personId)
+    await refreshPeoplePaths(parsed.status === "visitor" || parsed.personType === "visitor")
 
     return { ok: true, id: personId ?? undefined }
     } catch (error) {
@@ -559,7 +557,7 @@ export async function invitePersonAccess(input: InvitePersonAccessInput): Promis
       actorProfileId: user.id,
     })
 
-    await refreshPeoplePaths(result.personId)
+    await refreshPeoplePaths()
     return { ok: true, id: result.personId }
   } catch (error) {
     return toErrorResult(error)
@@ -597,7 +595,7 @@ export async function deletePerson(input: { id: string; companyId?: string | nul
       companyId,
       metadata: {},
     })
-    await refreshPeoplePaths(personId)
+    await refreshPeoplePaths()
 
     return { ok: true, id: personId }
   } catch (error) {
