@@ -37,7 +37,12 @@ test("event schedule generation is draft-only and idempotent", () => {
   assert.match(v2Actions, /event\.status !== "published"/)
   assert.match(v2Actions, /event\.volunteer_schedule_published_at/)
   assert.match(v2Actions, /on conflict \(schedule_id, event_id, event_position_id\)/)
-  assert.match(v2Actions, /generateSmartVolunteerSchedule\(schedule\.id\)/)
+  const eventGenerator = v2Actions.slice(
+    v2Actions.indexOf("export async function generateVolunteerScheduleForEvent("),
+    v2Actions.indexOf("export async function publishVolunteerEventSchedule("),
+  )
+  assert.doesNotMatch(eventGenerator, /generateSmartVolunteerSchedule\(schedule\.id\)/)
+  assert.match(eventGenerator, /created: 0/)
   assert.match(v2Actions, /'proposed'/)
 })
 

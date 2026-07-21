@@ -15,6 +15,11 @@ test("admin usa três áreas e abre assistente de programação", async ({ page 
     await expect(page.getByRole("tab", { name: tab })).toBeVisible()
   }
   await expect(page.getByText("Todas as programações")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Montar escala" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Sugerir para vagas vazias" }).first()).toBeVisible()
+  await expect(page.getByRole("button", { name: "Escolher pessoas" }).first()).toBeVisible()
+  await expect(page.getByText(/\bproposed\b/)).toHaveCount(0)
+  await expect(page.getByText(/\d+ pts/)).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Excluir" }).first()).toBeVisible()
 
   await page.getByRole("button", { name: "Nova programação" }).click()

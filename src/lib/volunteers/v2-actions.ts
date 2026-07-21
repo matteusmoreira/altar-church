@@ -11,6 +11,7 @@ import {
   rankVolunteersForShift,
   selectVolunteersForShift,
   type SchedulerCandidateInput,
+  withManualSelectionRules,
 } from "./scheduler";
 import type { VolunteerActionResult } from "./types";
 import { requireVolunteerSelfContext } from "./access";
@@ -530,14 +531,15 @@ export async function getVolunteerShiftCandidates(
     const volunteers = await sql<Record<string, unknown>[]>`
       select volunteer.id, person.full_name as name, volunteer.registration_status, volunteer.desired_services_per_month,
         volunteer.max_services_per_month, volunteer.minimum_rest_hours,
-        array_agg(distinct membership.department_id::text) as department_ids,
-        array_agg(distinct membership.role_name) as role_names,
+        coalesce(array_agg(distinct membership.department_id::text) filter (where membership.department_id is not null), '{}') as department_ids,
+        coalesce(array_agg(distinct membership.role_name) filter (where membership.role_name is not null), '{}') as role_names,
         coalesce(preference.preference, 0) as preference
       from public.volunteer_profiles volunteer join public.people person on person.id = volunteer.person_id
-      join public.volunteer_department_memberships membership on membership.volunteer_id = volunteer.id and membership.is_active
+      left join public.volunteer_department_memberships membership on membership.volunteer_id = volunteer.id and membership.is_active
       left join public.volunteer_role_preferences preference on preference.volunteer_id = volunteer.id
         and preference.department_id = ${String(shiftRow.department_id)} and lower(preference.role_name) = lower(${String(shiftRow.role_name)})
       where volunteer.company_id = ${String(shiftRow.company_id)} and volunteer.deleted_at is null
+        and volunteer.registration_status = 'active'
       group by volunteer.id, person.full_name, preference.preference
     `;
     const iso = (value: unknown) =>
@@ -598,7 +600,11 @@ export async function getVolunteerShiftCandidates(
       endsAt: iso(shiftRow.ends_at),
       timezone,
     });
-    return { ok: true, id: shiftId, data: ranked };
+    return {
+      ok: true,
+      id: shiftId,
+      data: ranked.map(withManualSelectionRules),
+    };
   } catch (error) {
     return resultError(error);
   }
@@ -1357,8 +1363,10 @@ export async function generateVolunteerScheduleForEvent(
         `;
       }
     });
-    const generated = await generateSmartVolunteerSchedule(schedule.id);
-    if (!generated.ok) return generated;
+    const openVacancies = positions.reduce(
+      (total, position) => total + position.required_volunteers,
+      0,
+    );
     await audit(
       "volunteer_schedule.event_generate",
       "events",
@@ -1369,7 +1377,7 @@ export async function generateVolunteerScheduleForEvent(
     return {
       ok: true,
       id: schedule.id,
-      data: generated.data,
+      data: { shifts: positions.length, created: 0, shortages: openVacancies },
     };
   } catch (error) {
     return resultError(error);
@@ -1403,6 +1411,27 @@ export async function publishVolunteerEventSchedule(
       throw new Error("Gere o rascunho antes de publicar");
     for (const row of departments)
       await managerContext("schedules.publish", row.department_id);
+
+    const incomplete = await sql<{ role_name: string; missing: number }[]>`
+      select shift.role_name,
+             shift.required_volunteers - count(assignment.id) filter (
+               where assignment.status not in ('declined', 'cancelled')
+             )::integer as missing
+      from public.volunteer_shifts shift
+      left join public.volunteer_assignments assignment on assignment.shift_id = shift.id
+      where shift.event_id = ${eventId} and shift.company_id = ${companyId}
+      group by shift.id, shift.role_name, shift.required_volunteers
+      having count(assignment.id) filter (
+        where assignment.status not in ('declined', 'cancelled')
+      ) < shift.required_volunteers
+      order by shift.role_name
+    `;
+    if (incomplete.length > 0)
+      throw new Error(
+        `Preencha todas as vagas antes de publicar: ${incomplete
+          .map((item) => `${item.role_name} (${item.missing})`)
+          .join(", ")}`,
+      );
 
     await sql`
       update public.volunteer_assignments assignment
@@ -1457,7 +1486,9 @@ export async function publishVolunteerEventSchedule(
             ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
             'whatsapp', ${recipient.phone}, 'Sua escala', ${content}
           )
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
       if (recipient.email_enabled && recipient.email)
         await sql`
@@ -1468,7 +1499,9 @@ export async function publishVolunteerEventSchedule(
             ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
             'email', ${recipient.email}, 'Sua escala foi publicada', ${content}
           )
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
       if (recipient.push_enabled)
         await sql`
@@ -1481,7 +1514,9 @@ export async function publishVolunteerEventSchedule(
             'push', '', 'Nova escala', ${content}, 'schedule',
             ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb
           )
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
     }
     await sql`

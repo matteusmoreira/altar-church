@@ -679,18 +679,24 @@ export async function saveVolunteerAssignment(
           (item as { volunteerId: string }).volunteerId === parsed.volunteerId,
       ) as
         | {
-            eligible: boolean;
-            score: number;
-            reasons: unknown[];
+            selectableManually: boolean;
+            warnings: string[];
             blockers: string[];
           }
         | undefined;
-      if (!candidate?.eligible)
+      if (!candidate?.selectableManually)
         throw new Error(
           candidate?.blockers.join("; ") || "Voluntário indisponível",
         );
-      score = candidate.score;
-      scoreReasons = candidate.reasons;
+      score = null;
+      scoreReasons = [
+        { code: "manual", label: "Escolha manual do líder", points: 0 },
+        ...candidate.warnings.map((warning) => ({
+          code: "manual",
+          label: warning,
+          points: 0,
+        })),
+      ];
     }
     const rows = await sql<{ id: string }[]>`
       insert into public.volunteer_assignments (company_id, shift_id, volunteer_id, status, score, score_reasons, is_locked, created_by, updated_by)
@@ -729,6 +735,22 @@ export async function publishVolunteerSchedule(
       companyId,
       scheduleDepartments.map((row) => row.department_id),
     );
+    const incomplete = await sql<{ role_name: string; missing: number }[]>`
+      select shift.role_name,
+             shift.required_volunteers - count(assignment.id) filter (
+               where assignment.status not in ('declined', 'cancelled')
+             )::integer as missing
+      from public.volunteer_shifts shift
+      left join public.volunteer_assignments assignment on assignment.shift_id = shift.id
+      where shift.schedule_id = ${id} and shift.company_id = ${companyId}
+      group by shift.id, shift.role_name, shift.required_volunteers
+      having count(assignment.id) filter (
+        where assignment.status not in ('declined', 'cancelled')
+      ) < shift.required_volunteers
+      order by shift.role_name
+    `;
+    if (incomplete.length > 0)
+      throw new Error("Preencha todas as vagas antes de publicar");
     const schedules = await sql<{ id: string }[]>`
       update public.volunteer_schedules set status = 'published', published_at = now(), updated_by = ${user.id}
       where id = ${id} and company_id = ${companyId} returning id
@@ -772,14 +794,18 @@ export async function publishVolunteerSchedule(
         await sql`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
       }
       if (recipient.email_enabled && recipient.email) {
         await sql`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala foi publicada', ${content})
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
       }
       if (recipient.push_enabled) {
@@ -787,7 +813,9 @@ export async function publishVolunteerSchedule(
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content, event_kind, payload)
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule',
             ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
-          on conflict (assignment_id, volunteer_id, channel) do nothing
+          on conflict (assignment_id, volunteer_id, channel)
+            where assignment_id is not null
+          do nothing
         `;
       }
     }

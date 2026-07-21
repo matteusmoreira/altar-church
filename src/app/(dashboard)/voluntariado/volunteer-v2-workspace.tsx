@@ -94,6 +94,16 @@ const fmt = (value: string) =>
     timeStyle: "short",
   }).format(new Date(value));
 const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const assignmentStatusLabels: Record<string, string> = {
+  proposed: "Rascunho — ainda não avisado",
+  notified: "Aguardando resposta",
+  confirmed: "Confirmado",
+  declined: "Recusou",
+  cancelled: "Removido",
+  checked_in: "Check-in realizado",
+  checked_out: "Serviço concluído",
+  no_show: "Não compareceu",
+};
 
 function ok(result: VolunteerActionResult, success: string) {
   if (!result.ok) {
@@ -182,6 +192,7 @@ function CandidatePanel({
 }) {
   const [items, setItems] = useState<SchedulingCandidate[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
   async function load() {
     setLoading(true);
     const result = await getVolunteerShiftCandidates(shift.id);
@@ -215,11 +226,24 @@ function CandidatePanel({
         ) : (
           <Sparkles className="mr-2 h-4 w-4" />
         )}
-        Candidatos explicados
+        Escolher pessoas
       </Button>
       {items && (
-        <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-2">
-          {items.slice(0, 20).map((candidate) => (
+        <div className="space-y-2 rounded-lg border p-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar voluntário pelo nome"
+            aria-label="Buscar voluntário"
+          />
+          <p className="text-xs text-muted-foreground">
+            Escolha manualmente. Equipe ou função diferente gera alerta; conflito e indisponibilidade bloqueiam.
+          </p>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+          {items
+            .filter((candidate) => candidate.volunteerName.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
+            .slice(0, 50)
+            .map((candidate) => (
             <div
               key={candidate.volunteerId}
               className="flex items-start justify-between gap-3 rounded-md border p-2"
@@ -227,28 +251,19 @@ function CandidatePanel({
               <div>
                 <p className="text-sm font-medium">
                   {candidate.volunteerName}{" "}
-                  <Badge variant={candidate.eligible ? "default" : "secondary"}>
-                    {candidate.eligible ? candidate.score : "bloqueado"}
+                  <Badge variant={candidate.selectableManually ? "default" : "secondary"}>
+                    {candidate.selectableManually ? "Disponível" : "Indisponível"}
                   </Badge>
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {candidate.eligible
-                    ? candidate.reasons
-                        .map(
-                          (reason) =>
-                            `${reason.label} ${reason.points >= 0 ? "+" : ""}${reason.points}`,
-                        )
-                        .join(" · ")
-                    : candidate.blockers.join(" · ")}
-                </p>
+                {candidate.warnings.length > 0 && <p className="text-xs text-amber-700">Atenção: {candidate.warnings.join(" · ")}</p>}
+                {candidate.blockers.length > 0 && <p className="text-xs text-destructive">{candidate.blockers.join(" · ")}</p>}
               </div>
-              {candidate.eligible && (
-                <Button size="sm" onClick={() => assign(candidate.volunteerId)}>
-                  Escalar
-                </Button>
-              )}
+              <Button size="sm" disabled={!candidate.selectableManually} onClick={() => assign(candidate.volunteerId)}>
+                Escolher
+              </Button>
             </div>
           ))}
+          </div>
         </div>
       )}
     </div>
@@ -1123,7 +1138,7 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
     if (
       ok(
         result,
-        `Proposta criada: ${(result.data as { created?: number })?.created ?? 0} posições`,
+        `Sugestões adicionadas em ${(result.data as { created?: number })?.created ?? 0} vaga(s) vazia(s)`,
       )
     )
       router.refresh();
@@ -1153,9 +1168,9 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold">Rascunhos e escalas publicadas</h3>
+        <h3 className="text-lg font-semibold">Montar escala</h3>
         <p className="text-sm text-muted-foreground">
-          Revise sugestões, faça trocas e publique quando estiver pronto.
+          Escolha as pessoas de cada função. Sugestões são opcionais e nunca substituem escolhas manuais.
         </p>
       </div>
       {data.schedules.map((schedule) => (
@@ -1170,7 +1185,7 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
               </div>
               <Button variant="outline" onClick={() => smart(schedule.id)}>
                 <Sparkles className="mr-2 h-4 w-4" />
-                Recalcular vagas abertas
+                Sugerir para vagas vazias
               </Button>
             </div>
           </CardHeader>
@@ -1185,8 +1200,13 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
               const firstForEvent =
                 schedule.shifts.findIndex((item) => item.eventId === shift.eventId) ===
                 shiftIndex;
+              const eventComplete = schedule.shifts
+                .filter((item) => item.eventId === shift.eventId)
+                .every((item) => item.assignments.filter(
+                  (assignment) => !["declined", "cancelled"].includes(assignment.status),
+                ).length >= item.requiredVolunteers);
               return (
-                <div key={shift.id} className="rounded-lg border p-3">
+                <div id={firstForEvent ? `escala-${shift.eventId}` : undefined} key={shift.id} className="scroll-mt-4 rounded-lg border p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="font-medium">
@@ -1204,7 +1224,7 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                           : "secondary"
                       }
                     >
-                      {active.length}/{shift.requiredVolunteers}
+                      {active.length}/{shift.requiredVolunteers} preenchida(s)
                     </Badge>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1219,10 +1239,8 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                         className="rounded-md bg-muted px-2 py-1 text-xs"
                       >
                         <strong>{assignment.volunteerName}</strong> ·{" "}
-                        {assignment.status}
-                        {assignment.score !== null &&
-                          ` · ${assignment.score} pts`}
-                        {assignment.locked && " · travado"}
+                        {assignmentStatusLabels[assignment.status] ?? assignment.status}
+                        {` · ${assignment.locked ? "Escolhido manualmente" : "Sugerido pelo sistema"}`}
                         {!["declined", "cancelled"].includes(assignment.status) && (
                           <button
                             type="button"
@@ -1243,7 +1261,11 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                       eventPlan?.schedulePublishedAt ? (
                         <Badge>Escala do culto publicada</Badge>
                       ) : (
-                        <Button onClick={() => publish(shift.eventId ?? "")}>
+                        <Button
+                          disabled={!eventComplete}
+                          title={eventComplete ? "Publicar e avisar voluntários" : "Preencha todas as vagas antes de publicar"}
+                          onClick={() => publish(shift.eventId ?? "")}
+                        >
                           Publicar escala deste culto
                         </Button>
                       )
@@ -2160,10 +2182,9 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
         </TabsList>
         <TabsContent value="programmings" className="space-y-4">
           <VolunteerProgrammingWorkspace data={data} />
-          <details className="rounded-lg border p-4">
-            <summary className="cursor-pointer font-medium">Ajustar pessoas da escala</summary>
-            <div className="mt-4"><ManagerSchedules data={data} /></div>
-          </details>
+          <section id="montar-escala" className="scroll-mt-4 rounded-lg border p-4">
+            <ManagerSchedules data={data} />
+          </section>
           <details className="rounded-lg border p-4">
             <summary className="cursor-pointer font-medium">Planejamento avançado legado</summary>
             <div className="mt-4"><ManagerWorship data={data} /></div>

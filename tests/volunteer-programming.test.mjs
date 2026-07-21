@@ -46,8 +46,26 @@ test("wizard requires teams and keeps publishing explicit", () => {
   assert.match(actions, /prepareVolunteerProgrammingMonth/);
   assert.match(actions, /publishVolunteerProgrammingEvents/);
   assert.match(workspace, /Etapa \{step\} de 4/);
+  assert.match(workspace, /Depois escolherá as pessoas em cada data/);
   assert.match(workspace, /Nenhum aviso será enviado antes da publicação/);
+  assert.match(actions, /Cada função deve aparecer apenas uma vez/);
   assert.match(workspace, /Programações/);
+});
+
+test("manual schedule UI hides technical score and publication matches partial outbox index", () => {
+  const actions = read("src/lib/volunteers/v2-actions.ts");
+  const workspace = read("src/app/(dashboard)/voluntariado/volunteer-v2-workspace.tsx");
+  const publishBlock = actions.slice(
+    actions.indexOf("export async function publishVolunteerEventSchedule("),
+    actions.indexOf("const eventPlanSchema"),
+  );
+  assert.equal((publishBlock.match(/where assignment_id is not null/g) ?? []).length, 3);
+  assert.match(publishBlock, /Preencha todas as vagas antes de publicar/);
+  assert.match(workspace, /Escolher pessoas/);
+  assert.match(workspace, /Sugerir para vagas vazias/);
+  assert.match(workspace, /Rascunho — ainda não avisado/);
+  assert.doesNotMatch(workspace, /Candidatos explicados/);
+  assert.doesNotMatch(workspace, /\$\{assignment\.score\} pts/);
 });
 
 test("only admins delete programming, team and volunteer while preserving history and People", () => {

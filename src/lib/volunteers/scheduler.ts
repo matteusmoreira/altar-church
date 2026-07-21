@@ -41,6 +41,34 @@ export interface SchedulerShiftInput {
   timezone?: string;
 }
 
+const MANUAL_WARNING_BLOCKERS = new Set([
+  "Não pertence ao departamento",
+  "Função incompatível",
+]);
+
+type ScoredCandidate = Omit<
+  SchedulingCandidate,
+  "eligibleForSuggestion" | "selectableManually" | "warnings"
+>;
+
+export function withManualSelectionRules(
+  candidate: ScoredCandidate,
+): SchedulingCandidate {
+  const warnings = candidate.blockers.filter((blocker) =>
+    MANUAL_WARNING_BLOCKERS.has(blocker),
+  );
+  const blockers = candidate.blockers.filter(
+    (blocker) => !MANUAL_WARNING_BLOCKERS.has(blocker),
+  );
+  return {
+    ...candidate,
+    eligibleForSuggestion: candidate.eligible,
+    selectableManually: blockers.length === 0,
+    warnings,
+    blockers,
+  };
+}
+
 function overlaps(a: SchedulerInterval, b: SchedulerInterval) {
   return (
     new Date(a.startsAt).getTime() < new Date(b.endsAt).getTime() &&
@@ -135,7 +163,7 @@ function restSatisfied(
 export function scoreVolunteerForShift(
   candidate: SchedulerCandidateInput,
   shift: SchedulerShiftInput,
-): SchedulingCandidate {
+): ScoredCandidate {
   const blockers: string[] = [];
   const interval = { startsAt: shift.startsAt, endsAt: shift.endsAt };
   const timezone = shift.timezone ?? "America/Sao_Paulo";

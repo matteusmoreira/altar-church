@@ -4,6 +4,7 @@ import {
   rankVolunteersForShift,
   scoreVolunteerForShift,
   selectVolunteersForShift,
+  withManualSelectionRules,
   type SchedulerCandidateInput,
   type SchedulerShiftInput,
 } from "../src/lib/volunteers/scheduler.ts";
@@ -82,6 +83,36 @@ test("bloqueia indisponibilidade, conflito, função e limite mensal", () => {
     shift,
   );
   assert.ok(limited.blockers.includes("Limite mensal atingido"));
+});
+
+test("escolha manual aceita equipe ou função diferente, mas bloqueia conflito", () => {
+  const mismatch = withManualSelectionRules(
+    scoreVolunteerForShift(
+      candidate({ departmentIds: ["media"], roleNames: ["Câmera"] }),
+      shift,
+    ),
+  );
+  assert.equal(mismatch.eligibleForSuggestion, false);
+  assert.equal(mismatch.selectableManually, true);
+  assert.deepEqual(mismatch.warnings.sort(), [
+    "Função incompatível",
+    "Não pertence ao departamento",
+  ]);
+  assert.deepEqual(mismatch.blockers, []);
+
+  const conflict = withManualSelectionRules(
+    scoreVolunteerForShift(
+      candidate({
+        assignments: [{
+          startsAt: "2026-07-19T13:00:00.000Z",
+          endsAt: "2026-07-19T15:00:00.000Z",
+        }],
+      }),
+      shift,
+    ),
+  );
+  assert.equal(conflict.selectableManually, false);
+  assert.ok(conflict.blockers.includes("Conflito de horário"));
 });
 
 test("respeita disponibilidade recorrente no fuso da igreja", () => {

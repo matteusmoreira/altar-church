@@ -38,6 +38,14 @@ const programmingSchema = z
     positions: z.array(positionSchema).min(1, "Inclua ao menos uma equipe e função").max(100),
   })
   .superRefine((value, context) => {
+    const roleIds = value.positions.map((position) => position.roleId);
+    if (new Set(roleIds).size !== roleIds.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["positions"],
+        message: "Cada função deve aparecer apenas uma vez; use quantidade para abrir mais vagas",
+      });
+    }
     if (value.recurrenceFrequency === "weekly" && value.recurrenceWeekdays.length === 0) {
       context.addIssue({ code: "custom", path: ["recurrenceWeekdays"], message: "Escolha ao menos um dia" });
     }

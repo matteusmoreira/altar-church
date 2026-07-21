@@ -175,10 +175,15 @@ function Wizard({
   const [saving, setSaving] = useState(false);
 
   function addPosition() {
-    const department = data.departments.find((item) => item.active && item.roles?.some((role) => role.active));
-    const role = department?.roles?.find((item) => item.active);
-    if (!department || !role) return toast.error("Crie equipe e função primeiro");
-    if (form.positions.some((item) => item.roleId === role.id)) return toast.error("Função já adicionada");
+    const selectedRoleIds = new Set(form.positions.map((item) => item.roleId));
+    const department = data.departments.find((item) =>
+      item.active && item.roles?.some((role) => role.active && !selectedRoleIds.has(role.id)),
+    );
+    const role = department?.roles?.find(
+      (item) => item.active && !selectedRoleIds.has(item.id),
+    );
+    if (!department || !role)
+      return toast.error("Todas as funções disponíveis já foram adicionadas");
     setForm({
       ...form,
       positions: [...form.positions, {
@@ -225,15 +230,19 @@ function Wizard({
     });
     setSaving(false);
     if (!result.ok) return toast.error(result.error ?? "Programação não foi salva");
-    const info = result.data as { generated?: number; shortages?: number; skippedPublished?: number } | undefined;
+    const info = result.data as { skippedPublished?: number } | undefined;
     toast.success(
       form.editScope === "occurrence"
         ? "Ocorrência atualizada"
-        : `Programação salva · ${info?.generated ?? 0} sugestões`,
+        : "Programação salva. Agora escolha as pessoas de cada data.",
     );
     if (info?.skippedPublished) toast.info(`${info.skippedPublished} escala(s) publicada(s) preservada(s)`);
     onOpenChange(false);
     router.refresh();
+    window.location.hash = "montar-escala";
+    window.setTimeout(() => {
+      document.getElementById("montar-escala")?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   }
 
   const stepTitles = ["Dados", "Recorrência", "Equipes", "Revisão"];
@@ -344,7 +353,7 @@ function Wizard({
               <Button type="button" variant="outline" disabled={!templateId} onClick={applyTemplate}>Aplicar modelo</Button>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <div><p className="font-medium">Equipes, funções e quantidades</p><p className="text-xs text-muted-foreground">Sistema sugerirá pessoas disponíveis.</p></div>
+              <div><p className="font-medium">Equipes, funções e quantidades</p><p className="text-xs text-muted-foreground">Aqui você define as vagas. Depois escolherá as pessoas em cada data.</p></div>
               <Button type="button" variant="outline" onClick={addPosition}><Plus className="mr-2 h-4 w-4" />Função</Button>
             </div>
             {form.positions.map((position, index) => {
@@ -353,7 +362,9 @@ function Wizard({
                 <div key={`${position.roleId}-${index}`} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_100px_auto]">
                   <select className="h-10 rounded-md border bg-background px-3" value={position.departmentId} onChange={(event) => {
                     const nextDepartment = data.departments.find((item) => item.id === event.target.value);
-                    const role = nextDepartment?.roles?.find((item) => item.active);
+                    const selectedRoleIds = new Set(form.positions.filter((_, current) => current !== index).map((item) => item.roleId));
+                    const role = nextDepartment?.roles?.find((item) => item.active && !selectedRoleIds.has(item.id));
+                    if (!role) return toast.error("Esta equipe não possui outra função disponível");
                     setForm({ ...form, positions: form.positions.map((item, current) => current === index ? { ...item, departmentId: event.target.value, roleId: role?.id ?? "", instructions: role?.instructions ?? "" } : item) });
                   }}>
                     {data.departments.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -362,7 +373,7 @@ function Wizard({
                     const role = department?.roles?.find((item) => item.id === event.target.value);
                     setForm({ ...form, positions: form.positions.map((item, current) => current === index ? { ...item, roleId: event.target.value, instructions: role?.instructions ?? "" } : item) });
                   }}>
-                    {(department?.roles ?? []).filter((item) => item.active).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                    {(department?.roles ?? []).filter((item) => item.active).map((role) => <option key={role.id} value={role.id} disabled={form.positions.some((item, current) => current !== index && item.roleId === role.id)}>{role.name}</option>)}
                   </select>
                   <Input aria-label="Quantidade" type="number" min="1" max="100" value={position.requiredVolunteers} onChange={(event) => setForm({ ...form, positions: form.positions.map((item, current) => current === index ? { ...item, requiredVolunteers: Number(event.target.value) } : item) })} />
                   <Button type="button" size="icon" variant="ghost" aria-label="Remover função" onClick={() => setForm({ ...form, positions: form.positions.filter((_, current) => current !== index) })}><Trash2 className="h-4 w-4" /></Button>
@@ -392,7 +403,7 @@ function Wizard({
                 return <Badge key={position.roleId} variant="secondary">{department?.name} · {role?.name} · {position.requiredVolunteers}</Badge>;
               })}
             </CardContent></Card>
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm sm:col-span-2">Finalizar cria rascunho e sugestões. Nenhum aviso será enviado antes da publicação.</div>
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm sm:col-span-2">Finalizar cria as vagas, sem escolher pessoas. Em seguida, monte cada escala manualmente. Nenhum aviso será enviado antes da publicação.</div>
           </div>
         )}
 
@@ -454,8 +465,8 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
     const result = await prepareVolunteerProgrammingMonth(monthKey(month));
     setWorking(false);
     if (!result.ok) return toast.error(result.error ?? "Mês não foi preparado");
-    const info = result.data as { events?: number; generated?: number; shortages?: number } | undefined;
-    toast.success(`${info?.events ?? 0} programações · ${info?.generated ?? 0} sugestões`);
+    const info = result.data as { events?: number; shortages?: number } | undefined;
+    toast.success(`${info?.events ?? 0} programações preparadas para escolha manual`);
     if (info?.shortages) toast.warning(`${info.shortages} vaga(s) ainda sem voluntário`);
     router.refresh();
   }
@@ -469,6 +480,12 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
     else toast.success(`${info?.published ?? 0} programação(ões) publicada(s)`);
     setSelected([]);
     router.refresh();
+  }
+
+  function openSchedule(eventId: string) {
+    const targetId = `escala-${eventId}`;
+    window.location.hash = targetId;
+    document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth" });
   }
 
   async function removeProgramming(programming: VolunteerProgramming) {
@@ -530,7 +547,7 @@ export function VolunteerProgrammingWorkspace({ data }: { data: VolunteerDashboa
                   <div className="flex flex-wrap items-center gap-2"><p className="font-medium">{programming.title}</p><Badge variant={occurrence.status === "published" ? "default" : "secondary"}>{STATUS_LABELS[occurrence.status]}</Badge>{programming.recurrenceFrequency !== "none" && <Repeat className="h-3.5 w-3.5 text-muted-foreground" />}</div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDate(occurrence.startsAt)}</span>{programming.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{programming.location}</span>}<span className="flex items-center gap-1"><Users className="h-3 w-3" />{occurrence.assignedVolunteers}/{occurrence.requiredVolunteers}</span></div>
                 </div>
-                <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={occurrence.status === "published"} onClick={() => openEdit(programming, occurrence)}><Edit className="mr-1 h-3.5 w-3.5" />Esta</Button><Button variant="ghost" size="sm" onClick={() => openEdit(programming, occurrence, "series")}><Repeat className="mr-1 h-3.5 w-3.5" />Esta e próximas</Button>{data.canAdminDelete && <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeProgramming(programming)}><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</Button>}</div>
+                <div className="flex flex-wrap gap-2">{occurrence.status !== "published" && <Button size="sm" onClick={() => openSchedule(occurrence.eventId)}><Users className="mr-1 h-3.5 w-3.5" />Montar escala</Button>}<Button variant="outline" size="sm" disabled={occurrence.status === "published"} onClick={() => openEdit(programming, occurrence)}><Edit className="mr-1 h-3.5 w-3.5" />Esta</Button><Button variant="ghost" size="sm" onClick={() => openEdit(programming, occurrence, "series")}><Repeat className="mr-1 h-3.5 w-3.5" />Esta e próximas</Button>{data.canAdminDelete && <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeProgramming(programming)}><Trash2 className="mr-1 h-3.5 w-3.5" />Excluir</Button>}</div>
               </div>
             );
           })}

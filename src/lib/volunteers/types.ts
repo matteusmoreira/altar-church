@@ -153,8 +153,11 @@ export interface SchedulingCandidate {
   volunteerId: string
   volunteerName: string
   eligible: boolean
+  eligibleForSuggestion: boolean
+  selectableManually: boolean
   score: number
   reasons: SchedulingReason[]
+  warnings: string[]
   blockers: string[]
 }
 
