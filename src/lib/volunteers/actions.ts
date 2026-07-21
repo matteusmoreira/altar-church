@@ -388,10 +388,10 @@ export async function saveVolunteer(
           )
           select ${companyId}, input.department_id, ${volunteerId}, input.role_id, input.role_name, input.preferred
           from unnest(
-            ${departmentIds}::uuid[],
-            ${membershipRoleIds}::uuid[],
-            ${roleNames}::text[],
-            ${preferred}::boolean[]
+            ${tx.array(departmentIds)}::uuid[],
+            ${tx.array(membershipRoleIds)}::uuid[],
+            ${tx.array(roleNames)}::text[],
+            ${tx.array(preferred)}::boolean[]
           ) as input(department_id, role_id, role_name, preferred)
         `;
       }

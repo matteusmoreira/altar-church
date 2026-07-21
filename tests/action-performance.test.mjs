@@ -17,6 +17,7 @@ test("acoes principais possuem medicao e trabalho derivado pos-resposta", async 
   assert.match(pastoral, /withActionTiming\("ministries\.save"/)
   assert.match(volunteers, /withActionTiming\("volunteers\.save"/)
   assert.match(volunteers, /from unnest\(/)
+  assert.match(volunteers, /tx\.array\(preferred\)/)
 })
 
 test("Pessoas evita N Server Actions e carrega duplicidades sob demanda", async () => {
