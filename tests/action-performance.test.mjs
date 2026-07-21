@@ -45,3 +45,10 @@ test("fluxos prioritarios mostram pending e nao fazem refresh duplicado", async 
   assert.doesNotMatch(ministries, /setFormData\(emptyForm\)\s+router\.refresh/)
   assert.doesNotMatch(volunteers, /resetForm\(\);\s+router\.refresh/)
 })
+
+test("worker de voluntarios separa idempotencia inicial e lembretes", async () => {
+  const migration = await read("supabase/migrations/20260721010000_volunteer_delivery_idempotency.sql")
+  assert.match(migration, /notification_key is null/)
+  assert.match(migration, /notification_key_unique_idx/)
+  assert.match(migration, /notification_key is not null/)
+})
