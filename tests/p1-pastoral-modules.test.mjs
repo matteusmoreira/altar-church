@@ -66,7 +66,7 @@ test("P1 pastoral module pages do not import mock data", () => {
     assert.doesNotMatch(page, /"use client"/)
     assert.doesNotMatch(page, /@\/lib\/mock\/data/)
     assert.doesNotMatch(client, /@\/lib\/mock\/data/)
-    assert.match(client, /router\.refresh\(\)/)
+    assert.doesNotMatch(client, /router\.refresh\(\)/)
   }
 
   assert.match(read("src/app/(dashboard)/ministerios/page.tsx"), /listMinistries/)

@@ -16,9 +16,19 @@ export async function deletePerson(input: { id: string; companyId?: string | nul
   return deletePersonAction(input)
 }
 
+export async function deletePeople(input: { ids: string[]; companyId?: string | null }) {
+  const { deletePeople: deletePeopleAction } = await import("@/lib/people/actions")
+  return deletePeopleAction(input)
+}
+
 export async function resolveDuplicateCandidate(input: DuplicateCandidateActionInput) {
   const { resolveDuplicateCandidate: resolveDuplicateCandidateAction } = await import("@/lib/people/actions")
   return resolveDuplicateCandidateAction(input)
+}
+
+export async function loadDuplicateCandidates() {
+  const { listDuplicateCandidates } = await import("@/lib/people/data")
+  return listDuplicateCandidates()
 }
 
 export async function invitePersonAccess(input: InvitePersonAccessInput) {

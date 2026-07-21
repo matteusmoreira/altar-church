@@ -153,7 +153,8 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
     }
 
     setIsSaving(true)
-    const result = await saveMinistry({
+    try {
+      const result = await saveMinistry({
       id: formData.id,
       companyId: formData.companyId,
       name: formData.name,
@@ -162,18 +163,20 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
       leaderPersonId: formData.leaderPersonId || null,
       isActive: formData.isActive,
     })
-    setIsSaving(false)
-
-    if (!result.ok) {
-      toast.error(result.error ?? "Não foi possível salvar o ministério")
-      return
-    }
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível salvar o ministério")
+        return
+      }
 
     toast.success(editingMinistry ? "Ministério atualizado com sucesso" : "Ministério cadastrado com sucesso")
     setDialogOpen(false)
     setEditingMinistry(null)
     setFormData(emptyForm)
-    router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o ministério")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -194,7 +197,6 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
     toast.success("Ministério removido com sucesso")
     setDeleteDialogOpen(false)
     setDeletingMinistry(null)
-    router.refresh()
   }
 
   const goToPage = (page: number) => updateRoute(filterState, page)

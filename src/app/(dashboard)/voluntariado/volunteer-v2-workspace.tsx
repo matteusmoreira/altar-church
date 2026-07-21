@@ -506,6 +506,7 @@ function ManagerOverview({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [personQuery, setPersonQuery] = useState("");
   const [suggestions, setSuggestions] = useState<VolunteerPersonSuggestion[]>([]);
@@ -593,18 +594,25 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
     });
   }
   async function create() {
+    if (saving) return;
     if (!form.personId) return toast.error("Selecione uma Pessoa");
     if (form.memberships.length === 0)
       return toast.error("Adicione ao menos uma equipe e função");
-    const result = await saveVolunteer({
-      ...form,
-      registrationStatus: "active",
-      whatsappEnabled: true,
-      emailEnabled: true,
-    });
-    if (ok(result, form.id ? "Voluntário atualizado" : "Voluntário salvo")) {
-      resetForm();
-      router.refresh();
+    setSaving(true);
+    try {
+      const result = await saveVolunteer({
+        ...form,
+        registrationStatus: "active",
+        whatsappEnabled: true,
+        emailEnabled: true,
+      });
+      if (ok(result, form.id ? "Voluntário atualizado" : "Voluntário salvo")) {
+        resetForm();
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o voluntário");
+    } finally {
+      setSaving(false);
     }
   }
   async function remove(id: string) {
@@ -797,9 +805,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
             Convidar para portal
           </label>
           <div className="flex gap-2">
-            <Button onClick={create}>
-              <Plus className="mr-2 h-4 w-4" />
-              {form.id ? "Atualizar vínculo" : "Salvar voluntário"}
+            <Button onClick={create} disabled={saving} aria-busy={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              {saving ? (form.invite ? "Criando acesso..." : "Salvando...") : form.id ? "Atualizar vínculo" : "Salvar voluntário"}
             </Button>
             {selectedPerson && (
               <Button variant="ghost" onClick={resetForm}>
@@ -876,6 +884,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [department, setDepartment] = useState<{
     id: string | null;
     name: string;
@@ -891,31 +900,33 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     active: true,
   });
   async function addDepartment() {
-    const result = await saveVolunteerDepartment({
-      managerProfileId: null,
-      ...department,
-    });
-    if (ok(result, department.id ? "Equipe atualizada" : "Equipe criada")) {
-      if (result.id) setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
-      setDepartment({ id: null, name: "", description: "", active: true });
-      router.refresh();
+    if (pendingKey) return;
+    setPendingKey("department");
+    try {
+      const result = await saveVolunteerDepartment({ managerProfileId: null, ...department });
+      if (ok(result, department.id ? "Equipe atualizada" : "Equipe criada")) {
+        if (result.id) setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
+        setDepartment({ id: null, name: "", description: "", active: true });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a equipe");
+    } finally {
+      setPendingKey(null);
     }
   }
   async function addRole() {
+    if (pendingKey) return;
     if (!role.departmentId) return toast.error("Selecione uma equipe");
-    const result = await saveVolunteerDepartmentRole({
-      ...role,
-    });
-    if (ok(result, role.id ? "Função atualizada" : "Função criada")) {
-      setRole({
-        ...role,
-        id: null,
-        name: "",
-        description: "",
-        instructions: "",
-        active: true,
-      });
-      router.refresh();
+    setPendingKey("role");
+    try {
+      const result = await saveVolunteerDepartmentRole({ ...role });
+      if (ok(result, role.id ? "Função atualizada" : "Função criada")) {
+        setRole({ ...role, id: null, name: "", description: "", instructions: "", active: true });
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a função");
+    } finally {
+      setPendingKey(null);
     }
   }
   async function toggleDepartment(item: VolunteerDashboardData["departments"][number]) {
@@ -980,8 +991,9 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
             }
           />
           <div className="flex gap-2">
-            <Button onClick={addDepartment}>
-              {department.id ? "Salvar equipe" : "Criar equipe"}
+            <Button onClick={addDepartment} disabled={pendingKey !== null} aria-busy={pendingKey === "department"}>
+              {pendingKey === "department" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {pendingKey === "department" ? "Salvando..." : department.id ? "Salvar equipe" : "Criar equipe"}
             </Button>
             {department.id && (
               <Button
@@ -1104,8 +1116,9 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
             onChange={(e) => setRole({ ...role, instructions: e.target.value })}
           />
           <div className="flex gap-2">
-            <Button onClick={addRole} disabled={!role.departmentId}>
-              {role.id ? "Salvar função" : "Criar função"}
+            <Button onClick={addRole} disabled={!role.departmentId || pendingKey !== null} aria-busy={pendingKey === "role"}>
+              {pendingKey === "role" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {pendingKey === "role" ? "Salvando..." : role.id ? "Salvar função" : "Criar função"}
             </Button>
             {role.id && (
               <Button

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { afterResponse } from "@/lib/performance/after-response"
+import { withActionTiming } from "@/lib/performance/action-timing"
 import { z } from "zod"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
@@ -82,6 +83,11 @@ const invitePersonAccessSchema = z.object({
 
 const deletePersonSchema = z.object({
   id: z.string().uuid(),
+  companyId: nullableUuidSchema,
+})
+
+const deletePeopleSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
   companyId: nullableUuidSchema,
 })
 
@@ -355,7 +361,8 @@ async function provisionPersonAccess(input: {
 }
 
 export async function savePerson(input: SavePersonInput): Promise<PeopleActionResult> {
-  try {
+  return withActionTiming("people.save", async () => {
+    try {
     const parsed = personSchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
 
@@ -488,7 +495,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       })
     }
 
-    await refreshMemberCount(companyId)
+    afterResponse("people member count", () => refreshMemberCount(companyId))
     await writeAuditLog({
       action: "person.save",
       entityTable: "people",
@@ -533,9 +540,10 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     await refreshPeoplePaths(personId)
 
     return { ok: true, id: personId ?? undefined }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+    } catch (error) {
+      return toErrorResult(error)
+    }
+  })
 }
 
 export async function invitePersonAccess(input: InvitePersonAccessInput): Promise<PeopleActionResult> {
@@ -597,6 +605,39 @@ export async function deletePerson(input: { id: string; companyId?: string | nul
   } catch (error) {
     return toErrorResult(error)
   }
+}
+
+export async function deletePeople(input: { ids: string[]; companyId?: string | null }): Promise<PeopleActionResult> {
+  return withActionTiming("people.bulk_delete", async () => {
+    try {
+      const parsed = deletePeopleSchema.parse(input)
+      const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+      await requirePermission("members.delete", companyId)
+
+      const ids = [...new Set(parsed.ids)]
+      const rows = await getSql()<{ id: string }[]>`
+        update public.people
+        set deleted_at = now(), is_active = false, updated_by = ${user.id}
+        where company_id = ${companyId}
+          and id = any(${ids}::uuid[])
+          and deleted_at is null
+        returning id
+      `
+      if (rows.length === 0) throw new Error("Nenhuma pessoa encontrada")
+
+      afterResponse("people member count", () => refreshMemberCount(companyId))
+      await writeAuditLog({
+        action: "person.bulk_delete",
+        entityTable: "people",
+        companyId,
+        metadata: { ids: rows.map((row) => row.id), count: rows.length },
+      })
+      await refreshPeoplePaths()
+      return { ok: true, id: rows[0]?.id }
+    } catch (error) {
+      return toErrorResult(error)
+    }
+  })
 }
 
 export async function resolveDuplicateCandidate(input: DuplicateCandidateActionInput): Promise<PeopleActionResult> {

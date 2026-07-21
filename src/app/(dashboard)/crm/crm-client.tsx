@@ -1,7 +1,6 @@
 "use client"
 
 import { FormEvent, useMemo, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   CalendarClock,
@@ -122,7 +121,6 @@ function emptyStageForm(sortOrder: number): StageFormState {
 }
 
 export function CrmClient({ stages, cards, people }: CrmClientProps) {
-  const router = useRouter()
   const [pending, startTransition] = useTransition()
   const defaultStageId =
     stages.find((stage) => stage.isDefault)?.id ?? stages[0]?.id ?? ""
@@ -214,7 +212,6 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
       }
       toast.success(cardForm.id ? "Card atualizado" : "Card criado")
       setCardOpen(false)
-      router.refresh()
     })
   }
 
@@ -235,7 +232,6 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
       }
       toast.success(stageForm.id ? "Coluna atualizada" : "Coluna criada")
       setStageOpen(false)
-      router.refresh()
     })
   }
 
@@ -249,7 +245,6 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
         return
       }
       toast.success("Card excluído")
-      router.refresh()
     })
   }
 
@@ -268,7 +263,6 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
       toast.success("Coluna excluída")
       setDeleteStage(null)
       setReassignStageId("")
-      router.refresh()
     })
   }
 

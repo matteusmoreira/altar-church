@@ -20,8 +20,8 @@ test("members client uses server actions for create, edit and delete", () => {
 
   assert.match(client, /^"use client"/)
   assert.match(client, /savePerson/)
-  assert.match(client, /deletePerson/)
-  assert.match(client, /router\.refresh\(\)/)
+  assert.match(client, /deletePeople/)
+  assert.doesNotMatch(client, /setFormData\(emptyForm\)\s+router\.refresh/)
   assert.match(client, /peopleResult\.people/)
   assert.doesNotMatch(client, /mockMembers/)
   assert.doesNotMatch(client, /setMembers/)
@@ -34,7 +34,7 @@ test("members client supports page selection and bulk delete", () => {
   assert.match(client, /togglePageSelection/)
   assert.match(client, /Selecionar todas as pessoas desta página/)
   assert.match(client, /Excluir selecionadas/)
-  assert.match(client, /for \(const person of peopleToDelete\)/)
+  assert.match(client, /ids: peopleToDelete\.map/)
 })
 
 test("member detail page shows real profile history and journey data", () => {
@@ -67,7 +67,7 @@ test("members duplicates flow lists candidates and resolves with audited server 
   const data = read("src/lib/people/data.ts")
   const types = read("src/lib/people/types.ts")
 
-  assert.match(page, /listDuplicateCandidates/)
+  assert.doesNotMatch(page, /listDuplicateCandidates/)
   assert.match(page, /duplicateCandidates=/)
   assert.match(client, /duplicateCandidates/)
   assert.match(client, /Resolver duplicidade/)
@@ -78,6 +78,7 @@ test("members duplicates flow lists candidates and resolves with audited server 
   assert.match(actions, /action: "person_duplicate\.resolve"/)
   assert.match(actions, /revalidatePath\("\/pessoas"\)/)
   assert.match(routeActions, /resolveDuplicateCandidate/)
+  assert.match(routeActions, /loadDuplicateCandidates/)
   assert.match(data, /export async function listDuplicateCandidates/)
   assert.match(data, /primary_person/)
   assert.match(data, /duplicate_person/)

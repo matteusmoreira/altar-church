@@ -2,7 +2,6 @@ import { MembersClient } from "./members-client"
 import {
   getPeopleDashboardData,
   getPersonFormOptions,
-  listDuplicateCandidates,
   listPeople,
 } from "@/lib/people/data"
 import { listCrmStages } from "@/lib/operational/data"
@@ -64,11 +63,10 @@ export default async function MembersPage({
     pageSize: 20,
   }
 
-  const [peopleResult, dashboard, formOptions, duplicateCandidates, crmStages] = await Promise.all([
+  const [peopleResult, dashboard, formOptions, crmStages] = await Promise.all([
     listPeople(filters),
     getPeopleDashboardData(),
     getPersonFormOptions(),
-    listDuplicateCandidates(),
     listCrmStages().catch((): CRMStage[] => []),
   ])
 
@@ -76,7 +74,7 @@ export default async function MembersPage({
     <MembersClient
       crmStages={crmStages}
       dashboard={dashboard}
-      duplicateCandidates={duplicateCandidates}
+      duplicateCandidates={[]}
       filters={filters}
       formOptions={formOptions}
       peopleResult={peopleResult}

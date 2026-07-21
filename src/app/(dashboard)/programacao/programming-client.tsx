@@ -192,7 +192,6 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
     setDialogOpen(false)
     setEditingProgramming(null)
     setFormData(emptyForm)
-    router.refresh()
   }
 
   const handleDelete = async () => {
@@ -213,7 +212,6 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
     toast.success("Programação removida com sucesso")
     setDeleteDialogOpen(false)
     setDeletingProgramming(null)
-    router.refresh()
   }
 
   const goToPage = (page: number) => updateRoute(filterState, page)

@@ -129,8 +129,6 @@ export function FormsClient({ data }: FormsClientProps) {
       setCreateOpen(false)
       if (result.id) {
         router.push(`/formularios/${result.id}`)
-      } else {
-        router.refresh()
       }
     })
   }
@@ -145,7 +143,6 @@ export function FormsClient({ data }: FormsClientProps) {
       }
       toast.success("Formulário excluído")
       setDeleteTarget(null)
-      router.refresh()
     })
   }
 

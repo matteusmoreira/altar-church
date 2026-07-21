@@ -18,7 +18,7 @@ test("visitors page uses real people data instead of mock visitors", () => {
   assert.match(client, /savePerson/)
   assert.match(client, /deletePerson/)
   assert.match(client, /journeyStatus/)
-  assert.match(client, /router\.refresh\(\)/)
+  assert.doesNotMatch(client, /router\.refresh\(\)/)
 
   assert.match(actions, /revalidatePath\("\/visitantes"\)/)
 })

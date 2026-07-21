@@ -176,7 +176,6 @@ export function SongsClient({ songsResult, filters }: SongsClientProps) {
     setDialogOpen(false)
     setEditingSong(null)
     setFormData(emptyForm)
-    router.refresh()
   }
 
   const handleDelete = async () => {
@@ -197,7 +196,6 @@ export function SongsClient({ songsResult, filters }: SongsClientProps) {
     toast.success("Música removida com sucesso")
     setDeleteDialogOpen(false)
     setDeletingSong(null)
-    router.refresh()
   }
 
   const goToPage = (page: number) => updateRoute(filterState, page)

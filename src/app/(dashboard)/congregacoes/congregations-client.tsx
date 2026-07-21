@@ -186,7 +186,6 @@ export function CongregationsClient({
     setDialogOpen(false)
     setEditingCongregation(null)
     setFormData(emptyForm)
-    router.refresh()
   }
 
   const handleDelete = async () => {
@@ -207,7 +206,6 @@ export function CongregationsClient({
     toast.success("Congregação removida com sucesso")
     setDeleteDialogOpen(false)
     setDeletingCongregation(null)
-    router.refresh()
   }
 
   return (

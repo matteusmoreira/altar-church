@@ -40,7 +40,7 @@ test("content dashboard uses server data and audited server actions", () => {
   assert.match(client, /saveContentPost/)
   assert.match(client, /saveContentBanner/)
   assert.match(client, /deleteContentPost/)
-  assert.match(client, /router\.refresh\(\)/)
+  assert.doesNotMatch(client, /router\.refresh\(\)/)
   assert.doesNotMatch(client, /@\/lib\/mock\/data/)
 
   assert.match(routeActions, /saveContentPost/)

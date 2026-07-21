@@ -6,6 +6,7 @@ import { requirePermission, writeAuditLog } from "@/lib/auth/permissions";
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { withActionTiming } from "@/lib/performance/action-timing";
 import type { Permission } from "@/lib/types";
 import type {
   VolunteerActionResult,
@@ -278,7 +279,8 @@ export async function searchVolunteerPeople(
 export async function saveVolunteer(
   input: z.input<typeof volunteerSchema>,
 ): Promise<VolunteerActionResult> {
-  try {
+  return withActionTiming("volunteers.save", async () => {
+    try {
     const parsed = volunteerSchema.parse(input);
     const { user, companyId } = await context(
       parsed.id ? "volunteers.edit" : "volunteers.create",
@@ -375,17 +377,22 @@ export async function saveVolunteer(
         delete from public.volunteer_department_memberships
         where volunteer_id = ${volunteerId}
       `;
-      for (const membership of parsed.memberships) {
-        const role = rolesById.get(membership.roleId);
-        if (!role) throw new Error("Função inválida");
+      if (parsed.memberships.length > 0) {
+        const departmentIds = parsed.memberships.map((membership) => membership.departmentId);
+        const membershipRoleIds = parsed.memberships.map((membership) => membership.roleId);
+        const roleNames = parsed.memberships.map((membership) => rolesById.get(membership.roleId)?.name ?? "");
+        const preferred = parsed.memberships.map((membership) => membership.preferred);
         await tx`
           insert into public.volunteer_department_memberships (
             company_id, department_id, volunteer_id, role_id, role_name, preferred
           )
-          values (
-            ${companyId}, ${membership.departmentId}, ${volunteerId},
-            ${membership.roleId}, ${role.name}, ${membership.preferred}
-          )
+          select ${companyId}, input.department_id, ${volunteerId}, input.role_id, input.role_name, input.preferred
+          from unnest(
+            ${departmentIds}::uuid[],
+            ${membershipRoleIds}::uuid[],
+            ${roleNames}::text[],
+            ${preferred}::boolean[]
+          ) as input(department_id, role_id, role_name, preferred)
         `;
       }
     });
@@ -411,15 +418,17 @@ export async function saveVolunteer(
     );
     refresh();
     return { ok: true, id: volunteerId ?? undefined };
-  } catch (error) {
-    return failure(error);
-  }
+    } catch (error) {
+      return failure(error);
+    }
+  });
 }
 
 export async function saveVolunteerDepartment(
   input: z.input<typeof departmentSchema>,
 ): Promise<VolunteerActionResult> {
-  try {
+  return withActionTiming("volunteer_departments.save", async () => {
+    try {
     const parsed = departmentSchema.parse(input);
     const { user, companyId } = await context(
       parsed.id ? "volunteers.edit" : "volunteers.create",
@@ -450,9 +459,10 @@ export async function saveVolunteerDepartment(
     );
     refresh();
     return { ok: true, id: rows[0].id };
-  } catch (error) {
-    return failure(error);
-  }
+    } catch (error) {
+      return failure(error);
+    }
+  });
 }
 
 export async function saveVolunteerTemplate(

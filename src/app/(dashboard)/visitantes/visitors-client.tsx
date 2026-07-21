@@ -314,7 +314,6 @@ export function VisitorsClient({ visitorsResult, filters }: VisitorsClientProps)
     setDialogOpen(false)
     setEditingVisitor(null)
     setFormData(emptyForm)
-    router.refresh()
   }
 
   const handleDelete = async () => {
@@ -335,7 +334,6 @@ export function VisitorsClient({ visitorsResult, filters }: VisitorsClientProps)
     toast.success("Visitante removido com sucesso")
     setDeleteDialogOpen(false)
     setDeletingVisitor(null)
-    router.refresh()
   }
 
   const goToPage = (page: number) => updateRoute(filterState, page)

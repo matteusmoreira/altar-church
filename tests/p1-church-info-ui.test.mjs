@@ -24,7 +24,7 @@ test("church info page reads profile from server and saves social links with aud
   assert.match(client, /^"use client"/)
   assert.match(client, /saveChurchInfo/)
   assert.match(client, /socialLinks/)
-  assert.match(client, /router\.refresh\(\)/)
+  assert.doesNotMatch(client, /router\.refresh\(\)/)
   assert.match(client, /Salvar alterações/)
   assert.doesNotMatch(client, /Upload de logo em desenvolvimento/)
   assert.doesNotMatch(client, /mockChurches/)

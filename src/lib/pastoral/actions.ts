@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { withActionTiming } from "@/lib/performance/action-timing"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
@@ -104,7 +105,8 @@ function refreshSongPaths() {
 }
 
 export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralActionResult> {
-  try {
+  return withActionTiming("ministries.save", async () => {
+    try {
     const parsed = ministrySchema.parse(input)
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
     await requirePermission(parsed.id ? "ministries.edit" : "ministries.create", companyId)
@@ -169,9 +171,10 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
     refreshMinistryPaths()
 
     return { ok: true, id: ministryId }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+    } catch (error) {
+      return toErrorResult(error)
+    }
+  })
 }
 
 export async function deleteMinistry(input: { id: string; companyId?: string | null }): Promise<PastoralActionResult> {

@@ -18,6 +18,7 @@ import {
   FileText,
   Kanban,
   List,
+  Loader2,
   MoreVertical,
   Plus,
   Route,
@@ -30,7 +31,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
-import { deletePerson, movePersonToKanban, resolveDuplicateCandidate, savePerson } from "./actions"
+import { deletePeople, loadDuplicateCandidates, movePersonToKanban, resolveDuplicateCandidate, savePerson } from "./actions"
 import type {
   DuplicateCandidateItem,
   DuplicateCandidateResolution,
@@ -277,6 +278,9 @@ export function MembersClient({
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
   const [activeTab, setActiveTab] = useState("lista")
+  const [duplicates, setDuplicates] = useState(duplicateCandidates)
+  const [duplicatesLoaded, setDuplicatesLoaded] = useState(duplicateCandidates.length > 0)
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -327,6 +331,21 @@ export function MembersClient({
     })
   }
 
+  const handleTabChange = async (value: string) => {
+    setActiveTab(value)
+    if (value !== "duplicidades" || duplicatesLoaded || duplicatesLoading) return
+
+    setDuplicatesLoading(true)
+    try {
+      setDuplicates(await loadDuplicateCandidates())
+      setDuplicatesLoaded(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível carregar duplicidades")
+    } finally {
+      setDuplicatesLoading(false)
+    }
+  }
+
   const togglePageSelection = () => {
     setSelectedPersonIds(
       allPagePeopleSelected ? new Set() : new Set(peopleResult.people.map((person) => person.id)),
@@ -373,8 +392,9 @@ export function MembersClient({
     }
 
     setIsSaving(true)
-    const { firstName, lastName } = splitFullName(fullName)
-    const result = await savePerson({
+    try {
+      const { firstName, lastName } = splitFullName(fullName)
+      const result = await savePerson({
       id: formData.id,
       companyId: formData.companyId,
       firstName,
@@ -398,12 +418,10 @@ export function MembersClient({
       accessRole: formData.inviteAccess ? formData.accessRole : undefined,
       temporaryPassword: formData.inviteAccess ? formData.temporaryPassword : undefined,
     })
-    setIsSaving(false)
-
-    if (!result.ok) {
-      toast.error(result.error ?? "Não foi possível salvar a pessoa")
-      return
-    }
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível salvar a pessoa")
+        return
+      }
 
     let kanbanMoved = false
     if (formData.moveToKanban && result.id) {
@@ -439,7 +457,11 @@ export function MembersClient({
     }
     setDialogOpen(false)
     setFormData(emptyForm)
-    router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a pessoa")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -447,42 +469,24 @@ export function MembersClient({
     if (peopleToDelete.length === 0) return
 
     setIsDeleting(true)
-    const results = []
-    for (const person of peopleToDelete) {
-      const result = await deletePerson({
-        id: person.id,
-        companyId: person.companyId,
+    try {
+      const result = await deletePeople({
+        ids: peopleToDelete.map((person) => person.id),
+        companyId: peopleToDelete[0]?.companyId,
       })
-      results.push({ person, result })
-    }
-    setIsDeleting(false)
-
-    const failed = results.filter(({ result }) => !result.ok)
-    const removedCount = results.length - failed.length
-
-    if (failed.length > 0) {
-      const firstError = failed[0]?.result.error
-      toast.error(
-        removedCount > 0
-          ? `${removedCount} removida(s); ${failed.length} não puderam ser excluída(s).`
-          : firstError ?? "Não foi possível excluir as pessoas selecionadas",
-      )
-      setSelectedPersonIds(new Set(failed.map(({ person }) => person.id)))
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível excluir as pessoas selecionadas")
+        return
+      }
+      toast.success(peopleToDelete.length === 1 ? "Pessoa removida com sucesso" : `${peopleToDelete.length} pessoas removidas com sucesso`)
       setDeleteDialogOpen(false)
       setDeletingPerson(null)
-      if (removedCount > 0) router.refresh()
-      return
+      setSelectedPersonIds(new Set())
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível excluir as pessoas selecionadas")
+    } finally {
+      setIsDeleting(false)
     }
-
-    toast.success(
-      peopleToDelete.length === 1
-        ? "Pessoa removida com sucesso"
-        : `${peopleToDelete.length} pessoas removidas com sucesso`,
-    )
-    setDeleteDialogOpen(false)
-    setDeletingPerson(null)
-    setSelectedPersonIds(new Set())
-    router.refresh()
   }
 
   const handleResolveDuplicate = async (
@@ -503,7 +507,7 @@ export function MembersClient({
     }
 
     toast.success(status === "ignored" ? "Suspeita ignorada" : "Duplicidade resolvida")
-    router.refresh()
+    setDuplicates((current) => current.filter((item) => item.id !== candidate.id))
   }
 
   const metricCards = [
@@ -526,7 +530,7 @@ export function MembersClient({
         </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => value && setActiveTab(value)}>
+      <Tabs value={activeTab} onValueChange={(value) => value && void handleTabChange(value)}>
         <TabsList className="flex h-auto flex-wrap">
           <TabsTrigger value="lista"><List />Lista geral</TabsTrigger>
           <TabsTrigger value="duplicidades"><AlertTriangle />Duplicidades</TabsTrigger>
@@ -924,7 +928,11 @@ export function MembersClient({
               </p>
             </div>
 
-            {duplicateCandidates.length === 0 ? (
+            {duplicatesLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Carregando duplicidades...
+              </div>
+            ) : duplicates.length === 0 ? (
               <Card className="glass">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <CheckCircle2 className="h-12 w-12 text-success/70" />
@@ -932,7 +940,7 @@ export function MembersClient({
                 </CardContent>
               </Card>
             ) : (
-              duplicateCandidates.map((candidate) => {
+              duplicates.map((candidate) => {
                 const isResolving = resolvingDuplicateId === candidate.id
 
                 return (

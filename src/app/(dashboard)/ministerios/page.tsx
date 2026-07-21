@@ -36,16 +36,23 @@ export default async function MinistriesPage({ searchParams }: { searchParams?: 
     pageSize: 10,
   }
   const user = await getCurrentUser()
-  const [ministriesResult, leaderCandidates, memberships] = await Promise.all([
+  const [ministriesResult, leaderCandidates] = await Promise.all([
     listMinistries(filters),
     listMinistryLeaderCandidates(),
-    user ? listManagedMinistryMemberships(user) : Promise.resolve([]),
   ])
 
   return (
     <div className="space-y-6">
       <MinistriesClient ministriesResult={ministriesResult} filters={filters} leaderCandidates={leaderCandidates} />
-      <MinistryMembershipManager memberships={memberships} />
+      <Suspense fallback={<div className="h-32 animate-pulse rounded-xl border bg-muted/30" />}>
+        <ManagedMemberships user={user} />
+      </Suspense>
     </div>
   )
 }
+
+async function ManagedMemberships({ user }: { user: Awaited<ReturnType<typeof getCurrentUser>> }) {
+  const memberships = user ? await listManagedMinistryMemberships(user) : []
+  return <MinistryMembershipManager memberships={memberships} />
+}
+import { Suspense } from "react"

@@ -1,7 +1,6 @@
 "use client"
 
 import { FormEvent, useMemo, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
@@ -225,7 +224,6 @@ function categoriesForType(categories: ContentCategory[], type: ContentType) {
 }
 
 export function ContentClient({ data }: ContentClientProps) {
-  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [activeType, setActiveType] = useState<ContentType>("news")
   const [search, setSearch] = useState("")
@@ -277,7 +275,6 @@ export function ContentClient({ data }: ContentClientProps) {
 
   function refreshAfterSuccess(message: string) {
     toast.success(message)
-    router.refresh()
   }
 
   function uploadAsset(target: ContentAssetTarget, file: File | null) {

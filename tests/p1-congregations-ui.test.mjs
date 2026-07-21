@@ -20,7 +20,7 @@ test("congregations page uses real server data and client actions", () => {
   assert.match(client, /^"use client"/)
   assert.match(client, /saveCongregation/)
   assert.match(client, /deleteCongregation/)
-  assert.match(client, /router\.refresh\(\)/)
+  assert.doesNotMatch(client, /router\.refresh\(\)/)
   assert.match(client, /congregationsResult\.congregations/)
   assert.match(client, /Nova congregação/)
   assert.doesNotMatch(client, /mockCongregations/)

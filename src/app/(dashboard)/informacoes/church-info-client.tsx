@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Building2, Calendar, Image as ImageIcon, MapPin, Music, Upload, Users } from "lucide-react"
@@ -126,7 +125,6 @@ function AssetUploadField({
 }
 
 export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
-  const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
   const [uploadingAsset, setUploadingAsset] = useState<ChurchAssetTarget | null>(null)
   const [formData, setFormData] = useState(() => toForm(churchInfoData))
@@ -179,7 +177,6 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
     }
 
     toast.success("Informações da igreja salvas com sucesso")
-    router.refresh()
   }
 
   const handleAssetUpload = async (target: ChurchAssetTarget, file: File | null) => {
@@ -207,7 +204,6 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
       [target === "church-logo" ? "logo" : "cover"]: result.originalName ?? file.name,
     }))
     toast.success("Arquivo enviado")
-    router.refresh()
   }
 
   return (
