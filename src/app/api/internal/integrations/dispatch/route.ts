@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { processIntegrationOutbox } from "@/lib/integrations/deliver"
 import { processKidDeliveryOutbox, reconcileKidWhatsApp } from "@/lib/kids/delivery"
+import { processVolunteerChatPushOutbox } from "@/lib/volunteers/chat-delivery"
 
 /**
  * Cron / worker entrypoint.
@@ -30,12 +31,13 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const batchSize = Number((body as { batchSize?: number }).batchSize ?? 25)
     const safeBatchSize = Number.isFinite(batchSize) ? Math.min(Math.max(batchSize, 1), 100) : 25
-    const [integrations, kidsReconcile, kidsDispatch] = await Promise.all([
+    const [integrations, kidsReconcile, kidsDispatch, volunteerChat] = await Promise.all([
       processIntegrationOutbox(safeBatchSize),
       reconcileKidWhatsApp(safeBatchSize),
       processKidDeliveryOutbox(safeBatchSize),
+      processVolunteerChatPushOutbox(safeBatchSize),
     ])
-    return NextResponse.json({ data: { integrations, kids: { reconcile: kidsReconcile, dispatch: kidsDispatch } } })
+    return NextResponse.json({ data: { integrations, kids: { reconcile: kidsReconcile, dispatch: kidsDispatch }, volunteerChat } })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro no dispatch"
     return NextResponse.json(

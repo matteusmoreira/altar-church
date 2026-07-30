@@ -42,8 +42,12 @@ export interface GroupListItem {
   meetingDay: string
   meetingTime: string | null
   meetingLocation: string
+  postalCode: string
+  addressNumber: string
+  addressComplement: string
   neighborhood: string
   city: string
+  state: string
   maxCapacity: number
   minAge: number | null
   maxAge: number | null
@@ -134,8 +138,12 @@ export interface SaveGroupInput {
   meetingDay?: string
   meetingTime?: string | null
   meetingLocation?: string
+  postalCode?: string
+  addressNumber?: string
+  addressComplement?: string
   neighborhood?: string
   city?: string
+  state?: string
   maxCapacity?: number
   minAge?: number | null
   maxAge?: number | null
@@ -172,4 +180,13 @@ export interface GroupsActionResult {
   ok: boolean
   id?: string
   error?: string
+}
+
+export interface SaveGroupCategoryInput {
+  id?: string | null
+  companyId?: string | null
+  name: string
+  description?: string
+  sortOrder?: number
+  isActive?: boolean
 }

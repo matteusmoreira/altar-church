@@ -62,3 +62,11 @@ test("manager UI uses three simple areas and keeps advanced operations secondary
   assert.doesNotMatch(workspace, /Adicionar música do catálogo/)
   assert.doesNotMatch(workspace, /Culto e Louvor/)
 })
+
+test("volunteer directory has aligned search icons and list/grid views", () => {
+  assert.match(workspace, /className="pl-10 md:pl-10"/)
+  assert.match(workspace, /const \[viewMode, setViewMode\] = useState<"list" \| "grid">\("grid"\)/)
+  assert.match(workspace, /Ver voluntários em lista/)
+  assert.match(workspace, /Ver voluntários em grade/)
+  assert.match(workspace, /Envia convite para/)
+})

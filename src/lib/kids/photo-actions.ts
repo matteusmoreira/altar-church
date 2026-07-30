@@ -7,7 +7,7 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { getOptionalFile, removePersonPhoto, replacePersonPhoto } from "@/lib/files/server"
 import { guardianChildSchema } from "./schemas"
-import { registerVisitorKid, saveGuardianChild } from "./portal-actions"
+import { registerVisitorKid, saveGuardianChild, saveGuardianContact } from "./portal-actions"
 import type { KidsActionResult, KidsPortalActionResult } from "./types"
 
 function text(formData: FormData, key: string) {
@@ -103,6 +103,59 @@ export async function saveGuardianChildWithPhotos(formData: FormData): Promise<K
     }
     refreshKids()
     return { ...result, warning: warnings.length ? `Cadastro salvo, mas não foi possível salvar ${warnings.join(" e ")}.` : undefined }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function saveGuardianContactWithPhoto(formData: FormData): Promise<KidsPortalActionResult> {
+  try {
+    const payload = JSON.parse(text(formData, "payload")) as unknown
+    const result = await saveGuardianContact(payload)
+    if (!result.ok) return result
+
+    const photo = getOptionalFile(formData, "photo")
+    if (!photo) return result
+
+    const user = await getCurrentUser()
+    if (!user?.churchId || !result.id || !result.personId) throw new Error("Acesso negado")
+    const allowed = await getSql()<{ id: string }[]>`
+      select person.id
+      from public.kid_guardians guardian
+      join public.people person on person.id = guardian.person_id and person.deleted_at is null
+      where guardian.id = ${result.id}
+        and guardian.person_id = ${result.personId}
+        and guardian.company_id = ${user.churchId}
+        and guardian.created_by = ${user.id}
+        and guardian.is_primary = false
+        and guardian.deleted_at is null
+        and person.created_by = ${user.id}
+        and person.profile_id is null
+        and exists (
+          select 1 from public.kid_guardians owner
+          where owner.kid_id = guardian.kid_id
+            and owner.profile_id = ${user.id}
+            and owner.deleted_at is null
+        )
+      limit 1
+    `
+    if (!allowed[0]?.id) {
+      return { ...result, warning: "Contato salvo. Foto não alterada porque esta pessoa já tinha cadastro na igreja." }
+    }
+
+    try {
+      await uploadPhoto({
+        file: photo,
+        personId: result.personId,
+        companyId: user.churchId,
+        ownerProfileId: user.id,
+        source: "guardian-authorized-contact",
+      })
+    } catch {
+      return { ...result, warning: "Contato salvo, mas não foi possível salvar a foto." }
+    }
+    refreshKids()
+    return result
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
   }

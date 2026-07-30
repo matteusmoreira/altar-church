@@ -9,7 +9,8 @@ declare const Deno: {
 type Delivery = {
   id: string
   company_id: string
-  volunteer_id: string
+  volunteer_id: string | null
+  target_profile_id: string | null
   channel: "whatsapp" | "email" | "push"
   recipient: string
   subject: string
@@ -123,7 +124,10 @@ async function sendEmail(delivery: Delivery) {
 async function sendPush(delivery: Delivery) {
   if (!vapidSubject || !vapidPublicKey || !vapidPrivateKey) throw new Error("Web Push não configurado")
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey)
-  const response = await rest(`volunteer_push_subscriptions?volunteer_id=eq.${encodeURIComponent(delivery.volunteer_id)}&is_active=eq.true&select=id,endpoint,p256dh,auth_key`)
+  const ownerFilter = delivery.target_profile_id
+    ? `profile_id=eq.${encodeURIComponent(delivery.target_profile_id)}`
+    : `volunteer_id=eq.${encodeURIComponent(delivery.volunteer_id ?? "")}`
+  const response = await rest(`volunteer_push_subscriptions?${ownerFilter}&is_active=eq.true&select=id,endpoint,p256dh,auth_key`)
   const subscriptions = await response.json() as { id: string; endpoint: string; p256dh: string; auth_key: string }[]
   if (subscriptions.length === 0) throw new Error("Sem dispositivo push ativo")
   const payload = JSON.stringify({ title: delivery.subject, body: delivery.content, url: "/voluntariado", ...delivery.payload })

@@ -21,12 +21,11 @@ import {
   deleteGuardianContact,
   generateGuardianPickupCode,
   requestGuardianCheckout,
-  saveGuardianContact,
   saveGuardianKidsProfile,
   signOutFamily,
   updateGuardianConsents,
 } from "@/lib/kids/portal-actions"
-import { saveGuardianChildWithPhotos } from "@/lib/kids/photo-actions"
+import { saveGuardianChildWithPhotos, saveGuardianContactWithPhoto } from "@/lib/kids/photo-actions"
 import { markKidConversationRead, sendKidInternalMessage } from "@/lib/kids/actions"
 import { createClient } from "@/lib/supabase/client"
 import type {
@@ -34,6 +33,7 @@ import type {
   GuardianPickupCode,
   GuardianPortalData,
   KidConsentType,
+  KidGuardianItem,
   KidRelationship,
 } from "@/lib/kids/types"
 
@@ -139,7 +139,14 @@ const emptyContactForm: ContactFormState = {
 export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPortalData; embedded?: boolean }) {
   const router = useRouter()
   const [childForm, setChildForm] = useState<ChildFormState | null>(null)
-  const [contactForm, setContactForm] = useState<{ kidId: string; form: ContactFormState } | null>(null)
+  const [contactForm, setContactForm] = useState<{
+    kidId: string
+    guardianLinkId: string | null
+    personId: string | null
+    photoUrl: string | null
+    photoFile: File | null
+    form: ContactFormState
+  } | null>(null)
   const [pickupCode, setPickupCode] = useState<(GuardianPickupCode & { childName: string }) | null>(null)
   const [pending, setPending] = useState(false)
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
@@ -223,22 +230,46 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
 
   async function submitContact() {
     if (!contactForm) return
+    const request = new FormData()
+    request.set("payload", JSON.stringify({
+      kidId: contactForm.kidId,
+      contact: {
+        id: contactForm.guardianLinkId,
+        personId: contactForm.personId,
+        ...contactForm.form,
+        isPrimary: false,
+        whatsappEnabled: true,
+        emailEnabled: true,
+      },
+    }))
+    if (contactForm.photoFile) request.set("photo", contactForm.photoFile)
     await run(
-      () =>
-        saveGuardianContact({
-          kidId: contactForm.kidId,
-          contact: {
-            id: null,
-            personId: null,
-            ...contactForm.form,
-            isPrimary: false,
-            whatsappEnabled: true,
-            emailEnabled: true,
-          },
-        }),
-      "Contato salvo",
-      () => setContactForm(null),
+      () => saveGuardianContactWithPhoto(request),
+      contactForm.guardianLinkId ? "Contato atualizado" : "Contato salvo",
+      (result) => {
+        if (result.warning) toast.warning(result.warning)
+        setContactForm(null)
+      },
     )
+  }
+
+  function startEditContact(kidId: string, guardian: KidGuardianItem) {
+    setContactForm({
+      kidId,
+      guardianLinkId: guardian.id,
+      personId: guardian.personId,
+      photoUrl: guardian.photoUrl,
+      photoFile: null,
+      form: {
+        fullName: guardian.name,
+        phone: guardian.phone,
+        email: guardian.email ?? "",
+        relationship: guardian.relationship,
+        canCheckin: guardian.canCheckin,
+        canCheckout: guardian.canCheckout,
+        isEmergencyContact: guardian.isEmergencyContact,
+      },
+    })
   }
 
   async function showPickupCode(child: GuardianChildItem) {
@@ -448,29 +479,39 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                       </p>
                       </div>
                     </div>
-                    {!guardian.isPrimary && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => void run(() => deleteGuardianContact({ kidId: child.kidId, guardianLinkId: guardian.id }), "Contato removido")}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    {guardian.canManage && (
+                      <div className="flex items-center gap-1">
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`Editar ${guardian.name}`} onClick={() => startEditContact(child.kidId, guardian)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          aria-label={`Excluir ${guardian.name}`}
+                          onClick={() => {
+                            if (window.confirm(`Excluir ${guardian.name} das pessoas autorizadas de ${child.firstName}?`)) {
+                              void run(() => deleteGuardianContact({ kidId: child.kidId, guardianLinkId: guardian.id }), "Contato removido")
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
                 {contactForm?.kidId === child.kidId ? (
                   <div className="space-y-2 rounded-md border border-primary/40 p-3">
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <Input className="sm:col-span-2" placeholder="Nome completo *" value={contactForm.form.fullName} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, fullName: event.target.value } })} />
-                      <Input placeholder="Telefone *" value={contactForm.form.phone} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, phone: event.target.value } })} />
-                      <Input placeholder="E-mail" value={contactForm.form.email} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, email: event.target.value } })} />
+                      <Input className="sm:col-span-2" placeholder="Nome completo *" value={contactForm.form.fullName} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, fullName: event.target.value } })} />
+                      <Input placeholder="Telefone *" value={contactForm.form.phone} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, phone: event.target.value } })} />
+                      <Input placeholder="E-mail" value={contactForm.form.email} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, email: event.target.value } })} />
                       <select
                         className="h-9 rounded-md border bg-background px-2 text-sm"
                         value={contactForm.form.relationship}
-                        onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, relationship: event.target.value as KidRelationship } })}
+                        onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, relationship: event.target.value as KidRelationship } })}
                       >
                         {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
                           <option key={value} value={value}>{label}</option>
@@ -479,25 +520,36 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       <label className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={contactForm.form.canCheckin} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, canCheckin: event.target.checked } })} />
+                        <input type="checkbox" checked={contactForm.form.canCheckin} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, canCheckin: event.target.checked } })} />
                         Pode entregar
                       </label>
                       <label className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={contactForm.form.canCheckout} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, canCheckout: event.target.checked } })} />
+                        <input type="checkbox" checked={contactForm.form.canCheckout} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, canCheckout: event.target.checked } })} />
                         Pode retirar
                       </label>
                       <label className="flex items-center gap-1.5">
-                        <input type="checkbox" checked={contactForm.form.isEmergencyContact} onChange={(event) => setContactForm({ kidId: child.kidId, form: { ...contactForm.form, isEmergencyContact: event.target.checked } })} />
+                        <input type="checkbox" checked={contactForm.form.isEmergencyContact} onChange={(event) => setContactForm({ ...contactForm, form: { ...contactForm.form, isEmergencyContact: event.target.checked } })} />
                         Contato de emergência
                       </label>
                     </div>
+                    <PhotoCapture
+                      label="da pessoa autorizada"
+                      currentUrl={contactForm.photoUrl}
+                      value={contactForm.photoFile}
+                      allowRemove={false}
+                      disabled={pending}
+                      onChange={(file) => setContactForm({ ...contactForm, photoFile: file })}
+                      onError={(message) => toast.error(message)}
+                    />
                     <div className="flex gap-2">
-                      <Button type="button" size="sm" onClick={() => void submitContact()} disabled={pending}>Salvar contato</Button>
+                      <Button type="button" size="sm" onClick={() => void submitContact()} disabled={pending}>
+                        {contactForm.guardianLinkId ? "Salvar alterações" : "Salvar contato"}
+                      </Button>
                       <Button type="button" size="sm" variant="outline" onClick={() => setContactForm(null)}>Cancelar</Button>
                     </div>
                   </div>
                 ) : (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setContactForm({ kidId: child.kidId, form: { ...emptyContactForm } })}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setContactForm({ kidId: child.kidId, guardianLinkId: null, personId: null, photoUrl: null, photoFile: null, form: { ...emptyContactForm } })}>
                     <Plus className="mr-1 h-4 w-4" />Adicionar autorizada
                   </Button>
                 )}

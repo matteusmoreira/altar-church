@@ -5,7 +5,7 @@ import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { getCellContext, requireManagedCell } from "@/lib/cells/access"
-import type { GroupsActionResult, SaveGroupInput, SaveGroupMeetingInput, SaveGroupMemberInput } from "./types"
+import type { GroupsActionResult, SaveGroupCategoryInput, SaveGroupInput, SaveGroupMeetingInput, SaveGroupMemberInput } from "./types"
 
 const nullableUuidSchema = z
   .union([z.string().uuid(), z.literal(""), z.null()])
@@ -24,6 +24,12 @@ const nullableTimeSchema = z
   .optional()
   .transform((value) => value || null)
 
+const postalCodeSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/\D/g, ""))
+  .refine((value) => value === "" || /^\d{8}$/.test(value), "CEP inválido")
+
 const groupSchema = z.object({
   id: nullableUuidSchema,
   companyId: nullableUuidSchema,
@@ -38,8 +44,12 @@ const groupSchema = z.object({
   meetingDay: z.string().trim().optional().default(""),
   meetingTime: nullableTimeSchema,
   meetingLocation: z.string().trim().optional().default(""),
+  postalCode: postalCodeSchema.optional().default(""),
+  addressNumber: z.string().trim().max(40).optional().default(""),
+  addressComplement: z.string().trim().max(120).optional().default(""),
   neighborhood: z.string().trim().optional().default(""),
   city: z.string().trim().optional().default(""),
+  state: z.string().trim().max(2).transform((value) => value.toUpperCase()).optional().default(""),
   maxCapacity: z.number().int().min(0).optional().default(0),
   minAge: nullableIntSchema,
   maxAge: nullableIntSchema,
@@ -48,6 +58,14 @@ const groupSchema = z.object({
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
   path: ["minAge"],
+})
+
+const groupCategorySchema = z.object({
+  companyId: nullableUuidSchema,
+  name: z.string().trim().min(2, "Nome da categoria obrigatório").max(100),
+  description: z.string().trim().max(500).optional().default(""),
+  sortOrder: z.number().int().min(0).optional().default(0),
+  isActive: z.boolean().optional().default(true),
 })
 
 const deleteGroupSchema = z.object({
@@ -238,8 +256,12 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
             meeting_day = ${parsed.meetingDay},
             meeting_time = ${parsed.meetingTime},
             meeting_location = ${parsed.meetingLocation},
+            postal_code = ${parsed.postalCode},
+            address_number = ${parsed.addressNumber},
+            address_complement = ${parsed.addressComplement},
             neighborhood = ${parsed.neighborhood},
             city = ${parsed.city},
+            state = ${parsed.state},
             max_capacity = ${parsed.maxCapacity},
             min_age = ${parsed.minAge},
             max_age = ${parsed.maxAge},
@@ -267,8 +289,12 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           meeting_day,
           meeting_time,
           meeting_location,
+          postal_code,
+          address_number,
+          address_complement,
           neighborhood,
           city,
+          state,
           max_capacity,
           min_age,
           max_age,
@@ -290,8 +316,12 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           ${parsed.meetingDay},
           ${parsed.meetingTime},
           ${parsed.meetingLocation},
+          ${parsed.postalCode},
+          ${parsed.addressNumber},
+          ${parsed.addressComplement},
           ${parsed.neighborhood},
           ${parsed.city},
+          ${parsed.state},
           ${parsed.maxCapacity},
           ${parsed.minAge},
           ${parsed.maxAge},
@@ -323,6 +353,50 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
     refreshGroupsPaths()
 
     return { ok: true, id: groupId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function createGroupCategory(input: SaveGroupCategoryInput): Promise<GroupsActionResult> {
+  try {
+    const parsed = groupCategorySchema.parse(input)
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    await requirePermission("cells.edit", companyId)
+
+    const sql = getSql()
+    const duplicateRows = await sql<{ id: string }[]>`
+      select id
+      from public.group_categories
+      where company_id = ${companyId}
+        and lower(name) = lower(${parsed.name})
+        and deleted_at is null
+      limit 1
+    `
+    if (duplicateRows[0]) throw new Error("Já existe uma categoria com esse nome")
+
+    const rows = await sql<{ id: string }[]>`
+      insert into public.group_categories (
+        company_id, name, description, sort_order, is_active, created_by, updated_by
+      )
+      values (
+        ${companyId}, ${parsed.name}, ${parsed.description}, ${parsed.sortOrder},
+        ${parsed.isActive}, ${user.id}, ${user.id}
+      )
+      returning id
+    `
+    const categoryId = rows[0]?.id
+    if (!categoryId) throw new Error("Categoria não foi criada")
+
+    await writeAuditLog({
+      action: "group.category.save",
+      entityTable: "group_categories",
+      entityId: categoryId,
+      companyId,
+      metadata: { name: parsed.name },
+    })
+    refreshGroupsPaths()
+    return { ok: true, id: categoryId }
   } catch (error) {
     return toErrorResult(error)
   }

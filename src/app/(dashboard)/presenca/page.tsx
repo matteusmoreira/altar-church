@@ -34,12 +34,19 @@ const eventTypeLabels: Record<AttendanceRecord["eventType"], string> = {
   course: "Curso",
 }
 
+const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
+const eventTypeOptions = Object.entries(eventTypeLabels).map(([value, label]) => ({ value, label }))
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`))
 }
 
 export default async function AttendancePage() {
   const [records, people] = await Promise.all([listAttendanceRecords(), listPeopleDirectory()])
+  const personOptions = [
+    { value: "__manual__", label: "Informar outro nome" },
+    ...people.map((person) => ({ value: person.id, label: person.fullName })),
+  ]
   const today = new Date().toISOString().slice(0, 10)
   const presentToday = records.filter((record) => record.date === today && record.status === "present").length
   const absentToday = records.filter((record) => record.date === today && record.status === "absent").length
@@ -69,28 +76,27 @@ export default async function AttendancePage() {
         <CardContent>
           <form action={saveAttendanceRecordForm} className="grid gap-4 lg:grid-cols-6">
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="personId">Pessoa do cadastro</Label>
-              <Select name="personId" defaultValue="__manual__">
+              <Label htmlFor="personId">Pessoa</Label>
+              <Select name="personId" defaultValue="__manual__" items={personOptions}>
                 <SelectTrigger id="personId">
-                  <SelectValue placeholder="Selecione (recomendado)" />
+                  <SelectValue placeholder="Selecione uma pessoa" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__manual__">Digitação manual</SelectItem>
-                  {people.map((person) => (
-                    <SelectItem key={person.id} value={person.id}>
-                      {person.fullName}
+                  {personOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="personName">Nome manual (se não selecionar)</Label>
-              <Input id="personName" name="personName" placeholder="Nome completo" />
+              <Label htmlFor="personName">Outro nome (se não estiver no cadastro)</Label>
+              <Input id="personName" name="personName" placeholder="Digite o nome completo" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="eventType">Tipo</Label>
-              <Select name="eventType" defaultValue="service">
+              <Label htmlFor="eventType">Tipo de encontro</Label>
+              <Select name="eventType" defaultValue="service" items={eventTypeOptions}>
                 <SelectTrigger id="eventType">
                   <SelectValue />
                 </SelectTrigger>
@@ -104,12 +110,12 @@ export default async function AttendancePage() {
               </Select>
             </div>
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="eventRefName">Evento</Label>
-              <Input id="eventRefName" name="eventRefName" placeholder="Culto de domingo" />
+              <Label htmlFor="eventRefName">Nome do encontro (opcional)</Label>
+              <Input id="eventRefName" name="eventRefName" placeholder="Ex.: Culto de domingo" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="status">Status</Label>
-              <Select name="status" defaultValue="present">
+              <Label htmlFor="status">Situação</Label>
+              <Select name="status" defaultValue="present" items={statusOptions}>
                 <SelectTrigger id="status">
                   <SelectValue />
                 </SelectTrigger>

@@ -152,6 +152,7 @@ export interface SchedulingReason {
 export interface SchedulingCandidate {
   volunteerId: string
   volunteerName: string
+  photoUrl: string | null
   eligible: boolean
   eligibleForSuggestion: boolean
   selectableManually: boolean
@@ -175,6 +176,7 @@ export interface VolunteerShift {
   checkinClosesAt: string
   assignments: VolunteerAssignment[]
   instructions: string
+  unreadChatCount: number
   candidates?: SchedulingCandidate[]
 }
 

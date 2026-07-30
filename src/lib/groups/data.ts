@@ -36,8 +36,12 @@ interface GroupRow {
   meeting_day: string
   meeting_time: string | null
   meeting_location: string
+  postal_code: string
+  address_number: string
+  address_complement: string
   neighborhood: string
   city: string
+  state: string
   max_capacity: number
   min_age: number | null
   max_age: number | null
@@ -147,8 +151,12 @@ function toGroup(row: GroupRow): GroupListItem {
     meetingDay: row.meeting_day,
     meetingTime: row.meeting_time,
     meetingLocation: row.meeting_location,
+    postalCode: row.postal_code,
+    addressNumber: row.address_number,
+    addressComplement: row.address_complement,
     neighborhood: row.neighborhood,
     city: row.city,
+    state: row.state,
     maxCapacity: row.max_capacity,
     minAge: row.min_age,
     maxAge: row.max_age,
@@ -254,8 +262,12 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
         g.meeting_day,
         g.meeting_time::text as meeting_time,
         g.meeting_location,
+        g.postal_code,
+        g.address_number,
+        g.address_complement,
         g.neighborhood,
         g.city,
+        g.state,
         g.max_capacity,
         g.min_age,
         g.max_age,

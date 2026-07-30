@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,6 +14,8 @@ import {
   ClipboardCheck,
   Download,
   HeartHandshake,
+  Grid2X2,
+  List,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -33,6 +35,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { saveEvent } from "@/lib/operational/actions";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -42,6 +45,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -59,6 +79,8 @@ import {
   generateSmartVolunteerSchedule,
   getVolunteerShiftCandidates,
   grantVolunteerRecognition,
+  deleteVolunteerEventSchedule,
+  markVolunteerShiftConversationRead,
   publishVolunteerEventSchedule,
   requestVolunteerSwap,
   respondVolunteerAssignment,
@@ -69,7 +91,7 @@ import {
   saveVolunteerServicePlan,
   saveVolunteerFeedback,
   saveVolunteerModuleSettings,
-  saveVolunteerPushSubscription,
+  saveProfilePushSubscription,
   sendVolunteerShiftMessage,
   softDeleteVolunteerDepartment,
   softDeleteVolunteer,
@@ -193,6 +215,8 @@ function CandidatePanel({
   const [items, setItems] = useState<SchedulingCandidate[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
   async function load() {
     setLoading(true);
     const result = await getVolunteerShiftCandidates(shift.id);
@@ -202,23 +226,33 @@ function CandidatePanel({
     setItems(result.data as SchedulingCandidate[]);
   }
   async function assign(volunteerId: string) {
+    setAssigningId(volunteerId);
     const result = await saveVolunteerAssignment({
       shiftId: shift.id,
       volunteerId,
       status: "proposed",
     });
+    setAssigningId(null);
     if (ok(result, "Voluntário escalado")) {
       setItems(null);
+      setOpen(false);
+      setSearch("");
       onAssigned();
     }
   }
+  const filteredItems = useMemo(() => items
+    ?.filter((candidate) => candidate.volunteerName.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
+    .slice(0, 50) ?? [], [items, search]);
   return (
-    <div className="space-y-2">
+    <>
       <Button
         type="button"
         variant="outline"
         size="sm"
-        onClick={load}
+        onClick={() => {
+          setOpen(true);
+          void load();
+        }}
         disabled={loading}
       >
         {loading ? (
@@ -228,8 +262,15 @@ function CandidatePanel({
         )}
         Escolher pessoas
       </Button>
-      {items && (
-        <div className="space-y-2 rounded-lg border p-2">
+      <Dialog open={open} onOpenChange={(next) => {
+        if (!assigningId) setOpen(next);
+      }}>
+        <DialogContent className="flex max-h-[min(90dvh,760px)] w-[min(960px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden p-0">
+          <DialogHeader className="border-b px-5 py-4 pr-12">
+            <DialogTitle>Escolher pessoa para {shift.roleName}</DialogTitle>
+            <DialogDescription>{shift.eventTitle} · {fmt(shift.startsAt)}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 overflow-hidden px-5 pb-5">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -239,38 +280,44 @@ function CandidatePanel({
           <p className="text-xs text-muted-foreground">
             Escolha manualmente. Equipe ou função diferente gera alerta; conflito e indisponibilidade bloqueiam.
           </p>
-          <div className="max-h-72 space-y-2 overflow-y-auto">
-          {items
-            .filter((candidate) => candidate.volunteerName.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
-            .slice(0, 50)
-            .map((candidate) => (
+          <div className="max-h-[55dvh] space-y-2 overflow-y-auto pr-1">
+          {loading && <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Carregando pessoas...</div>}
+          {!loading && filteredItems.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">Nenhuma pessoa encontrada.</p>}
+          {filteredItems.map((candidate) => (
             <div
               key={candidate.volunteerId}
-              className="flex items-start justify-between gap-3 rounded-md border p-2"
+              className="flex items-center gap-3 rounded-lg border p-3"
             >
-              <div>
-                <p className="text-sm font-medium">
-                  {candidate.volunteerName}{" "}
+              <Avatar className="h-11 w-11 shrink-0">
+                {candidate.photoUrl && <AvatarImage src={candidate.photoUrl} alt={candidate.volunteerName} />}
+                <AvatarFallback>{candidate.volunteerName.slice(0, 2).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-sm font-medium">{candidate.volunteerName}</p>
                   <Badge variant={candidate.selectableManually ? "default" : "secondary"}>
                     {candidate.selectableManually ? "Disponível" : "Indisponível"}
                   </Badge>
-                </p>
+                </div>
                 {candidate.warnings.length > 0 && <p className="text-xs text-amber-700">Atenção: {candidate.warnings.join(" · ")}</p>}
                 {candidate.blockers.length > 0 && <p className="text-xs text-destructive">{candidate.blockers.join(" · ")}</p>}
               </div>
-              <Button size="sm" disabled={!candidate.selectableManually} onClick={() => assign(candidate.volunteerId)}>
-                Escolher
+              <Button className="shrink-0" size="sm" disabled={!candidate.selectableManually || assigningId !== null} onClick={() => void assign(candidate.volunteerId)}>
+                {assigningId === candidate.volunteerId && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {assigningId === candidate.volunteerId ? "Escolhendo..." : "Escolher"}
               </Button>
             </div>
           ))}
           </div>
-        </div>
-      )}
-    </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
-function ShiftChat({ shiftId }: { shiftId: string }) {
+function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCount: number }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -301,16 +348,18 @@ function ShiftChat({ shiftId }: { shiftId: string }) {
             cache: "no-store",
           })
             .then((response) => response.json())
-            .then((payload: { data?: typeof messages }) =>
-              setMessages(payload.data ?? []),
-            );
+            .then(async (payload: { data?: typeof messages }) => {
+              setMessages(payload.data ?? []);
+              await markVolunteerShiftConversationRead(shiftId);
+              router.refresh();
+            });
         },
       )
       .subscribe();
     return () => {
       void client.removeChannel(channel);
     };
-  }, [open, shiftId]);
+  }, [open, router, shiftId]);
   async function load() {
     const response = await fetch(
       `/api/v1/volunteers/shifts/${shiftId}/chat/messages`,
@@ -322,7 +371,11 @@ function ShiftChat({ shiftId }: { shiftId: string }) {
   async function toggle() {
     const next = !open;
     setOpen(next);
-    if (next) await load();
+    if (next) {
+      await load();
+      const result = await markVolunteerShiftConversationRead(shiftId);
+      if (result.ok) router.refresh();
+    }
   }
   async function send() {
     setSending(true);
@@ -355,6 +408,7 @@ function ShiftChat({ shiftId }: { shiftId: string }) {
       <Button type="button" size="sm" variant="ghost" onClick={toggle}>
         <MessageSquare className="mr-2 h-4 w-4" />
         Chat
+        {unreadCount > 0 && <Badge className="ml-2" aria-label={`${unreadCount} mensagens não lidas`}>{unreadCount}</Badge>}
       </Button>
       {open && (
         <div className="mt-2 space-y-2 rounded-lg border p-3">
@@ -415,6 +469,24 @@ function ShiftChat({ shiftId }: { shiftId: string }) {
       )}
     </div>
   );
+}
+
+function useVolunteerChatRealtime() {
+  const router = useRouter();
+  useEffect(() => {
+    const client = createClient();
+    const channel = client
+      .channel("volunteer-chat-unread")
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "volunteer_shift_messages",
+      }, () => router.refresh())
+      .subscribe();
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [router]);
 }
 
 function ManagerOverview({ data }: { data: VolunteerDashboardData }) {
@@ -508,6 +580,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "grid">("grid");
   const [personQuery, setPersonQuery] = useState("");
   const [suggestions, setSuggestions] = useState<VolunteerPersonSuggestion[]>([]);
   const [selectedPerson, setSelectedPerson] =
@@ -647,9 +720,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="relative max-w-2xl">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-9"
+              className="pl-10 md:pl-10"
               placeholder="Digite ao menos 3 letras para buscar em Pessoas"
               value={personQuery}
               onChange={(e) => {
@@ -796,14 +869,22 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
               Adicionar equipe e função
             </Button>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.invite}
-              onChange={(e) => setForm({ ...form, invite: e.target.checked })}
-            />
-            Convidar para portal
-          </label>
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.invite}
+                disabled={!selectedPerson?.email}
+                onChange={(e) => setForm({ ...form, invite: e.target.checked })}
+              />
+              Convidar para portal
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {selectedPerson?.email
+                ? `Envia convite para ${selectedPerson.email} criar o acesso ao Portal do Membro.`
+                : "Selecione uma Pessoa com e-mail para enviar o convite."}
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button onClick={create} disabled={saving} aria-busy={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
@@ -817,37 +898,47 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
           </div>
         </CardContent>
       </Card>
-      <div className="relative max-w-lg">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Buscar nome, e-mail ou telefone"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-lg">
+          <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-10 md:pl-10"
+            placeholder="Buscar nome, e-mail ou telefone"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex w-fit rounded-md border p-1" aria-label="Modo de visualização">
+          <Button type="button" variant={viewMode === "list" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setViewMode("list")} aria-label="Ver voluntários em lista" title="Lista">
+            <List className="h-4 w-4" />
+          </Button>
+          <Button type="button" variant={viewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setViewMode("grid")} aria-label="Ver voluntários em grade" title="Grade">
+            <Grid2X2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className={viewMode === "grid" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
         {visible.map((volunteer) => (
           <Card key={volunteer.id}>
-            <CardContent className="p-4">
-              <div className="flex justify-between gap-2">
-                <div>
+            <CardContent className={viewMode === "grid" ? "p-4" : "flex flex-col gap-3 p-4 lg:flex-row lg:items-center"}>
+              <div className={viewMode === "grid" ? "flex justify-between gap-2" : "flex min-w-0 flex-1 justify-between gap-2"}>
+                <div className="min-w-0">
                   <p className="font-medium">{volunteer.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="truncate text-xs text-muted-foreground">
                     {volunteer.email ?? (volunteer.phone || "Sem contato")}
                   </p>
                 </div>
                 <StatusBadge status={volunteer.status} />
               </div>
-              <p className="mt-3 text-sm">
-                {volunteer.departmentNames.join(", ") || "Sem equipe"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {volunteer.checkins}/{volunteer.assignments} presenças · meta{" "}
-                {volunteer.desiredServicesPerMonth}, limite{" "}
-                {volunteer.maxServicesPerMonth}/mês
-              </p>
-              <div className="mt-3 flex gap-2">
+              <div className={viewMode === "grid" ? "mt-3" : "min-w-0 flex-1 lg:max-w-sm"}>
+                <p className="truncate text-sm">{volunteer.departmentNames.join(", ") || "Sem equipe"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {volunteer.checkins}/{volunteer.assignments} presenças · meta{" "}
+                  {volunteer.desiredServicesPerMonth}, limite{" "}
+                  {volunteer.maxServicesPerMonth}/mês
+                </p>
+              </div>
+              <div className={viewMode === "grid" ? "mt-3 flex flex-wrap gap-2" : "flex shrink-0 flex-wrap gap-2"}>
                 <Button
                   size="sm"
                   variant="outline"
@@ -1146,6 +1237,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
+  const [deleteTarget, setDeleteTarget] = useState<{ eventId: string; title: string; startsAt: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   async function smart(id: string) {
     const result = await generateSmartVolunteerSchedule(id);
     if (
@@ -1177,6 +1270,16 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
       )
     )
       router.refresh();
+  }
+  async function removeEventSchedule() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const result = await deleteVolunteerEventSchedule(deleteTarget.eventId);
+    setDeleting(false);
+    if (ok(result, "Escala excluída")) {
+      setDeleteTarget(null);
+      router.refresh();
+    }
   }
   return (
     <div className="space-y-4">
@@ -1239,6 +1342,7 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                     >
                       {active.length}/{shift.requiredVolunteers} preenchida(s)
                     </Badge>
+                    {shift.unreadChatCount > 0 && <Badge variant="destructive">{shift.unreadChatCount} nova(s)</Badge>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {shift.assignments
@@ -1287,7 +1391,12 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
                       shift={shift}
                       onAssigned={() => router.refresh()}
                     />
-                    <ShiftChat shiftId={shift.id} />
+                    <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
+                    {firstForEvent && shift.eventId && data.canAdminDelete && (
+                      <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteTarget({ eventId: shift.eventId ?? "", title: shift.eventTitle, startsAt: shift.startsAt })}>
+                        <Trash2 className="mr-2 h-4 w-4" />Excluir escala
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -1295,6 +1404,24 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
           </CardContent>
         </Card>
       ))}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir esta escala?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? `${deleteTarget.title} · ${fmt(deleteTarget.startsAt)}. ` : ""}
+              Pessoas escaladas, mensagens e registros vinculados serão apagados. Avisos já entregues não podem ser desfeitos. Evento e programação serão mantidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void removeEventSchedule()}>
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {deleting ? "Excluindo..." : "Excluir permanentemente"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -2163,11 +2290,15 @@ function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
 }
 
 export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
+  useVolunteerChatRealtime();
   const ready = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false,
   );
+  const totalUnread = data.schedules
+    .flatMap((schedule) => schedule.shifts)
+    .reduce((total, shift) => total + shift.unreadChatCount, 0);
 
   return (
     <div
@@ -2182,14 +2313,17 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
             Programações, equipes e pessoas. Simples e objetivo.
           </p>
         </div>
-        <Badge variant={data.v2Enabled ? "default" : "secondary"}>
-          <ShieldCheck className="mr-1 h-3 w-3" />
-          {data.v2Enabled ? "V2 ativo" : "V2 em validação"}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <PushControls />
+          <Badge variant={data.v2Enabled ? "default" : "secondary"}>
+            <ShieldCheck className="mr-1 h-3 w-3" />
+            {data.v2Enabled ? "V2 ativo" : "V2 em validação"}
+          </Badge>
+        </div>
       </div>
       <Tabs defaultValue="programmings">
         <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="programmings">Programações</TabsTrigger>
+          <TabsTrigger value="programmings">Programações{totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}</TabsTrigger>
           <TabsTrigger value="teams">Equipes</TabsTrigger>
           <TabsTrigger value="volunteers">Voluntários</TabsTrigger>
         </TabsList>
@@ -2234,34 +2368,36 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 function PushControls() {
-  const [pushReady, setPushReady] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      Notification.permission === "granted",
-  );
+  const [pushReady, setPushReady] = useState(false);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    void navigator.serviceWorker.getRegistration().then(async (registration) => {
+      setPushReady(Boolean(await registration?.pushManager.getSubscription()));
+    });
+  }, []);
   async function enablePush() {
-    const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!key) return toast.error("Chave Web Push não configurada");
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted")
-      return toast.error("Notificações não autorizadas");
-    const registration = await navigator.serviceWorker.getRegistration();
-    if (!registration)
-      return toast.error("PWA disponível somente após publicação");
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(key),
-    });
-    const json = subscription.toJSON();
-    const result = await saveVolunteerPushSubscription({
-      endpoint: subscription.endpoint,
-      p256dh: json.keys?.p256dh ?? "",
-      auth: json.keys?.auth ?? "",
-      userAgent: navigator.userAgent,
-    });
-    if (ok(result, "Push ativado")) setPushReady(true);
+    try {
+      const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!key) return toast.error("Chave Web Push não configurada");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted")
+        return toast.error("Notificações não autorizadas");
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+      const json = subscription.toJSON();
+      const result = await saveProfilePushSubscription({
+        endpoint: subscription.endpoint,
+        p256dh: json.keys?.p256dh ?? "",
+        auth: json.keys?.auth ?? "",
+        userAgent: navigator.userAgent,
+      });
+      if (ok(result, "Push ativado")) setPushReady(true);
+    } catch {
+      toast.error("Não foi possível ativar o push neste navegador");
+    }
   }
   return (
     <div className="flex flex-wrap gap-2">
@@ -2398,14 +2534,37 @@ function PortalPreferences({
 }) {
   const router = useRouter();
   const [state, setState] = useState(preferences);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<"saved" | "error" | null>(null);
+  const [error, setError] = useState("");
+  const labels: { key: keyof VolunteerNotificationPreferences; label: string }[] = [
+    { key: "scheduleEnabled", label: "Escalas" },
+    { key: "reminderEnabled", label: "Lembretes" },
+    { key: "swapEnabled", label: "Trocas" },
+    { key: "chatEnabled", label: "Mensagens do chat" },
+    { key: "feedEnabled", label: "Atualizações" },
+    { key: "recognitionEnabled", label: "Reconhecimentos" },
+    { key: "pushEnabled", label: "Notificações push" },
+    { key: "whatsappEnabled", label: "WhatsApp" },
+    { key: "emailEnabled", label: "E-mail" },
+  ];
+  const dirty = labels.some(({ key }) => state[key] !== preferences[key]);
   async function save() {
-    if (
-      ok(
-        await saveMyVolunteerNotificationPreferences(state),
-        "Preferências salvas",
-      )
-    )
+    setSaving(true);
+    setStatus(null);
+    setError("");
+    const result = await saveMyVolunteerNotificationPreferences(state);
+    setSaving(false);
+    if (result.ok) {
+      toast.success("Preferências salvas");
+      setStatus("saved");
       router.refresh();
+    } else {
+      const message = result.error ?? "Não foi possível salvar as preferências";
+      setError(message);
+      setStatus("error");
+      toast.error(message);
+    }
   }
   return (
     <Card>
@@ -2413,20 +2572,31 @@ function PortalPreferences({
         <CardTitle>Preferências de avisos</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        {Object.entries(state).map(([key, value]) => (
+        {labels.map(({ key, label }) => (
           <label
             key={key}
             className="flex items-center justify-between rounded-md border p-2 text-sm"
           >
-            <span>{key.replace("Enabled", "").replace(/([A-Z])/g, " $1")}</span>
+            <span>{label}</span>
             <input
               type="checkbox"
-              checked={value}
-              onChange={(e) => setState({ ...state, [key]: e.target.checked })}
+              checked={state[key]}
+              disabled={saving}
+              onChange={(e) => {
+                setState({ ...state, [key]: e.target.checked });
+                setStatus(null);
+              }}
             />
           </label>
         ))}
-        <Button onClick={save}>Salvar preferências</Button>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Button onClick={() => void save()} disabled={saving || !dirty} aria-busy={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {saving ? "Salvando..." : "Salvar preferências"}
+          </Button>
+          {status === "saved" && <p className="flex items-center gap-1 text-sm text-emerald-700"><Check className="h-4 w-4" />Preferências salvas.</p>}
+          {status === "error" && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </div>
       </CardContent>
     </Card>
   );
@@ -2621,7 +2791,7 @@ function PortalAssignment({ shift }: { shift: VolunteerShift }) {
             </Button>
           </div>
         )}
-        <ShiftChat shiftId={shift.id} />
+        <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
       </CardContent>
     </Card>
   );
@@ -2664,6 +2834,8 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
 
 export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
   const router = useRouter();
+  useVolunteerChatRealtime();
+  const totalUnread = data.upcomingAssignments.reduce((total, shift) => total + shift.unreadChatCount, 0);
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2694,7 +2866,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
       </div>
       <Tabs defaultValue="schedule">
         <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="schedule">Escalas</TabsTrigger>
+          <TabsTrigger value="schedule">Escalas{totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}</TabsTrigger>
           <TabsTrigger value="availability">Disponibilidade</TabsTrigger>
           <TabsTrigger value="worship">Roteiro do culto</TabsTrigger>
           <TabsTrigger value="updates">Atualizações</TabsTrigger>

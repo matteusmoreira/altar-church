@@ -48,7 +48,7 @@ const MANUAL_WARNING_BLOCKERS = new Set([
 
 type ScoredCandidate = Omit<
   SchedulingCandidate,
-  "eligibleForSuggestion" | "selectableManually" | "warnings"
+  "photoUrl" | "eligibleForSuggestion" | "selectableManually" | "warnings"
 >;
 
 export function withManualSelectionRules(
@@ -62,6 +62,7 @@ export function withManualSelectionRules(
   );
   return {
     ...candidate,
+    photoUrl: null,
     eligibleForSuggestion: candidate.eligible,
     selectableManually: blockers.length === 0,
     warnings,

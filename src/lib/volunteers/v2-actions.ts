@@ -5,7 +5,7 @@ import { z } from "zod";
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions";
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
-import { uploadManagedFile } from "@/lib/files/server";
+import { createSignedUrlsByStoragePath, uploadManagedFile } from "@/lib/files/server";
 import type { Permission } from "@/lib/types";
 import {
   rankVolunteersForShift,
@@ -15,6 +15,8 @@ import {
 } from "./scheduler";
 import type { VolunteerActionResult } from "./types";
 import { requireVolunteerSelfContext } from "./access";
+import { afterResponse } from "@/lib/performance/after-response";
+import { processVolunteerChatPushOutbox } from "./chat-delivery";
 
 const uuid = z.string().uuid();
 const optionalUuid = z
@@ -37,6 +39,11 @@ function refreshVolunteerPaths() {
   revalidatePath("/eventos");
   revalidatePath("/louvor");
   revalidatePath("/dashboard");
+}
+
+function refreshVolunteerChatPaths() {
+  revalidatePath("/voluntariado");
+  revalidatePath("/membro/voluntariado");
 }
 
 async function managerContext(
@@ -529,18 +536,20 @@ export async function getVolunteerShiftCandidates(
     `;
     const timezone = settingRows[0]?.timezone ?? "America/Sao_Paulo";
     const volunteers = await sql<Record<string, unknown>[]>`
-      select volunteer.id, person.full_name as name, volunteer.registration_status, volunteer.desired_services_per_month,
+      select volunteer.id, person.full_name as name, photo.storage_path as photo_path,
+        volunteer.registration_status, volunteer.desired_services_per_month,
         volunteer.max_services_per_month, volunteer.minimum_rest_hours,
         coalesce(array_agg(distinct membership.department_id::text) filter (where membership.department_id is not null), '{}') as department_ids,
         coalesce(array_agg(distinct membership.role_name) filter (where membership.role_name is not null), '{}') as role_names,
         coalesce(preference.preference, 0) as preference
       from public.volunteer_profiles volunteer join public.people person on person.id = volunteer.person_id
+      left join public.app_files photo on photo.id = person.photo_file_id and photo.is_active and photo.deleted_at is null
       left join public.volunteer_department_memberships membership on membership.volunteer_id = volunteer.id and membership.is_active
       left join public.volunteer_role_preferences preference on preference.volunteer_id = volunteer.id
         and preference.department_id = ${String(shiftRow.department_id)} and lower(preference.role_name) = lower(${String(shiftRow.role_name)})
       where volunteer.company_id = ${String(shiftRow.company_id)} and volunteer.deleted_at is null
         and volunteer.registration_status = 'active'
-      group by volunteer.id, person.full_name, preference.preference
+      group by volunteer.id, person.full_name, photo.storage_path, preference.preference
     `;
     const iso = (value: unknown) =>
       value instanceof Date ? value.toISOString() : String(value);
@@ -600,10 +609,18 @@ export async function getVolunteerShiftCandidates(
       endsAt: iso(shiftRow.ends_at),
       timezone,
     });
+    const photoUrls = await createSignedUrlsByStoragePath(
+      volunteers.map((volunteer) => String(volunteer.photo_path ?? "")),
+    );
     return {
       ok: true,
       id: shiftId,
-      data: ranked.map(withManualSelectionRules),
+      data: ranked.map((candidate) => ({
+        ...withManualSelectionRules(candidate),
+        photoUrl: volunteers.find((volunteer) => String(volunteer.id) === candidate.volunteerId)?.photo_path
+          ? photoUrls.get(String(volunteers.find((volunteer) => String(volunteer.id) === candidate.volunteerId)?.photo_path)) ?? null
+          : null,
+      })),
     };
   } catch (error) {
     return resultError(error);
@@ -880,15 +897,24 @@ export async function sendVolunteerShiftMessage(
     const companyId = requireUserCompanyId(user);
     const sql = getSql();
     const access = await sql<
-      { department_id: string; is_participant: boolean }[]
+      { department_id: string; is_participant: boolean; is_manager: boolean; event_title: string }[]
     >`
-      select shift.department_id, exists(select 1 from public.volunteer_assignments assignment
+      select shift.department_id, coalesce(event.title, 'Escala') as event_title,
+        exists(select 1 from public.volunteer_assignments assignment
         join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
         join public.profiles profile on profile.id = ${user.id}
         join public.people identity on identity.id = volunteer.person_id
           and (profile.person_id = identity.id or identity.profile_id = profile.id)
-        where assignment.shift_id = shift.id and assignment.status not in ('declined', 'cancelled')) as is_participant
-      from public.volunteer_shifts shift where shift.id = ${parsed.shiftId} and shift.company_id = ${companyId}
+        where assignment.shift_id = shift.id and assignment.status not in ('declined', 'cancelled')) as is_participant,
+        (${["superadmin", "admin", "pastor"].includes(user.role)} or exists(
+          select 1 from public.volunteer_department_access manager_access
+          where manager_access.company_id = shift.company_id
+            and manager_access.department_id = shift.department_id
+            and manager_access.profile_id = ${user.id}
+        )) as is_manager
+      from public.volunteer_shifts shift
+      left join public.events event on event.id = shift.event_id
+      where shift.id = ${parsed.shiftId} and shift.company_id = ${companyId}
     `;
     if (!access[0]) throw new Error("Escala não encontrada");
     if (!access[0].is_participant)
@@ -912,6 +938,53 @@ export async function sendVolunteerShiftMessage(
         select ${id}, file.id from public.app_files file where file.id = ${fileId} and file.company_id = ${companyId} and file.deleted_at is null
         on conflict do nothing
       `;
+      if (access[0].is_manager) {
+        await tx`
+          insert into public.volunteer_delivery_outbox(
+            company_id, volunteer_id, chat_message_id, target_profile_id, channel,
+            recipient, subject, content, notification_key, payload
+          )
+          select distinct ${companyId}::uuid, volunteer.id, ${id}::uuid, target.id, 'push', '',
+            'Nova mensagem na escala', ${`Nova mensagem em ${access[0].event_title}`},
+            ${`chat:${id}:`} || target.id::text,
+            jsonb_build_object('url', '/membro/voluntariado', 'shiftId', ${parsed.shiftId}::text)
+          from public.volunteer_assignments assignment
+          join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
+          join public.people person on person.id = volunteer.person_id
+          join public.profiles target on target.company_id = ${companyId} and target.active
+            and (target.id = person.profile_id or target.person_id = person.id)
+          join public.volunteer_notification_preferences preference on preference.volunteer_id = volunteer.id
+          where assignment.shift_id = ${parsed.shiftId}
+            and assignment.status not in ('declined', 'cancelled')
+            and target.id <> ${user.id}
+            and preference.chat_enabled and preference.push_enabled
+            and exists(select 1 from public.volunteer_push_subscriptions subscription
+              where subscription.is_active and (subscription.profile_id = target.id or subscription.volunteer_id = volunteer.id))
+          on conflict (notification_key) where notification_key is not null do nothing
+        `;
+      } else {
+        await tx`
+          insert into public.volunteer_delivery_outbox(
+            company_id, volunteer_id, chat_message_id, target_profile_id, channel,
+            recipient, subject, content, notification_key, payload
+          )
+          select distinct ${companyId}::uuid, null::uuid, ${id}::uuid, target.id, 'push', '',
+            'Resposta de voluntário', ${`Nova resposta em ${access[0].event_title}`},
+            ${`chat:${id}:`} || target.id::text,
+            jsonb_build_object('url', '/voluntariado', 'shiftId', ${parsed.shiftId}::text)
+          from public.profiles target
+          where target.company_id = ${companyId} and target.active and target.id <> ${user.id}
+            and (target.role in ('superadmin', 'admin', 'pastor') or exists(
+              select 1 from public.volunteer_department_access manager_access
+              where manager_access.company_id = ${companyId}
+                and manager_access.department_id = ${access[0].department_id}
+                and manager_access.profile_id = target.id
+            ))
+            and exists(select 1 from public.volunteer_push_subscriptions subscription
+              where subscription.profile_id = target.id and subscription.is_active)
+          on conflict (notification_key) where notification_key is not null do nothing
+        `;
+      }
       return id;
     });
     await audit(
@@ -921,8 +994,112 @@ export async function sendVolunteerShiftMessage(
       companyId,
       { shiftId: parsed.shiftId },
     );
-    refreshVolunteerPaths();
+    afterResponse("volunteer chat push", () => processVolunteerChatPushOutbox(25, messageId));
+    refreshVolunteerChatPaths();
     return { ok: true, id: messageId };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+export async function markVolunteerShiftConversationRead(
+  shiftIdInput: string,
+): Promise<VolunteerActionResult> {
+  try {
+    const shiftId = uuid.parse(shiftIdInput);
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Acesso negado");
+    const companyId = requireUserCompanyId(user);
+    const sql = getSql();
+    const rows = await sql<{ conversation_id: string; department_id: string; is_participant: boolean }[]>`
+      select conversation.id as conversation_id, shift.department_id,
+        exists(select 1 from public.volunteer_assignments assignment
+          join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
+          join public.people person on person.id = volunteer.person_id
+          where assignment.shift_id = shift.id
+            and assignment.status not in ('declined', 'cancelled')
+            and (person.profile_id = ${user.id}::uuid or exists(select 1 from public.profiles profile
+              where profile.id = ${user.id}::uuid and profile.person_id = person.id))) as is_participant
+      from public.volunteer_shifts shift
+      join public.volunteer_shift_conversations conversation on conversation.shift_id = shift.id
+      where shift.id = ${shiftId} and shift.company_id = ${companyId}
+    `;
+    if (!rows[0]) return { ok: true, id: shiftId };
+    if (!rows[0].is_participant) {
+      await requirePermission("volunteer_chat.manage", companyId);
+      if (!["superadmin", "admin", "pastor"].includes(user.role)) {
+        const access = await sql<{ allowed: boolean }[]>`
+          select exists(select 1 from public.volunteer_department_access
+            where company_id = ${companyId}::uuid
+              and department_id = ${rows[0].department_id}::uuid
+              and profile_id = ${user.id}::uuid) as allowed
+        `;
+        if (!access[0]?.allowed) throw new Error("Acesso negado");
+      }
+    }
+    await sql`
+      insert into public.volunteer_shift_conversation_reads(conversation_id, profile_id, company_id, last_read_at)
+      values (${rows[0].conversation_id}::uuid, ${user.id}::uuid, ${companyId}::uuid, now())
+      on conflict (conversation_id, profile_id) do update
+      set last_read_at = excluded.last_read_at, updated_at = now()
+    `;
+    return { ok: true, id: rows[0].conversation_id };
+  } catch (error) {
+    return resultError(error);
+  }
+}
+
+export async function deleteVolunteerEventSchedule(
+  eventIdInput: string,
+): Promise<VolunteerActionResult> {
+  try {
+    const eventId = uuid.parse(eventIdInput);
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Acesso negado");
+    const companyId = requireUserCompanyId(user);
+    await requirePermission("schedules.edit", companyId);
+    if (!["superadmin", "admin"].includes(user.role))
+      throw new Error("Somente administrador pode excluir escala");
+    const sql = getSql();
+    const rows = await sql<{ event_title: string; shift_count: number; was_published: boolean }[]>`
+      select event.title as event_title, count(shift.id)::int as shift_count,
+        event.volunteer_schedule_published_at is not null as was_published
+      from public.events event
+      join public.volunteer_shifts shift on shift.event_id = event.id and shift.company_id = event.company_id
+      where event.id = ${eventId} and event.company_id = ${companyId} and event.deleted_at is null
+      group by event.id
+    `;
+    if (!rows[0]?.shift_count) throw new Error("Escala não encontrada");
+    const result = await sql.begin(async (tx) => {
+      const scheduleRows = await tx<{ schedule_id: string }[]>`
+        select distinct schedule_id from public.volunteer_shifts
+        where company_id = ${companyId} and event_id = ${eventId}
+      `;
+      await tx`delete from public.volunteer_shifts where company_id = ${companyId} and event_id = ${eventId}`;
+      await tx`
+        update public.events set volunteer_schedule_published_at = null, updated_at = now()
+        where id = ${eventId} and company_id = ${companyId}
+      `;
+      let emptySchedules = 0;
+      for (const schedule of scheduleRows) {
+        const deleted = await tx<{ id: string }[]>`
+          delete from public.volunteer_schedules schedule
+          where schedule.id = ${schedule.schedule_id} and schedule.company_id = ${companyId}
+            and not exists(select 1 from public.volunteer_shifts shift where shift.schedule_id = schedule.id)
+          returning id
+        `;
+        emptySchedules += deleted.length;
+      }
+      return { emptySchedules };
+    });
+    await audit("volunteer_schedule.delete", "events", eventId, companyId, {
+      eventTitle: rows[0].event_title,
+      shiftsDeleted: rows[0].shift_count,
+      emptySchedulesDeleted: result.emptySchedules,
+      wasPublished: rows[0].was_published,
+    });
+    refreshVolunteerPaths();
+    return { ok: true, id: eventId, data: { deleted: rows[0].shift_count } };
   } catch (error) {
     return resultError(error);
   }
@@ -1063,25 +1240,45 @@ const pushSchema = z.object({
   auth: z.string().min(5),
   userAgent: z.string().max(500).default(""),
 });
-export async function saveVolunteerPushSubscription(
+export async function saveProfilePushSubscription(
   input: z.input<typeof pushSchema>,
 ): Promise<VolunteerActionResult> {
   try {
     const parsed = pushSchema.parse(input);
-    const { companyId, volunteerId } = await volunteerContext(
-      "volunteer.self.preferences",
-    );
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Acesso negado");
+    const companyId = requireUserCompanyId(user);
+    const volunteerRows = await getSql()<{ id: string }[]>`
+      select volunteer.id from public.volunteer_profiles volunteer
+      join public.people person on person.id = volunteer.person_id
+      where volunteer.company_id = ${companyId} and volunteer.deleted_at is null
+        and (person.profile_id = ${user.id} or exists(select 1 from public.profiles profile
+          where profile.id = ${user.id} and profile.person_id = person.id))
+      limit 1
+    `;
+    const volunteerId = volunteerRows[0]?.id ?? null;
     const rows = await getSql()<{ id: string }[]>`
-      insert into public.volunteer_push_subscriptions(company_id, volunteer_id, endpoint, p256dh, auth_key, user_agent)
-      values (${companyId}, ${volunteerId}, ${parsed.endpoint}, ${parsed.p256dh}, ${parsed.auth}, ${parsed.userAgent})
-      on conflict (endpoint) do update set volunteer_id = excluded.volunteer_id, p256dh = excluded.p256dh,
+      insert into public.volunteer_push_subscriptions(company_id, volunteer_id, profile_id, endpoint, p256dh, auth_key, user_agent)
+      values (${companyId}, ${volunteerId}, ${user.id}, ${parsed.endpoint}, ${parsed.p256dh}, ${parsed.auth}, ${parsed.userAgent})
+      on conflict (endpoint) do update set volunteer_id = excluded.volunteer_id, profile_id = excluded.profile_id, p256dh = excluded.p256dh,
         auth_key = excluded.auth_key, user_agent = excluded.user_agent, is_active = true, updated_at = now() returning id
     `;
-    await getSql()`update public.volunteer_notification_preferences set push_enabled = true where volunteer_id = ${volunteerId}`;
+    if (volunteerId)
+      await getSql()`
+        insert into public.volunteer_notification_preferences(volunteer_id, company_id, push_enabled)
+        values (${volunteerId}, ${companyId}, true)
+        on conflict (volunteer_id) do update set push_enabled = true, updated_at = now()
+      `;
     return { ok: true, id: rows[0]?.id };
   } catch (error) {
     return resultError(error);
   }
+}
+
+export async function saveVolunteerPushSubscription(
+  input: z.input<typeof pushSchema>,
+): Promise<VolunteerActionResult> {
+  return saveProfilePushSubscription(input);
 }
 
 const servicePlanSchema = z.object({

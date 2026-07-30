@@ -371,11 +371,25 @@ export async function getKidsDashboardData(companyIdInput?: string | null, famil
       children_with_health_alerts: number
     }[]>`
       select
-        (select count(*) from public.kid_profiles kp where kp.company_id = ${resolvedCompanyId} and kp.deleted_at is null)::int as total_children,
-        (select count(*) from public.kid_profiles kp where kp.company_id = ${resolvedCompanyId} and kp.deleted_at is null and kp.is_visitor)::int as visitors,
-        (select count(distinct kg.person_id) from public.kid_guardians kg where kg.company_id = ${resolvedCompanyId} and kg.deleted_at is null)::int as total_guardians,
+        (select count(*)
+          from public.kid_profiles kp
+          join public.people child_person on child_person.id = kp.person_id and child_person.deleted_at is null
+          where kp.company_id = ${resolvedCompanyId} and kp.deleted_at is null)::int as total_children,
+        (select count(*)
+          from public.kid_profiles kp
+          join public.people child_person on child_person.id = kp.person_id and child_person.deleted_at is null
+          where kp.company_id = ${resolvedCompanyId} and kp.deleted_at is null and kp.is_visitor)::int as visitors,
+        (select count(distinct kg.person_id)
+          from public.kid_guardians kg
+          join public.kid_profiles child on child.id = kg.kid_id and child.deleted_at is null
+          join public.people child_person on child_person.id = child.person_id and child_person.deleted_at is null
+          join public.people guardian_person on guardian_person.id = kg.person_id and guardian_person.deleted_at is null
+          where kg.company_id = ${resolvedCompanyId} and kg.deleted_at is null)::int as total_guardians,
         (select count(*) from public.kid_classrooms kc where kc.company_id = ${resolvedCompanyId} and kc.deleted_at is null and kc.is_active)::int as active_classrooms,
-        (select count(*) from public.kid_health_profiles hp
+        (select count(*)
+          from public.kid_health_profiles hp
+          join public.kid_profiles child on child.id = hp.kid_id and child.deleted_at is null
+          join public.people child_person on child_person.id = child.person_id and child_person.deleted_at is null
           where hp.company_id = ${resolvedCompanyId} and hp.deleted_at is null
             and (hp.has_allergy or hp.has_dietary_restriction or hp.has_medication or hp.has_special_needs))::int as children_with_health_alerts
     `,

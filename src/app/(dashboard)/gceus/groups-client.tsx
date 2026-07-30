@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useMemo, useState, useTransition } from "react"
+import { FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -18,7 +18,7 @@ import {
   UsersRound,
 } from "lucide-react"
 import { toast } from "sonner"
-import { deleteGroup, saveGroup } from "./actions"
+import { createGroupCategory, deleteGroup, saveGroup } from "./actions"
 import { GroupOperationsPanel } from "./group-operations-panel"
 import { EmptyState } from "@/components/shared/empty-state"
 import { PageHeader } from "@/components/shared/page-header"
@@ -45,6 +45,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea"
 import type {
   GroupDashboardData,
+  GroupCategory,
   GroupFormOptions,
   GroupListFilters,
   GroupListItem,
@@ -69,8 +70,12 @@ type GroupFormState = {
   meetingDay: string
   meetingTime: string
   meetingLocation: string
+  postalCode: string
+  addressNumber: string
+  addressComplement: string
   neighborhood: string
   city: string
+  state: string
   maxCapacity: number
   minAge: number | null
   maxAge: number | null
@@ -125,8 +130,12 @@ const emptyForm: GroupFormState = {
   meetingDay: "",
   meetingTime: "",
   meetingLocation: "",
+  postalCode: "",
+  addressNumber: "",
+  addressComplement: "",
   neighborhood: "",
   city: "",
+  state: "",
   maxCapacity: 0,
   minAge: null,
   maxAge: null,
@@ -136,6 +145,11 @@ const emptyForm: GroupFormState = {
 
 function formatDate(value: string) {
   return format(parseISO(value), "dd/MM/yyyy HH:mm", { locale: ptBR })
+}
+
+function cepMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8)
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
 }
 
 function toFilterChoice(value: boolean | null | undefined) {
@@ -163,8 +177,12 @@ function groupToForm(group: GroupListItem): GroupFormState {
     meetingDay: group.meetingDay,
     meetingTime: group.meetingTime?.slice(0, 5) ?? "",
     meetingLocation: group.meetingLocation,
+    postalCode: group.postalCode,
+    addressNumber: group.addressNumber,
+    addressComplement: group.addressComplement,
     neighborhood: group.neighborhood,
     city: group.city,
+    state: group.state,
     maxCapacity: group.maxCapacity,
     minAge: group.minAge,
     maxAge: group.maxAge,
@@ -188,8 +206,12 @@ function buildActionInput(form: GroupFormState): SaveGroupInput {
     meetingDay: form.meetingDay,
     meetingTime: form.meetingTime || null,
     meetingLocation: form.meetingLocation,
+    postalCode: form.postalCode,
+    addressNumber: form.addressNumber,
+    addressComplement: form.addressComplement,
     neighborhood: form.neighborhood,
     city: form.city,
+    state: form.state,
     maxCapacity: form.maxCapacity,
     minAge: form.minAge,
     maxAge: form.maxAge,
@@ -219,9 +241,15 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
   const pathname = usePathname()
   const [isPending, startTransition] = useTransition()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
+  const [categoryName, setCategoryName] = useState("")
+  const [categoryError, setCategoryError] = useState("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<GroupListItem | null>(null)
   const [form, setForm] = useState<GroupFormState>(emptyForm)
+  const [createdCategories, setCreatedCategories] = useState<GroupCategory[]>([])
+  const [cepLookup, setCepLookup] = useState<"idle" | "loading" | "error">("idle")
+  const lastCepLookup = useRef("")
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
     categoryId: filters.categoryId ?? "all",
@@ -230,10 +258,42 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     meetingDay: filters.meetingDay ?? "all",
   })
 
+  const categories = useMemo(() => {
+    const byId = new Map([...formOptions.categories, ...createdCategories].map((category) => [category.id, category]))
+    return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name))
+  }, [createdCategories, formOptions.categories])
+
+  const cepDigits = form.postalCode.replace(/\D/g, "")
+  useEffect(() => {
+    if (cepDigits.length !== 8 || cepDigits === lastCepLookup.current) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      lastCepLookup.current = cepDigits
+      setCepLookup("loading")
+      try {
+        const response = await fetch(`/api/cep/${cepDigits}`, { signal: controller.signal })
+        const data = await response.json() as { postalCode?: string; street?: string; neighborhood?: string; city?: string; state?: string; error?: string }
+        if (!response.ok) throw new Error(data.error)
+        setForm((current) => ({
+          ...current,
+          postalCode: data.postalCode ?? current.postalCode,
+          meetingLocation: data.street ?? current.meetingLocation,
+          neighborhood: data.neighborhood ?? current.neighborhood,
+          city: data.city ?? current.city,
+          state: data.state ?? current.state,
+        }))
+        setCepLookup("idle")
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setCepLookup("error")
+      }
+    }, 300)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [cepDigits])
+
   const categoryLabel = useMemo(() => {
     if (form.categoryId === "none") return "Sem categoria"
-    return formOptions.categories.find((category) => category.id === form.categoryId)?.name ?? "Sem categoria"
-  }, [form.categoryId, formOptions.categories])
+    return categories.find((category) => category.id === form.categoryId)?.name ?? "Sem categoria"
+  }, [form.categoryId, categories])
 
   const congregationLabel = useMemo(() => {
     if (form.congregationId === "none") return "Sem congregação"
@@ -275,6 +335,8 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
 
   function openCreate() {
     setForm(emptyForm)
+    setCategoryName("")
+    setCategoryError("")
     setDialogOpen(true)
   }
 
@@ -299,6 +361,36 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
       toast.success(form.id ? "Célula atualizada" : "Célula criada")
       setDialogOpen(false)
       router.refresh()
+    })
+  }
+
+  function submitCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = categoryName.trim()
+    if (!name) {
+      setCategoryError("Informe nome da categoria")
+      return
+    }
+    startTransition(async () => {
+      const result = await createGroupCategory({ companyId: form.companyId, name })
+      if (!result.ok || !result.id) {
+        setCategoryError(result.error ?? "Não foi possível criar categoria")
+        return
+      }
+      const newCategory = {
+        id: result.id,
+        companyId: form.companyId ?? "",
+        name,
+        description: "",
+        sortOrder: 0,
+        isActive: true,
+      }
+      setCreatedCategories((current) => [...current, newCategory])
+      setForm((current) => ({ ...current, categoryId: result.id ?? "none" }))
+      setCategoryName("")
+      setCategoryError("")
+      setCategoryDialogOpen(false)
+      toast.success("Categoria criada")
     })
   }
 
@@ -355,12 +447,12 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
                 <SelectValue>
                   {filterState.categoryId === "all"
                     ? "Todas categorias"
-                    : formOptions.categories.find((category) => category.id === filterState.categoryId)?.name ?? "Todas categorias"}
+                    : categories.find((category) => category.id === filterState.categoryId)?.name ?? "Todas categorias"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas categorias</SelectItem>
-                {formOptions.categories.map((category) => (
+                {categories.map((category) => (
                   <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -530,17 +622,25 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
               </div>
               <div className="grid gap-2">
                 <Label>Categoria</Label>
-                <Select value={form.categoryId} onValueChange={(value) => setForm({ ...form, categoryId: value ?? "none" })}>
-                  <SelectTrigger data-testid="group-category-select" className="w-full">
-                    <SelectValue>{categoryLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem categoria</SelectItem>
-                    {formOptions.categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Select value={form.categoryId} onValueChange={(value) => setForm({ ...form, categoryId: value ?? "none" })}>
+                      <SelectTrigger data-testid="group-category-select" className="w-full">
+                        <SelectValue>{categoryLabel}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem categoria</SelectItem>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button type="button" variant="outline" data-testid="group-category-create-button" onClick={() => setCategoryDialogOpen(true)}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Criar
+                  </Button>
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label>Congregação</Label>
@@ -600,17 +700,43 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
                 <Label>Horário</Label>
                 <Input data-testid="group-time-input" type="time" value={form.meetingTime} onChange={(event) => setForm({ ...form, meetingTime: event.target.value })} />
               </div>
-              <div className="grid gap-2">
-                <Label>Local</Label>
-                <Input data-testid="group-location-input" value={form.meetingLocation} onChange={(event) => setForm({ ...form, meetingLocation: event.target.value })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Bairro</Label>
-                <Input data-testid="group-neighborhood-input" value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Cidade</Label>
-                <Input data-testid="group-city-input" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+              <div className="grid gap-4 rounded-lg border p-4 md:col-span-2">
+                <div>
+                  <p className="font-medium">Endereço do encontro</p>
+                  <p className="text-sm text-muted-foreground">Digite o CEP primeiro para preencher o endereço automaticamente.</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-6">
+                  <div className="grid gap-2 md:col-span-2">
+                    <Label>CEP</Label>
+                    <Input data-testid="group-postal-code-input" inputMode="numeric" maxLength={9} value={form.postalCode} onChange={(event) => { lastCepLookup.current = ""; setCepLookup("idle"); setForm({ ...form, postalCode: cepMask(event.target.value) }) }} placeholder="00000-000" />
+                    {cepLookup === "loading" && <p className="text-xs text-muted-foreground">Buscando endereço…</p>}
+                    {cepLookup === "error" && <p className="text-xs text-warning">CEP não encontrado. Preencha manualmente.</p>}
+                  </div>
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Logradouro</Label>
+                    <Input data-testid="group-location-input" value={form.meetingLocation} onChange={(event) => setForm({ ...form, meetingLocation: event.target.value })} placeholder="Rua, avenida…" />
+                  </div>
+                  <div className="grid gap-2 md:col-span-2">
+                    <Label>Número</Label>
+                    <Input data-testid="group-address-number-input" value={form.addressNumber} onChange={(event) => setForm({ ...form, addressNumber: event.target.value })} />
+                  </div>
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Complemento</Label>
+                    <Input data-testid="group-address-complement-input" value={form.addressComplement} onChange={(event) => setForm({ ...form, addressComplement: event.target.value })} />
+                  </div>
+                  <div className="grid gap-2 md:col-span-2">
+                    <Label>Bairro</Label>
+                    <Input data-testid="group-neighborhood-input" value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} />
+                  </div>
+                  <div className="grid gap-2 md:col-span-3">
+                    <Label>Cidade</Label>
+                    <Input data-testid="group-city-input" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
+                  </div>
+                  <div className="grid gap-2 md:col-span-1">
+                    <Label>UF</Label>
+                    <Input data-testid="group-state-input" maxLength={2} value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value.toUpperCase() })} />
+                  </div>
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label>Capacidade</Label>
@@ -640,6 +766,26 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
               <Button data-testid="group-save-button" type="submit" disabled={isPending} className="gradient-primary">Salvar</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={submitCategory} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>Criar categoria</DialogTitle>
+              <DialogDescription>A categoria ficará disponível para as células desta igreja.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Label htmlFor="group-category-name">Nome *</Label>
+              <Input id="group-category-name" data-testid="group-category-name-input" value={categoryName} onChange={(event) => { setCategoryName(event.target.value); setCategoryError("") }} autoFocus required />
+              {categoryError && <p className="text-sm text-destructive">{categoryError}</p>}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCategoryDialogOpen(false)}>Cancelar</Button>
+              <Button data-testid="group-category-save-button" type="submit" disabled={isPending || !categoryName.trim()} className="gradient-primary">Criar categoria</Button>
             </DialogFooter>
           </form>
         </DialogContent>

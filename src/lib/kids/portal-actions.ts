@@ -418,7 +418,69 @@ export async function saveGuardianContact(input: unknown): Promise<KidsPortalAct
     const fullName = contactName.fullName
     const digits = parsed.contact.phone.replace(/\D/g, "")
 
-    let personId = parsed.contact.personId
+    if (parsed.contact.id) {
+      const links = await sql<{
+        id: string
+        person_id: string
+        full_name: string
+        phone: string
+        email: string | null
+        person_created_by: string | null
+        person_profile_id: string | null
+      }[]>`
+        select guardian.id, guardian.person_id, person.full_name, person.phone, person.email,
+               person.created_by as person_created_by, person.profile_id as person_profile_id
+        from public.kid_guardians guardian
+        join public.people person on person.id = guardian.person_id and person.deleted_at is null
+        where guardian.id = ${parsed.contact.id}
+          and guardian.kid_id = ${parsed.kidId}
+          and guardian.company_id = ${companyId}
+          and guardian.created_by = ${user.id}
+          and guardian.is_primary = false
+          and guardian.deleted_at is null
+          and (guardian.profile_id is null or guardian.profile_id <> ${user.id})
+        limit 1
+      `
+      const link = links[0]
+      if (!link) throw new Error("Contato não encontrado ou não foi adicionado por você")
+
+      const identityChanged =
+        link.full_name !== fullName ||
+        link.phone !== parsed.contact.phone ||
+        (link.email ?? "") !== (parsed.contact.email ?? "")
+      if (identityChanged && (link.person_created_by !== user.id || link.person_profile_id)) {
+        throw new Error("Nome, telefone e e-mail pertencem a um cadastro existente. Altere somente as autorizações.")
+      }
+
+      await sql.begin(async (tx) => {
+        if (identityChanged) {
+          await tx`
+            update public.people
+            set first_name = ${contactName.firstName}, last_name = ${contactName.lastName},
+                full_name = ${fullName}, email = ${parsed.contact.email}, phone = ${parsed.contact.phone},
+                updated_by = ${user.id}
+            where id = ${link.person_id} and company_id = ${companyId}
+              and created_by = ${user.id} and profile_id is null and deleted_at is null
+          `
+        }
+        await tx`
+          update public.kid_guardians
+          set relationship = ${parsed.contact.relationship},
+              can_checkin = ${parsed.contact.canCheckin}, can_checkout = ${parsed.contact.canCheckout},
+              is_emergency_contact = ${parsed.contact.isEmergencyContact},
+              whatsapp_enabled = ${parsed.contact.whatsappEnabled}, email_enabled = ${parsed.contact.emailEnabled},
+              updated_by = ${user.id}
+          where id = ${link.id} and kid_id = ${parsed.kidId} and company_id = ${companyId}
+            and created_by = ${user.id} and is_primary = false and deleted_at is null
+        `
+      })
+
+      refresh()
+      return { ok: true, id: link.id, personId: link.person_id }
+    }
+
+    let personId: string | null = null
+    let createdPerson = false
     if (!personId && digits.length >= 8) {
       const existing = await sql<{ id: string }[]>`
         select id from public.people
@@ -446,6 +508,7 @@ export async function saveGuardianContact(input: unknown): Promise<KidsPortalAct
         returning id
       `
       personId = inserted[0]?.id ?? null
+      createdPerson = true
     }
     if (!personId) throw new Error("Contato não foi salvo")
 
@@ -469,11 +532,15 @@ export async function saveGuardianContact(input: unknown): Promise<KidsPortalAct
         whatsapp_enabled = excluded.whatsapp_enabled,
         email_enabled = excluded.email_enabled,
         updated_by = excluded.updated_by
+      where public.kid_guardians.created_by = ${user.id}
+        and public.kid_guardians.is_primary = false
       returning id
     `
 
+    if (!rows[0]?.id) throw new Error("Esta pessoa já possui um vínculo que não foi criado por você")
+
     refresh()
-    return { ok: true, id: rows[0]?.id }
+    return { ok: true, id: rows[0]?.id, personId, createdGuardian: createdPerson }
   } catch (error) {
     return failure(error)
   }
@@ -494,6 +561,8 @@ export async function deleteGuardianContact(input: unknown): Promise<KidsPortalA
         and kid_id = ${parsed.kidId}
         and company_id = ${companyId}
         and deleted_at is null
+        and created_by = ${user.id}
+        and is_primary = false
         and (profile_id is null or profile_id <> ${user.id})
       returning id
     `

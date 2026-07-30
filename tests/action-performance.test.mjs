@@ -53,3 +53,16 @@ test("worker de voluntarios separa idempotencia inicial e lembretes", async () =
   assert.match(migration, /notification_key_unique_idx/)
   assert.match(migration, /notification_key is not null/)
 })
+
+test("compute fica perto do banco e leitura de chat evita invalidacao global", async () => {
+  const vercel = JSON.parse(await read("vercel.json"))
+  const volunteers = await read("src/lib/volunteers/v2-actions.ts")
+  const markRead = volunteers.slice(
+    volunteers.indexOf("export async function markVolunteerShiftConversationRead("),
+    volunteers.indexOf("export async function deleteVolunteerEventSchedule("),
+  )
+
+  assert.deepEqual(vercel.regions, ["gru1"])
+  assert.doesNotMatch(markRead, /refreshVolunteerPaths\(\)/)
+  assert.doesNotMatch(markRead, /revalidatePath\(/)
+})

@@ -151,7 +151,14 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     sql<Record<string, unknown>[]>`
       select shift.id, shift.schedule_id, shift.event_id, coalesce(event.title, 'Escala avulsa') as event_title,
              shift.department_id, department.name as department_name, shift.role_name, shift.required_volunteers,
-             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions
+             shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions,
+             (select count(*)::int
+                from public.volunteer_shift_conversations conversation
+                join public.volunteer_shift_messages message on message.conversation_id = conversation.id and message.deleted_at is null
+                left join public.volunteer_shift_conversation_reads read
+                  on read.conversation_id = conversation.id and read.profile_id = ${user.id}
+               where conversation.shift_id = shift.id and message.sender_profile_id <> ${user.id}
+                 and message.created_at > coalesce(read.last_read_at, '-infinity'::timestamptz)) as unread_chat_count
       from public.volunteer_shifts shift
       join public.volunteer_schedules schedule on schedule.id = shift.schedule_id
       join public.volunteer_departments department on department.id = shift.department_id
@@ -351,6 +358,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       checkinClosesAt: iso(row.checkin_closes_at as DateValue) ?? "",
       assignments: assignmentsByShift.get(String(row.id)) ?? [],
       instructions: String(row.instructions ?? ""),
+      unreadChatCount: Number(row.unread_chat_count ?? 0),
     }
     const current = shiftsBySchedule.get(String(row.schedule_id)) ?? []
     current.push(shift)
@@ -504,7 +512,14 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
              shift.department_id, department.name as department_name, shift.role_name, shift.required_volunteers,
              shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions,
              assignment.id as assignment_id, assignment.status as assignment_status, assignment.checked_in_at,
-             assignment.checked_out_at, assignment.score, assignment.score_reasons, assignment.is_locked, assignment.decline_reason
+             assignment.checked_out_at, assignment.score, assignment.score_reasons, assignment.is_locked, assignment.decline_reason,
+             (select count(*)::int
+                from public.volunteer_shift_conversations conversation
+                join public.volunteer_shift_messages message on message.conversation_id = conversation.id and message.deleted_at is null
+                left join public.volunteer_shift_conversation_reads read
+                  on read.conversation_id = conversation.id and read.profile_id = ${user.id}
+               where conversation.shift_id = shift.id and message.sender_profile_id <> ${user.id}
+                 and message.created_at > coalesce(read.last_read_at, '-infinity'::timestamptz)) as unread_chat_count
       from public.volunteer_assignments assignment
       join public.volunteer_shifts shift on shift.id = assignment.shift_id
       join public.volunteer_departments department on department.id = shift.department_id
@@ -571,6 +586,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
         declineReason: row.decline_reason ? String(row.decline_reason) : null,
       }],
       instructions: String(row.instructions ?? ""),
+      unreadChatCount: Number(row.unread_chat_count ?? 0),
     })),
     feedPosts: feedRows.map(toFeedPost),
     ...extras,

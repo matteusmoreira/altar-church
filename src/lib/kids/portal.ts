@@ -155,6 +155,7 @@ function toGuardianItem(value: unknown, photoUrls = new Map<string, string>(), c
       photoUrl: item.photoPath ? photoUrls.get(String(item.photoPath)) ?? null : null,
       address: { ...EMPTY_KID_ADDRESS },
       customValues: customValues.get(String(item.personId)) ?? [],
+      canManage: Boolean(item.canManage),
     }
   })
 }
@@ -223,7 +224,10 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
           'isEmergencyContact', guardian.is_emergency_contact,
           'whatsappEnabled', guardian.whatsapp_enabled,
           'emailEnabled', guardian.email_enabled
-          , 'photoPath', guardian_photo.storage_path
+          , 'photoPath', guardian_photo.storage_path,
+          'canManage', guardian.created_by = ${user.id}
+            and guardian.is_primary = false
+            and (guardian.profile_id is null or guardian.profile_id <> ${user.id})
         ) order by guardian.is_primary desc, guardian_person.full_name)
         from public.kid_guardians guardian
         join public.people guardian_person on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null

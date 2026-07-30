@@ -197,6 +197,7 @@ export interface KidGuardianItem {
   photoUrl: string | null
   address: KidAddress
   customValues: KidCustomFieldValue[]
+  canManage?: boolean
 }
 
 export interface KidListItem {
