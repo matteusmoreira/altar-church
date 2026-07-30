@@ -37,6 +37,7 @@ test("cell first-use flows do not require a study and expose usable empty states
   assert.match(client, /data\.canPublishToAll &&/)
   assert.match(client, /data\.studies\.length === 0/)
   assert.match(client, /data\.meetings\.length === 0/)
+  assert.match(client, /<Button type="submit" disabled=\{pending\}><Upload \/>Enviar estudo/)
   assert.match(groupPanel, /Sem estudo \(opcional\)/)
   assert.doesNotMatch(groupPanel, /if \(meetingForm\.studyId === "none"\)/)
   assert.doesNotMatch(groupActions, /Selecione o estudo do encontro/)
