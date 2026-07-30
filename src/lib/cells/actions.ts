@@ -7,6 +7,7 @@ import { getCellContext, isCellAdministrator, requireCellParticipant, requireCel
 import { getSql } from "@/lib/db/client"
 import { attachFileToEntity, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { sanitizeCellNoticeHtml, stripCellNoticeHtml } from "./rich-content"
 import type { CellActionResult } from "./types"
 
 const CELL_STUDY_MAX_BYTES = 30 * 1024 * 1024
@@ -204,13 +205,14 @@ export async function confirmCellCheckin(tokenInput: string): Promise<CellAction
     const attendance = await sql<{ id: string }[]>`
       insert into public.attendance_records (
         company_id, person_id, person_name, event_type, event_ref_id, event_ref_name,
-        occurred_on, occurred_time, status, registered_by, registered_by_name, checkin_source, checkin_session_id
+        occurred_on, occurred_time, status, registered_by, registered_by_name, checkin_source, checkin_session_id, checkin_at
       ) values (
         ${context.companyId}, ${context.personId}, ${row.person_name}, 'cell', ${row.meeting_id}, ${row.meeting_title},
-        current_date, localtime, 'present', ${context.user.id}, ${context.user.name}, 'qr', ${row.session_id}
+        current_date, localtime, 'present', ${context.user.id}, ${context.user.name}, 'qr', ${row.session_id}, now()
       )
       on conflict (company_id, event_ref_id, person_id) where event_type = 'cell' and person_id is not null and deleted_at is null
-      do update set status = 'present', checkin_source = 'qr', checkin_session_id = excluded.checkin_session_id, updated_at = now()
+      do update set status = 'present', occurred_on = current_date, occurred_time = localtime,
+        checkin_source = 'qr', checkin_session_id = excluded.checkin_session_id, checkin_at = now(), updated_at = now()
       returning id
     `
     await audit("cell.checkin.qr", "attendance_records", attendance[0]?.id ?? row.meeting_id, context.companyId, { meetingId: row.meeting_id })
@@ -258,10 +260,11 @@ export async function manualCellCheckin(formData: FormData): Promise<CellActionR
     const people = await sql<{ id: string; full_name: string }[]>`select id, full_name from public.people where id = ${personId} and company_id = ${context.companyId} and deleted_at is null`
     if (!people[0]) throw new Error("Pessoa não encontrada")
     const rows = await sql<{ id: string }[]>`
-      insert into public.attendance_records (company_id, person_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by, registered_by_name, checkin_source)
-      values (${context.companyId}, ${personId}, ${people[0].full_name}, 'cell', ${meetingId}, ${meeting.title || meeting.group_name}, current_date, localtime, 'present', ${context.user.id}, ${context.user.name}, 'manual')
+      insert into public.attendance_records (company_id, person_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by, registered_by_name, checkin_source, checkin_at)
+      values (${context.companyId}, ${personId}, ${people[0].full_name}, 'cell', ${meetingId}, ${meeting.title || meeting.group_name}, current_date, localtime, 'present', ${context.user.id}, ${context.user.name}, 'manual', now())
       on conflict (company_id, event_ref_id, person_id) where event_type = 'cell' and person_id is not null and deleted_at is null
-      do update set status = 'present', checkin_source = 'manual', updated_at = now()
+      do update set status = 'present', occurred_on = current_date, occurred_time = localtime,
+        checkin_source = 'manual', checkin_at = now(), updated_at = now()
       returning id
     `
     await audit("cell.checkin.manual", "attendance_records", rows[0]?.id ?? meetingId, context.companyId, { meetingId, personId })
@@ -372,7 +375,9 @@ export async function saveCellNotice(formData: FormData): Promise<CellActionResu
   try {
     const context = await requireCellPermission("cells.notice.manage")
     const title = z.string().trim().min(3, "Informe o título").max(160).parse(text(formData, "title"))
-    const content = z.string().trim().min(3, "Informe o aviso").max(10000).parse(text(formData, "content"))
+    const rawContent = z.string().trim().min(3, "Informe o aviso").max(10000).parse(text(formData, "content"))
+    const content = sanitizeCellNoticeHtml(rawContent)
+    if (stripCellNoticeHtml(content).length < 3) throw new Error("Informe o aviso")
     const requestedAudience = text(formData, "audience") === "all" ? "all" : "selected"
     const audience = isCellAdministrator(context.user) ? requestedAudience : "selected"
     const groupIds = ids(formData, "groupIds")

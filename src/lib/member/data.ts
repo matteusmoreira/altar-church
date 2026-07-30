@@ -2,6 +2,7 @@ import "server-only"
 
 import { getSql } from "@/lib/db/client"
 import { requireMemberContext } from "./access"
+import { sanitizeCellNoticeHtml } from "@/lib/cells/rich-content"
 import type { MemberMinistryItem, MemberPortalCapabilities, MemberPortalSummary, MinistryMembershipAdminItem } from "./types"
 import type { User } from "@/lib/types"
 
@@ -40,7 +41,7 @@ export async function getMemberShellData() {
 export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
-  const [companyRows, cellCountRows, ministryCountRows, childrenCountRows, meetingRows, noticeRows] = await Promise.all([
+  const [companyRows, cellCountRows, cellCheckinCountRows, ministryCountRows, childrenCountRows, meetingRows, noticeRows, cellCheckinRows] = await Promise.all([
     sql<{ name: string }[]>`select name from public.companies where id = ${companyId} limit 1`,
     sql<{ total: number }[]>`
       select count(*)::integer as total
@@ -48,6 +49,15 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
       join public.groups cell on cell.id = member.group_id
       where member.company_id = ${companyId} and member.person_id = ${personId}
         and member.status = 'active' and cell.type = 'cell' and cell.deleted_at is null
+    `,
+    sql<{ total: number }[]>`
+      select count(*)::integer as total
+      from public.attendance_records attendance
+      join public.group_meetings meeting on meeting.id = attendance.event_ref_id
+      join public.groups cell on cell.id = meeting.group_id
+      where attendance.company_id = ${companyId} and attendance.person_id = ${personId}
+        and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null
+        and meeting.deleted_at is null and cell.type = 'cell' and cell.deleted_at is null
     `,
     sql<{ total: number }[]>`
       select count(*)::integer as total
@@ -95,12 +105,27 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
       order by notice.published_at desc
       limit 3
     `,
+    sql<{ id: string; cell_name: string; meeting_title: string; checkin_at: DateValue; checkin_source: "qr" | "manual" }[]>`
+      select attendance.id, cell.name as cell_name,
+        coalesce(nullif(meeting.title, ''), cell.name) as meeting_title,
+        coalesce(attendance.checkin_at, attendance.created_at) as checkin_at,
+        coalesce(attendance.checkin_source, 'manual') as checkin_source
+      from public.attendance_records attendance
+      join public.group_meetings meeting on meeting.id = attendance.event_ref_id
+      join public.groups cell on cell.id = meeting.group_id
+      where attendance.company_id = ${companyId} and attendance.person_id = ${personId}
+        and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null
+        and meeting.deleted_at is null and cell.type = 'cell' and cell.deleted_at is null
+      order by coalesce(attendance.checkin_at, attendance.created_at) desc
+      limit 6
+    `,
   ])
   const meeting = meetingRows[0]
   return {
     memberName: user.name,
     churchName: companyRows[0]?.name ?? "Altar Church",
     cellCount: cellCountRows[0]?.total ?? 0,
+    cellCheckinCount: cellCheckinCountRows[0]?.total ?? 0,
     ministryCount: ministryCountRows[0]?.total ?? 0,
     childrenCount: childrenCountRows[0]?.total ?? 0,
     nextMeeting: meeting ? {
@@ -111,8 +136,15 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
     notices: noticeRows.map((notice) => ({
       id: notice.id,
       title: notice.title,
-      content: notice.content,
+      content: sanitizeCellNoticeHtml(notice.content),
       publishedAt: iso(notice.published_at) ?? "",
+    })),
+    recentCellCheckins: cellCheckinRows.map((checkin) => ({
+      id: checkin.id,
+      cellName: checkin.cell_name,
+      meetingTitle: checkin.meeting_title,
+      checkedInAt: iso(checkin.checkin_at) ?? "",
+      source: checkin.checkin_source,
     })),
   }
 }

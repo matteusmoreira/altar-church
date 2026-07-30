@@ -4,6 +4,7 @@ import { hasPermission } from "@/lib/types"
 import { getCellContext, isCellAdministrator, requireCellPermission } from "./access"
 import { getSql } from "@/lib/db/client"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
+import { sanitizeCellNoticeHtml } from "./rich-content"
 import type {
   CellAttendance,
   CellCheckinPreview,
@@ -90,9 +91,9 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
       from public.cell_checkin_sessions where company_id = ${context.companyId} and group_id = any(${cellIds})
       order by created_at desc limit 100
     ` : Promise.resolve([]),
-    manager ? sql<{ id: string; event_ref_id: string; person_id: string | null; person_name: string; checkin_source: "qr" | "manual"; occurred_on: string; occurred_time: string | null; visitor: boolean }[]>`
+    manager ? sql<{ id: string; event_ref_id: string; person_id: string | null; person_name: string; checkin_source: "qr" | "manual"; occurred_on: string; occurred_time: string | null; checkin_at: DateValue | null; visitor: boolean }[]>`
       select attendance.id, attendance.event_ref_id, attendance.person_id, attendance.person_name, attendance.checkin_source,
-        attendance.occurred_on::text, attendance.occurred_time::text,
+        attendance.occurred_on::text, attendance.occurred_time::text, attendance.checkin_at,
         coalesce(person.status = 'visitor', false) as visitor
       from public.attendance_records attendance
       join public.group_meetings meeting on meeting.id = attendance.event_ref_id
@@ -149,14 +150,14 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   }))
   const attendance: CellAttendance[] = attendanceRows.map((row) => ({
     id: row.id, meetingId: row.event_ref_id, personId: row.person_id, personName: row.person_name,
-    source: row.checkin_source ?? "manual", occurredAt: `${row.occurred_on}T${row.occurred_time ?? "00:00:00"}`, visitor: row.visitor,
+    source: row.checkin_source ?? "manual", occurredAt: iso(row.checkin_at) ?? `${row.occurred_on}T${row.occurred_time ?? "00:00:00"}`, visitor: row.visitor,
   }))
   const prayers: CellPrayerRequest[] = prayerRows.map((row) => ({
     id: row.id, groupId: row.group_id, groupName: row.group_name, authorName: row.author_name,
     message: row.message, status: row.status, own: row.author_profile_id === context.user.id, createdAt: iso(row.created_at) ?? "",
   }))
   const notices: CellNotice[] = noticeRows.map((row) => ({
-    id: row.id, title: row.title, content: row.content, audience: row.audience, groupIds: row.group_ids,
+    id: row.id, title: row.title, content: sanitizeCellNoticeHtml(row.content), audience: row.audience, groupIds: row.group_ids,
     authorName: row.author_name, publishedAt: iso(row.published_at) ?? "",
   }))
 

@@ -4,6 +4,7 @@ export interface MemberPortalSummary {
   memberName: string
   churchName: string
   cellCount: number
+  cellCheckinCount: number
   ministryCount: number
   childrenCount: number
   nextMeeting: {
@@ -16,6 +17,13 @@ export interface MemberPortalSummary {
     title: string
     content: string
     publishedAt: string
+  }[]
+  recentCellCheckins: {
+    id: string
+    cellName: string
+    meetingTitle: string
+    checkedInAt: string
+    source: "qr" | "manual"
   }[]
 }
 

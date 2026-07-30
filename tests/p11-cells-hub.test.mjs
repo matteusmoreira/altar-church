@@ -80,6 +80,34 @@ test("cell database optimization keeps tenant scope and targeted indexes", () =>
   assert.match(migration, /profile\.company_id = study\.company_id/)
 })
 
+test("cell check-in keeps exact timestamp and appears in member dashboard", () => {
+  const migration = read("supabase/migrations/20260730210000_cell_checkin_timestamps.sql")
+  const actions = read("src/lib/cells/actions.ts")
+  const memberData = read("src/lib/member/data.ts")
+  const memberDashboard = read("src/components/member/member-dashboard.tsx")
+  assert.match(migration, /add column if not exists checkin_at timestamptz/)
+  assert.match(actions, /checkin_source, checkin_session_id, checkin_at/)
+  assert.match(actions, /checkin_at = now\(\)/)
+  assert.match(memberData, /recentCellCheckins/)
+  assert.match(memberData, /attendance\.checkin_at/)
+  assert.match(memberDashboard, /Check-ins nas células/)
+  assert.match(memberDashboard, /Check-in realizado/)
+})
+
+test("cell notices use rich editor buttons and sanitize unsafe content", () => {
+  const editor = read("src/components/ui/rich-text-editor.tsx")
+  const richContent = read("src/lib/cells/rich-content.ts")
+  const actions = read("src/lib/cells/actions.ts")
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
+  assert.match(editor, /contentEditable/)
+  assert.match(editor, /Inserir botão/)
+  assert.match(richContent, /data-cell-button/)
+  assert.match(richContent, /url\.protocol === "http:" \|\| url\.protocol === "https:"/)
+  assert.match(actions, /sanitizeCellNoticeHtml/)
+  assert.match(client, /RichTextEditor/)
+  assert.match(client, /dangerouslySetInnerHTML/)
+})
+
 test("profile and person identity backfill leaves only global profiles unlinked", () => {
   const migration = read("supabase/migrations/20260715173000_profiles_people_identity_backfill.sql")
   assert.match(migration, /lower\(person\.email\) = lower\(profile\.email\)/)

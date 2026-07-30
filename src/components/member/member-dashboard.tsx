@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, Baby, Bell, CalendarDays, HeartHandshake, Network, Sparkles } from "lucide-react"
+import { ArrowRight, Baby, Bell, CalendarDays, CheckCircle2, HeartHandshake, Network, Sparkles } from "lucide-react"
 import type { MemberPortalSummary } from "@/lib/member/types"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -83,11 +83,32 @@ export function MemberDashboard({ data }: { data: MemberPortalSummary }) {
           <Card key={notice.id} className="rounded-2xl bg-card/85 py-0">
             <CardContent className="p-4">
               <p className="font-semibold">{notice.title}</p>
-              <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{notice.content}</p>
+              <div className="mt-1 line-clamp-3 text-sm text-muted-foreground [&_a[data-cell-button=true]]:inline-flex [&_a[data-cell-button=true]]:rounded-lg [&_a[data-cell-button=true]]:bg-primary [&_a[data-cell-button=true]]:px-3 [&_a[data-cell-button=true]]:py-2 [&_a[data-cell-button=true]]:font-semibold [&_a[data-cell-button=true]]:text-primary-foreground" dangerouslySetInnerHTML={{ __html: notice.content }} />
             </CardContent>
           </Card>
         )) : (
           <p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">Nenhum aviso novo para suas células.</p>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="h-5 w-5 text-emerald-600" />Check-ins nas células</h2>
+          <span className="text-sm font-semibold text-primary">{data.cellCheckinCount} registrados</span>
+        </div>
+        {data.recentCellCheckins.length ? data.recentCellCheckins.map((checkin) => (
+          <Card key={checkin.id} className="rounded-2xl border-emerald-500/20 bg-card/85 py-0">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600"><CheckCircle2 className="h-5 w-5" /></div>
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{checkin.cellName}</p>
+                <p className="truncate text-sm text-muted-foreground">{checkin.meetingTitle}</p>
+                <p className="mt-1 text-xs font-medium capitalize text-emerald-700 dark:text-emerald-300">Check-in realizado · {dateTime(checkin.checkedInAt)}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )) : (
+          <Card className="rounded-2xl border-dashed py-0"><CardContent className="p-5 text-sm text-muted-foreground">Seus próximos check-ins aparecerão aqui depois da primeira presença.</CardContent></Card>
         )}
       </section>
     </div>
