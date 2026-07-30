@@ -24,6 +24,8 @@ type ManagedFileUploadInput = {
   metadata?: Record<string, unknown>
   allowedMimeTypes?: ReadonlySet<string>
   allowedExtensions?: ReadonlySet<string>
+  allowGenericMimeByExtension?: boolean
+  contentType?: string
   maxSizeBytes?: number
 }
 
@@ -76,11 +78,13 @@ export function getOptionalFile(formData: FormData, key: string) {
 
 export function assertManagedFile(
   file: File,
-  policy?: { allowedMimeTypes?: ReadonlySet<string>; allowedExtensions?: ReadonlySet<string>; maxSizeBytes?: number },
+  policy?: { allowedMimeTypes?: ReadonlySet<string>; allowedExtensions?: ReadonlySet<string>; allowGenericMimeByExtension?: boolean; maxSizeBytes?: number },
 ) {
   const mimeTypes = policy?.allowedMimeTypes ?? allowedMimeTypes
   const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : ""
-  if (!mimeTypes.has(file.type) || (policy?.allowedExtensions && !policy.allowedExtensions.has(extension))) {
+  const genericMime = !file.type || file.type === "application/octet-stream"
+  const mimeAllowed = mimeTypes.has(file.type) || (policy?.allowGenericMimeByExtension && genericMime && policy.allowedExtensions?.has(extension))
+  if (!mimeAllowed || (policy?.allowedExtensions && !policy.allowedExtensions.has(extension))) {
     throw new Error("Tipo de arquivo inválido")
   }
   const maxSizeBytes = policy?.maxSizeBytes ?? MAX_UPLOAD_SIZE_BYTES
@@ -103,9 +107,10 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
   const entitySegment = input.entityId ?? "pending"
   const storagePath = `${input.companyId}/${input.entityTable}/${entitySegment}/${input.purpose}/${randomUUID()}-${safeName}`
   const storage = await getStorageClient()
+  const contentType = input.contentType ?? input.file.type
 
   const uploadResult = await storage.storage.from(FILE_BUCKET).upload(storagePath, input.file, {
-    contentType: input.file.type,
+    contentType,
     cacheControl: "3600",
     upsert: false,
   })
@@ -137,7 +142,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
         ${FILE_BUCKET},
         ${storagePath},
         ${originalName},
-        ${input.file.type},
+        ${contentType},
         ${input.file.size},
         ${input.visibility ?? "private"},
         ${ownerProfileId},
@@ -159,7 +164,7 @@ export async function uploadManagedFile(input: ManagedFileUploadInput): Promise<
       bucket: FILE_BUCKET,
       storagePath,
       originalName,
-      mimeType: input.file.type,
+      mimeType: contentType,
       sizeBytes: input.file.size,
     }
   } catch (error) {

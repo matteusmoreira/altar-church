@@ -22,6 +22,14 @@ const studyMimeTypes = new Set([
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ])
+const studyContentTypesByExtension = new Map([
+  [".pdf", "application/pdf"],
+  [".txt", "text/plain"],
+  [".doc", "application/msword"],
+  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  [".xls", "application/vnd.ms-excel"],
+  [".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+])
 const studyExtensions = new Set([".pdf", ".txt", ".doc", ".docx", ".xls", ".xlsx"])
 const photoMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"])
 const photoExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"])
@@ -33,6 +41,10 @@ function text(formData: FormData, key: string) {
 
 function ids(formData: FormData, key: string) {
   return [...new Set(formData.getAll(key).filter((value): value is string => typeof value === "string" && z.string().uuid().safeParse(value).success))]
+}
+
+function fileExtension(file: File) {
+  return file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : ""
 }
 
 function failure(error: unknown): CellActionResult {
@@ -77,6 +89,8 @@ export async function saveCellStudy(formData: FormData): Promise<CellActionResul
       metadata: { kind: "cell-study" },
       allowedMimeTypes: studyMimeTypes,
       allowedExtensions: studyExtensions,
+      allowGenericMimeByExtension: true,
+      contentType: studyContentTypesByExtension.get(fileExtension(file)) ?? file.type,
       maxSizeBytes: CELL_STUDY_MAX_BYTES,
     })
 
@@ -120,7 +134,7 @@ export async function openCellCheckin(meetingIdInput: string): Promise<CellActio
     const meeting = meetings[0]
     if (!meeting) throw new Error("Encontro não encontrado")
     await requireManagedCell(context, meeting.group_id)
-    if (!meeting.study_id || meeting.report_status === "cancelled") throw new Error("Encontro precisa de estudo e não pode estar cancelado")
+    if (meeting.report_status === "cancelled") throw new Error("Encontro cancelado")
     if (new Date(meeting.expires_at).getTime() <= Date.now()) throw new Error("Janela deste encontro já terminou")
 
     await sql`update public.cell_checkin_sessions set closed_at = now() where meeting_id = ${meetingId} and closed_at is null`

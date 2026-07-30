@@ -581,10 +581,6 @@ export async function saveGroupMeeting(input: SaveGroupMeetingInput): Promise<Gr
     await requirePermission("cells.meeting.manage", companyId)
     await requireManagedCell(await getCellContext(companyId), parsed.groupId)
 
-    if (parsed.reportStatus !== "cancelled" && !parsed.studyId) {
-      throw new Error("Selecione o estudo do encontro")
-    }
-
     await Promise.all([
       assertGroupReference(parsed.groupId, companyId),
       assertStudyReference(

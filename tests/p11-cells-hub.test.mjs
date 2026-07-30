@@ -26,6 +26,26 @@ test("cell uploads enforce document, photo and quantity limits", () => {
   assert.match(actions, /allowedExtensions: studyExtensions/)
 })
 
+test("cell first-use flows do not require a study and expose usable empty states", () => {
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
+  const cellActions = read("src/lib/cells/actions.ts")
+  const groupPanel = read("src/app/(dashboard)/gceus/group-operations-panel.tsx")
+  const groupActions = read("src/lib/groups/actions.ts")
+  const files = read("src/lib/files/server.ts")
+
+  assert.match(client, /defaultChecked/)
+  assert.match(client, /data\.canPublishToAll &&/)
+  assert.match(client, /data\.studies\.length === 0/)
+  assert.match(client, /data\.meetings\.length === 0/)
+  assert.match(groupPanel, /Sem estudo \(opcional\)/)
+  assert.doesNotMatch(groupPanel, /if \(meetingForm\.studyId === "none"\)/)
+  assert.doesNotMatch(groupActions, /Selecione o estudo do encontro/)
+  assert.doesNotMatch(cellActions, /!meeting\.study_id/)
+  assert.match(cellActions, /meeting\.report_status === "cancelled"/)
+  assert.match(cellActions, /allowGenericMimeByExtension: true/)
+  assert.match(files, /const contentType = input\.contentType/)
+})
+
 test("cell check-in is authenticated, scoped and idempotent", () => {
   const actions = read("src/lib/cells/actions.ts")
   const access = read("src/lib/cells/access.ts")

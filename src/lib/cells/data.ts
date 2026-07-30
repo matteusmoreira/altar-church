@@ -1,7 +1,7 @@
 import "server-only"
 
 import { hasPermission } from "@/lib/types"
-import { getCellContext, requireCellPermission } from "./access"
+import { getCellContext, isCellAdministrator, requireCellPermission } from "./access"
 import { getSql } from "@/lib/db/client"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
@@ -22,6 +22,7 @@ const iso = (value: DateValue | null | undefined) => value instanceof Date ? val
 export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const baseContext = await getCellContext()
   const manager = hasPermission(baseContext.user.role, "cells.view") && ["superadmin", "admin", "cell_supervisor", "cell_leader"].includes(baseContext.user.role)
+  const canPublishToAll = isCellAdministrator(baseContext.user)
   const context = manager ? await requireCellPermission("cells.view") : await requireCellPermission("cells.self.view")
   const sql = getSql()
 
@@ -53,7 +54,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     : []
 
   if (cellIds.length === 0) {
-    return { mode: manager ? "manager" : "portal", personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [] }
+    return { mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [] }
   }
 
   const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows] = await Promise.all([
@@ -160,7 +161,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   }))
 
   return {
-    mode: manager ? "manager" : "portal", personId: context.personId, cells: cellRows,
+    mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
   }

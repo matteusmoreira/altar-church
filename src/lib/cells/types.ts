@@ -76,6 +76,7 @@ export interface CellPortalMeeting {
 
 export interface CellFeaturesData {
   mode: "manager" | "portal"
+  canPublishToAll: boolean
   personId: string | null
   cells: { id: string; name: string }[]
   people: { id: string; name: string; phone: string; visitor: boolean }[]
@@ -103,4 +104,3 @@ export interface CellCheckinPreview {
   available: boolean
   alreadyCheckedIn: boolean
 }
-

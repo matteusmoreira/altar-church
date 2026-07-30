@@ -162,11 +162,6 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
       toast.error("Selecione uma célula")
       return
     }
-    if (meetingForm.studyId === "none") {
-      toast.error("Selecione o estudo do encontro")
-      return
-    }
-
     const input: SaveGroupMeetingInput = {
       groupId: selectedGroup.id,
       studyId: meetingForm.studyId === "none" ? null : meetingForm.studyId,
@@ -329,6 +324,7 @@ export function GroupOperationsPanel({ formOptions, groups, members, meetings }:
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Sem estudo (opcional)</SelectItem>
                     {formOptions.studies.map((study) => (
                       <SelectItem key={study.id} value={study.id}>{study.title}</SelectItem>
                     ))}
