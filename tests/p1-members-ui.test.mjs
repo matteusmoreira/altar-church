@@ -27,6 +27,26 @@ test("members client uses server actions for create, edit and delete", () => {
   assert.doesNotMatch(client, /setMembers/)
 })
 
+test("people form keeps CEP first and fills complete address from ViaCEP", () => {
+  const client = read("src/app/(dashboard)/pessoas/members-client.tsx")
+  const address = read("src/components/people/address-fields.tsx")
+  const actions = read("src/lib/people/actions.ts")
+  const types = read("src/lib/people/types.ts")
+
+  assert.match(client, /PersonAddressFields/)
+  assert.match(client, /postalCode: formData\.postalCode/)
+  assert.match(address, /<Label>CEP<\/Label>/)
+  assert.match(address, /fetch\(`\/api\/cep\/\$\{digits\}`/)
+  assert.match(address, /address: data\.street/)
+  assert.match(address, /neighborhood: data\.neighborhood/)
+  assert.match(address, /city: data\.city/)
+  assert.match(address, /state: data\.state/)
+  for (const field of ["postalCode", "addressNumber", "addressComplement", "neighborhood"]) {
+    assert.match(actions, new RegExp(field))
+    assert.match(types, new RegExp(field))
+  }
+})
+
 test("members client supports page selection and bulk delete", () => {
   const client = read("src/app/(dashboard)/pessoas/members-client.tsx")
 

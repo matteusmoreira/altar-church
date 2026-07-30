@@ -162,6 +162,10 @@ export interface SavePersonInput {
   birthDate?: string | null
   gender?: PersonGender | null
   address?: string
+  postalCode?: string
+  addressNumber?: string
+  addressComplement?: string
+  neighborhood?: string
   city?: string
   state?: string
   country?: string

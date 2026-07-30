@@ -63,7 +63,7 @@ test("P1 people service exposes server-side listing, dashboard and audited mutat
   assert.match(actions, /requirePermission\("members\.edit"/)
   assert.match(actions, /requirePermission\("members\.delete"/)
   assert.match(actions, /writeAuditLog/)
-  assert.match(actions, /action: "person\.save"/)
+  assert.match(actions, /['"]person\.save['"]/)
   assert.match(actions, /action: "person\.delete"/)
   assert.match(actions, /revalidatePath\("\/pessoas"\)/)
 })

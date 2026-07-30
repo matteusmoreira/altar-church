@@ -27,6 +27,12 @@ const nullableTextSchema = z
   .optional()
   .transform((value) => value || null)
 
+const postalCodeSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/\D/g, ""))
+  .refine((value) => value === "" || /^\d{8}$/.test(value), "CEP inválido")
+
 const accessRoleSchema = z.enum([
   "admin",
   "pastor",
@@ -58,6 +64,10 @@ const personSchema = z.object({
     .transform((value) => value || null),
   gender: z.enum(["male", "female", "other", "not_informed"]).nullable().optional().default(null),
   address: z.string().trim().optional().default(""),
+  postalCode: postalCodeSchema.optional().default(""),
+  addressNumber: z.string().trim().max(40).optional().default(""),
+  addressComplement: z.string().trim().max(120).optional().default(""),
+  neighborhood: z.string().trim().optional().default(""),
   city: z.string().trim().optional().default(""),
   state: z.string().trim().max(2, "UF inválida").optional().default(""),
   country: z.string().trim().optional().default("Brasil"),
@@ -402,7 +412,11 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
               document = ${parsed.document},
               birth_date = ${parsed.birthDate},
               gender = ${parsed.gender},
+              postal_code = ${parsed.postalCode},
               address = ${parsed.address},
+              address_number = ${parsed.addressNumber},
+              address_complement = ${parsed.addressComplement},
+              neighborhood = ${parsed.neighborhood},
               city = ${parsed.city},
               state = ${parsed.state.toUpperCase()},
               country = ${parsed.country},
@@ -440,7 +454,11 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             document,
             birth_date,
             gender,
+            postal_code,
             address,
+            address_number,
+            address_complement,
+            neighborhood,
             city,
             state,
             country,
@@ -466,7 +484,11 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             ${parsed.document},
             ${parsed.birthDate},
             ${parsed.gender},
+            ${parsed.postalCode},
             ${parsed.address},
+            ${parsed.addressNumber},
+            ${parsed.addressComplement},
+            ${parsed.neighborhood},
             ${parsed.city},
             ${parsed.state.toUpperCase()},
             ${parsed.country},

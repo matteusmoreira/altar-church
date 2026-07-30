@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
+import { PersonAddressFields } from "@/components/people/address-fields"
 import { deletePeople, loadDuplicateCandidates, movePersonToKanban, resolveDuplicateCandidate, savePerson } from "./actions"
 import type {
   DuplicateCandidateItem,
@@ -80,7 +81,11 @@ interface PersonFormState {
   congregationId: string
   status: PersonStatus
   personType: PersonType
+  postalCode: string
   address: string
+  addressNumber: string
+  addressComplement: string
+  neighborhood: string
   city: string
   state: string
   baptized: boolean
@@ -149,7 +154,11 @@ const emptyForm: PersonFormState = {
   congregationId: "none",
   status: "active",
   personType: "member",
+  postalCode: "",
   address: "",
+  addressNumber: "",
+  addressComplement: "",
+  neighborhood: "",
   city: "",
   state: "",
   baptized: false,
@@ -214,7 +223,11 @@ function personToForm(person: PersonListItem): PersonFormState {
     congregationId: person.congregationId ?? "none",
     status: person.status,
     personType: person.personType,
+    postalCode: formatCepMask(person.postalCode),
     address: person.address,
+    addressNumber: person.addressNumber,
+    addressComplement: person.addressComplement,
+    neighborhood: person.neighborhood,
     city: person.city,
     state: person.state,
     baptized: person.baptized,
@@ -228,6 +241,11 @@ function personToForm(person: PersonListItem): PersonFormState {
     moveToKanban: false,
     kanbanStageId: "default",
   }
+}
+
+function formatCepMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8)
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
 }
 
 function DuplicatePersonPanel({
@@ -407,7 +425,11 @@ export function MembersClient({
       congregationId: formData.congregationId === "none" ? null : formData.congregationId,
       status: formData.status,
       personType: formData.personType,
+      postalCode: formData.postalCode,
       address: formData.address,
+      addressNumber: formData.addressNumber,
+      addressComplement: formData.addressComplement,
+      neighborhood: formData.neighborhood,
       city: formData.city,
       state: formData.state,
       baptized: formData.baptized,
@@ -1110,7 +1132,7 @@ export function MembersClient({
                 />
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label>Data de nascimento</Label>
                 <Input
@@ -1202,34 +1224,12 @@ export function MembersClient({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label>UF</Label>
-                <Input
-                  maxLength={2}
-                  value={formData.state}
-                  onChange={(event) => setFormData({ ...formData, state: event.target.value.toUpperCase() })}
-                  placeholder="SP"
-                />
-              </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Cidade</Label>
-                <Input
-                  value={formData.city}
-                  onChange={(event) => setFormData({ ...formData, city: event.target.value })}
-                  placeholder="Cidade"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Endereço</Label>
-                <Input
-                  value={formData.address}
-                  onChange={(event) => setFormData({ ...formData, address: event.target.value })}
-                  placeholder="Rua, número, bairro"
-                />
-              </div>
-            </div>
+            <PersonAddressFields
+              value={formData}
+              onChange={(address) => setFormData({ ...formData, ...address })}
+              disabled={isSaving}
+            />
             <div className="grid gap-3 rounded-lg border border-border/40 p-3 sm:grid-cols-3">
               <div className="flex items-center justify-between gap-3">
                 <Label>Batizado</Label>
