@@ -94,6 +94,14 @@ test("cell check-in keeps exact timestamp and appears in member dashboard", () =
   assert.match(memberDashboard, /Check-in realizado/)
 })
 
+test("admin has a dedicated cell summary option", () => {
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
+  assert.match(client, /TabsTrigger value="resumo"/)
+  assert.match(client, /Resumo geral das células/)
+  assert.match(client, /Ver resumo completo/)
+  assert.match(client, /setSelectedSummaryCellId\(cell\.id\)/)
+})
+
 test("cell notices use rich editor buttons and sanitize unsafe content", () => {
   const editor = read("src/components/ui/rich-text-editor.tsx")
   const richContent = read("src/lib/cells/rich-content.ts")
