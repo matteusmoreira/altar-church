@@ -5,7 +5,7 @@ import { getSql } from "@/lib/db/client"
 import { requireUser } from "@/lib/auth/server"
 import type { UserRole } from "@/lib/types"
 
-export const PORTAL_ROLES: readonly UserRole[] = ["member", "volunteer", "ministry_leader"]
+export const PORTAL_ROLES: readonly UserRole[] = ["member", "volunteer", "ministry_leader", "cell_leader"]
 
 export function isPortalRole(role: UserRole) {
   return PORTAL_ROLES.includes(role)

@@ -1,6 +1,76 @@
 export type CellCheckinSource = "qr" | "manual"
 export type CellPrayerStatus = "open" | "praying" | "answered" | "archived"
 
+export interface CellLeaderCell {
+  id: string
+  name: string
+  description: string
+  meetingDay: string
+  meetingTime: string | null
+  meetingLocation: string
+  postalCode: string
+  addressNumber: string
+  addressComplement: string
+  neighborhood: string
+  city: string
+  state: string
+  maxCapacity: number
+  minAge: number | null
+  maxAge: number | null
+  acceptsRequests: boolean
+  memberCount: number
+}
+
+export interface CellLeaderParticipant {
+  id: string
+  cellId: string
+  personId: string
+  name: string
+  phone: string
+  role: "member" | "leader" | "co_leader" | "host" | "visitor"
+}
+
+export interface CellLeaderWorkspaceData {
+  cells: CellLeaderCell[]
+  participants: CellLeaderParticipant[]
+}
+
+export interface SaveLeaderCellInput {
+  id?: string | null
+  name: string
+  description?: string
+  meetingDay?: string
+  meetingTime?: string | null
+  meetingLocation?: string
+  postalCode?: string
+  addressNumber?: string
+  addressComplement?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+  maxCapacity?: number
+  minAge?: number | null
+  maxAge?: number | null
+  acceptsRequests?: boolean
+}
+
+export interface CreateCellLeaderPersonInput {
+  cellId: string
+  fullName: string
+  phone?: string
+  email?: string | null
+}
+
+export interface LinkCellLeaderPersonInput {
+  cellId: string
+  personId: string
+}
+
+export interface SearchCellLeaderPeopleInput {
+  query: string
+  cellId: string
+}
+
 export interface CellStudyFile {
   id: string
   title: string
@@ -75,7 +145,7 @@ export interface CellPortalMeeting {
 }
 
 export interface CellFeaturesData {
-  mode: "manager" | "portal"
+  mode: "manager" | "leader" | "portal"
   canPublishToAll: boolean
   personId: string | null
   cells: { id: string; name: string }[]
@@ -86,6 +156,7 @@ export interface CellFeaturesData {
   attendance: CellAttendance[]
   prayers: CellPrayerRequest[]
   notices: CellNotice[]
+  leaderWorkspace: CellLeaderWorkspaceData | null
 }
 
 export interface CellActionResult {

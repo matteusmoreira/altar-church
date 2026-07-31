@@ -82,6 +82,7 @@ const personSchema = z.object({
   inviteAccess: z.boolean().optional().default(false),
   accessRole: accessRoleSchema.optional(),
   temporaryPassword: z.string().optional(),
+  cellIds: z.array(z.string().uuid()).optional().default([]),
 })
 
 const invitePersonAccessSchema = z.object({
@@ -89,6 +90,7 @@ const invitePersonAccessSchema = z.object({
   companyId: nullableUuidSchema,
   role: accessRoleSchema,
   temporaryPassword: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
+  cellIds: z.array(z.string().uuid()).optional().default([]),
 })
 
 const deletePersonSchema = z.object({
@@ -168,6 +170,33 @@ async function refreshCompanyUserCount(companyId: string) {
     ) counts
     where c.id = counts.company_id
       and c.id = ${companyId}
+  `
+}
+
+async function validateCellLeaderCells(companyId: string, role: PersonAccessRole, cellIds: string[]) {
+  if (role !== "cell_leader") return []
+  const uniqueCellIds = [...new Set(cellIds)]
+  if (uniqueCellIds.length === 0) {
+    throw new Error("Selecione ao menos uma célula para o líder")
+  }
+  const rows = await getSql()<{ count: string | number }[]>`
+    select count(*) as count
+    from public.groups
+    where company_id = ${companyId}
+      and type = 'cell'
+      and is_active = true
+      and deleted_at is null
+      and id = any(${uniqueCellIds}::uuid[])
+  `
+  if (Number(rows[0]?.count ?? 0) !== uniqueCellIds.length) {
+    throw new Error("Uma ou mais células não pertencem a esta igreja")
+  }
+  return uniqueCellIds
+}
+
+async function syncCellLeaderAssignments(companyId: string, personId: string, cellIds: string[]) {
+  await getSql()`
+    select public.sync_cell_leader_assignments(${companyId}, ${personId}, ${cellIds}::uuid[])
   `
 }
 
@@ -363,7 +392,13 @@ async function provisionPersonAccess(input: {
     },
   })
 
-  return { profileId, personId: person.id, wasReset }
+  return {
+    profileId,
+    personId: person.id,
+    wasReset,
+    role: effectiveRole,
+    previousRole: profileByEmail?.role ?? null,
+  }
 }
 
 export async function savePerson(input: SavePersonInput): Promise<PeopleActionResult> {
@@ -389,6 +424,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       if (!parsed.temporaryPassword || parsed.temporaryPassword.length < 8) {
         throw new Error("Senha deve ter no mínimo 8 caracteres")
       }
+      await validateCellLeaderCells(companyId, parsed.accessRole, parsed.cellIds)
     }
 
     const fullName = parsed.fullName || [parsed.firstName, parsed.lastName].filter(Boolean).join(" ")
@@ -516,13 +552,18 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     if (!personId) throw new Error("Pessoa não foi salva")
 
     if (parsed.inviteAccess && personId && parsed.accessRole && parsed.temporaryPassword) {
-      await provisionPersonAccess({
+      const provisioned = await provisionPersonAccess({
         personId,
         companyId,
         role: parsed.accessRole,
         temporaryPassword: parsed.temporaryPassword,
         actorProfileId: user.id,
       })
+      if (provisioned.role === "cell_leader") {
+        await syncCellLeaderAssignments(companyId, personId, parsed.cellIds)
+      } else if (provisioned.previousRole === "cell_leader") {
+        await syncCellLeaderAssignments(companyId, personId, [])
+      }
     }
 
     afterResponse("people member count", () => refreshMemberCount(companyId))
@@ -570,6 +611,7 @@ export async function invitePersonAccess(input: InvitePersonAccessInput): Promis
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
     assertCanInviteAccess(user)
     await requirePermission("members.edit", companyId)
+    const cellIds = await validateCellLeaderCells(companyId, parsed.role, parsed.cellIds)
 
     const result = await provisionPersonAccess({
       personId: parsed.personId,
@@ -578,6 +620,11 @@ export async function invitePersonAccess(input: InvitePersonAccessInput): Promis
       temporaryPassword: parsed.temporaryPassword,
       actorProfileId: user.id,
     })
+    if (result.role === "cell_leader") {
+      await syncCellLeaderAssignments(companyId, result.personId, cellIds)
+    } else if (result.previousRole === "cell_leader") {
+      await syncCellLeaderAssignments(companyId, result.personId, [])
+    }
 
     await refreshPeoplePaths()
     return { ok: true, id: result.personId }

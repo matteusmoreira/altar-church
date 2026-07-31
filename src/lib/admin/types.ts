@@ -58,7 +58,14 @@ export interface AdminProfile {
   email: string
   role: UserRole
   active: boolean
+  cellIds: string[]
   createdAt: string
+}
+
+export interface AdminCellOption {
+  id: string
+  companyId: string
+  name: string
 }
 
 export interface AdminDashboardData {
@@ -66,6 +73,7 @@ export interface AdminDashboardData {
   users: AdminProfile[]
   plans: AdminPlan[]
   modules: AdminModule[]
+  cells: AdminCellOption[]
 }
 
 export interface ActionResult {

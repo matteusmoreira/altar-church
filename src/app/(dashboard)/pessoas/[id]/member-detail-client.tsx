@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface MemberDetailClientProps {
   person: PersonDetail
+  cells: { id: string; name: string }[]
 }
 
 const statusColors: Record<PersonStatus, string> = {
@@ -143,13 +144,14 @@ function DetailItem({
   )
 }
 
-export function MemberDetailClient({ person }: MemberDetailClientProps) {
+export function MemberDetailClient({ person, cells }: MemberDetailClientProps) {
   const router = useRouter()
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
   const [inviteOpen, setInviteOpen] = useState(false)
   const [isInviting, setIsInviting] = useState(false)
   const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "member")
+  const [cellIds, setCellIds] = useState<string[]>(person.cellIds)
   const [temporaryPassword, setTemporaryPassword] = useState("")
 
   const completedSteps = person.journeySteps.filter((step) => step.completedAt).length
@@ -165,6 +167,10 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
       toast.error("Senha temporária deve ter no mínimo 8 caracteres")
       return
     }
+    if (accessRole === "cell_leader" && cellIds.length === 0) {
+      toast.error("Selecione ao menos uma célula para o líder")
+      return
+    }
 
     setIsInviting(true)
     const result = await invitePersonAccess({
@@ -172,6 +178,7 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
       companyId: person.companyId,
       role: accessRole,
       temporaryPassword,
+      cellIds: accessRole === "cell_leader" ? cellIds : [],
     })
     setIsInviting(false)
 
@@ -453,6 +460,7 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                   variant={person.hasSystemAccess ? "outline" : "default"}
                   onClick={() => {
                     setAccessRole(person.accessRole ?? "member")
+                    setCellIds(person.cellIds)
                     setTemporaryPassword("")
                     setInviteOpen(true)
                   }}
@@ -574,6 +582,26 @@ export function MemberDetailClient({ person }: MemberDetailClientProps) {
                 placeholder="Mínimo 8 caracteres"
               />
             </div>
+            {accessRole === "cell_leader" ? (
+              <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3">
+                <Label>Células do líder *</Label>
+                <p className="text-xs text-muted-foreground">Selecione uma ou mais células que esta pessoa poderá gerenciar.</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {cells.map((cell) => (
+                    <label key={cell.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={cellIds.includes(cell.id)}
+                        onChange={(event) => setCellIds((current) => event.target.checked
+                          ? [...new Set([...current, cell.id])]
+                          : current.filter((id) => id !== cell.id))}
+                      />
+                      {cell.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>

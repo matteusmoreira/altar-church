@@ -58,6 +58,32 @@ export async function requireManagedCell(context: CellContext, groupId: string) 
   if (!(await canManageCell(context, groupId))) throw new Error("Você não pode gerenciar esta célula")
 }
 
+export async function requireCellLeaderContext() {
+  const context = await getCellContext()
+  if (context.user.role !== "cell_leader" || !context.personId) {
+    throw new Error("Acesso restrito ao líder de célula")
+  }
+  await requirePermission("cells.leader.manage", context.companyId)
+  return context
+}
+
+export async function requireOwnedLeaderCell(context: CellContext, groupId: string) {
+  if (context.user.role !== "cell_leader" || !context.personId) {
+    throw new Error("Acesso restrito ao líder de célula")
+  }
+  const rows = await getSql()<{ id: string }[]>`
+    select id
+    from public.groups
+    where id = ${groupId}
+      and company_id = ${context.companyId}
+      and type = 'cell'
+      and leader_person_id = ${context.personId}
+      and deleted_at is null
+    limit 1
+  `
+  if (!rows[0]) throw new Error("Você não pode gerenciar esta célula")
+}
+
 export async function isActiveCellParticipant(context: CellContext, groupId: string) {
   if (!context.personId) return false
   const rows = await getSql()<{ allowed: boolean }[]>`
@@ -78,4 +104,3 @@ export async function isActiveCellParticipant(context: CellContext, groupId: str
 export async function requireCellParticipant(context: CellContext, groupId: string) {
   if (!(await isActiveCellParticipant(context, groupId))) throw new Error("Você não participa desta célula")
 }
-

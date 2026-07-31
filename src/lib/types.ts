@@ -21,6 +21,7 @@ export type Permission =
   | "cells.photo.manage"
   | "cells.notice.manage"
   | "cells.prayer.manage"
+  | "cells.leader.manage"
   | "cells.self.view"
   | "cells.self.checkin"
   | "cells.self.prayer"
@@ -465,14 +466,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "attendance.view", "attendance.create", "prayer.view", "prayer.create",
   ],
   cell_leader: [
-    "members.view",
-    "visitors.view", "visitors.create",
-    "cells.view", "cells.edit", "cells.study.manage", "cells.meeting.manage", "cells.checkin.manage",
-    "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
-    "events.view",
-    "attendance.view", "attendance.create",
-    "prayer.view", "prayer.create",
-    "groups.view", "groups.edit",
+    "cells.self.view", "cells.self.checkin", "cells.self.prayer",
+    "ministries.self.view", "ministries.self.request", "kids.guardian.self",
+    "cells.leader.manage",
   ],
   communication: [
     "members.view",

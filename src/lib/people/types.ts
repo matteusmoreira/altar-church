@@ -55,6 +55,7 @@ export interface PersonListItem {
   accessRole: PersonAccessRole | null
   accessActive: boolean | null
   hasSystemAccess: boolean
+  cellIds: string[]
   internalNotes?: string
   status: PersonStatus
   personType: PersonType
@@ -145,6 +146,7 @@ export interface PeopleDashboardData {
 
 export interface PersonFormOptions {
   congregations: { id: string; name: string }[]
+  cells: { id: string; name: string }[]
   activities: { id: string; description: string; category: string }[]
   journeys: { id: string; name: string }[]
 }
@@ -180,6 +182,7 @@ export interface SavePersonInput {
   inviteAccess?: boolean
   accessRole?: PersonAccessRole
   temporaryPassword?: string
+  cellIds?: string[]
 }
 
 export interface InvitePersonAccessInput {
@@ -187,6 +190,7 @@ export interface InvitePersonAccessInput {
   companyId?: string | null
   role: PersonAccessRole
   temporaryPassword: string
+  cellIds?: string[]
 }
 
 export interface DuplicateCandidateActionInput {

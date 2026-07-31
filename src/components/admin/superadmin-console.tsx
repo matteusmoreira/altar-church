@@ -31,6 +31,7 @@ import {
 } from "@/lib/admin/actions"
 import type {
   AdminCompany,
+  AdminCellOption,
   AdminDashboardData,
   AdminModule,
   AdminPlan,
@@ -123,6 +124,7 @@ interface ProfileForm {
   role: UserRole
   active: boolean
   password: string
+  cellIds: string[]
 }
 
 interface PasswordResetForm {
@@ -206,6 +208,7 @@ function emptyProfileForm(companies: AdminCompany[]): ProfileForm {
     role: "member",
     active: true,
     password: "",
+    cellIds: [],
   }
 }
 
@@ -391,6 +394,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             role: profile.role,
             active: profile.active,
             password: "",
+            cellIds: profile.cellIds,
           }
         : emptyProfileForm(data.companies)
     )
@@ -1228,7 +1232,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label>Empresa</Label>
-                <Select value={profileForm.companyId ?? "system"} onValueChange={(value) => setProfileForm({ ...profileForm, companyId: value === "system" ? null : value })}>
+                <Select value={profileForm.companyId ?? "system"} onValueChange={(value) => setProfileForm({ ...profileForm, companyId: value === "system" ? null : value, cellIds: [] })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="system">Sistema</SelectItem>
@@ -1250,6 +1254,28 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                 </Select>
               </div>
             </div>
+            {profileForm.role === "cell_leader" ? (
+              <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3">
+                <Label>Células do líder *</Label>
+                <p className="text-xs text-muted-foreground">Selecione uma ou mais células da igreja escolhida.</p>
+                {profileForm.companyId ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {data.cells.filter((cell: AdminCellOption) => cell.companyId === profileForm.companyId).map((cell) => (
+                      <label key={cell.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={profileForm.cellIds.includes(cell.id)}
+                          onChange={() => setProfileForm({ ...profileForm, cellIds: toggleId(profileForm.cellIds, cell.id) })}
+                        />
+                        {cell.name}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-destructive">Escolha uma igreja antes de selecionar células.</p>
+                )}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between rounded-lg border border-border/40 p-3">
               <Label>Usuário ativo</Label>
               <Switch checked={profileForm.active} onCheckedChange={(checked) => setProfileForm({ ...profileForm, active: !!checked })} />

@@ -94,6 +94,7 @@ interface PersonFormState {
   internalNotes: string
   inviteAccess: boolean
   accessRole: PersonAccessRole
+  cellIds: string[]
   temporaryPassword: string
   hasSystemAccess: boolean
   moveToKanban: boolean
@@ -167,6 +168,7 @@ const emptyForm: PersonFormState = {
   internalNotes: "",
   inviteAccess: false,
   accessRole: "member",
+  cellIds: [],
   temporaryPassword: "",
   hasSystemAccess: false,
   moveToKanban: false,
@@ -236,6 +238,7 @@ function personToForm(person: PersonListItem): PersonFormState {
     internalNotes: "",
     inviteAccess: false,
     accessRole: person.accessRole ?? "member",
+    cellIds: person.cellIds,
     temporaryPassword: "",
     hasSystemAccess: person.hasSystemAccess,
     moveToKanban: false,
@@ -409,6 +412,11 @@ export function MembersClient({
       }
     }
 
+    if (formData.inviteAccess && formData.accessRole === "cell_leader" && formData.cellIds.length === 0) {
+      toast.error("Selecione ao menos uma célula para o líder")
+      return
+    }
+
     setIsSaving(true)
     try {
       const { firstName, lastName } = splitFullName(fullName)
@@ -439,6 +447,7 @@ export function MembersClient({
       inviteAccess: formData.inviteAccess,
       accessRole: formData.inviteAccess ? formData.accessRole : undefined,
       temporaryPassword: formData.inviteAccess ? formData.temporaryPassword : undefined,
+      cellIds: formData.inviteAccess && formData.accessRole === "cell_leader" ? formData.cellIds : [],
     })
       if (!result.ok) {
         toast.error(result.error ?? "Não foi possível salvar a pessoa")
@@ -1366,6 +1375,29 @@ export function MembersClient({
                         </Button>
                       </div>
                     </div>
+                    {formData.accessRole === "cell_leader" ? (
+                      <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3 sm:col-span-2">
+                        <Label>Células do líder *</Label>
+                        <p className="text-xs text-muted-foreground">Selecione uma ou mais células que esta pessoa poderá gerenciar.</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {formOptions.cells.map((cell) => (
+                            <label key={cell.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={formData.cellIds.includes(cell.id)}
+                                onChange={(event) => setFormData({
+                                  ...formData,
+                                  cellIds: event.target.checked
+                                    ? [...new Set([...formData.cellIds, cell.id])]
+                                    : formData.cellIds.filter((id) => id !== cell.id),
+                                })}
+                              />
+                              {cell.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

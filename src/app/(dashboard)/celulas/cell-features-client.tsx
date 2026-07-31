@@ -18,6 +18,7 @@ import {
   uploadCellPhotos,
 } from "@/lib/cells/actions"
 import type { CellActionResult, CellFeaturesData, CellNotice } from "@/lib/cells/types"
+import { CellLeaderWorkspace } from "@/components/member/cell-leader-workspace"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -85,6 +86,10 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   const qrUrl = displayedQrToken && typeof window !== "undefined" ? `${window.location.origin}/celulas/check-in?token=${displayedQrToken}` : ""
   const selectedCellSummary = getCellSummary(data, selectedSummaryCellId)
   const activeCellSummary = getCellSummary(data, selectedMeeting?.groupId ?? selectedSummaryCellId)
+
+  if (data.mode === "leader") {
+    return <CellLeaderWorkspace data={data.leaderWorkspace ?? { cells: [], participants: [] }} />
+  }
 
   function submitForm(event: FormEvent<HTMLFormElement>, action: (formData: FormData) => Promise<CellActionResult>, success: string) {
     event.preventDefault()

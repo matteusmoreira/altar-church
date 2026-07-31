@@ -10,6 +10,7 @@ import type {
   CellCheckinPreview,
   CellCheckinSession,
   CellFeaturesData,
+  CellLeaderWorkspaceData,
   CellNotice,
   CellPhoto,
   CellPortalMeeting,
@@ -22,7 +23,25 @@ const iso = (value: DateValue | null | undefined) => value instanceof Date ? val
 
 export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const baseContext = await getCellContext()
-  const manager = hasPermission(baseContext.user.role, "cells.view") && ["superadmin", "admin", "cell_supervisor", "cell_leader"].includes(baseContext.user.role)
+  const leader = baseContext.user.role === "cell_leader"
+  if (leader) {
+    const context = await requireCellPermission("cells.leader.manage")
+    return {
+      mode: "leader",
+      canPublishToAll: false,
+      personId: context.personId,
+      cells: [],
+      people: [],
+      meetings: [],
+      studies: [],
+      sessions: [],
+      attendance: [],
+      prayers: [],
+      notices: [],
+      leaderWorkspace: await getCellLeaderWorkspaceData(context.companyId, context.personId),
+    }
+  }
+  const manager = hasPermission(baseContext.user.role, "cells.view") && ["superadmin", "admin", "cell_supervisor"].includes(baseContext.user.role)
   const canPublishToAll = isCellAdministrator(baseContext.user)
   const context = manager ? await requireCellPermission("cells.view") : await requireCellPermission("cells.self.view")
   const sql = getSql()
@@ -55,7 +74,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     : []
 
   if (cellIds.length === 0) {
-    return { mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [] }
+    return { mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [], leaderWorkspace: null }
   }
 
   const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows] = await Promise.all([
@@ -165,6 +184,100 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
+    leaderWorkspace: null,
+  }
+}
+
+async function getCellLeaderWorkspaceData(companyId: string, personId: string | null): Promise<CellLeaderWorkspaceData> {
+  if (!personId) return { cells: [], participants: [] }
+  const sql = getSql()
+  const [cellRows, participantRows] = await Promise.all([
+    sql<{
+      id: string
+      name: string
+      description: string
+      meeting_day: string
+      meeting_time: string | null
+      meeting_location: string
+      postal_code: string
+      address_number: string
+      address_complement: string
+      neighborhood: string
+      city: string
+      state: string
+      max_capacity: number
+      min_age: number | null
+      max_age: number | null
+      accepts_requests: boolean
+      member_count: string | number
+    }[]>`
+      select cell.id, cell.name, cell.description, cell.meeting_day,
+        cell.meeting_time::text as meeting_time, cell.meeting_location,
+        cell.postal_code, cell.address_number, cell.address_complement,
+        cell.neighborhood, cell.city, cell.state, cell.max_capacity,
+        cell.min_age, cell.max_age, cell.accepts_requests,
+        count(member.id) filter (where member.status = 'active') as member_count
+      from public.groups cell
+      left join public.group_members member on member.group_id = cell.id
+      where cell.company_id = ${companyId}
+        and cell.type = 'cell'
+        and cell.is_active = true
+        and cell.leader_person_id = ${personId}
+        and cell.deleted_at is null
+      group by cell.id
+      order by cell.name
+    `,
+    sql<{
+      id: string
+      cell_id: string
+      person_id: string
+      name: string
+      phone: string
+      role: "member" | "leader" | "co_leader" | "host" | "visitor"
+    }[]>`
+      select member.id, member.group_id as cell_id, member.person_id,
+        person.full_name as name, coalesce(person.phone, '') as phone, member.role
+      from public.group_members member
+      join public.groups cell on cell.id = member.group_id
+      join public.people person on person.id = member.person_id
+      where member.company_id = ${companyId}
+        and member.status = 'active'
+        and cell.type = 'cell'
+        and cell.is_active = true
+        and cell.leader_person_id = ${personId}
+        and cell.deleted_at is null
+        and person.deleted_at is null
+      order by cell.name, person.full_name
+    `,
+  ])
+  return {
+    cells: cellRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      meetingDay: row.meeting_day,
+      meetingTime: row.meeting_time,
+      meetingLocation: row.meeting_location,
+      postalCode: row.postal_code,
+      addressNumber: row.address_number,
+      addressComplement: row.address_complement,
+      neighborhood: row.neighborhood,
+      city: row.city,
+      state: row.state,
+      maxCapacity: Number(row.max_capacity ?? 0),
+      minAge: row.min_age,
+      maxAge: row.max_age,
+      acceptsRequests: row.accepts_requests,
+      memberCount: Number(row.member_count ?? 0),
+    })),
+    participants: participantRows.map((row) => ({
+      id: row.id,
+      cellId: row.cell_id,
+      personId: row.person_id,
+      name: row.name,
+      phone: row.phone,
+      role: row.role,
+    })),
   }
 }
 

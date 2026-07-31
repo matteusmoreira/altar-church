@@ -41,6 +41,7 @@ interface PersonRow {
   profile_id: string | null
   access_role: PersonAccessRole | null
   access_active: boolean | null
+  cell_ids: string[] | null
   internal_notes?: string
   status: PersonStatus
   person_type: PersonType
@@ -244,6 +245,7 @@ function toPerson(row: PersonRow): PersonListItem {
     accessRole: row.access_role,
     accessActive: row.access_active,
     hasSystemAccess: Boolean(row.profile_id),
+    cellIds: row.cell_ids ?? [],
     internalNotes: row.internal_notes ?? undefined,
     status: row.status,
     personType: row.person_type,
@@ -329,6 +331,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = p.id and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
         p.internal_notes,
         p.status,
         p.person_type,
@@ -512,6 +515,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = p.id and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
         p.status,
         p.person_type,
         p.journey_status,
@@ -624,11 +628,20 @@ export async function getPersonFormOptions(companyIdInput?: string | null): Prom
   await requirePermission("members.view", companyId)
 
   const sql = getSql()
-  const [congregations, activities, journeys] = await Promise.all([
+  const [congregations, cells, activities, journeys] = await Promise.all([
     sql<{ id: string; name: string }[]>`
       select id, name
       from public.congregations
       where company_id = ${companyId}
+        and deleted_at is null
+        and is_active = true
+      order by name
+    `,
+    sql<{ id: string; name: string }[]>`
+      select id, name
+      from public.groups
+      where company_id = ${companyId}
+        and type = 'cell'
         and deleted_at is null
         and is_active = true
       order by name
@@ -651,5 +664,5 @@ export async function getPersonFormOptions(companyIdInput?: string | null): Prom
     `,
   ])
 
-  return { congregations, activities, journeys }
+  return { congregations, cells, activities, journeys }
 }

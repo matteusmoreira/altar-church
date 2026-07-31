@@ -57,6 +57,7 @@ const profileSchema = z
     ]),
     active: z.boolean(),
     password: z.string().optional().default(""),
+    cellIds: z.array(z.string().uuid()).optional().default([]),
   })
   .superRefine((data, ctx) => {
     const password = data.password?.trim() ?? ""
@@ -99,6 +100,27 @@ function toErrorResult(error: unknown): ActionResult {
     return { ok: false, error: error.message }
   }
   return { ok: false, error: "Erro inesperado" }
+}
+
+async function validateCellLeaderAssignments(companyId: string | null, cellIds: string[]) {
+  if (!companyId) {
+    throw new Error("Líder de célula precisa pertencer a uma igreja")
+  }
+  if (cellIds.length === 0) {
+    throw new Error("Selecione ao menos uma célula para o líder")
+  }
+  const rows = await getSql()<{ count: string }[]>`
+    select count(*)::text as count
+    from public.groups
+    where company_id = ${companyId}
+      and id = any(${cellIds}::uuid[])
+      and type = 'cell'
+      and is_active = true
+      and deleted_at is null
+  `
+  if (Number(rows[0]?.count ?? 0) !== cellIds.length) {
+    throw new Error("Uma ou mais células são inválidas, inativas ou pertencem a outra igreja")
+  }
 }
 
 async function refreshAdminPaths() {
@@ -574,8 +596,19 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
   try {
     await assertSuperadmin()
     const parsed = profileSchema.parse(input)
+    if (parsed.role === "cell_leader") {
+      await validateCellLeaderAssignments(parsed.companyId, parsed.cellIds)
+    }
     const password = parsed.password?.trim() ?? ""
     const existingAuthUserId = await getExistingProfileAuthUserId(parsed.id)
+    const previousProfile = parsed.id
+      ? (await getSql()<{ role: string; person_id: string | null }[]>`
+          select role, person_id
+          from public.profiles
+          where id = ${parsed.id}
+          limit 1
+        `)[0] ?? null
+      : null
 
     let authUserId = existingAuthUserId
     if (parsed.active) {
@@ -659,6 +692,40 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
             and person.profile_id = profile.id
             and person.deleted_at is null
         `
+        if (parsed.role === "cell_leader") {
+          const personRows = await tx<{ id: string }[]>`
+            select person.id
+            from public.people person
+            where person.profile_id = ${auditProfileId}
+              and person.company_id = ${parsed.companyId}
+              and person.deleted_at is null
+            limit 1
+          `
+          const personId = personRows[0]?.id
+          if (!personId) {
+            throw new Error("Não foi possível vincular o líder a uma pessoa")
+          }
+          await tx`
+            select public.sync_cell_leader_assignments(${parsed.companyId}, ${personId}, ${parsed.cellIds}::uuid[])
+          `
+        } else if (previousProfile?.role === "cell_leader") {
+          const personRows = await tx<{ id: string }[]>`
+            select coalesce(${previousProfile.person_id}::uuid, person.id) as id
+            from public.people person
+            where (${previousProfile.person_id}::uuid is null or person.id = ${previousProfile.person_id}::uuid)
+              and person.profile_id = ${auditProfileId}
+              and person.company_id = ${parsed.companyId}
+              and person.is_active = true
+              and person.deleted_at is null
+            limit 1
+          `
+          const personId = personRows[0]?.id
+          if (personId) {
+            await tx`
+              select public.sync_cell_leader_assignments(${parsed.companyId}, ${personId}, '{}'::uuid[])
+            `
+          }
+        }
       }
 
       await tx`
@@ -686,6 +753,7 @@ export async function saveProfile(input: z.input<typeof profileSchema>): Promise
         authUserLinked: Boolean(authUserId),
         authAccessBlocked,
         passwordSet: Boolean(password),
+        cellIds: parsed.cellIds,
       },
     })
     await refreshAdminPaths()

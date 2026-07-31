@@ -74,7 +74,14 @@ interface ProfileRow {
   email: string
   role: UserRole
   active: boolean
+  cell_ids: string[] | null
   created_at: Date
+}
+
+interface AdminCellRow {
+  id: string
+  company_id: string
+  name: string
 }
 
 function groupModuleIds<T extends { module_id: string } & Record<string, string>>(
@@ -212,6 +219,7 @@ export async function getAdminProfiles(): Promise<AdminProfile[]> {
       p.email,
       p.role,
       p.active,
+      coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = coalesce(p.person_id, (select candidate.id from public.people candidate where candidate.profile_id = p.id and candidate.deleted_at is null limit 1)) and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
       p.created_at
     from public.profiles p
     left join public.companies c on c.id = p.company_id
@@ -227,8 +235,20 @@ export async function getAdminProfiles(): Promise<AdminProfile[]> {
     email: profile.email,
     role: profile.role,
     active: profile.active,
+    cellIds: profile.cell_ids ?? [],
     createdAt: profile.created_at.toISOString().slice(0, 10),
   }))
+}
+
+export async function getAdminCellOptions(): Promise<{ id: string; companyId: string; name: string }[]> {
+  const sql = getSql()
+  const rows = await sql<AdminCellRow[]>`
+    select id, company_id, name
+    from public.groups
+    where type = 'cell' and is_active = true and deleted_at is null
+    order by name
+  `
+  return rows.map((row) => ({ id: row.id, companyId: row.company_id, name: row.name }))
 }
 
 export async function getAdminDashboardData(): Promise<AdminDashboardData> {
@@ -236,8 +256,9 @@ export async function getAdminDashboardData(): Promise<AdminDashboardData> {
   const plans = await getAdminPlans()
   const companies = await getAdminCompanies()
   const users = await getAdminProfiles()
+  const cells = await getAdminCellOptions()
 
-  return { companies, users, plans, modules }
+  return { companies, users, plans, modules, cells }
 }
 
 export const getCompanyEnabledModuleIds = cache(async function getCompanyEnabledModuleIds(companyId: string): Promise<string[]> {
