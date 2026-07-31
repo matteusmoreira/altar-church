@@ -24,27 +24,14 @@ const iso = (value: DateValue | null | undefined) => value instanceof Date ? val
 export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const baseContext = await getCellContext()
   const leader = baseContext.user.role === "cell_leader"
-  if (leader) {
-    const context = await requireCellPermission("cells.leader.manage")
-    return {
-      mode: "leader",
-      canPublishToAll: false,
-      canDeleteStudies: true,
-      personId: context.personId,
-      cells: [],
-      people: [],
-      meetings: [],
-      studies: [],
-      sessions: [],
-      attendance: [],
-      prayers: [],
-      notices: [],
-      leaderWorkspace: await getCellLeaderWorkspaceData(context.companyId, context.personId),
-    }
-  }
   const manager = hasPermission(baseContext.user.role, "cells.view") && ["superadmin", "admin", "cell_supervisor"].includes(baseContext.user.role)
   const canPublishToAll = isCellAdministrator(baseContext.user)
-  const context = manager ? await requireCellPermission("cells.view") : await requireCellPermission("cells.self.view")
+  const operationsManager = manager || leader
+  const context = leader
+    ? await requireCellPermission("cells.leader.manage")
+    : manager
+      ? await requireCellPermission("cells.view")
+      : await requireCellPermission("cells.self.view")
   const sql = getSql()
 
   const cellRows = manager
@@ -56,6 +43,14 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
             or (${context.user.role} = 'cell_leader' and cell.leader_person_id = ${context.personId}))
         order by name
       `
+    : leader
+      ? await sql<{ id: string; name: string }[]>`
+          select cell.id, cell.name
+          from public.groups cell
+          where cell.company_id = ${context.companyId} and cell.type = 'cell'
+            and cell.leader_person_id = ${context.personId} and cell.deleted_at is null and cell.is_active = true
+          order by cell.name
+        `
     : context.personId
       ? await sql<{ id: string; name: string }[]>`
           select cell.id, cell.name from public.group_members member
@@ -72,10 +67,26 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
         select id, full_name, phone, status from public.people
         where company_id = ${context.companyId} and deleted_at is null and is_active = true order by full_name limit 500
       `
+    : leader && cellIds.length > 0
+      ? await sql<{ id: string; full_name: string; phone: string; status: string }[]>`
+          select distinct person.id, person.full_name, coalesce(person.phone, '') as phone, person.status
+          from public.group_members member
+          join public.people person on person.id = member.person_id
+          where member.company_id = ${context.companyId} and member.group_id = any(${cellIds})
+            and member.status = 'active' and person.deleted_at is null and person.is_active = true
+          order by person.full_name
+        `
     : []
 
   if (cellIds.length === 0) {
-    return { mode: manager ? "manager" : "portal", canPublishToAll, canDeleteStudies: isCellAdministrator(context.user), personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [], leaderWorkspace: null }
+    return {
+      mode: leader ? "leader" : manager ? "manager" : "portal",
+      canPublishToAll,
+      canDeleteStudies: leader || isCellAdministrator(context.user),
+      personId: context.personId,
+      cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [],
+      leaderWorkspace: leader ? await getCellLeaderWorkspaceData(context.companyId, context.personId) : null,
+    }
   }
 
   const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows] = await Promise.all([
@@ -106,12 +117,12 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
         and file.is_active = true and file.deleted_at is null and meeting.group_id = any(${cellIds})
       order by meeting.starts_at desc, file.created_at
     `,
-    manager ? sql<{ id: string; meeting_id: string; group_id: string; token: string; opens_at: DateValue; expires_at: DateValue; closed_at: DateValue | null }[]>`
+    operationsManager ? sql<{ id: string; meeting_id: string; group_id: string; token: string; opens_at: DateValue; expires_at: DateValue; closed_at: DateValue | null }[]>`
       select id, meeting_id, group_id, token::text, opens_at, expires_at, closed_at
       from public.cell_checkin_sessions where company_id = ${context.companyId} and group_id = any(${cellIds})
       order by created_at desc limit 100
     ` : Promise.resolve([]),
-    manager ? sql<{ id: string; event_ref_id: string; person_id: string | null; person_name: string; checkin_source: "qr" | "manual"; occurred_on: string; occurred_time: string | null; checkin_at: DateValue | null; visitor: boolean }[]>`
+    operationsManager ? sql<{ id: string; event_ref_id: string; person_id: string | null; person_name: string; checkin_source: "qr" | "manual"; occurred_on: string; occurred_time: string | null; checkin_at: DateValue | null; visitor: boolean }[]>`
       select attendance.id, attendance.event_ref_id, attendance.person_id, attendance.person_name, attendance.checkin_source,
         attendance.occurred_on::text, attendance.occurred_time::text, attendance.checkin_at,
         coalesce(person.status = 'visitor', false) as visitor
@@ -121,7 +132,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
       where attendance.company_id = ${context.companyId} and attendance.event_type = 'cell' and attendance.deleted_at is null
         and meeting.group_id = any(${cellIds}) order by attendance.created_at desc limit 500
     ` : Promise.resolve([]),
-    manager ? sql<{ id: string; group_id: string; group_name: string; author_name: string; author_profile_id: string; message: string; status: "open" | "praying" | "answered" | "archived"; created_at: DateValue }[]>`
+    operationsManager ? sql<{ id: string; group_id: string; group_name: string; author_name: string; author_profile_id: string; message: string; status: "open" | "praying" | "answered" | "archived"; created_at: DateValue }[]>`
       select prayer.id, prayer.group_id, cell.name as group_name, person.full_name as author_name,
         prayer.author_profile_id, prayer.message, prayer.status, prayer.created_at
       from public.cell_prayer_requests prayer
@@ -148,10 +159,12 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   ])
 
   const urls = await createSignedUrlsByStoragePath([...studyRows.map((row) => row.storage_path), ...photoRows.map((row) => row.storage_path)], 3600)
+  const leaderWorkspace = leader ? await getCellLeaderWorkspaceData(context.companyId, context.personId) : null
   const studies: CellStudyFile[] = studyRows.map((row) => ({
     id: row.id, title: row.title, description: row.description, scriptureRef: row.scripture_ref,
     fileName: row.original_name, fileUrl: urls.get(row.storage_path) ?? "", audience: row.audience,
-    groupIds: row.group_ids, createdAt: iso(row.created_at) ?? "", canDelete: isCellAdministrator(context.user),
+    groupIds: row.group_ids, createdAt: iso(row.created_at) ?? "",
+    canDelete: isCellAdministrator(context.user) || Boolean(leaderWorkspace?.studies.find((study) => study.id === row.id)?.canDelete),
   }))
   const studyById = new Map(studies.map((study) => [study.id, study]))
   const photos: CellPhoto[] = photoRows.map((row) => ({
@@ -182,10 +195,11 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   }))
 
   return {
-    mode: manager ? "manager" : "portal", canPublishToAll, canDeleteStudies: isCellAdministrator(context.user), personId: context.personId, cells: cellRows,
+    mode: leader ? "leader" : manager ? "manager" : "portal", canPublishToAll,
+    canDeleteStudies: leader || isCellAdministrator(context.user), personId: context.personId, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
-    leaderWorkspace: null,
+    leaderWorkspace,
   }
 }
 

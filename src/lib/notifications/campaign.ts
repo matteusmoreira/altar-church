@@ -2,7 +2,7 @@ import type postgres from "postgres"
 
 type TransactionSql = postgres.TransactionSql
 
-export type NotificationAudience = "all" | "cell" | "ministry" | "visitors" | "birthdays" | "manual"
+export type NotificationAudience = "all" | "cell" | "ministry" | "ministry_team" | "visitors" | "birthdays" | "manual"
 export type NotificationChannel = "push" | "email" | "whatsapp"
 
 type PersonRow = {
@@ -23,7 +23,7 @@ type CampaignInput = {
 }
 
 function assertAudienceReference(input: CampaignInput) {
-  if ((input.audience === "cell" || input.audience === "ministry") && !input.audienceRefId) {
+  if ((input.audience === "cell" || input.audience === "ministry" || input.audience === "ministry_team") && !input.audienceRefId) {
     throw new Error("Selecione célula ou ministério")
   }
   if (input.audience === "manual" && input.personIds.length === 0) {
@@ -85,6 +85,22 @@ async function findAudiencePeople(tx: TransactionSql, input: CampaignInput) {
           and membership.ministry_id = ${input.audienceRefId}
           and membership.person_id = people.id
           and membership.status = 'active'
+      )
+      order by full_name, id
+    `
+  }
+  if (input.audience === "ministry_team") {
+    return tx<PersonRow[]>`
+      ${base()}
+      and exists (
+        select 1
+        from public.group_members member
+        join public.groups team on team.id = member.group_id
+          and team.type = 'ministry' and team.deleted_at is null
+        where member.company_id = ${input.companyId}
+          and member.group_id = ${input.audienceRefId}
+          and member.person_id = people.id
+          and member.status = 'active'
       )
       order by full_name, id
     `

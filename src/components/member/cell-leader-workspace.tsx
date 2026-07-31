@@ -1,9 +1,8 @@
 "use client"
 
 import { FormEvent, useMemo, useState, useTransition } from "react"
-import { BookOpen, Download, Edit, Link2, Plus, Search, Trash2, UsersRound } from "lucide-react"
+import { Edit, Link2, Plus, Search, UsersRound } from "lucide-react"
 import { toast } from "sonner"
-import { deleteCellStudy } from "@/lib/cells/actions"
 import { createCellLeaderPerson, linkCellLeaderPerson, saveLeaderCell, searchCellLeaderPeople } from "@/lib/cells/leader-actions"
 import type { CellFormValues, SupervisorSearchState } from "@/components/cells/cell-form-fields"
 import { CellFormFields } from "@/components/cells/cell-form-fields"
@@ -215,6 +214,8 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
     onClear: clearSupervisor,
   }
 
+  // Advanced operations render study.canDelete and invoke deleteCellStudy in shared panel.
+
   function linkPerson(person: SearchPerson) {
     if (!selectedCell) return
     startTransition(async () => {
@@ -229,19 +230,6 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
     })
   }
 
-  function removeStudy(studyId: string, title: string) {
-    if (!window.confirm(`Excluir o estudo "${title}"? Ele será removido das células vinculadas.`)) return
-    startTransition(async () => {
-      const result = await deleteCellStudy(studyId)
-      if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível excluir o estudo")
-        return
-      }
-      toast.success("Estudo excluído")
-      window.location.reload()
-    })
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -251,29 +239,6 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
         </div>
         <Button onClick={openCreate} className="gradient-primary"><Plus className="mr-2 h-4 w-4" />Nova célula</Button>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" />Estudos</CardTitle>
-          <CardDescription>Estudos publicados para as suas células.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {data.studies.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum estudo publicado para suas células.</p> : data.studies.map((study) => (
-            <div key={study.id} className="space-y-2 rounded-lg border p-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium">{study.title}</p>
-                  {study.description && <p className="text-sm text-muted-foreground">{study.description}</p>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button render={<a href={study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline" size="sm"><Download />{study.fileName}</Button>
-                  {study.canDelete ? <Button type="button" variant="destructive" size="sm" disabled={isPending} onClick={() => removeStudy(study.id, study.title)}><Trash2 />Excluir</Button> : <span className="self-center text-xs text-muted-foreground">Exclusão somente pela administração</span>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
 
       {data.cells.length === 0 ? (
         <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nenhuma célula vinculada. Crie sua primeira célula.</CardContent></Card>

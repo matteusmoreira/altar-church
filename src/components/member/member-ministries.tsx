@@ -126,6 +126,12 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     {statusLabel[ministry.membershipStatus]}
                   </Badge>
                 )}
+                {ministry.membershipStatus === "active" && ministry.onboardingTotal > 0 ? (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground"><span>Integração</span><span>{ministry.onboardingPercent}%</span></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${ministry.onboardingPercent}%` }} /></div>
+                  </div>
+                ) : null}
                 {ministry.membershipRole === "leader" || ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
                   <Button type="button" variant="outline" className="min-h-11 w-full rounded-xl" disabled={loading} onClick={() => run(ministry.id, true)}>
                     Cancelar solicitação

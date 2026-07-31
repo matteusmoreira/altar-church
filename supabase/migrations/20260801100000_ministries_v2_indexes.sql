@@ -1,0 +1,21 @@
+-- Índices das novas relações e consultas do workspace de Ministérios.
+create index if not exists ministries_image_file_idx on public.ministries(image_file_id) where image_file_id is not null;
+create index if not exists groups_ministry_fk_idx on public.groups(ministry_id) where ministry_id is not null;
+create index if not exists programmings_ministry_fk_idx on public.programmings(ministry_id) where ministry_id is not null;
+create index if not exists events_ministry_fk_idx on public.events(ministry_id) where ministry_id is not null;
+create index if not exists person_follow_up_tasks_ministry_fk_idx on public.person_follow_up_tasks(ministry_id) where ministry_id is not null;
+create index if not exists ministry_onboarding_templates_ministry_fk_idx on public.ministry_onboarding_templates(ministry_id) where deleted_at is null;
+create index if not exists ministry_onboarding_steps_template_fk_idx on public.ministry_onboarding_steps(template_id) where deleted_at is null;
+create index if not exists ministry_member_onboarding_membership_fk_idx on public.ministry_member_onboarding(membership_id);
+create index if not exists ministry_member_onboarding_step_fk_idx on public.ministry_member_onboarding(step_id);
+create index if not exists ministry_resources_ministry_fk_idx on public.ministry_resources(ministry_id) where deleted_at is null;
+create index if not exists ministry_resources_file_fk_idx on public.ministry_resources(file_id) where file_id is not null;
+analyze public.ministries;
+analyze public.groups;
+analyze public.programmings;
+analyze public.events;
+analyze public.person_follow_up_tasks;
+analyze public.ministry_onboarding_templates;
+analyze public.ministry_onboarding_steps;
+analyze public.ministry_member_onboarding;
+analyze public.ministry_resources;

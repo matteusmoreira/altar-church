@@ -176,6 +176,11 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     left join public.member_event_rsvps own on own.event_id = event.id and own.person_id = ${personId} and own.company_id = ${companyId}
     where event.company_id = ${companyId} and event.deleted_at is null
       and event.status not in ('canceled', 'cancelled', 'draft')
+      and (event.ministry_id is null or exists (
+        select 1 from public.ministry_memberships membership
+        where membership.company_id = ${companyId} and membership.ministry_id = event.ministry_id
+          and membership.person_id = ${personId} and membership.status = 'active' and membership.left_at is null
+      ))
       and event.starts_at >= now() - interval '1 day'
     group by event.id, own.status
     order by event.starts_at
@@ -240,13 +245,17 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
     membership_status: MemberMinistryItem["membershipStatus"]
     is_active: boolean
     can_manage: boolean
+    onboarding_total: number
+    onboarding_completed: number
   }[]>`
     select ministry.id, ministry.name, ministry.description, ministry.contact,
       leader.full_name as leader_name,
       count(active_member.id) filter (where active_member.status = 'active')::integer as member_count,
       own.id as membership_id, own.role as membership_role, own.status as membership_status,
       ministry.is_active,
-      ministry.leader_person_id = ${personId} as can_manage
+      ministry.leader_person_id = ${personId} as can_manage,
+      coalesce((select count(step.id)::integer from public.ministry_onboarding_templates template join public.ministry_onboarding_steps step on step.template_id = template.id and step.deleted_at is null where template.ministry_id = ministry.id and template.company_id = ${companyId} and template.is_active and template.deleted_at is null), 0) as onboarding_total,
+      coalesce((select count(onboarding.id)::integer from public.ministry_member_onboarding onboarding join public.ministry_onboarding_steps step on step.id = onboarding.step_id and step.deleted_at is null join public.ministry_onboarding_templates template on template.id = step.template_id and template.is_active and template.deleted_at is null where onboarding.membership_id = own.id and onboarding.completed_at is not null), 0) as onboarding_completed
     from public.ministries ministry
     left join public.people leader on leader.id = ministry.leader_person_id
     left join public.ministry_memberships active_member on active_member.ministry_id = ministry.id
@@ -270,6 +279,9 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
     membershipStatus: row.membership_status,
     isActive: row.is_active,
     canManage: row.can_manage,
+    onboardingCompleted: row.onboarding_completed,
+    onboardingTotal: row.onboarding_total,
+    onboardingPercent: row.onboarding_total ? Math.round(row.onboarding_completed / row.onboarding_total * 100) : 0,
   }))
 }
 

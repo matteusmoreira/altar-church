@@ -49,12 +49,12 @@ export async function requireExportContext(searchParams: URLSearchParams, permis
   return { user, companyId }
 }
 
-export async function auditExport(action: string, entityTable: string, companyId: string) {
+export async function auditExport(action: string, entityTable: string, companyId: string, format = "csv") {
   await writeAuditLog({
     action,
     entityTable,
     entityId: companyId,
     companyId,
-    metadata: { format: "csv" },
+    metadata: { format },
   })
 }

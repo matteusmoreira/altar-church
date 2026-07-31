@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Edit, Heart, MoreVertical, Plus, Search, Trash2, User, Users } from "lucide-react"
@@ -339,6 +340,7 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
                 </div>
                 <p className="text-xs">Atualizado em {formatDate(ministry.updatedAt)}</p>
               </div>
+              <Link href={`/ministerios/${ministry.id}`} className="inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">Abrir gestão</Link>
             </CardContent>
           </Card>
         ))}

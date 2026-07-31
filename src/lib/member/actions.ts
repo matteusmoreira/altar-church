@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { createClient } from "@/lib/supabase/server"
 import { requireMemberContext } from "./access"
+import { requireMinistryPermission } from "@/lib/ministries/access"
 
 type Result = { ok: boolean; error?: string }
 const ministrySchema = z.object({ ministryId: z.string().uuid() })
@@ -47,7 +48,7 @@ export async function requestMinistryMembership(input: z.input<typeof ministrySc
       values (${companyId}, ${parsed.ministryId}, ${personId}, 'member', 'pending', ${user.id}, now())
       on conflict (ministry_id, person_id) do update
       set status = 'pending', role = 'member', requested_by = ${user.id},
-          requested_at = now(), reviewed_by = null, reviewed_at = null, joined_at = null
+          requested_at = now(), reviewed_by = null, reviewed_at = null, joined_at = null, left_at = null
       where public.ministry_memberships.status in ('rejected', 'inactive')
       returning id, status
     `
@@ -138,9 +139,8 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
   try {
     const parsed = reviewSchema.parse(input)
     const user = await getCurrentUser()
-    if (!user?.churchId || !["superadmin", "admin", "pastor"].includes(user.role)) {
-      throw new Error("Acesso negado")
-    }
+    if (!user?.churchId) throw new Error("Acesso negado")
+    if (!["superadmin", "admin", "pastor"].includes(user.role) && user.role !== "ministry_leader") throw new Error("Acesso negado")
     const sql = getSql()
     const memberships = await sql<{ id: string; ministry_id: string; status: string }[]>`
       select membership.id, membership.ministry_id, membership.status
@@ -153,6 +153,7 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
     `
     const membership = memberships[0]
     if (!membership) throw new Error("Participação não encontrada")
+    const access = await requireMinistryPermission(membership.ministry_id, "ministries.members.manage", user.churchId, { manage: true })
     if (parsed.decision !== "remove" && membership.status !== "pending") {
       throw new Error("Solicitação já foi revisada")
     }
@@ -163,14 +164,15 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
     await sql`
       update public.ministry_memberships
       set status = ${status}, reviewed_by = ${user.id}, reviewed_at = now(),
-          joined_at = case when ${status} = 'active' then coalesce(joined_at, now()) else joined_at end
-      where id = ${membership.id} and company_id = ${user.churchId}
+          joined_at = case when ${status} = 'active' then coalesce(joined_at, now()) else joined_at end,
+          left_at = case when ${status} = 'active' then null else coalesce(left_at, now()) end
+      where id = ${membership.id} and company_id = ${access.companyId}
     `
     await writeAuditLog({
       action: `ministry.membership.${parsed.decision}`,
       entityTable: "ministry_memberships",
       entityId: membership.id,
-      companyId: user.churchId,
+      companyId: access.companyId,
       metadata: { ministryId: membership.ministry_id, status },
     })
     revalidatePath("/ministerios")

@@ -35,10 +35,13 @@ export interface MemberMinistryItem {
   leaderName: string | null
   memberCount: number
   membershipId: string | null
-  membershipRole: "member" | "leader" | null
+  membershipRole: "member" | "leader" | "coordinator" | null
   membershipStatus: MinistryMembershipStatus | null
   isActive: boolean
   canManage: boolean
+  onboardingCompleted: number
+  onboardingTotal: number
+  onboardingPercent: number
 }
 
 export interface MemberPortalCapabilities {
@@ -82,7 +85,7 @@ export interface MinistryMembershipAdminItem {
   ministryName: string
   personId: string
   personName: string
-  role: "member" | "leader"
+  role: "member" | "leader" | "coordinator"
   status: MinistryMembershipStatus
   requestedAt: string
   reviewedAt: string | null
