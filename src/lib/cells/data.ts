@@ -29,6 +29,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     return {
       mode: "leader",
       canPublishToAll: false,
+      canDeleteStudies: true,
       personId: context.personId,
       cells: [],
       people: [],
@@ -74,7 +75,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     : []
 
   if (cellIds.length === 0) {
-    return { mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [], leaderWorkspace: null }
+    return { mode: manager ? "manager" : "portal", canPublishToAll, canDeleteStudies: isCellAdministrator(context.user), personId: context.personId, cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [], leaderWorkspace: null }
   }
 
   const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows] = await Promise.all([
@@ -150,7 +151,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const studies: CellStudyFile[] = studyRows.map((row) => ({
     id: row.id, title: row.title, description: row.description, scriptureRef: row.scripture_ref,
     fileName: row.original_name, fileUrl: urls.get(row.storage_path) ?? "", audience: row.audience,
-    groupIds: row.group_ids, createdAt: iso(row.created_at) ?? "",
+    groupIds: row.group_ids, createdAt: iso(row.created_at) ?? "", canDelete: isCellAdministrator(context.user),
   }))
   const studyById = new Map(studies.map((study) => [study.id, study]))
   const photos: CellPhoto[] = photoRows.map((row) => ({
@@ -181,7 +182,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   }))
 
   return {
-    mode: manager ? "manager" : "portal", canPublishToAll, personId: context.personId, cells: cellRows,
+    mode: manager ? "manager" : "portal", canPublishToAll, canDeleteStudies: isCellAdministrator(context.user), personId: context.personId, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
     leaderWorkspace: null,
@@ -189,11 +190,13 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
 }
 
 async function getCellLeaderWorkspaceData(companyId: string, personId: string | null): Promise<CellLeaderWorkspaceData> {
-  if (!personId) return { cells: [], participants: [] }
+  if (!personId) return { cells: [], participants: [], studies: [], formOptions: { categories: [], congregations: [] } }
   const sql = getSql()
-  const [cellRows, participantRows] = await Promise.all([
+  const [cellRows, participantRows, categoryRows, congregationRows, studyRows] = await Promise.all([
     sql<{
       id: string
+      category_id: string | null
+      congregation_id: string | null
       name: string
       description: string
       meeting_day: string
@@ -209,22 +212,26 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       min_age: number | null
       max_age: number | null
       accepts_requests: boolean
+      coordinator_person_id: string | null
+      coordinator_name: string | null
       member_count: string | number
     }[]>`
-      select cell.id, cell.name, cell.description, cell.meeting_day,
+      select cell.id, cell.category_id, cell.congregation_id, cell.name, cell.description, cell.meeting_day,
         cell.meeting_time::text as meeting_time, cell.meeting_location,
         cell.postal_code, cell.address_number, cell.address_complement,
         cell.neighborhood, cell.city, cell.state, cell.max_capacity,
         cell.min_age, cell.max_age, cell.accepts_requests,
+        cell.coordinator_person_id, coordinator.full_name as coordinator_name,
         count(member.id) filter (where member.status = 'active') as member_count
       from public.groups cell
       left join public.group_members member on member.group_id = cell.id
+      left join public.people coordinator on coordinator.id = cell.coordinator_person_id and coordinator.deleted_at is null
       where cell.company_id = ${companyId}
         and cell.type = 'cell'
         and cell.is_active = true
         and cell.leader_person_id = ${personId}
         and cell.deleted_at is null
-      group by cell.id
+      group by cell.id, coordinator.full_name
       order by cell.name
     `,
     sql<{
@@ -249,10 +256,92 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
         and person.deleted_at is null
       order by cell.name, person.full_name
     `,
+    sql<{ id: string; name: string }[]>`
+      select id, name
+      from public.group_categories
+      where company_id = ${companyId} and deleted_at is null and is_active = true
+      order by sort_order, name
+    `,
+    sql<{ id: string; name: string }[]>`
+      select id, name
+      from public.congregations
+      where company_id = ${companyId} and deleted_at is null and is_active = true
+      order by name
+    `,
+    sql<{
+      id: string
+      title: string
+      description: string
+      scripture_ref: string
+      audience: "all" | "selected"
+      original_name: string
+      storage_path: string
+      created_at: DateValue
+      group_ids: string[]
+      can_delete: boolean
+    }[]>`
+      select study.id, study.title, study.description, study.scripture_ref, study.audience,
+        file.original_name, file.storage_path, study.created_at,
+        coalesce(array_agg(distinct target.group_id) filter (where target.group_id is not null), '{}') as group_ids,
+        (
+          study.audience = 'selected'
+          and exists (
+            select 1
+            from public.cell_study_targets owned_target
+            join public.groups owned_cell on owned_cell.id = owned_target.group_id
+            where owned_target.study_id = study.id
+              and owned_cell.company_id = ${companyId}
+              and owned_cell.type = 'cell'
+              and owned_cell.is_active = true
+              and owned_cell.deleted_at is null
+              and owned_cell.leader_person_id = ${personId}
+          )
+          and not exists (
+            select 1
+            from public.cell_study_targets other_target
+            left join public.groups other_cell on other_cell.id = other_target.group_id
+            where other_target.study_id = study.id
+              and (
+                other_target.company_id <> ${companyId}
+                or other_cell.id is null
+                or other_cell.company_id <> ${companyId}
+                or other_cell.type <> 'cell'
+                or other_cell.is_active = false
+                or other_cell.deleted_at is not null
+                or other_cell.leader_person_id is distinct from ${personId}
+              )
+          )
+        ) as can_delete
+      from public.group_studies study
+      join public.app_files file on file.id = study.file_id and file.is_active = true and file.deleted_at is null
+      left join public.cell_study_targets target on target.study_id = study.id
+      where study.company_id = ${companyId}
+        and study.deleted_at is null
+        and study.is_active = true
+        and (
+          study.audience = 'all'
+          or exists (
+            select 1
+            from public.cell_study_targets visible_target
+            join public.groups visible_cell on visible_cell.id = visible_target.group_id
+            where visible_target.study_id = study.id
+              and visible_cell.company_id = ${companyId}
+              and visible_cell.type = 'cell'
+              and visible_cell.is_active = true
+              and visible_cell.deleted_at is null
+              and visible_cell.leader_person_id = ${personId}
+          )
+        )
+      group by study.id, file.original_name, file.storage_path
+      order by study.created_at desc
+    `,
   ])
+  const studyUrls = await createSignedUrlsByStoragePath(studyRows.map((study) => study.storage_path), 3600)
   return {
     cells: cellRows.map((row) => ({
       id: row.id,
+      categoryId: row.category_id,
+      congregationId: row.congregation_id,
       name: row.name,
       description: row.description,
       meetingDay: row.meeting_day,
@@ -268,6 +357,8 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       minAge: row.min_age,
       maxAge: row.max_age,
       acceptsRequests: row.accepts_requests,
+      coordinatorPersonId: row.coordinator_person_id,
+      coordinatorName: row.coordinator_name,
       memberCount: Number(row.member_count ?? 0),
     })),
     participants: participantRows.map((row) => ({
@@ -278,6 +369,22 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       phone: row.phone,
       role: row.role,
     })),
+    studies: studyRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      scriptureRef: row.scripture_ref,
+      fileName: row.original_name,
+      fileUrl: studyUrls.get(row.storage_path) ?? "",
+      audience: row.audience,
+      groupIds: row.group_ids,
+      createdAt: iso(row.created_at) ?? "",
+      canDelete: row.can_delete,
+    })),
+    formOptions: {
+      categories: categoryRows,
+      congregations: congregationRows,
+    },
   }
 }
 

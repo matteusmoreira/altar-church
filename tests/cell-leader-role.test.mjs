@@ -70,3 +70,19 @@ test("people forms carry leader cell assignments", () => {
   assert.match(detail, /setCellIds\(person\.cellIds\)/)
   assert.match(detail, /cellIds: accessRole === "cell_leader" \? cellIds : \[\]/)
 })
+
+test("admin and leader cell forms share fields while leader searches supervisor", () => {
+  const sharedForm = read("src/components/cells/cell-form-fields.tsx")
+  const leaderWorkspace = read("src/components/member/cell-leader-workspace.tsx")
+  const leaderActions = read("src/lib/cells/leader-actions.ts")
+  const types = read("src/lib/cells/types.ts")
+
+  assert.match(sharedForm, /leaderMode/)
+  assert.match(sharedForm, /Pesquisar pessoa por nome ou telefone/)
+  assert.match(sharedForm, /group-postal-code-input/)
+  assert.match(leaderWorkspace, /CellFormFields/)
+  assert.match(leaderWorkspace, /searchCellLeaderPeople\(/)
+  assert.match(leaderActions, /coordinatorPersonId/)
+  assert.match(leaderActions, /coordinator_person_id/)
+  assert.match(types, /formOptions:/)
+})

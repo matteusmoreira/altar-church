@@ -6,6 +6,8 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 test("cell form keeps CEP-first full address and ViaCEP lookup", () => {
   const client = read("src/app/(dashboard)/gceus/groups-client.tsx")
+  const sharedForm = read("src/components/cells/cell-form-fields.tsx")
+  const form = `${client}\n${sharedForm}`
   const action = read("src/lib/groups/actions.ts")
   const data = read("src/lib/groups/data.ts")
   const migration = read("supabase/migrations/20260730200000_cells_address_fields.sql")
@@ -14,20 +16,22 @@ test("cell form keeps CEP-first full address and ViaCEP lookup", () => {
     assert.match(migration, new RegExp(`add column if not exists ${field}`))
     assert.match(action, new RegExp(field.replaceAll("_", "_")))
   }
-  assert.match(client, /group-postal-code-input/)
-  assert.match(client, /fetch\(`\/api\/cep\/\$\{cepDigits\}`/)
-  assert.match(client, /meetingLocation: data\.street/)
-  assert.match(client, /neighborhood: data\.neighborhood/)
-  assert.match(client, /city: data\.city/)
-  assert.match(client, /state: data\.state/)
+  assert.match(form, /group-postal-code-input/)
+  assert.match(form, /fetch\(`\/api\/cep\/\$\{cepDigits\}`/)
+  assert.match(form, /meetingLocation: data\.street/)
+  assert.match(form, /neighborhood: data\.neighborhood/)
+  assert.match(form, /city: data\.city/)
+  assert.match(form, /state: data\.state/)
   assert.match(data, /g\.postal_code/)
 })
 
 test("cell category can be created from selector with tenant validation and audit", () => {
   const client = read("src/app/(dashboard)/gceus/groups-client.tsx")
+  const sharedForm = read("src/components/cells/cell-form-fields.tsx")
+  const form = `${client}\n${sharedForm}`
   const action = read("src/lib/groups/actions.ts")
 
-  assert.match(client, /group-category-create-button/)
+  assert.match(form, /group-category-create-button/)
   assert.match(client, /createGroupCategory\(/)
   assert.match(client, /setForm\(\(current\) => \(\{ \.\.\.current, categoryId: result\.id/)
   assert.match(action, /export async function createGroupCategory/)

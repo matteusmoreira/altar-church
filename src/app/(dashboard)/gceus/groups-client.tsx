@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { FormEvent, useMemo, useState, useTransition } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner"
 import { createGroupCategory, deleteGroup, saveGroup } from "./actions"
 import { GroupOperationsPanel } from "./group-operations-panel"
+import { CellFormFields } from "@/components/cells/cell-form-fields"
 import { EmptyState } from "@/components/shared/empty-state"
 import { PageHeader } from "@/components/shared/page-header"
 import {
@@ -40,9 +41,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import type {
   GroupDashboardData,
   GroupCategory,
@@ -100,8 +99,6 @@ interface GroupsClientProps {
   meetings: GroupMeeting[]
 }
 
-const weekDays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-
 const typeLabels: Record<GroupType, string> = {
   cell: "Célula",
   ministry: "Ministério",
@@ -145,11 +142,6 @@ const emptyForm: GroupFormState = {
 
 function formatDate(value: string) {
   return format(parseISO(value), "dd/MM/yyyy HH:mm", { locale: ptBR })
-}
-
-function cepMask(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 8)
-  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits
 }
 
 function toFilterChoice(value: boolean | null | undefined) {
@@ -248,8 +240,6 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
   const [groupToDelete, setGroupToDelete] = useState<GroupListItem | null>(null)
   const [form, setForm] = useState<GroupFormState>(emptyForm)
   const [createdCategories, setCreatedCategories] = useState<GroupCategory[]>([])
-  const [cepLookup, setCepLookup] = useState<"idle" | "loading" | "error">("idle")
-  const lastCepLookup = useRef("")
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
     categoryId: filters.categoryId ?? "all",
@@ -262,53 +252,6 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     const byId = new Map([...formOptions.categories, ...createdCategories].map((category) => [category.id, category]))
     return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name))
   }, [createdCategories, formOptions.categories])
-
-  const cepDigits = form.postalCode.replace(/\D/g, "")
-  useEffect(() => {
-    if (cepDigits.length !== 8 || cepDigits === lastCepLookup.current) return
-    const controller = new AbortController()
-    const timer = window.setTimeout(async () => {
-      lastCepLookup.current = cepDigits
-      setCepLookup("loading")
-      try {
-        const response = await fetch(`/api/cep/${cepDigits}`, { signal: controller.signal })
-        const data = await response.json() as { postalCode?: string; street?: string; neighborhood?: string; city?: string; state?: string; error?: string }
-        if (!response.ok) throw new Error(data.error)
-        setForm((current) => ({
-          ...current,
-          postalCode: data.postalCode ?? current.postalCode,
-          meetingLocation: data.street ?? current.meetingLocation,
-          neighborhood: data.neighborhood ?? current.neighborhood,
-          city: data.city ?? current.city,
-          state: data.state ?? current.state,
-        }))
-        setCepLookup("idle")
-      } catch (error) {
-        if ((error as Error).name !== "AbortError") setCepLookup("error")
-      }
-    }, 300)
-    return () => { window.clearTimeout(timer); controller.abort() }
-  }, [cepDigits])
-
-  const categoryLabel = useMemo(() => {
-    if (form.categoryId === "none") return "Sem categoria"
-    return categories.find((category) => category.id === form.categoryId)?.name ?? "Sem categoria"
-  }, [form.categoryId, categories])
-
-  const congregationLabel = useMemo(() => {
-    if (form.congregationId === "none") return "Sem congregação"
-    return formOptions.congregations.find((congregation) => congregation.id === form.congregationId)?.name ?? "Sem congregação"
-  }, [form.congregationId, formOptions.congregations])
-
-  const leaderLabel = useMemo(() => {
-    if (form.leaderPersonId === "none") return "Sem líder"
-    return formOptions.people.find((person) => person.id === form.leaderPersonId)?.fullName ?? "Sem líder"
-  }, [form.leaderPersonId, formOptions.people])
-
-  const supervisorLabel = useMemo(() => {
-    if (form.coordinatorPersonId === "none") return "Sem supervisor"
-    return formOptions.people.find((person) => person.id === form.coordinatorPersonId)?.fullName ?? "Sem supervisor"
-  }, [form.coordinatorPersonId, formOptions.people])
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -611,157 +554,18 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
               <DialogDescription>Dados persistidos no banco com auditoria e validação no servidor.</DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2 md:col-span-2">
-                <Label>Nome *</Label>
-                <Input data-testid="group-name-input" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-              </div>
-              <div className="grid gap-2 md:col-span-2">
-                <Label>Descrição</Label>
-                <Textarea data-testid="group-description-input" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={3} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Categoria</Label>
-                <div className="flex gap-2">
-                  <div className="min-w-0 flex-1">
-                    <Select value={form.categoryId} onValueChange={(value) => setForm({ ...form, categoryId: value ?? "none" })}>
-                      <SelectTrigger data-testid="group-category-select" className="w-full">
-                        <SelectValue>{categoryLabel}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Sem categoria</SelectItem>
-                        {categories.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="outline" data-testid="group-category-create-button" onClick={() => setCategoryDialogOpen(true)}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Criar
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Congregação</Label>
-                <Select value={form.congregationId} onValueChange={(value) => setForm({ ...form, congregationId: value ?? "none" })}>
-                  <SelectTrigger data-testid="group-congregation-select" className="w-full">
-                    <SelectValue>{congregationLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem congregação</SelectItem>
-                    {formOptions.congregations.map((congregation) => (
-                      <SelectItem key={congregation.id} value={congregation.id}>{congregation.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Líder</Label>
-                <Select value={form.leaderPersonId} onValueChange={(value) => setForm({ ...form, leaderPersonId: value ?? "none" })}>
-                  <SelectTrigger data-testid="group-leader-select" className="w-full">
-                    <SelectValue>{leaderLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem líder</SelectItem>
-                    {formOptions.people.map((person) => (
-                      <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Supervisor</Label>
-                <Select value={form.coordinatorPersonId} onValueChange={(value) => setForm({ ...form, coordinatorPersonId: value ?? "none" })}>
-                  <SelectTrigger data-testid="cell-supervisor-select" className="w-full">
-                    <SelectValue>{supervisorLabel}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem supervisor</SelectItem>
-                    {formOptions.people.map((person) => <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Dia</Label>
-                <Select value={form.meetingDay || "none"} onValueChange={(value) => setForm({ ...form, meetingDay: value === "none" ? "" : value ?? "" })}>
-                  <SelectTrigger data-testid="group-day-select" className="w-full">
-                    <SelectValue>{form.meetingDay || "Sem dia"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem dia</SelectItem>
-                    {weekDays.map((day) => (
-                      <SelectItem key={day} value={day}>{day}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Horário</Label>
-                <Input data-testid="group-time-input" type="time" value={form.meetingTime} onChange={(event) => setForm({ ...form, meetingTime: event.target.value })} />
-              </div>
-              <div className="grid gap-4 rounded-lg border p-4 md:col-span-2">
-                <div>
-                  <p className="font-medium">Endereço do encontro</p>
-                  <p className="text-sm text-muted-foreground">Digite o CEP primeiro para preencher o endereço automaticamente.</p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-6">
-                  <div className="grid gap-2 md:col-span-2">
-                    <Label>CEP</Label>
-                    <Input data-testid="group-postal-code-input" inputMode="numeric" maxLength={9} value={form.postalCode} onChange={(event) => { lastCepLookup.current = ""; setCepLookup("idle"); setForm({ ...form, postalCode: cepMask(event.target.value) }) }} placeholder="00000-000" />
-                    {cepLookup === "loading" && <p className="text-xs text-muted-foreground">Buscando endereço…</p>}
-                    {cepLookup === "error" && <p className="text-xs text-warning">CEP não encontrado. Preencha manualmente.</p>}
-                  </div>
-                  <div className="grid gap-2 md:col-span-4">
-                    <Label>Logradouro</Label>
-                    <Input data-testid="group-location-input" value={form.meetingLocation} onChange={(event) => setForm({ ...form, meetingLocation: event.target.value })} placeholder="Rua, avenida…" />
-                  </div>
-                  <div className="grid gap-2 md:col-span-2">
-                    <Label>Número</Label>
-                    <Input data-testid="group-address-number-input" value={form.addressNumber} onChange={(event) => setForm({ ...form, addressNumber: event.target.value })} />
-                  </div>
-                  <div className="grid gap-2 md:col-span-4">
-                    <Label>Complemento</Label>
-                    <Input data-testid="group-address-complement-input" value={form.addressComplement} onChange={(event) => setForm({ ...form, addressComplement: event.target.value })} />
-                  </div>
-                  <div className="grid gap-2 md:col-span-2">
-                    <Label>Bairro</Label>
-                    <Input data-testid="group-neighborhood-input" value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} />
-                  </div>
-                  <div className="grid gap-2 md:col-span-3">
-                    <Label>Cidade</Label>
-                    <Input data-testid="group-city-input" value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} />
-                  </div>
-                  <div className="grid gap-2 md:col-span-1">
-                    <Label>UF</Label>
-                    <Input data-testid="group-state-input" maxLength={2} value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value.toUpperCase() })} />
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Capacidade</Label>
-                <Input data-testid="group-capacity-input" type="number" min={0} value={form.maxCapacity} onChange={(event) => setForm({ ...form, maxCapacity: Number(event.target.value) })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Idade mínima</Label>
-                <Input data-testid="group-min-age-input" type="number" min={0} value={form.minAge ?? ""} onChange={(event) => setForm({ ...form, minAge: event.target.value ? Number(event.target.value) : null })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Idade máxima</Label>
-                <Input data-testid="group-max-age-input" type="number" min={0} value={form.maxAge ?? ""} onChange={(event) => setForm({ ...form, maxAge: event.target.value ? Number(event.target.value) : null })} />
-              </div>
-            </div>
-
-            <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">Aceita solicitações</span>
-                <Switch checked={form.acceptsRequests} onCheckedChange={(checked) => setForm({ ...form, acceptsRequests: checked })} />
-              </label>
-              <label className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">Ativo</span>
-                <Switch checked={form.isActive} onCheckedChange={(checked) => setForm({ ...form, isActive: checked })} />
-              </label>
-            </div>
+            <CellFormFields
+              form={form}
+              onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+              formOptions={{
+                categories,
+                congregations: formOptions.congregations,
+                people: formOptions.people,
+              }}
+              leaderMode={false}
+              pending={isPending}
+              onCreateCategory={() => setCategoryDialogOpen(true)}
+            />
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

@@ -3,6 +3,8 @@ export type CellPrayerStatus = "open" | "praying" | "answered" | "archived"
 
 export interface CellLeaderCell {
   id: string
+  categoryId: string | null
+  congregationId: string | null
   name: string
   description: string
   meetingDay: string
@@ -18,6 +20,8 @@ export interface CellLeaderCell {
   minAge: number | null
   maxAge: number | null
   acceptsRequests: boolean
+  coordinatorPersonId: string | null
+  coordinatorName: string | null
   memberCount: number
 }
 
@@ -33,10 +37,17 @@ export interface CellLeaderParticipant {
 export interface CellLeaderWorkspaceData {
   cells: CellLeaderCell[]
   participants: CellLeaderParticipant[]
+  studies: CellStudyFile[]
+  formOptions: {
+    categories: { id: string; name: string }[]
+    congregations: { id: string; name: string }[]
+  }
 }
 
 export interface SaveLeaderCellInput {
   id?: string | null
+  categoryId?: string | null
+  congregationId?: string | null
   name: string
   description?: string
   meetingDay?: string
@@ -52,6 +63,7 @@ export interface SaveLeaderCellInput {
   minAge?: number | null
   maxAge?: number | null
   acceptsRequests?: boolean
+  coordinatorPersonId?: string | null
 }
 
 export interface CreateCellLeaderPersonInput {
@@ -68,7 +80,7 @@ export interface LinkCellLeaderPersonInput {
 
 export interface SearchCellLeaderPeopleInput {
   query: string
-  cellId: string
+  cellId?: string | null
 }
 
 export interface CellStudyFile {
@@ -81,6 +93,7 @@ export interface CellStudyFile {
   audience: "all" | "selected"
   groupIds: string[]
   createdAt: string
+  canDelete?: boolean
 }
 
 export interface CellCheckinSession {
@@ -147,6 +160,7 @@ export interface CellPortalMeeting {
 export interface CellFeaturesData {
   mode: "manager" | "leader" | "portal"
   canPublishToAll: boolean
+  canDeleteStudies: boolean
   personId: string | null
   cells: { id: string; name: string }[]
   people: { id: string; name: string; phone: string; visitor: boolean }[]

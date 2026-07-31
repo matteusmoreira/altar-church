@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
-import { writeAuditLog } from "@/lib/auth/permissions"
+import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCellContext, isCellAdministrator, requireCellParticipant, requireCellPermission, requireManagedCell } from "./access"
 import { getSql } from "@/lib/db/client"
-import { attachFileToEntity, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { attachFileToEntity, deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { sanitizeCellNoticeHtml, stripCellNoticeHtml } from "./rich-content"
 import type { CellActionResult } from "./types"
@@ -55,6 +55,7 @@ function failure(error: unknown): CellActionResult {
 
 function refresh() {
   revalidatePath("/celulas")
+  revalidatePath("/membro/celulas")
   revalidatePath("/presenca")
   revalidatePath("/dashboard")
 }
@@ -115,6 +116,93 @@ export async function saveCellStudy(formData: FormData): Promise<CellActionResul
       `
     }
     await audit("cell.study.upload", "group_studies", studyId, context.companyId, { audience, groupIds, fileId: uploaded.id })
+    refresh()
+    return { ok: true, id: studyId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function deleteCellStudy(studyIdInput: string, companyIdInput?: string | null): Promise<CellActionResult> {
+  try {
+    const studyId = uuid.parse(studyIdInput)
+    const context = await getCellContext(companyIdInput)
+    const administrator = isCellAdministrator(context.user)
+
+    if (administrator) {
+      await requirePermission("cells.study.manage", context.companyId)
+    } else if (context.user.role === "cell_leader") {
+      await requirePermission("cells.leader.manage", context.companyId)
+    } else {
+      throw new Error("Acesso restrito à administração ou ao líder da célula")
+    }
+
+    const sql = getSql()
+    const rows = administrator
+      ? await sql<{ id: string; file_id: string | null }[]>`
+          select id, file_id
+          from public.group_studies
+          where id = ${studyId}
+            and company_id = ${context.companyId}
+            and deleted_at is null
+            and is_active = true
+          limit 1
+        `
+      : await sql<{ id: string; file_id: string | null }[]>`
+          select study.id, study.file_id
+          from public.group_studies study
+          where study.id = ${studyId}
+            and study.company_id = ${context.companyId}
+            and study.audience = 'selected'
+            and study.deleted_at is null
+            and study.is_active = true
+            and exists (
+              select 1
+              from public.cell_study_targets target
+              join public.groups cell on cell.id = target.group_id
+              where target.study_id = study.id
+                and cell.company_id = ${context.companyId}
+                and cell.type = 'cell'
+                and cell.is_active = true
+                and cell.deleted_at is null
+                and cell.leader_person_id = ${context.personId}
+            )
+            and not exists (
+              select 1
+              from public.cell_study_targets target
+              left join public.groups cell on cell.id = target.group_id
+              where target.study_id = study.id
+                and (
+                  target.company_id <> ${context.companyId}
+                  or cell.id is null
+                  or cell.company_id <> ${context.companyId}
+                  or cell.type <> 'cell'
+                  or cell.is_active = false
+                  or cell.deleted_at is not null
+                  or cell.leader_person_id is distinct from ${context.personId}
+                )
+            )
+          limit 1
+        `
+
+    const study = rows[0]
+    if (!study) throw new Error("Estudo não encontrado ou fora do escopo da sua célula")
+
+    await sql.begin(async (tx) => {
+      await tx`
+        update public.group_meetings
+        set study_id = null, updated_by = ${context.user.id}, updated_at = now()
+        where study_id = ${studyId} and company_id = ${context.companyId} and deleted_at is null
+      `
+      await tx`
+        update public.group_studies
+        set is_active = false, deleted_at = now(), updated_by = ${context.user.id}, updated_at = now()
+        where id = ${studyId} and company_id = ${context.companyId} and deleted_at is null
+      `
+    })
+
+    if (study.file_id) await deleteManagedFile(study.file_id, context.companyId).catch(() => undefined)
+    await audit("cell.study.delete", "group_studies", studyId, context.companyId, { fileId: study.file_id })
     refresh()
     return { ok: true, id: studyId }
   } catch (error) {

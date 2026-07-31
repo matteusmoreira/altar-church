@@ -4,11 +4,12 @@ import Image from "next/image"
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { QRCodeSVG } from "qrcode.react"
-import { BarChart3, BookOpen, Camera, CheckCircle2, ClipboardCheck, Download, Heart, ImageIcon, Megaphone, QrCode, Upload } from "lucide-react"
+import { BarChart3, BookOpen, Camera, CheckCircle2, ClipboardCheck, Download, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import {
   closeCellCheckin,
   deleteCellPhoto,
+  deleteCellStudy,
   manualCellCheckin,
   openCellCheckin,
   saveCellNotice,
@@ -88,7 +89,7 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   const activeCellSummary = getCellSummary(data, selectedMeeting?.groupId ?? selectedSummaryCellId)
 
   if (data.mode === "leader") {
-    return <CellLeaderWorkspace data={data.leaderWorkspace ?? { cells: [], participants: [] }} />
+    return <CellLeaderWorkspace data={data.leaderWorkspace ?? { cells: [], participants: [], studies: [], formOptions: { categories: [], congregations: [] } }} />
   }
 
   function submitForm(event: FormEvent<HTMLFormElement>, action: (formData: FormData) => Promise<CellActionResult>, success: string) {
@@ -100,6 +101,16 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
       if (!result.ok) return toast.error(result.error ?? "Operação não concluída")
       toast.success(success)
       form.reset()
+      router.refresh()
+    })
+  }
+
+  function removeStudy(studyId: string, title: string) {
+    if (!window.confirm(`Excluir o estudo "${title}"? Ele será removido das células vinculadas.`)) return
+    startTransition(async () => {
+      const result = await deleteCellStudy(studyId)
+      if (!result.ok) return toast.error(result.error ?? "Não foi possível excluir o estudo")
+      toast.success("Estudo excluído")
       router.refresh()
     })
   }
@@ -128,7 +139,7 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex h-auto flex-wrap"><TabsTrigger value="estudos"><BookOpen />Estudos</TabsTrigger><TabsTrigger value="checkin"><QrCode />Check-in</TabsTrigger><TabsTrigger value="resumo"><BarChart3 />Resumo</TabsTrigger><TabsTrigger value="mural"><Camera />Mural</TabsTrigger><TabsTrigger value="oracao"><Heart />Oração</TabsTrigger><TabsTrigger value="avisos"><Megaphone />Avisos</TabsTrigger></TabsList>
 
-        <TabsContent value="estudos" className="grid gap-6 lg:grid-cols-2"><form onSubmit={(event) => submitForm(event, saveCellStudy, "Estudo publicado")} className="space-y-3"><Label>Título</Label><Input name="title" required minLength={3} maxLength={160} /><Label>Descrição</Label><Textarea name="description" maxLength={3000} /><Label>Referência bíblica</Label><Input name="scriptureRef" maxLength={300} /><Label>Arquivo — PDF, Word, Excel ou TXT; até 30 MB</Label><Input name="file" type="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" /><Label>Destino</Label><Select name="audience" value={studyAudience} onValueChange={(value) => setStudyAudience((value ?? "selected") as "all" | "selected")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="selected">Células selecionadas</SelectItem>{data.canPublishToAll && <SelectItem value="all">Todas as células (somente admin)</SelectItem>}</SelectContent></Select>{studyAudience === "selected" && <CellCheckboxes cells={data.cells} />}<Button type="submit" disabled={pending}><Upload />Enviar estudo</Button></form><div className="space-y-3">{data.studies.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum estudo publicado. Envie o primeiro estudo para as células.</CardContent></Card> : data.studies.map((study) => <Card key={study.id}><CardContent className="space-y-2 pt-5"><strong>{study.title}</strong><p className="text-sm text-muted-foreground">{study.description}</p><Button render={<a href={study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline"><Download />{study.fileName}</Button></CardContent></Card>)}</div></TabsContent>
+        <TabsContent value="estudos" className="grid gap-6 lg:grid-cols-2"><form onSubmit={(event) => submitForm(event, saveCellStudy, "Estudo publicado")} className="space-y-3"><Label>Título</Label><Input name="title" required minLength={3} maxLength={160} /><Label>Descrição</Label><Textarea name="description" maxLength={3000} /><Label>Referência bíblica</Label><Input name="scriptureRef" maxLength={300} /><Label>Arquivo — PDF, Word, Excel ou TXT; até 30 MB</Label><Input name="file" type="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" /><Label>Destino</Label><Select name="audience" value={studyAudience} onValueChange={(value) => setStudyAudience((value ?? "selected") as "all" | "selected")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="selected">Células selecionadas</SelectItem>{data.canPublishToAll && <SelectItem value="all">Todas as células (somente admin)</SelectItem>}</SelectContent></Select>{studyAudience === "selected" && <CellCheckboxes cells={data.cells} />}<Button type="submit" disabled={pending}><Upload />Enviar estudo</Button></form><div className="space-y-3">{data.studies.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum estudo publicado. Envie o primeiro estudo para as células.</CardContent></Card> : data.studies.map((study) => <Card key={study.id}><CardContent className="space-y-2 pt-5"><div className="flex items-start justify-between gap-3"><strong>{study.title}</strong>{data.canDeleteStudies && <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={() => removeStudy(study.id, study.title)}><Trash2 />Excluir</Button>}</div><p className="text-sm text-muted-foreground">{study.description}</p><Button render={<a href={study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline"><Download />{study.fileName}</Button></CardContent></Card>)}</div></TabsContent>
 
         <TabsContent value="checkin" className="space-y-6">
           {data.meetings.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum encontro disponível. Crie um encontro em “Participantes e reuniões”; o estudo é opcional.</CardContent></Card> : <>

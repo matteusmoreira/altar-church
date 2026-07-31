@@ -102,6 +102,23 @@ test("admin has a dedicated cell summary option", () => {
   assert.match(client, /setSelectedSummaryCellId\(cell\.id\)/)
 })
 
+test("admins and cell leaders can delete studies only inside their allowed scope", () => {
+  const actions = read("src/lib/cells/actions.ts")
+  const data = read("src/lib/cells/data.ts")
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
+  const leaderWorkspace = read("src/components/member/cell-leader-workspace.tsx")
+
+  assert.match(actions, /export async function deleteCellStudy/)
+  assert.match(actions, /study\.audience = 'selected'/)
+  assert.match(actions, /cell\.leader_person_id is distinct from/)
+  assert.match(actions, /set is_active = false, deleted_at = now\(\)/)
+  assert.match(actions, /update public\.group_meetings[\s\S]*set study_id = null/)
+  assert.match(data, /can_delete: boolean/)
+  assert.match(client, /data\.canDeleteStudies &&/)
+  assert.match(leaderWorkspace, /study\.canDelete/)
+  assert.match(leaderWorkspace, /deleteCellStudy/)
+})
+
 test("cell notices use rich editor buttons and sanitize unsafe content", () => {
   const editor = read("src/components/ui/rich-text-editor.tsx")
   const richContent = read("src/lib/cells/rich-content.ts")

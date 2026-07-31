@@ -20,6 +20,8 @@ const nullableInt = z.union([z.number().int().min(0), z.null()]).optional().tran
 
 const cellSchema = z.object({
   id: nullableUuid,
+  categoryId: nullableUuid,
+  congregationId: nullableUuid,
   name: z.string().trim().min(3, "Nome da célula obrigatório").max(160),
   description: z.string().trim().max(3000).optional().default(""),
   meetingDay: z.string().trim().max(40).optional().default(""),
@@ -35,6 +37,7 @@ const cellSchema = z.object({
   minAge: nullableInt,
   maxAge: nullableInt,
   acceptsRequests: z.boolean().optional().default(true),
+  coordinatorPersonId: nullableUuid,
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
   path: ["minAge"],
@@ -48,7 +51,7 @@ const personSchema = z.object({
 })
 
 const linkSchema = z.object({ cellId: uuid, personId: uuid })
-const searchSchema = z.object({ query: z.string().trim().min(2, "Digite pelo menos 2 caracteres"), cellId: uuid })
+const searchSchema = z.object({ query: z.string().trim().min(2, "Digite pelo menos 2 caracteres"), cellId: nullableUuid })
 
 function result(error: unknown): CellActionResult {
   if (error instanceof z.ZodError) return { ok: false, error: error.issues[0]?.message ?? "Dados inválidos" }
@@ -69,15 +72,47 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
     const sql = getSql()
     let cellId: string | null = parsed.id
 
+    if (parsed.coordinatorPersonId) {
+      const supervisors = await sql<{ id: string }[]>`
+        select id
+        from public.people
+        where id = ${parsed.coordinatorPersonId}
+          and company_id = ${context.companyId}
+          and deleted_at is null
+          and is_active = true
+        limit 1
+      `
+      if (!supervisors[0]) throw new Error("Supervisor inválido para esta igreja")
+    }
+    if (parsed.categoryId) {
+      const categories = await sql<{ id: string }[]>`
+        select id from public.group_categories
+        where id = ${parsed.categoryId} and company_id = ${context.companyId} and deleted_at is null and is_active = true
+        limit 1
+      `
+      if (!categories[0]) throw new Error("Categoria inválida para esta igreja")
+    }
+    if (parsed.congregationId) {
+      const congregations = await sql<{ id: string }[]>`
+        select id from public.congregations
+        where id = ${parsed.congregationId} and company_id = ${context.companyId} and deleted_at is null and is_active = true
+        limit 1
+      `
+      if (!congregations[0]) throw new Error("Congregação inválida para esta igreja")
+    }
+
     if (parsed.id) {
       await requireOwnedLeaderCell(context, parsed.id)
       const rows = await sql<{ id: string }[]>`
         update public.groups
-        set name = ${parsed.name},
+        set category_id = ${parsed.categoryId},
+            congregation_id = ${parsed.congregationId},
+            name = ${parsed.name},
             description = ${parsed.description},
             meeting_day = ${parsed.meetingDay},
             meeting_time = ${parsed.meetingTime},
             meeting_location = ${parsed.meetingLocation},
+            coordinator_person_id = ${parsed.coordinatorPersonId},
             postal_code = ${parsed.postalCode},
             address_number = ${parsed.addressNumber},
             address_complement = ${parsed.addressComplement},
@@ -100,13 +135,13 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
     } else {
       const rows = await sql<{ id: string }[]>`
         insert into public.groups (
-          company_id, name, description, type, leader_person_id,
+          company_id, category_id, congregation_id, name, description, type, leader_person_id, coordinator_person_id,
           meeting_day, meeting_time, meeting_location, postal_code,
           address_number, address_complement, neighborhood, city, state,
           max_capacity, min_age, max_age, accepts_requests, is_active,
           created_by, updated_by
         ) values (
-          ${context.companyId}, ${parsed.name}, ${parsed.description}, 'cell', ${context.personId},
+          ${context.companyId}, ${parsed.categoryId}, ${parsed.congregationId}, ${parsed.name}, ${parsed.description}, 'cell', ${context.personId}, ${parsed.coordinatorPersonId},
           ${parsed.meetingDay}, ${parsed.meetingTime}, ${parsed.meetingLocation}, ${parsed.postalCode},
           ${parsed.addressNumber}, ${parsed.addressComplement}, ${parsed.neighborhood}, ${parsed.city}, ${parsed.state},
           ${parsed.maxCapacity}, ${parsed.minAge}, ${parsed.maxAge}, ${parsed.acceptsRequests}, true,
@@ -122,7 +157,7 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
       entityTable: "groups",
       entityId: cellId,
       companyId: context.companyId,
-      metadata: { leaderPersonId: context.personId },
+      metadata: { leaderPersonId: context.personId, coordinatorPersonId: parsed.coordinatorPersonId },
     })
     refresh()
     return { ok: true, id: cellId }
@@ -212,7 +247,7 @@ export async function linkCellLeaderPerson(input: LinkCellLeaderPersonInput): Pr
 export async function searchCellLeaderPeople(input: SearchCellLeaderPeopleInput) {
   const parsed = searchSchema.parse(input)
   const context = await requireCellLeaderContext()
-  await requireOwnedLeaderCell(context, parsed.cellId)
+  if (parsed.cellId) await requireOwnedLeaderCell(context, parsed.cellId)
   const pattern = `%${parsed.query}%`
   return await getSql()<{ id: string; name: string; phone: string }[]>`
     select id, full_name as name, coalesce(phone, '') as phone
