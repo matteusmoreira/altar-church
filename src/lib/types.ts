@@ -338,6 +338,14 @@ export interface ChurchEvent {
   onlineLink: string
   status: "draft" | "published" | "cancelled"
   recurring: boolean
+  programmingId?: string | null
+  recurrenceFrequency?: "none" | "weekly" | "monthly"
+  recurrenceWeekdays?: number[]
+  recurrenceUntil?: string | null
+  recurrenceNeedsReview?: boolean
+  registrationFormId?: string | null
+  registrationFormSlug?: string | null
+  registrationFormTitle?: string | null
   registrations: EventRegistration[]
   createdBy: string
   updatedBy: string

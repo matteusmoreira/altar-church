@@ -5,7 +5,7 @@ type DeliveryRow = {
   id: string
   notification_id: string
   company_id: string
-  person_id: string
+  person_id: string | null
   channel: "push" | "email" | "whatsapp"
   recipient: string
   recipient_name: string
@@ -93,6 +93,7 @@ async function sendWhatsApp(delivery: DeliveryRow, content: string): Promise<Pro
 }
 
 async function sendPush(delivery: DeliveryRow, title: string, content: string): Promise<ProviderResult> {
+  if (!delivery.person_id) throw new Error("Destinatário sem pessoa para push")
   const subject = process.env.VAPID_SUBJECT ?? ""
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""
   const privateKey = process.env.VAPID_PRIVATE_KEY ?? ""

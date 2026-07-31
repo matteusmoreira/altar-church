@@ -31,12 +31,13 @@ export async function rsvpMemberEvent(formData: FormData) {
         where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}
         for update
       `
-      const goingRows = await tx<{ count: number }[]>`
-        select count(*)::integer as count from public.member_event_rsvps
-        where event_id = ${eventId} and company_id = ${companyId} and status = 'going'
+      const goingRows = await tx<{ member_count: number; guest_count: number }[]>`
+        select
+          (select count(*)::integer from public.member_event_rsvps where event_id = ${eventId} and company_id = ${companyId} and status = 'going') as member_count,
+          (select count(*)::integer from public.event_guest_registrations where event_id = ${eventId} and company_id = ${companyId} and status = 'going') as guest_count
       `
-      const goingCount = Number(goingRows[0]?.count ?? 0)
-      const nextStatus = event.max_capacity !== null && goingCount >= event.max_capacity ? "waitlisted" : "going"
+      const goingCount = Number(goingRows[0]?.member_count ?? 0) + Number(goingRows[0]?.guest_count ?? 0) - (existing[0]?.status === "going" ? 1 : 0)
+      const nextStatus = event.max_capacity !== null && event.max_capacity > 0 && goingCount >= event.max_capacity ? "waitlisted" : "going"
       const rows = existing[0]
         ? await tx<{ id: string; status: "going" | "waitlisted" }[]>`
             update public.member_event_rsvps set status = ${nextStatus}, updated_at = now()
@@ -63,14 +64,39 @@ export async function cancelMemberEventRsvp(formData: FormData) {
   try {
     const eventId = uuid.parse(value(formData, "eventId"))
     const { user, companyId, personId } = await requireMemberContext()
-    const rows = await getSql()<{ id: string }[]>`
-      update public.member_event_rsvps set status = 'canceled', updated_at = now()
-      where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}
-        and status in ('going', 'waitlisted')
-      returning id
-    `
-    if (!rows[0]) throw new Error("RSVP não encontrado")
-    await writeAuditLog({ action: "member.event.rsvp.cancel", entityTable: "member_event_rsvps", entityId: rows[0].id, companyId, metadata: { eventId, personId, profileId: user.id } })
+    const rows = await getSql().begin(async (tx) => {
+      const canceled = await tx<{ id: string; event_id: string; status: string }[]>`
+        update public.member_event_rsvps set status = 'canceled', updated_at = now()
+        where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}
+          and status in ('going', 'waitlisted')
+        returning id, event_id, status
+      `
+      if (!canceled[0]) throw new Error("RSVP não encontrado")
+      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${eventId} and company_id = ${companyId} for update`
+      const capacity = Number(eventRows[0]?.max_capacity ?? 0)
+      if (capacity > 0) {
+        const goingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.member_event_rsvps where event_id = ${eventId} and company_id = ${companyId} and status = 'going'`
+        const guestGoingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.event_guest_registrations where event_id = ${eventId} and company_id = ${companyId} and status = 'going'`
+        if (Number(goingRows[0]?.count ?? 0) + Number(guestGoingRows[0]?.count ?? 0) < capacity) {
+          const promoted = await tx<{ id: string }[]>`
+            select id from public.member_event_rsvps
+            where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
+            order by created_at, id limit 1 for update skip locked
+          `
+          if (promoted[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promoted[0].id}`
+          else {
+            const guestPromoted = await tx<{ id: string }[]>`
+              select id from public.event_guest_registrations
+              where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
+              order by created_at, id limit 1 for update skip locked
+            `
+            if (guestPromoted[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${guestPromoted[0].id}`
+          }
+        }
+      }
+      return canceled[0]
+    })
+    await writeAuditLog({ action: "member.event.rsvp.cancel", entityTable: "member_event_rsvps", entityId: rows.id, companyId, metadata: { eventId, personId, profileId: user.id } })
     revalidatePath("/membro/agenda")
     return { ok: true }
   } catch (error) {

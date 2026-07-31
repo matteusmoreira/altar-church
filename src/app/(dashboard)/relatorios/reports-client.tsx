@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MetricCard } from "@/components/shared"
 import type { GroupDashboardData } from "@/lib/groups/types"
 import type { PeopleDashboardData } from "@/lib/people/types"
+import type { EventDashboardSummary } from "@/lib/events/types"
 
 interface ChartPoint {
   label: string
@@ -86,6 +87,7 @@ export interface ReportsClientData {
     totalVisitors: number
     averagePresent: number
   }
+  events: EventDashboardSummary
   content: {
     categories: number
     posts: number
@@ -180,6 +182,7 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
     }))
 
   const contentChart = data.content.postTypes.filter((item) => item.value > 0)
+  const eventChart = data.events.byType.filter((item) => item.value > 0)
 
   return (
     <div className="space-y-6">
@@ -241,6 +244,10 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
             <BookOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Conteúdo</span>
           </TabsTrigger>
+          <TabsTrigger value="eventos">
+            <CalendarDays className="h-4 w-4" />
+            <span className="hidden sm:inline">Eventos</span>
+          </TabsTrigger>
           <TabsTrigger value="geral">
             <BarChart3 className="h-4 w-4" />
             <span className="hidden sm:inline">Geral</span>
@@ -291,6 +298,41 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
               ) : (
                 <EmptyChart label="Sem aniversariantes neste mês" />
               )}
+            </ReportCard>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="eventos" className="mt-6 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard title="Eventos no mês" value={data.events.total} icon={CalendarDays} color="gradient-primary" />
+            <MetricCard title="Publicados" value={data.events.published} icon={Church} color="bg-success" />
+            <MetricCard title="Inscrições" value={data.events.registrations} icon={Users} color="bg-info" />
+            <MetricCard title="Presentes" value={data.events.present} icon={Activity} trendValue={data.events.attendanceRate === null ? "sem base" : `${data.events.attendanceRate}% presença`} color="bg-warning" />
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ReportCard title="Eventos por tipo" icon={CalendarDays}>
+              {eventChart.length > 0 ? (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={eventChart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.02 260 / 30%)" />
+                    <XAxis dataKey="label" stroke="oklch(0.6 0.02 260)" fontSize={12} />
+                    <YAxis allowDecimals={false} stroke="oklch(0.6 0.02 260)" fontSize={12} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Bar dataKey="value" fill="oklch(0.65 0.18 250)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyChart label="Sem eventos neste mês" />
+              )}
+            </ReportCard>
+
+            <ReportCard title="Resumo de presença" icon={Activity}>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Cancelados</span><span className="font-semibold">{data.events.canceled}</span></div>
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Inscrições confirmadas</span><span className="font-semibold">{data.events.registrations}</span></div>
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Presença média</span><span className="font-semibold">{data.events.attendanceRate === null ? "—" : `${data.events.attendanceRate}%`}</span></div>
+              </div>
             </ReportCard>
           </div>
         </TabsContent>

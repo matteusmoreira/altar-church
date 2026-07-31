@@ -1,120 +1,62 @@
-import { CalendarDays, Clock, Globe, MapPin, Trash2, Users } from "lucide-react"
+import { CalendarDays, CheckCircle2, Clock3, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { deleteEvent } from "@/lib/operational/actions"
-import { listEvents } from "@/lib/operational/data"
 import { requireUser } from "@/lib/auth/server"
+import { hasPermission } from "@/lib/types"
+import { listEventForms, listEventMinistries, listEvents, normalizeEventFilters } from "@/lib/operational/data"
 import { listVolunteerTemplatesForEvents } from "@/lib/volunteers/data"
-import { hasPermission, type ChurchEvent } from "@/lib/types"
 import { EventCreateForm } from "./event-create-form"
+import { EventFilters } from "./event-filters"
+import { EventsListView } from "./events-list-view"
 
-async function deleteEventForm(formData: FormData) {
-  "use server"
-  await deleteEvent(formData)
+type SearchParams = Record<string, string | string[] | undefined>
+
+function first(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value
 }
 
-const typeLabels: Record<ChurchEvent["type"], string> = {
-  service: "Culto",
-  prayer: "Oração",
-  youth: "Jovens",
-  children: "Crianças",
-  special: "Especial",
-  meeting: "Reunião",
-}
-
-const statusLabels: Record<ChurchEvent["status"], string> = {
-  draft: "Rascunho",
-  published: "Publicado",
-  cancelled: "Cancelado",
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
-}
-
-export default async function EventsPage() {
-  const [user, events, volunteerTemplates] = await Promise.all([
+export default async function EventsPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = (await searchParams) ?? {}
+  const filters = normalizeEventFilters({
+    query: first(params.query),
+    type: first(params.type) as never,
+    status: first(params.status) as never,
+    location: first(params.location),
+    ministryId: first(params.ministryId),
+    from: first(params.from),
+    to: first(params.to),
+  })
+  const [user, events, ministries, forms, volunteerTemplates] = await Promise.all([
     requireUser(),
-    listEvents(),
+    listEvents(filters),
+    listEventMinistries(),
+    listEventForms(),
     listVolunteerTemplatesForEvents(),
   ])
+  const canCreate = hasPermission(user.role, "events.create")
+  const canEdit = hasPermission(user.role, "events.edit")
+  const canDelete = hasPermission(user.role, "events.delete")
+  const published = events.filter((event) => event.status === "published").length
+  const upcoming = events.filter((event) => event.status === "published" && new Date(event.startDate) >= new Date()).length
+  const registrations = events.reduce((total, event) => total + event.goingCount, 0)
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Eventos</h1>
-        <p className="text-muted-foreground">Cultos, reuniões e eventos especiais persistidos.</p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div><div className="mb-2 flex items-center gap-2"><Badge variant="outline">Central operacional</Badge><span className="text-xs text-muted-foreground">Release 1</span></div><h1 className="text-2xl font-bold tracking-tight md:text-3xl">Eventos</h1><p className="text-muted-foreground">Crie, organize e acompanhe cada evento sem perder histórico.</p></div>
+        <div className="text-sm text-muted-foreground">{events.length} resultado(s) filtrado(s)</div>
       </div>
 
-      <EventCreateForm
-        canCreate={hasPermission(user.role, "events.create")}
-        volunteerTemplates={volunteerTemplates}
-      />
-
-      <div className="space-y-3">
-        {events.map((event) => (
-          <Card key={event.id} className="glass overflow-hidden">
-            <CardContent className="p-4">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div className="flex gap-4">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                    <CalendarDays className="h-6 w-6 text-primary" />
-                  </div>
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-semibold">{event.title}</h2>
-                      <Badge>{typeLabels[event.type]}</Badge>
-                      <Badge variant={event.status === "published" ? "default" : "secondary"}>
-                        {statusLabels[event.status]}
-                      </Badge>
-                      {event.isOnline && (
-                        <Badge variant="outline">
-                          <Globe className="mr-1 h-3 w-3" />
-                          Online
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">{event.description || "Sem descrição"}</p>
-                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDateTime(event.startDate)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        {event.location || "Sem local"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {event.attendance}/{event.maxCapacity || "sem limite"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <form action={deleteEventForm}>
-                  <input type="hidden" name="id" value={event.id} />
-                  <Button type="submit" variant="ghost" size="icon">
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </form>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card><CardContent className="flex items-center gap-3 p-4"><CalendarDays className="h-5 w-5 text-primary" /><div><p className="text-xs text-muted-foreground">Eventos carregados</p><p className="text-xl font-semibold">{events.length}</p></div></CardContent></Card>
+        <Card><CardContent className="flex items-center gap-3 p-4"><CheckCircle2 className="h-5 w-5 text-emerald-500" /><div><p className="text-xs text-muted-foreground">Publicados</p><p className="text-xl font-semibold">{published}</p></div></CardContent></Card>
+        <Card><CardContent className="flex items-center gap-3 p-4"><Clock3 className="h-5 w-5 text-amber-500" /><div><p className="text-xs text-muted-foreground">Próximos</p><p className="text-xl font-semibold">{upcoming}</p></div></CardContent></Card>
+        <Card><CardContent className="flex items-center gap-3 p-4"><Users className="h-5 w-5 text-sky-500" /><div><p className="text-xs text-muted-foreground">Inscrições</p><p className="text-xl font-semibold">{registrations}</p></div></CardContent></Card>
       </div>
 
-      {events.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <CalendarDays className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">Nenhum evento encontrado</p>
-        </div>
-      )}
+      <EventFilters values={filters} ministries={ministries} />
+      <EventCreateForm canCreate={canCreate} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} />
+      <EventsListView events={events} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
     </div>
   )
 }

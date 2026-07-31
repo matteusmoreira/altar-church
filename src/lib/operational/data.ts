@@ -52,6 +52,86 @@ interface EventRow {
   created_at: Date | string
   updated_at: Date | string
   deleted_at: Date | string | null
+  public_token?: string | null
+  ministry_id?: string | null
+  ministry_name?: string | null
+  programming_id?: string | null
+  recurrence_frequency?: "none" | "weekly" | "monthly" | null
+  recurrence_weekdays?: number[] | null
+  recurrence_until?: Date | string | null
+  recurrence_needs_review?: boolean | null
+  volunteer_template_id?: string | null
+  volunteer_template_name?: string | null
+  registration_form_id?: string | null
+  registration_form_slug?: string | null
+  registration_form_title?: string | null
+  going_count?: number | string | null
+  waitlisted_count?: number | string | null
+  cancelled_count?: number | string | null
+  present_count?: number | string | null
+}
+
+export interface EventListFilters {
+  query?: string
+  type?: ChurchEvent["type"] | ""
+  status?: ChurchEvent["status"] | ""
+  location?: string
+  ministryId?: string
+  from?: string
+  to?: string
+}
+
+export interface EventListItem extends ChurchEvent {
+  publicToken: string | null
+  ministryId: string | null
+  ministryName: string
+  programmingId: string | null
+  volunteerTemplateId: string | null
+  volunteerTemplateName: string
+  goingCount: number
+  waitlistedCount: number
+  cancelledCount: number
+}
+
+export interface EventParticipant {
+  id: string
+  kind: "member" | "guest"
+  personId: string | null
+  guestId: string | null
+  personName: string
+  personEmail: string
+  personPhone: string
+  status: "going" | "waitlisted" | "canceled"
+  createdAt: string
+  checkedIn: boolean
+  attendeeToken: string | null
+  confirmationToken: string | null
+  consented: boolean
+}
+
+export interface EventAttendance {
+  id: string
+  personId: string | null
+  personName: string
+  status: AttendanceRecord["status"]
+  occurredOn: string
+  occurredTime: string
+  registeredByName: string
+  createdAt: string
+  guestId: string | null
+  checkinSource: "qr" | "manual" | null
+}
+
+export interface EventVolunteerSummary {
+  shiftCount: number
+  requiredVolunteers: number
+  assignedVolunteers: number
+}
+
+export interface EventDetail extends EventListItem {
+  participants: EventParticipant[]
+  attendanceRecords: EventAttendance[]
+  volunteer: EventVolunteerSummary
 }
 
 interface AttendanceRow {
@@ -470,12 +550,36 @@ function toEvent(row: EventRow): ChurchEvent {
     onlineLink: row.online_link,
     status: row.status,
     recurring: row.recurring,
+    programmingId: row.programming_id ?? null,
+    recurrenceFrequency: row.recurrence_frequency ?? (row.recurring ? "weekly" : "none"),
+    recurrenceWeekdays: Array.isArray(row.recurrence_weekdays) ? row.recurrence_weekdays.map(Number) : [],
+    recurrenceUntil: toDate(row.recurrence_until ?? null) || null,
+    recurrenceNeedsReview: Boolean(row.recurrence_needs_review),
     registrations: [],
     createdBy: row.created_by ?? "",
     updatedBy: row.updated_by ?? "",
     createdAt: toIso(row.created_at) ?? "",
     updatedAt: toIso(row.updated_at) ?? "",
     deletedAt: toIso(row.deleted_at),
+  }
+}
+
+function toEventListItem(row: EventRow): EventListItem {
+  return {
+    ...toEvent(row),
+    attendance: Number(row.present_count ?? row.attendance_count ?? 0),
+    ministryId: row.ministry_id ?? null,
+    publicToken: row.public_token ?? null,
+    ministryName: row.ministry_name ?? "",
+    programmingId: row.programming_id ?? null,
+    volunteerTemplateId: row.volunteer_template_id ?? null,
+    volunteerTemplateName: row.volunteer_template_name ?? "",
+    registrationFormId: row.registration_form_id ?? null,
+    registrationFormSlug: row.registration_form_slug ?? null,
+    registrationFormTitle: row.registration_form_title ?? null,
+    goingCount: Number(row.going_count ?? 0),
+    waitlistedCount: Number(row.waitlisted_count ?? 0),
+    cancelledCount: Number(row.cancelled_count ?? 0),
   }
 }
 
@@ -852,21 +956,227 @@ function toSubscriptionCollection(row: SubscriptionCollectionRow, signedUrls = n
   }
 }
 
-export async function listEvents(companyIdInput?: string | null): Promise<ChurchEvent[]> {
-  const companyId = await resolveCompanyId(companyIdInput)
+const eventTypes: ChurchEvent["type"][] = ["service", "prayer", "youth", "children", "special", "meeting"]
+const eventStatuses: ChurchEvent["status"][] = ["draft", "published", "cancelled"]
+
+function validUuid(value: string | undefined) {
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : ""
+}
+
+function validDate(value: string | undefined) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ""
+}
+
+export function normalizeEventFilters(filters: EventListFilters = {}): Required<EventListFilters> {
+  return {
+    query: filters.query?.trim() ?? "",
+    type: filters.type && eventTypes.includes(filters.type) ? filters.type : "",
+    status: filters.status && eventStatuses.includes(filters.status) ? filters.status : "",
+    location: filters.location?.trim() ?? "",
+    ministryId: validUuid(filters.ministryId),
+    from: validDate(filters.from),
+    to: validDate(filters.to),
+  }
+}
+
+export async function listEvents(
+  filtersInput: EventListFilters | string | null = {},
+  companyIdInput?: string | null,
+): Promise<EventListItem[]> {
+  const legacyCompanyId = typeof filtersInput === "string" || filtersInput === null ? filtersInput : companyIdInput
+  const filters = filtersInput && typeof filtersInput === "object" ? filtersInput : {}
+  const companyId = await resolveCompanyId(legacyCompanyId)
   await requirePermission("events.view", companyId)
+  const normalizedFilters = normalizeEventFilters(filters)
 
   const sql = getSql()
   const rows = await sql<EventRow[]>`
-    select *
-    from public.events
-    where company_id = ${companyId}
-      and deleted_at is null
-    order by starts_at desc
-    limit 200
+    select event.*,
+           programming.recurrence_frequency,
+           programming.recurrence_weekdays,
+           programming.recurrence_until,
+           programming.recurrence_needs_review,
+           registration_form.slug as registration_form_slug,
+           registration_form.title as registration_form_title,
+           ministry.name as ministry_name,
+           volunteer_template.name as volunteer_template_name,
+           (select count(*)::integer from public.member_event_rsvps rsvp
+             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
+           + (select count(*)::integer from public.event_guest_registrations guest
+             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'going') as going_count,
+           (select count(*)::integer from public.member_event_rsvps rsvp
+             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'waitlisted')
+           + (select count(*)::integer from public.event_guest_registrations guest
+             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'waitlisted') as waitlisted_count,
+           (select count(*)::integer from public.member_event_rsvps rsvp
+             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'canceled')
+           + (select count(*)::integer from public.event_guest_registrations guest
+             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'canceled') as cancelled_count
+           ,(select count(*)::integer from public.attendance_records attendance
+             where attendance.company_id = event.company_id and attendance.event_ref_id = event.id
+               and attendance.event_type in ('event', 'service') and attendance.status = 'present' and attendance.deleted_at is null) as present_count
+    from public.events event
+    left join public.programmings programming on programming.id = event.programming_id and programming.company_id = event.company_id and programming.deleted_at is null
+    left join public.ministries ministry on ministry.id = event.ministry_id and ministry.company_id = event.company_id
+    left join public.volunteer_schedule_templates volunteer_template on volunteer_template.id = event.volunteer_template_id
+    left join public.forms registration_form on registration_form.id = event.registration_form_id and registration_form.company_id = event.company_id and registration_form.deleted_at is null
+    where event.company_id = ${companyId}
+      and event.deleted_at is null
+      and (${normalizedFilters.query} = '' or event.title ilike ${`%${normalizedFilters.query}%`} or event.description ilike ${`%${normalizedFilters.query}%`})
+      and (${normalizedFilters.type} = '' or event.type = ${normalizedFilters.type})
+      and (${normalizedFilters.status} = '' or event.status = ${normalizedFilters.status})
+      and (${normalizedFilters.location} = '' or event.location ilike ${`%${normalizedFilters.location}%`})
+      and (${normalizedFilters.ministryId} = '' or event.ministry_id = nullif(${normalizedFilters.ministryId}, '')::uuid)
+      and (${normalizedFilters.from} = '' or event.starts_at >= nullif(${normalizedFilters.from}, '')::date)
+      and (${normalizedFilters.to} = '' or event.starts_at < (nullif(${normalizedFilters.to}, '')::date + interval '1 day'))
+    order by event.starts_at desc
+    limit 500
   `
 
-  return rows.map(toEvent)
+  return rows.map(toEventListItem)
+}
+
+export async function listEventMinistries(companyIdInput?: string | null) {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("events.view", companyId)
+  return getSql()<
+    { id: string; name: string }[]
+  >`
+    select id, name
+    from public.ministries
+    where company_id = ${companyId} and is_active and deleted_at is null
+    order by name
+  `
+}
+
+export async function listEventForms(companyIdInput?: string | null) {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("events.view", companyId)
+  return getSql()<
+    { id: string; title: string; slug: string }[]
+  >`
+    select id, title, slug
+    from public.forms
+    where company_id = ${companyId} and status = 'published' and is_active and deleted_at is null
+    order by title
+  `
+}
+
+export async function getEventDetail(eventId: string, companyIdInput?: string | null): Promise<EventDetail> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId)) {
+    throw new Error("Evento inválido")
+  }
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("events.view", companyId)
+  const sql = getSql()
+  const eventRows = await sql<EventRow[]>`
+    select event.*, registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
+           programming.recurrence_frequency, programming.recurrence_weekdays, programming.recurrence_until, programming.recurrence_needs_review,
+           ministry.name as ministry_name, volunteer_template.name as volunteer_template_name,
+           (select count(*)::integer from public.member_event_rsvps rsvp where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
+           + (select count(*)::integer from public.event_guest_registrations guest where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'going') as going_count,
+           (select count(*)::integer from public.member_event_rsvps rsvp where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'waitlisted')
+           + (select count(*)::integer from public.event_guest_registrations guest where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'waitlisted') as waitlisted_count,
+           (select count(*)::integer from public.member_event_rsvps rsvp where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'canceled')
+           + (select count(*)::integer from public.event_guest_registrations guest where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'canceled') as cancelled_count
+           ,(select count(*)::integer from public.attendance_records attendance
+             where attendance.company_id = event.company_id and attendance.event_ref_id = event.id
+               and attendance.event_type in ('event', 'service') and attendance.status = 'present' and attendance.deleted_at is null) as present_count
+    from public.events event
+    left join public.programmings programming on programming.id = event.programming_id and programming.company_id = event.company_id and programming.deleted_at is null
+    left join public.ministries ministry on ministry.id = event.ministry_id and ministry.company_id = event.company_id
+    left join public.volunteer_schedule_templates volunteer_template on volunteer_template.id = event.volunteer_template_id
+    left join public.forms registration_form on registration_form.id = event.registration_form_id and registration_form.company_id = event.company_id and registration_form.deleted_at is null
+    where event.id = ${eventId} and event.company_id = ${companyId} and event.deleted_at is null
+    limit 1
+  `
+  const event = eventRows[0]
+  if (!event) throw new Error("Evento não encontrado")
+
+  const [participantRows, attendanceRows, volunteerRows] = await Promise.all([
+    sql<{
+      id: string; kind: EventParticipant["kind"]; person_id: string | null; guest_id: string | null;
+      person_name: string; person_email: string; person_phone: string;
+      status: EventParticipant["status"]; created_at: Date | string; checked_in: boolean;
+      attendee_token: string | null; confirmation_token: string | null; consented: boolean
+    }[]>`
+      select rsvp.id, 'member'::text as kind, rsvp.person_id, null::uuid as guest_id,
+             person.full_name as person_name, coalesce(person.email, '') as person_email,
+             coalesce(person.phone, '') as person_phone, rsvp.status, rsvp.created_at,
+             exists(select 1 from public.attendance_records attendance where attendance.company_id = rsvp.company_id and attendance.event_ref_id = rsvp.event_id and attendance.event_type = 'event' and attendance.person_id = rsvp.person_id and attendance.status = 'present' and attendance.deleted_at is null) as checked_in,
+             attendee.token as attendee_token, null::uuid as confirmation_token, true as consented
+      from public.member_event_rsvps rsvp
+      join public.people person on person.id = rsvp.person_id and person.company_id = rsvp.company_id
+      left join public.event_attendee_tokens attendee on attendee.member_rsvp_id = rsvp.id
+      where rsvp.company_id = ${companyId} and rsvp.event_id = ${eventId}
+      union all
+      select guest.id, 'guest'::text as kind, guest.person_id, guest.id as guest_id,
+             guest.full_name as person_name, guest.email as person_email, guest.phone as person_phone,
+             guest.status, guest.created_at, guest.checked_in_at is not null as checked_in,
+             attendee.token as attendee_token, guest.confirmation_token, guest.consent_at is not null as consented
+      from public.event_guest_registrations guest
+      left join public.event_attendee_tokens attendee on attendee.guest_registration_id = guest.id
+      where guest.company_id = ${companyId} and guest.event_id = ${eventId}
+      order by status, person_name
+      limit 1000
+    `,
+    sql<{
+      id: string; person_id: string | null; person_name: string; status: AttendanceRecord["status"];
+      occurred_on: Date | string; occurred_time: string | null; registered_by_name: string; created_at: Date | string;
+      guest_registration_id: string | null; checkin_source: "qr" | "manual" | null
+    }[]>`
+      select id, person_id, person_name, status, occurred_on, occurred_time, registered_by_name, created_at, guest_registration_id, checkin_source
+      from public.attendance_records
+      where company_id = ${companyId} and event_ref_id = ${eventId}
+        and event_type in ('event', 'service') and deleted_at is null
+      order by occurred_on desc, occurred_time desc nulls last, created_at desc
+      limit 500
+    `,
+    sql<{ shift_count: number | string; required_volunteers: number | string; assigned_volunteers: number | string }[]>`
+      select count(*)::integer as shift_count,
+             coalesce(sum(shift.required_volunteers), 0)::integer as required_volunteers,
+             coalesce(sum((select count(*) from public.volunteer_assignments assignment
+               where assignment.shift_id = shift.id and assignment.status not in ('declined', 'cancelled'))), 0)::integer as assigned_volunteers
+      from public.volunteer_shifts shift
+      where shift.company_id = ${companyId} and shift.event_id = ${eventId}
+    `,
+  ])
+
+  return {
+    ...toEventListItem(event),
+    participants: participantRows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      personId: row.person_id,
+      guestId: row.guest_id,
+      personName: row.person_name,
+      personEmail: row.person_email,
+      personPhone: row.person_phone,
+      status: row.status,
+      createdAt: toIso(row.created_at) ?? "",
+      checkedIn: row.checked_in,
+      attendeeToken: row.attendee_token,
+      confirmationToken: row.confirmation_token,
+      consented: row.consented,
+    })),
+    attendanceRecords: attendanceRows.map((row) => ({
+      id: row.id,
+      personId: row.person_id,
+      personName: row.person_name,
+      status: row.status,
+      occurredOn: toIso(row.occurred_on) ?? "",
+      occurredTime: row.occurred_time ?? "",
+      registeredByName: row.registered_by_name,
+      createdAt: toIso(row.created_at) ?? "",
+      guestId: row.guest_registration_id,
+      checkinSource: row.checkin_source,
+    })),
+    volunteer: {
+      shiftCount: Number(volunteerRows[0]?.shift_count ?? 0),
+      requiredVolunteers: Number(volunteerRows[0]?.required_volunteers ?? 0),
+      assignedVolunteers: Number(volunteerRows[0]?.assigned_volunteers ?? 0),
+    },
+  }
 }
 
 export async function listAttendanceRecords(companyIdInput?: string | null): Promise<AttendanceRecord[]> {

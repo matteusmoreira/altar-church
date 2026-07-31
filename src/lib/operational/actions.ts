@@ -34,6 +34,8 @@ const eventSchema = z.object({
   id: optionalUuidField,
   title: requiredString("Título"),
   startDate: requiredString("Início"),
+  type: z.enum(["service", "prayer", "youth", "children", "special", "meeting"]).default("service"),
+  status: z.enum(["draft", "published", "cancelled"]).default("draft"),
 })
 const attendanceSchema = z.object({
   personId: optionalUuidField,
@@ -140,6 +142,10 @@ const subscriptionCollectionSchema = z.object({
 const deleteEntitySchema = z.object({
   id: requiredUuidField,
 })
+const eventStatusSchema = z.object({
+  id: requiredUuidField,
+  status: z.enum(["published", "cancelled"]),
+})
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key)
@@ -210,6 +216,15 @@ function toErrorResult(error: unknown): ActionResult {
   return { ok: false, error: "Erro inesperado" }
 }
 
+function assertHttpUrl(value: string, label: string) {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
+  } catch {
+    throw new Error(`${label} deve ser uma URL HTTP ou HTTPS válida`)
+  }
+}
+
 async function actionContext(formData: FormData, permission: Permission) {
   const user = await getCurrentUser()
   if (!user) {
@@ -222,8 +237,8 @@ async function actionContext(formData: FormData, permission: Permission) {
   return { user, companyId }
 }
 
-async function audit(action: string, entityTable: string, entityId: string, companyId: string) {
-  await writeAuditLog({ action, entityTable, entityId, companyId, metadata: {} })
+async function audit(action: string, entityTable: string, entityId: string, companyId: string, metadata: Record<string, unknown> = {}) {
+  await writeAuditLog({ action, entityTable, entityId, companyId, metadata })
 }
 
 async function resolvePersonReference(
@@ -368,6 +383,22 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     if (endsAtDate < startsAtDate) {
       throw new Error("Fim deve ser igual ou posterior ao início")
     }
+    const type = text(formData, "type", "service")
+    const status = text(formData, "status", "draft")
+    if (!["service", "prayer", "youth", "children", "special", "meeting"].includes(type)) {
+      throw new Error("Tipo de evento inválido")
+    }
+    if (!["draft", "published", "cancelled"].includes(status)) {
+      throw new Error("Status de evento inválido")
+    }
+    const maxCapacity = integer(formData, "maxCapacity")
+    if (maxCapacity < 0) throw new Error("Capacidade não pode ser negativa")
+    const isOnline = bool(formData, "isOnline")
+    const onlineLink = text(formData, "onlineLink")
+    if (isOnline) {
+      if (!onlineLink) throw new Error("Informe o link do evento online")
+      assertHttpUrl(onlineLink, "Link online")
+    }
     const volunteerTemplateValue = text(formData, "volunteerTemplateId")
     const volunteerTemplateId = volunteerTemplateValue === "none" ? null : uuid(formData, "volunteerTemplateId")
     if (volunteerTemplateValue && volunteerTemplateValue !== "none" && !volunteerTemplateId) {
@@ -383,24 +414,66 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       if (!templates[0]?.id) throw new Error("Template de voluntariado não encontrado")
     }
 
+    const ministryValue = text(formData, "ministryId")
+    const ministryId = ministryValue === "none" ? null : uuid(formData, "ministryId")
+    if (ministryValue && ministryValue !== "none" && !ministryId) throw new Error("Ministério inválido")
+    if (ministryId) {
+      const ministries = await sql<{ id: string }[]>`
+        select id from public.ministries where id = ${ministryId} and company_id = ${companyId} and is_active and deleted_at is null limit 1
+      `
+      if (!ministries[0]) throw new Error("Ministério não encontrado")
+    }
+
+    const registrationFormValue = text(formData, "registrationFormId")
+    const registrationFormId = registrationFormValue === "none" ? null : uuid(formData, "registrationFormId")
+    if (registrationFormValue && registrationFormValue !== "none" && !registrationFormId) {
+      throw new Error("Formulário inválido")
+    }
+    if (registrationFormId) {
+      const forms = await sql<{ id: string }[]>`
+        select id from public.forms
+        where id = ${registrationFormId} and company_id = ${companyId} and status = 'published' and is_active and deleted_at is null
+        limit 1
+      `
+      if (!forms[0]) throw new Error("Formulário não encontrado")
+    }
+
+    const recurrenceFrequency = text(formData, "recurrenceFrequency", "none")
+    if (!["none", "weekly", "monthly"].includes(recurrenceFrequency)) throw new Error("Frequência de recorrência inválida")
+    const recurrenceEditScope = text(formData, "recurrenceEditScope", "series")
+    if (!["occurrence", "following", "series"].includes(recurrenceEditScope)) throw new Error("Escopo de recorrência inválido")
+    const recurrenceWeekdays = formData.getAll("recurrenceWeekdays").map((value) => Number(value)).filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
+    if (recurrenceFrequency === "weekly" && recurrenceWeekdays.length === 0) throw new Error("Escolha ao menos um dia da semana")
+    const recurrenceUntil = optionalText(formData, "recurrenceUntil")
+    if (recurrenceUntil && !/^\d{4}-\d{2}-\d{2}$/.test(recurrenceUntil)) throw new Error("Data final da recorrência inválida")
+    if (recurrenceUntil && recurrenceUntil < startsAt.slice(0, 10)) throw new Error("Término da recorrência deve ser posterior ao início")
+    const recurring = recurrenceFrequency !== "none" || bool(formData, "recurring")
+    const previousEventRows = id
+      ? await sql<{ status: string; title: string; starts_at: Date; ends_at: Date | null; location: string; programming_id: string | null }[]>`
+          select status, title, starts_at, ends_at, location, programming_id from public.events where id = ${id} and company_id = ${companyId} and deleted_at is null limit 1
+        `
+      : []
+
     stage = "persistence"
     const rows = id
       ? await sql<{ id: string }[]>`
           update public.events
           set title = ${title},
               description = ${text(formData, "description")},
-              type = ${text(formData, "type", "service")},
+              type = ${type},
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               location = ${text(formData, "location")},
-              max_capacity = ${integer(formData, "maxCapacity")},
+              max_capacity = ${maxCapacity},
               registration_enabled = ${bool(formData, "registrationEnabled")},
               is_public = ${bool(formData, "isPublic", true)},
-              is_online = ${bool(formData, "isOnline")},
-              online_link = ${text(formData, "onlineLink")},
+              is_online = ${isOnline},
+              online_link = ${onlineLink},
               volunteer_template_id = ${volunteerTemplateId},
-              status = ${text(formData, "status", "published")},
-              recurring = ${bool(formData, "recurring")},
+              ministry_id = ${ministryId},
+              registration_form_id = ${registrationFormId},
+              status = ${status},
+              recurring = ${recurring},
               updated_by = ${user.id}
           where id = ${id}
             and company_id = ${companyId}
@@ -410,14 +483,14 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       : await sql<{ id: string }[]>`
           insert into public.events (
             company_id, title, description, type, starts_at, ends_at, location,
-            max_capacity, registration_enabled, is_public, is_online, online_link, volunteer_template_id,
+            max_capacity, registration_enabled, is_public, is_online, online_link, volunteer_template_id, ministry_id, registration_form_id,
             status, recurring, created_by, updated_by
           )
           values (
-            ${companyId}, ${title}, ${text(formData, "description")}, ${text(formData, "type", "service")},
-            ${startsAt}, ${endsAt}, ${text(formData, "location")}, ${integer(formData, "maxCapacity")},
-            ${bool(formData, "registrationEnabled")}, ${bool(formData, "isPublic", true)}, ${bool(formData, "isOnline")},
-            ${text(formData, "onlineLink")}, ${volunteerTemplateId}, ${text(formData, "status", "published")}, ${bool(formData, "recurring")},
+            ${companyId}, ${title}, ${text(formData, "description")}, ${type},
+            ${startsAt}, ${endsAt}, ${text(formData, "location")}, ${maxCapacity},
+            ${bool(formData, "registrationEnabled")}, ${bool(formData, "isPublic", true)}, ${isOnline},
+            ${onlineLink}, ${volunteerTemplateId}, ${ministryId}, ${registrationFormId}, ${status}, ${recurring},
             ${user.id}, ${user.id}
           )
           returning id
@@ -425,8 +498,110 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
 
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Evento não foi salvo")
+
+    const previousProgrammingId = previousEventRows[0]?.programming_id ?? null
+    const programmingRows = await sql<{ id: string | null }[]>`select programming_id as id from public.events where id = ${savedId} and company_id = ${companyId} limit 1`
+    let programmingId = programmingRows[0]?.id ?? null
+    let recurrenceConflict = false
+    if (recurrenceEditScope === "occurrence" && previousProgrammingId) {
+      await sql`update public.events set programming_id = null, recurring = false, updated_by = ${user.id}, updated_at = now() where id = ${savedId} and company_id = ${companyId}`
+      programmingId = null
+    } else if (recurrenceFrequency !== "none") {
+      const programmingKind = ["service", "meeting"].includes(type) ? type : "other"
+      const durationMinutes = Math.max(1, Math.round((endsAtDate.getTime() - startsAtDate.getTime()) / 60000))
+      const oldProgrammingId = previousProgrammingId
+      await sql.begin(async (tx) => {
+        if (recurrenceEditScope === "following" && oldProgrammingId) {
+          const createdProgramming = await tx<{ id: string }[]>`
+            insert into public.programmings(company_id, title, description, starts_at, duration_minutes, is_recurring, recurrence_rule, kind, location, timezone, recurrence_frequency, recurrence_weekdays, recurrence_until, recurrence_needs_review, volunteer_template_id, source_event_id, is_active, created_by, updated_by)
+            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, 'America/Sao_Paulo', ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
+            returning id
+          `
+          programmingId = createdProgramming[0]?.id ?? null
+          if (!programmingId) throw new Error("Nova série não foi criada")
+          await tx`update public.events set programming_id = ${programmingId}, recurring = true, updated_by = ${user.id}, updated_at = now() where id = ${savedId} and company_id = ${companyId}`
+          await tx`delete from public.events where programming_id = ${oldProgrammingId} and starts_at >= ${startsAt} and id <> ${savedId} and volunteer_schedule_published_at is null and deleted_at is null`
+        } else if (programmingId) {
+          await tx`delete from public.events where programming_id = ${programmingId} and id <> ${savedId} and starts_at >= ${startsAt} and volunteer_schedule_published_at is null and deleted_at is null`
+          await tx`
+            update public.programmings set title = ${title}, description = ${text(formData, "description")}, starts_at = ${startsAt}, duration_minutes = ${durationMinutes}, kind = ${programmingKind}, location = ${text(formData, "location")}, timezone = 'America/Sao_Paulo', recurrence_frequency = ${recurrenceFrequency}, recurrence_weekdays = ${recurrenceWeekdays}::smallint[], recurrence_until = ${recurrenceUntil}::date, recurrence_needs_review = false, is_recurring = true, recurrence_rule = ${recurrenceFrequency}, is_active = true, volunteer_template_id = ${volunteerTemplateId}, updated_by = ${user.id}, updated_at = now()
+            where id = ${programmingId} and company_id = ${companyId} and deleted_at is null
+          `
+        } else {
+          const createdProgramming = await tx<{ id: string }[]>`
+            insert into public.programmings(company_id, title, description, starts_at, duration_minutes, is_recurring, recurrence_rule, kind, location, timezone, recurrence_frequency, recurrence_weekdays, recurrence_until, recurrence_needs_review, volunteer_template_id, source_event_id, is_active, created_by, updated_by)
+            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, 'America/Sao_Paulo', ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
+            returning id
+          `
+          programmingId = createdProgramming[0]?.id ?? null
+          if (!programmingId) throw new Error("Série não foi criada")
+          await tx`update public.events set programming_id = ${programmingId}, recurring = true, updated_by = ${user.id}, updated_at = now() where id = ${savedId} and company_id = ${companyId}`
+        }
+      })
+      await sql`select public.materialize_volunteer_programmings(${companyId}, 90)`
+      if (programmingId) {
+        const conflicts = await sql<{ count: number }[]>`
+          select count(*)::integer as count
+          from public.events occurrence
+          where occurrence.company_id = ${companyId}
+            and occurrence.programming_id = ${programmingId}
+            and occurrence.deleted_at is null
+            and occurrence.status <> 'cancelled'
+            and exists (
+              select 1 from public.events other
+              where other.company_id = occurrence.company_id
+                and other.id <> occurrence.id
+                and other.programming_id is distinct from ${programmingId}
+                and other.deleted_at is null
+                and other.status <> 'cancelled'
+                and other.starts_at < coalesce(occurrence.ends_at, occurrence.starts_at + interval '1 hour')
+                and coalesce(other.ends_at, other.starts_at + interval '1 hour') > occurrence.starts_at
+            )
+        `
+        recurrenceConflict = Number(conflicts[0]?.count ?? 0) > 0
+        if (recurrenceConflict) {
+          await sql`update public.programmings set recurrence_needs_review = true, updated_by = ${user.id}, updated_at = now() where id = ${programmingId} and company_id = ${companyId}`
+        }
+      }
+    } else if (programmingId && !recurring) {
+      await sql`update public.programmings set recurrence_frequency = 'none', recurrence_weekdays = '{}', recurrence_until = null, is_recurring = false, recurrence_rule = '', is_active = false, updated_by = ${user.id}, updated_at = now() where id = ${programmingId} and company_id = ${companyId}`
+    }
+
+    if (volunteerTemplateId) {
+      const publishedRows = await sql<{ volunteer_schedule_published_at: Date | null }[]>`select volunteer_schedule_published_at from public.events where id = ${savedId} and company_id = ${companyId} limit 1`
+      if (!publishedRows[0]?.volunteer_schedule_published_at) {
+        await sql.begin(async (tx) => {
+          const slots = await tx<{ department_id: string; role_id: string | null; role_name: string; required_volunteers: number; instructions: string; sort_order: number }[]>`
+            select department_id, role_id, role_name, required_volunteers, instructions, sort_order
+            from public.volunteer_schedule_template_slots
+            where company_id = ${companyId} and template_id = ${volunteerTemplateId} and role_id is not null
+            order by sort_order
+          `
+          await tx`delete from public.volunteer_event_positions where company_id = ${companyId} and event_id = ${savedId}`
+          for (const slot of slots) {
+            await tx`
+              insert into public.volunteer_event_positions(company_id, event_id, department_id, role_id, role_name, required_volunteers, instructions, sort_order, created_by, updated_by)
+              values (${companyId}, ${savedId}, ${slot.department_id}, ${slot.role_id}, ${slot.role_name}, ${slot.required_volunteers}, ${slot.instructions}, ${slot.sort_order}, ${user.id}, ${user.id})
+              on conflict (event_id, department_id, role_id) do update set role_name = excluded.role_name, required_volunteers = excluded.required_volunteers, instructions = excluded.instructions, sort_order = excluded.sort_order, updated_by = excluded.updated_by, updated_at = now()
+            `
+          }
+        })
+      }
+    }
     stage = "audit"
-    await audit("event.save", "events", savedId, companyId)
+    await audit("event.save", "events", savedId, companyId, { recurrenceEditScope, recurrenceConflict })
+    const previousEvent = previousEventRows[0]
+    const publishedChange = previousEvent?.status === "published" && status === "published" && (
+      previousEvent.title !== title
+      || previousEvent.location !== text(formData, "location")
+      || new Date(previousEvent.starts_at).getTime() !== startsAtDate.getTime()
+      || new Date(previousEvent.ends_at ?? previousEvent.starts_at).getTime() !== endsAtDate.getTime()
+    )
+    if (publishedChange) {
+      const { scheduleEventCommunication } = await import("@/lib/events/actions")
+      const communication = await scheduleEventCommunication({ eventId: savedId, templateKey: "change", channel: "email", audience: "all" })
+      if (!communication.ok) console.warn("[events.save] comunicação de alteração não enfileirada", communication.error)
+    }
     refresh(["/eventos", "/relatorios", "/dashboard"])
     return { ok: true, id: savedId }
   } catch (error) {
@@ -457,6 +632,66 @@ export async function deleteEvent(formData: FormData): Promise<ActionResult> {
     if (!rows[0]?.id) throw new Error("Evento não encontrado")
     await audit("event.delete", "events", rows[0].id, companyId)
     refresh(["/eventos", "/relatorios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function duplicateEvent(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const sourceId = uuid(formData, "id")
+    if (!sourceId) throw new Error("Evento inválido")
+    const { user, companyId } = await actionContext(formData, "events.create")
+    const rows = await getSql()<{ id: string }[]>`
+      insert into public.events (
+        company_id, title, description, type, starts_at, ends_at, location, banner_url,
+        max_capacity, registration_enabled, is_public, is_online, online_link,
+        volunteer_template_id, ministry_id, registration_form_id, status, recurring, created_by, updated_by
+      )
+      select company_id, left(title || ' (cópia)', 255), description, type, starts_at, ends_at, location, banner_url,
+             max_capacity, registration_enabled, is_public, is_online, online_link,
+             volunteer_template_id, ministry_id, registration_form_id, 'draft', false, ${user.id}, ${user.id}
+      from public.events
+      where id = ${sourceId} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Evento não encontrado")
+    await audit("event.duplicate", "events", rows[0].id, companyId, { sourceEventId: sourceId })
+    refresh(["/eventos", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function setEventStatus(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, eventStatusSchema)
+    const id = uuid(formData, "id")
+    const status = text(formData, "status")
+    if (!id || !["published", "cancelled"].includes(status)) throw new Error("Ação de evento inválida")
+    const { user, companyId } = await actionContext(formData, "events.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.events
+      set status = ${status}, updated_by = ${user.id}, updated_at = now()
+      where id = ${id} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Evento não encontrado")
+    await audit(`event.${status === "published" ? "publish" : "cancel"}`, "events", rows[0].id, companyId)
+    if (status === "cancelled") {
+      const { scheduleEventCommunication } = await import("@/lib/events/actions")
+      const communication = await scheduleEventCommunication({
+        eventId: rows[0].id,
+        templateKey: "cancellation",
+        channel: "email",
+        audience: "all",
+      })
+      if (!communication.ok) console.warn("[events.cancel] comunicação não enfileirada", communication.error)
+    }
+    refresh(["/eventos", `/eventos/${id}`, "/dashboard", "/relatorios"])
     return { ok: true, id: rows[0].id }
   } catch (error) {
     return toErrorResult(error)

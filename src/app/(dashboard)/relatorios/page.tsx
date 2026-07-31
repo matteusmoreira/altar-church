@@ -1,5 +1,7 @@
 import { getContentDashboardData } from "@/lib/content/data"
 import type { ContentDashboardData } from "@/lib/content/types"
+import { getEventDashboardSummary } from "@/lib/events/data"
+import type { EventDashboardSummary } from "@/lib/events/types"
 import {
   getGroupsDashboardData,
   listGroupMeetingReports,
@@ -48,6 +50,16 @@ const emptyContent: ContentDashboardData = {
   categories: [],
   posts: [],
   banners: [],
+}
+
+const emptyEvents: EventDashboardSummary = {
+  total: 0,
+  published: 0,
+  canceled: 0,
+  registrations: 0,
+  present: 0,
+  attendanceRate: null,
+  byType: [],
 }
 
 async function safeRead<T>(loader: () => Promise<T>, fallback: T): Promise<T> {
@@ -121,7 +133,7 @@ function summarizeMeetings(meetings: GroupMeeting[]) {
 }
 
 export default async function ReportsPage() {
-  const [peopleDashboard, visitors, members, groupsDashboard, cells, meetings, content] = await Promise.all([
+  const [peopleDashboard, visitors, members, groupsDashboard, cells, meetings, content, events] = await Promise.all([
     safeRead(() => getPeopleDashboardData(), emptyPeopleDashboard),
     safeRead(() => listPeople({ personType: "visitor", pageSize: 100 }), emptyPeopleList),
     safeRead(() => listPeople({ personType: "member", pageSize: 100 }), emptyPeopleList),
@@ -129,6 +141,7 @@ export default async function ReportsPage() {
     safeRead(() => listGroups({ type: "cell", pageSize: 100 }), emptyGroupsList),
     safeRead(() => listGroupMeetingReports(), []),
     safeRead(() => getContentDashboardData(), emptyContent),
+    safeRead(() => getEventDashboardSummary(), emptyEvents),
   ])
 
   const data: ReportsClientData = {
@@ -156,6 +169,7 @@ export default async function ReportsPage() {
     })),
     meetingSummary: summarizeMeetings(meetings),
     content: summarizeContent(content),
+    events,
   }
 
   return <ReportsClient data={data} />
