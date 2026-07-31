@@ -176,6 +176,13 @@ interface NotificationRow {
   send_date: Date | string | null
   status: Notification["status"]
   created_at: Date | string
+  audience_kind: Notification["audienceKind"] | null
+  snapshot_count: number
+  delivery_total: number
+  delivery_pending: number
+  delivery_sent: number
+  delivery_failed: number
+  delivery_dead: number
 }
 
 interface NotificationGroupRow {
@@ -606,11 +613,18 @@ function toNotification(row: NotificationRow): Notification {
     content: row.content,
     method: row.method,
     type: row.type,
+    audienceKind: row.audience_kind ?? undefined,
     targetGroup: row.target_group,
     scheduledSend: row.scheduled_send,
     sendDate: toDate(row.send_date),
     status: row.status,
     createdAt: toIso(row.created_at) ?? "",
+    snapshotCount: Number(row.snapshot_count ?? 0),
+    deliveryTotal: Number(row.delivery_total ?? 0),
+    deliveryPending: Number(row.delivery_pending ?? 0),
+    deliverySent: Number(row.delivery_sent ?? 0),
+    deliveryFailed: Number(row.delivery_failed ?? 0),
+    deliveryDead: Number(row.delivery_dead ?? 0),
   }
 }
 
@@ -1074,15 +1088,54 @@ export async function listNotifications(companyIdInput?: string | null): Promise
 
   const sql = getSql()
   const rows = await sql<NotificationRow[]>`
-    select id, company_id, title, content, method, type, target_group, scheduled_send, send_date, status, created_at
-    from public.notifications
-    where company_id = ${companyId}
-      and deleted_at is null
-    order by created_at desc
+    select campaign.id, campaign.company_id, campaign.title, campaign.content, campaign.method,
+           campaign.type, campaign.target_group, campaign.scheduled_send, campaign.send_date,
+           campaign.status, campaign.created_at, campaign.audience_kind, campaign.snapshot_count,
+           count(delivery.id)::int as delivery_total,
+           count(delivery.id) filter (where delivery.status in ('pending', 'processing'))::int as delivery_pending,
+           count(delivery.id) filter (where delivery.status = 'sent')::int as delivery_sent,
+           count(delivery.id) filter (where delivery.status = 'failed')::int as delivery_failed,
+           count(delivery.id) filter (where delivery.status = 'dead')::int as delivery_dead
+    from public.notifications campaign
+    left join public.notification_deliveries delivery on delivery.notification_id = campaign.id
+    where campaign.company_id = ${companyId}
+      and campaign.deleted_at is null
+    group by campaign.id
+    order by campaign.created_at desc
     limit 200
   `
 
   return rows.map(toNotification)
+}
+
+export type NotificationAudienceOptions = {
+  cells: { id: string; name: string }[]
+  ministries: { id: string; name: string }[]
+  people: { id: string; name: string }[]
+}
+
+export async function listNotificationAudienceOptions(companyIdInput?: string | null): Promise<NotificationAudienceOptions> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("notification.view", companyId)
+  const sql = getSql()
+  const [cells, ministries, people] = await Promise.all([
+    sql<{ id: string; name: string }[]>`
+      select id, name from public.groups
+      where company_id = ${companyId} and is_active = true and deleted_at is null
+      order by name limit 200
+    `,
+    sql<{ id: string; name: string }[]>`
+      select id, name from public.ministries
+      where company_id = ${companyId} and is_active = true and deleted_at is null
+      order by name limit 200
+    `,
+    sql<{ id: string; name: string }[]>`
+      select id, full_name as name from public.people
+      where company_id = ${companyId} and is_active = true and deleted_at is null
+      order by full_name limit 500
+    `,
+  ])
+  return { cells, ministries, people }
 }
 
 export async function listNotificationGroups(companyIdInput?: string | null): Promise<NotificationGroup[]> {

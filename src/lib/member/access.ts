@@ -17,17 +17,21 @@ export async function requireMemberContext() {
   if (!user.churchId) redirect("/login")
 
   const rows = await getSql()<{ person_id: string | null }[]>`
-    select coalesce(profile.person_id, person.id) as person_id
+    select coalesce(canonical_person.id, legacy_person.id) as person_id
     from public.profiles profile
-    left join public.people person
-      on person.company_id = profile.company_id
-      and person.profile_id = profile.id
-      and person.deleted_at is null
+    left join public.people canonical_person
+      on canonical_person.company_id = profile.company_id
+      and canonical_person.profile_id = profile.id
+      and canonical_person.deleted_at is null
+    left join public.people legacy_person
+      on legacy_person.company_id = profile.company_id
+      and legacy_person.id = profile.person_id
+    -- fallback legado mantém o portal renderizável enquanto o vínculo órfão é corrigido.
     where profile.id = ${user.id}
       and profile.company_id = ${user.churchId}
     limit 1
   `
-  const personId = rows[0]?.person_id
+  const personId = rows[0]?.person_id ?? null
   if (!personId) {
     throw new Error("Conta sem identidade de membro vinculada")
   }

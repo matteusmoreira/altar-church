@@ -25,9 +25,9 @@ for (const width of [360, 390, 430]) {
   })
 }
 
-test("membro abre as quatro áreas e não acessa dashboard administrativo", async ({ page }) => {
+test("membro abre agenda, oração, perfil e preferências sem entrar no dashboard", async ({ page }) => {
   await loginAs(page, e2e.accounts.member)
-  for (const path of ["/membro/celulas", "/membro/ministerios", "/membro/kids"]) {
+  for (const path of ["/membro/celulas", "/membro/ministerios", "/membro/kids", "/membro/agenda", "/membro/oracao", "/membro/perfil", "/membro/preferencias"]) {
     await page.goto(path, { waitUntil: "domcontentloaded" })
     await expect(page).toHaveURL(new RegExp(path))
     await expectNoDevError(page)

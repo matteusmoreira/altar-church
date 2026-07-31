@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Altar Church API
-  version: 1.2.0
+  version: 1.4.0
   description: |
     REST API do Altar Church.
     Autenticação: sessão Supabase (cookie SSR) **ou** API key `Authorization: Bearer ack_live_…`.
@@ -288,6 +288,11 @@ paths:
       summary: Listar notificações
     post:
       summary: Criar notificação
+  /notifications/preferences:
+    get:
+      summary: Ler preferências de comunicação da própria pessoa
+    post:
+      summary: Atualizar opt-out de canal ou subscription push da própria pessoa
   /notification-groups:
     get:
       summary: Listar grupos de notificação
@@ -386,6 +391,14 @@ paths:
   /settings:
     get:
       summary: Configurações
+  /operations/health:
+    get:
+      summary: Saúde operacional da igreja
+      description: Requer sessão com settings.manage_settings ou API key com escopo webhooks:manage.
+      parameters:
+        - in: query
+          name: companyId
+          schema: { type: string, format: uuid }
   /forms:
     get:
       summary: Listar formulários

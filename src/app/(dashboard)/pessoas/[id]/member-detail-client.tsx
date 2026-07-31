@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
 import { invitePersonAccess } from "../actions"
+import { FollowUpPanel } from "./follow-up-panel"
 import type { PersonAccessRole, PersonDetail, PersonStatus, PersonType } from "@/lib/people/types"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -43,6 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 interface MemberDetailClientProps {
   person: PersonDetail
   cells: { id: string; name: string }[]
+  responsibleOptions: { id: string; name: string }[]
 }
 
 const statusColors: Record<PersonStatus, string> = {
@@ -144,7 +146,7 @@ function DetailItem({
   )
 }
 
-export function MemberDetailClient({ person, cells }: MemberDetailClientProps) {
+export function MemberDetailClient({ person, cells, responsibleOptions }: MemberDetailClientProps) {
   const router = useRouter()
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
@@ -259,6 +261,10 @@ export function MemberDetailClient({ person, cells }: MemberDetailClientProps) {
               <TabsTrigger value="jornada">
                 <Route />
                 Jornada
+              </TabsTrigger>
+              <TabsTrigger value="linha-do-tempo">
+                <Activity />
+                Linha do tempo
               </TabsTrigger>
             </TabsList>
 
@@ -407,6 +413,16 @@ export function MemberDetailClient({ person, cells }: MemberDetailClientProps) {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="linha-do-tempo" className="mt-4">
+              <FollowUpPanel
+                personId={person.id}
+                companyId={person.companyId}
+                timeline={person.timeline}
+                tasks={person.followUpTasks}
+                responsibleOptions={responsibleOptions}
+              />
             </TabsContent>
           </Tabs>
         </div>

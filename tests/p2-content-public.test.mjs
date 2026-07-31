@@ -80,6 +80,7 @@ test("public church page reads published real data without client mock", () => {
   assert.match(page, /Programação/)
   assert.match(page, /Ministérios/)
   assert.match(page, /Congregações/)
+  assert.match(page, /Próximos eventos/)
   assert.doesNotMatch(page, /useParams/)
   assert.doesNotMatch(page, /mockChurches|mockEvents|mockMinistries|mockCells/)
 })

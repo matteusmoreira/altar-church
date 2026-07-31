@@ -101,6 +101,20 @@ interface PublicCongregationRow {
   address: string
 }
 
+interface PublicEventRow {
+  id: string
+  title: string
+  description: string
+  type: string
+  starts_at: Date | string
+  ends_at: Date | string | null
+  location: string
+  is_online: boolean
+  online_link: string
+  registration_enabled: boolean
+  max_capacity: number
+}
+
 function toIso(value: Date | string | null) {
   if (!value) return null
   if (value instanceof Date) return value.toISOString()
@@ -285,7 +299,7 @@ export async function getPublicChurchData(slug: string): Promise<PublicChurchDat
     return null
   }
 
-  const [bannerRows, postRows, ministryRows, programmingRows, congregationRows] = await Promise.all([
+  const [bannerRows, postRows, ministryRows, programmingRows, congregationRows, eventRows] = await Promise.all([
     sql<BannerRow[]>`
       select
         b.id,
@@ -376,6 +390,18 @@ export async function getPublicChurchData(slug: string): Promise<PublicChurchDat
       order by created_at desc
       limit 6
     `,
+    sql<PublicEventRow[]>`
+      select id, title, description, type, starts_at, ends_at, location,
+             is_online, online_link, registration_enabled, max_capacity
+      from public.events
+      where company_id = ${church.id}
+        and deleted_at is null
+        and is_public = true
+        and status = 'published'
+        and starts_at >= now() - interval '2 hours'
+      order by starts_at asc
+      limit 12
+    `,
   ])
 
   const fileUrls = await createSignedUrlsByStoragePath([
@@ -417,6 +443,19 @@ export async function getPublicChurchData(slug: string): Promise<PublicChurchDat
       name: congregation.name,
       responsible: congregation.responsible,
       address: congregation.address,
+    })),
+    events: eventRows.map((event) => ({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      type: event.type,
+      startsAt: toIso(event.starts_at) ?? "",
+      endsAt: toIso(event.ends_at),
+      location: event.location,
+      isOnline: event.is_online,
+      onlineLink: event.online_link,
+      registrationEnabled: event.registration_enabled,
+      maxCapacity: event.max_capacity,
     })),
   }
 }

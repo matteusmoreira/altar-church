@@ -3,7 +3,7 @@ import "server-only"
 import { getSql } from "@/lib/db/client"
 import { requireMemberContext } from "./access"
 import { sanitizeCellNoticeHtml } from "@/lib/cells/rich-content"
-import type { MemberMinistryItem, MemberPortalCapabilities, MemberPortalSummary, MinistryMembershipAdminItem } from "./types"
+import type { MemberAgendaEvent, MemberMinistryItem, MemberPortalCapabilities, MemberPortalSummary, MemberProfile, MinistryMembershipAdminItem } from "./types"
 import type { User } from "@/lib/types"
 
 type DateValue = Date | string
@@ -146,6 +146,83 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
       checkedInAt: iso(checkin.checkin_at) ?? "",
       source: checkin.checkin_source,
     })),
+  }
+}
+
+export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
+  const { companyId, personId } = await requireMemberContext()
+  const rows = await getSql()<{
+    id: string
+    title: string
+    description: string
+    type: string
+    starts_at: DateValue
+    ends_at: DateValue | null
+    location: string
+    online_link: string | null
+    max_capacity: number | null
+    going_count: number
+    waitlisted_count: number
+    my_status: MemberAgendaEvent["myStatus"]
+    registration_enabled: boolean
+  }[]>`
+    select event.id, event.title, event.description, event.type, event.starts_at, event.ends_at,
+      event.location, event.online_link, event.max_capacity,
+      count(rsvp.id) filter (where rsvp.status = 'going')::integer as going_count,
+      count(rsvp.id) filter (where rsvp.status = 'waitlisted')::integer as waitlisted_count,
+      own.status as my_status, event.registration_enabled
+    from public.events event
+    left join public.member_event_rsvps rsvp on rsvp.event_id = event.id and rsvp.company_id = ${companyId}
+    left join public.member_event_rsvps own on own.event_id = event.id and own.person_id = ${personId} and own.company_id = ${companyId}
+    where event.company_id = ${companyId} and event.deleted_at is null
+      and event.status not in ('canceled', 'cancelled', 'draft')
+      and event.starts_at >= now() - interval '1 day'
+    group by event.id, own.status
+    order by event.starts_at
+    limit 100
+  `
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    type: row.type,
+    startsAt: iso(row.starts_at) ?? "",
+    endsAt: iso(row.ends_at),
+    location: row.location,
+    externalLink: row.online_link,
+    maxCapacity: row.max_capacity,
+    goingCount: Number(row.going_count ?? 0),
+    waitlistedCount: Number(row.waitlisted_count ?? 0),
+    myStatus: row.my_status,
+    canRsvp: row.registration_enabled,
+  }))
+}
+
+export async function getMemberProfile(): Promise<MemberProfile | null> {
+  const { user, companyId, personId } = await requireMemberContext()
+  const rows = await getSql()<MemberProfile[]>`
+    select id, full_name as "fullName", email, phone, birth_date as "birthDate",
+      address, address_number as "addressNumber", address_complement as "addressComplement",
+      neighborhood, city, state, postal_code as "postalCode"
+    from public.people
+    where company_id = ${companyId} and deleted_at is null
+      and (id = ${personId} or profile_id = ${user.id})
+    order by (profile_id = ${user.id}) desc
+    limit 1
+  `
+  if (!rows[0]) return null
+  return {
+    ...rows[0],
+    birthDate: rows[0].birthDate ? String(rows[0].birthDate).slice(0, 10) : null,
+    email: rows[0].email ?? null,
+    phone: rows[0].phone ?? "",
+    address: rows[0].address ?? "",
+    addressNumber: rows[0].addressNumber ?? "",
+    addressComplement: rows[0].addressComplement ?? "",
+    neighborhood: rows[0].neighborhood ?? "",
+    city: rows[0].city ?? "",
+    state: rows[0].state ?? "",
+    postalCode: rows[0].postalCode ?? "",
   }
 }
 

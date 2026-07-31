@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Baby, CalendarCheck2, Church, HeartHandshake, Home, LogOut, Network } from "lucide-react"
+import { Baby, CalendarCheck2, CalendarDays, Church, HeartHandshake, Home, LogOut, Network, Settings2 } from "lucide-react"
 import { signOutMember } from "@/lib/member/actions"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -13,6 +13,7 @@ const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
   { href: "/membro/celulas", label: "Células", icon: Network },
   { href: "/membro/ministerios", label: "Ministérios", icon: HeartHandshake },
+  { href: "/membro/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/membro/kids", label: "Kids", icon: Baby },
 ]
 
@@ -52,6 +53,9 @@ export function MemberShell({
             <p className="truncate text-xs text-muted-foreground">Portal do Membro · {memberName}</p>
           </div>
           <PwaInstallButton iconOnly variant="ghost" />
+          <Button render={<Link href="/membro/preferencias" />} nativeButton={false} variant="ghost" size="icon" aria-label="Preferências de comunicação">
+            <Settings2 className="h-4 w-4" />
+          </Button>
           <ThemeToggle />
           <Button type="button" variant="ghost" size="icon" onClick={() => void logout()} aria-label="Sair">
             <LogOut className="h-4 w-4" />

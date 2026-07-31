@@ -249,7 +249,10 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
     { path: "/discipulado", heading: /Planos de Leitura/i },
     { path: "/comunicacao", heading: /Comunica/i },
     { path: "/notificacao", heading: /Notifica/i },
+    { path: "/pessoas/follow-up", heading: /Follow-up/i },
+    { path: "/configuracoes/follow-up", heading: /Gatilhos/i },
     { path: "/crm", heading: /CRM/i },
+    { path: "/celulas/saude", heading: /Saúde das células/i },
     { path: "/financeiro", heading: /Financeiro/i },
     { path: "/doacao", heading: /Doa/i },
     { path: "/inpeace-play", heading: /InPeace Play/i },
@@ -261,6 +264,21 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
     await expectNoDevError(page)
     await expect(page.getByRole("heading", { name: entry.heading }).first()).toBeVisible()
   }
+})
+
+test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ page }) => {
+  await loginAs(page, e2e.accounts.admin)
+  await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
+  await expectNoDevError(page)
+  const hrefs = await page.locator('a[href^="/pessoas/"]').evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""))
+  const personHref = hrefs.find((href) => /^\/pessoas\/[0-9a-f-]{36}$/i.test(href))
+  expect(personHref).toBeTruthy()
+  await page.goto(personHref!, { waitUntil: "domcontentloaded" })
+  await expectNoDevError(page)
+  await expect(page.getByRole("heading", { name: /Linha do tempo/i })).toHaveCount(0)
+  await page.getByRole("tab", { name: /Linha do tempo/i }).click()
+  await expect(page.getByText("Novo follow-up", { exact: true })).toBeVisible()
+  await expect(page.getByText(/Eventos consolidados por fonte/i)).toBeVisible()
 })
 
 test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) => {

@@ -105,6 +105,57 @@ export interface PersonDetail extends PersonListItem {
   customFields: PersonCustomFieldValue[]
   activities: PersonActivityDetail[]
   journeySteps: PersonJourneyStepDetail[]
+  timeline: PersonTimelineItem[]
+  followUpTasks: PersonFollowUpTask[]
+}
+
+export type PersonTimelineKind =
+  | "person"
+  | "attendance"
+  | "cell"
+  | "ministry"
+  | "kids"
+  | "volunteer"
+  | "crm"
+  | "prayer"
+  | "communication"
+  | "audit"
+
+export interface PersonTimelineItem {
+  id: string
+  kind: PersonTimelineKind
+  title: string
+  description: string
+  occurredAt: string
+  source: string
+}
+
+export type PersonFollowUpPriority = "low" | "normal" | "high" | "urgent"
+export type PersonFollowUpStatus = "open" | "in_progress" | "completed" | "canceled"
+
+export interface PersonFollowUpTask {
+  id: string
+  personId: string
+  personName: string
+  title: string
+  notes: string
+  dueAt: string | null
+  priority: PersonFollowUpPriority
+  status: PersonFollowUpStatus
+  origin: "manual" | "public_form" | "new_visitor" | "visitor_without_contact" | "recurring_absence" | "new_prayer_request" | "without_cell" | "without_portal_access" | string
+  responsibleProfileId: string | null
+  responsibleName: string | null
+  crmCardId: string | null
+  createdAt: string
+  completedAt: string | null
+}
+
+export interface PersonFollowUpTrigger {
+  id: string
+  triggerKind: string
+  name: string
+  isActive: boolean
+  config: Record<string, unknown>
 }
 
 export interface DuplicatePersonSummary {

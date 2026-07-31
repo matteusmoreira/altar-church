@@ -5,6 +5,7 @@ import { CheckCircle2, Church, Loader2, ShieldCheck } from "lucide-react"
 import { submitPublicForm } from "@/lib/forms/actions"
 import type { FormField, PublicFormData } from "@/lib/forms/types"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { AcquisitionBeacon } from "@/components/public/acquisition-beacon"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -95,10 +96,22 @@ export function PublicFormClient({ data }: PublicFormClientProps) {
     event.preventDefault()
     setError(null)
     startTransition(async () => {
+      const params = new URLSearchParams(window.location.search)
       const result = await submitPublicForm({
         companySlug: data.companySlug,
         formSlug: data.form.slug,
         values,
+        attribution: {
+          source: params.get("source") || params.get("origem") || params.get("src") || params.get("utm_source") || "direct",
+          sourceLabel: params.get("source_label") || params.get("origem_label") || "",
+          utmSource: params.get("utm_source") || "",
+          utmMedium: params.get("utm_medium") || "",
+          utmCampaign: params.get("utm_campaign") || "",
+          utmContent: params.get("utm_content") || "",
+          utmTerm: params.get("utm_term") || "",
+          landingPath: `${window.location.pathname}${window.location.search}`,
+          referrer: document.referrer,
+        },
       })
       if (!result.ok) {
         setError(result.error || "Não foi possível enviar. Tente novamente.")
@@ -111,6 +124,7 @@ export function PublicFormClient({ data }: PublicFormClientProps) {
   if (success) {
     return (
       <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background">
+        <AcquisitionBeacon companySlug={data.companySlug} />
         <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
           <ThemeToggle />
         </div>
@@ -137,6 +151,7 @@ export function PublicFormClient({ data }: PublicFormClientProps) {
 
   return (
     <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/12 via-background to-background">
+      <AcquisitionBeacon companySlug={data.companySlug} />
       <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
         <ThemeToggle />
       </div>

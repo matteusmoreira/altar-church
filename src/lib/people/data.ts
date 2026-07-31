@@ -1,6 +1,7 @@
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
+import { listPersonFollowUpTasks, listPersonTimeline } from "./follow-up"
 import type {
   DuplicateCandidateItem,
   DuplicateCandidateStatus,
@@ -304,7 +305,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
   await requirePermission("members.view", companyId)
 
   const sql = getSql()
-  const [peopleRows, customFieldRows, activityRows, journeyStepRows] = await Promise.all([
+  const [peopleRows, customFieldRows, activityRows, journeyStepRows, timeline, followUpTasks] = await Promise.all([
     sql<PersonDetailRow[]>`
       select
         p.id,
@@ -415,6 +416,8 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         and mj.is_active = true
       order by mj.sort_order, mj.name, mjs.sort_order
     `,
+    listPersonTimeline(personId, companyId),
+    listPersonFollowUpTasks(personId, companyId),
   ])
 
   const personRow = peopleRows[0]
@@ -426,6 +429,8 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     customFields: customFieldRows.map(toCustomField),
     activities: activityRows.map(toActivity),
     journeySteps: journeyStepRows.map(toJourneyStep),
+    timeline,
+    followUpTasks,
   }
 }
 

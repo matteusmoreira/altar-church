@@ -45,6 +45,37 @@ export interface MemberPortalCapabilities {
   hasVolunteerPortal: boolean
 }
 
+export interface MemberAgendaEvent {
+  id: string
+  title: string
+  description: string
+  type: string
+  startsAt: string
+  endsAt: string | null
+  location: string
+  externalLink: string | null
+  maxCapacity: number | null
+  goingCount: number
+  waitlistedCount: number
+  myStatus: "going" | "waitlisted" | "canceled" | null
+  canRsvp: boolean
+}
+
+export interface MemberProfile {
+  id: string
+  fullName: string
+  email: string | null
+  phone: string
+  birthDate: string | null
+  address: string
+  addressNumber: string
+  addressComplement: string
+  neighborhood: string
+  city: string
+  state: string
+  postalCode: string
+}
+
 export interface MinistryMembershipAdminItem {
   id: string
   ministryId: string

@@ -14,6 +14,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Activity,
   CalendarDays,
   CheckCircle2,
   Church,
@@ -73,6 +74,7 @@ const shortcuts = [
   { href: "/comunicacao", icon: Bell, title: "Comunicação", description: "Notificações e avisos persistidos" },
   { href: "/intercessao", icon: Heart, title: "Intercessão", description: "Pedidos de oração persistidos" },
   { href: "/relatorios", icon: BarChart3, title: "Relatórios", description: "Relatórios reais por módulo" },
+  { href: "/configuracoes/operacao", icon: Activity, title: "Saúde operacional", description: "Migrations, filas, workers e provedores" },
 ]
 
 export function DashboardClient({ data }: { data: DashboardClientData }) {

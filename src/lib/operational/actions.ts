@@ -7,6 +7,7 @@ import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { createNotificationCampaignDeliveries } from "@/lib/notifications/campaign"
 import type { Permission } from "@/lib/types"
 
 type ActionResult = {
@@ -62,6 +63,11 @@ const announcementSchema = z.object({
 const notificationSchema = z.object({
   title: requiredString("Título"),
   content: requiredString("Conteúdo"),
+  method: z.enum(["push", "email", "whatsapp"]),
+  audience: z.enum(["all", "cell", "ministry", "visitors", "birthdays", "manual"]),
+  audienceRefId: z.string().trim().optional().default(""),
+  audiencePersonIds: z.string().trim().optional().default(""),
+  scheduledAt: z.string().trim().optional().default(""),
 })
 const notificationGroupSchema = z.object({
   name: requiredString("Nome"),
@@ -168,8 +174,9 @@ function uuid(formData: FormData, key: string) {
 }
 
 function list(formData: FormData, key: string) {
-  return text(formData, key)
-    .split(",")
+  const values = formData.getAll(key).filter((value): value is string => typeof value === "string")
+  return (values.length > 0 ? values : [text(formData, key)])
+    .flatMap((value) => value.split(","))
     .map((item) => item.trim())
     .filter(Boolean)
 }
@@ -822,23 +829,51 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
     const { user, companyId } = await actionContext(formData, "notification.create")
     const title = requiredText(formData, "title", "Título")
     const content = requiredText(formData, "content", "Conteúdo")
-    const scheduled = bool(formData, "scheduledSend")
-    const rows = await getSql()<{ id: string }[]>`
-      insert into public.notifications (
-        company_id, title, content, method, type, target_group, scheduled_send,
-        send_date, status, created_by, updated_by
-      )
-      values (
-        ${companyId}, ${title}, ${content}, ${text(formData, "method", "push")},
-        ${text(formData, "type", "general")}, ${text(formData, "targetGroup")},
-        ${scheduled}, ${optionalText(formData, "sendDate")},
-        ${scheduled ? "scheduled" : "draft"}, ${user.id}, ${user.id}
-      )
-      returning id
-    `
-    await audit("notification.create", "notifications", rows[0].id, companyId)
+    const method = text(formData, "method", "push") as "push" | "email" | "whatsapp"
+    const audience = text(formData, "audience", "all") as "all" | "cell" | "ministry" | "visitors" | "birthdays" | "manual"
+    const audienceRefId = optionalText(formData, "audienceRefId")
+    const personIds = list(formData, "audiencePersonIds")
+    const scheduledAtInput = optionalText(formData, "scheduledAt")
+    if (scheduledAtInput && Number.isNaN(Date.parse(scheduledAtInput))) throw new Error("Data de agendamento inválida")
+    const scheduledAt = scheduledAtInput ? new Date(scheduledAtInput).toISOString() : null
+    if (scheduledAt && Date.parse(scheduledAt) <= Date.now()) throw new Error("Agendamento deve estar no futuro")
+    const scheduled = Boolean(scheduledAt)
+    const sendDate = scheduledAt ? scheduledAt.slice(0, 10) : optionalText(formData, "sendDate")
+    const rows = await getSql().begin(async (tx) => {
+      const campaigns = await tx<{ id: string }[]>`
+        insert into public.notifications (
+          company_id, title, content, method, type, target_group, scheduled_send,
+          send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids,
+          snapshot_at, snapshot_count, status, created_by, updated_by
+        )
+        values (
+          ${companyId}, ${title}, ${content}, ${method}, ${audience === "birthdays" ? "birthday" : audience === "all" ? "general" : "group"},
+          ${audienceRefId ?? ""}, ${scheduled}, ${sendDate}, ${scheduledAt}, ${audience}, ${audienceRefId},
+          ${tx.json(personIds)}, now(), 0, ${scheduled ? "scheduled" : "queued"}, ${user.id}, ${user.id}
+        )
+        returning id
+      `
+      const campaign = campaigns[0]
+      if (!campaign?.id) throw new Error("Campanha não foi criada")
+      const snapshot = await createNotificationCampaignDeliveries(tx, {
+        notificationId: campaign.id,
+        companyId,
+        channel: method,
+        audience,
+        audienceRefId,
+        personIds,
+        nextAttemptAt: scheduledAt,
+      })
+      await tx`
+        update public.notifications
+        set snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now()
+        where id = ${campaign.id} and company_id = ${companyId}
+      `
+      return { id: campaign.id, snapshot }
+    })
+    await audit("notification.create", "notifications", rows.id, companyId)
     refresh(["/notificacao", "/dashboard"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id: rows.id }
   } catch (error) {
     return toErrorResult(error)
   }

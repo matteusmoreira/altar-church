@@ -18,7 +18,7 @@ test("member is the canonical self-service role", () => {
 test("member portal has isolated shell, base destinations and conditional volunteer access", () => {
   const shell = read("src/components/member/member-shell.tsx")
   const dashboard = read("src/components/member/member-dashboard.tsx")
-  for (const path of ["/membro", "/membro/celulas", "/membro/ministerios", "/membro/kids"]) {
+  for (const path of ["/membro", "/membro/celulas", "/membro/ministerios", "/membro/kids", "/membro/agenda"]) {
     assert.match(shell, new RegExp(path.replaceAll("/", "\\/")))
   }
   assert.match(shell, /safe-area-inset-bottom/)
@@ -27,6 +27,8 @@ test("member portal has isolated shell, base destinations and conditional volunt
   assert.match(shell, /\/membro\/voluntariado/)
   assert.match(dashboard, /Próximo encontro/)
   assert.match(dashboard, /Avisos recentes/)
+  assert.match(shell, /\/membro\/agenda/)
+  assert.match(dashboard, /\/membro\/oracao/)
 })
 
 test("ministry membership contract is tenant-scoped, audited and approval based", () => {

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -18,15 +19,30 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getPublicChurchData } from "@/lib/content/data"
+import { AcquisitionBeacon } from "@/components/public/acquisition-beacon"
 import type { ContentPost } from "@/lib/content/types"
 
 type PublicChurchPageProps = {
   params: Promise<{ slug: string }>
 }
 
+export async function generateMetadata({ params }: PublicChurchPageProps): Promise<Metadata> {
+  const { slug } = await params
+  const data = await getPublicChurchData(slug)
+  if (!data) return { title: "Igreja não encontrada" }
+  return {
+    title: data.church.publicName,
+    description: data.church.history || `Informações públicas de ${data.church.publicName}`,
+  }
+}
+
 function formatDate(value: string | null) {
   if (!value) return ""
   return format(parseISO(value), "dd 'de' MMMM", { locale: ptBR })
+}
+
+function formatDateTime(value: string) {
+  return format(parseISO(value), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
 }
 
 function postTypeLabel(post: ContentPost) {
@@ -51,6 +67,7 @@ export default async function PublicChurchPage({ params }: PublicChurchPageProps
 
   return (
     <div className="min-h-screen bg-background">
+      <AcquisitionBeacon companySlug={data.church.slug} />
       <section className="border-b border-border/50 bg-foreground text-background">
         <div className="mx-auto grid min-h-[82vh] max-w-6xl content-center gap-10 px-4 py-12 md:grid-cols-[1.25fr_0.75fr] md:py-16">
           <div className="space-y-7">
@@ -182,6 +199,35 @@ export default async function PublicChurchPage({ params }: PublicChurchPageProps
               ))}
               {data.ministries.length === 0 && <p className="text-sm text-muted-foreground">Ministérios ainda não publicados.</p>}
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="h-6 w-6 text-primary" />
+            <h2 className="text-2xl font-bold">Próximos eventos</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {data.events.map((event) => (
+              <Card key={event.id}>
+                <CardHeader>
+                  <Badge variant="secondary" className="w-fit">{event.type}</Badge>
+                  <CardTitle className="text-lg">{event.title}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="font-medium">{formatDateTime(event.startsAt)}</p>
+                  {event.description && <p className="text-muted-foreground">{event.description}</p>}
+                  {(event.location || event.isOnline) && (
+                    <p className="text-muted-foreground">{event.isOnline ? "Online" : event.location}</p>
+                  )}
+                  {event.registrationEnabled && <p className="text-xs font-medium text-primary">Inscrições abertas</p>}
+                  {event.isOnline && event.onlineLink && (
+                    <a href={event.onlineLink} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">Acessar link online</a>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+            {data.events.length === 0 && <p className="text-sm text-muted-foreground">Nenhum evento público próximo.</p>}
           </div>
         </section>
 

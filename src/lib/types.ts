@@ -704,13 +704,20 @@ export interface Notification {
   churchId: string
   title: string
   content: string
-  method: "push" | "email" | "sms"
+  method: "push" | "email" | "whatsapp" | "sms"
   type: "general" | "group" | "birthday"
+  audienceKind?: "all" | "cell" | "ministry" | "visitors" | "birthdays" | "manual"
   targetGroup: string
   scheduledSend: boolean
   sendDate: string
-  status: "sent" | "scheduled" | "draft"
+  status: "sent" | "scheduled" | "draft" | "queued" | "processing" | "completed" | "failed" | "canceled"
   createdAt: string
+  snapshotCount?: number
+  deliveryTotal?: number
+  deliveryPending?: number
+  deliverySent?: number
+  deliveryFailed?: number
+  deliveryDead?: number
 }
 
 export interface NotificationGroup {

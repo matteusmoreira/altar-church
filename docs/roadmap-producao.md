@@ -1,6 +1,41 @@
 # Roadmap de Produção - Altar Church
 
-Status validado em 05/06/2026.
+## Atualização de 31/07/2026 — Fase 0
+
+- Fase 0 implementada no código: `/api/health`, `/api/ready`, API V1 e painel `/configuracoes/operacao`.
+- O painel mede banco, Storage, Auth, workers, cron, filas/outboxes, dead letters, uso por tenant, providers e status de backup informado.
+- Projeto Supabase alvo confirmado pelo host configurado: `zsldqioutjxchgmmwtfi.supabase.co`.
+- Migrations verificadas na conclusão desta rodada: 55 no repo, 55 remotas, 0 pendentes.
+- Nenhuma migration nova foi necessária nesta fase; tabelas/outboxes existentes foram reutilizadas.
+- Runbook: `docs/operations/fase-0-release-observability.md`.
+- Staging separado, E2E autenticado, restore real, alertas externos e entrega física de provedores continuam gates separados.
+
+## Atualização de 31/07/2026 — Fase 1
+
+- Campanhas multicanal implementadas localmente para push, e-mail e WhatsApp, com público por célula, ministério, visitantes, aniversariantes, todas as pessoas ou seleção manual.
+- Snapshot de destinatários e `notification_deliveries` persistem status por entrega, tentativas, backoff, dead letter, idempotência e escopo por tenant.
+- Preferências de opt-out, cadastro de push, portal `/membro/preferencias`, API V1 e detalhe de campanha com retry manual foram adicionados.
+- Dispatch integrado processa notificações; rota dedicada usa `NOTIFICATION_WORKER_SECRET` quando configurada.
+- Migrations: 55 no repo, 55 remotas, 0 pendentes.
+- Código e gates locais passaram; provider real, secrets de plataforma, cron, staging, retry observado e entrega física continuam NO-GO até prova externa.
+
+## Atualização de 31/07/2026 — Fases 2 a 4
+
+- Pessoa 360 ganhou linha do tempo multi-origem, tarefas pastorais, filtros, responsáveis, configuração de gatilhos e deduplicação por `source_key`, com reuso de card CRM.
+- Portal do membro ganhou agenda/RSVP com espera transacional, pedido de oração, perfil próprio e preferências, mantendo isolamento por pessoa e tenant.
+- Saúde das células ganhou métricas de presença, capacidade, crescimento, ausência, oração, comunicação, alertas, configuração e exportação CSV.
+- Migrations aplicadas: `20260731150000_person_360_follow_up`, `20260731170000_member_portal_2`, `20260731190000_cell_health`.
+- Testes locais finais desta rodada: 191 testes principais, 6 de voluntariado V2, 7 operacionais; typecheck, lint e build passaram.
+
+## Atualização de 31/07/2026 — pacote público e aquisição
+
+- Portal `/church/[slug]` agora lista eventos públicos futuros e possui metadata SEO básica por igreja.
+- Formulários públicos registram origem (`qr`, Instagram, site, indicação, evento ou campanha), UTM, landing path e referrer sem guardar IP; beacon de visita usa sessão anônima e idempotência.
+- Cada envio público persiste atribuição, cria Pessoa/CRM conforme configuração e abre uma tarefa auditada de primeiro contato com `source_key` idempotente.
+- Relatório protegido disponível em `/relatorios/aquisicao`.
+- Migration final: `20260731210000_public_acquisition`; limpeza/indexação: `20260731220000_public_acquisition_indexes`; total remoto/repo: 55/55.
+
+O bloco abaixo preserva o baseline histórico de 05/06/2026; para o estado atual, use as atualizações acima.
 
 ## Veredito
 
@@ -8,7 +43,7 @@ O core do sistema está pronto para homologação/staging com base real. Produç
 
 Para uso comercial com pagamento, push, e-mail ou WhatsApp automáticos, ainda é obrigatório conectar provedores reais com filas, retries, logs e rollback. O código atual mantém esses fluxos como operação manual/persistida.
 
-## Evidência desta rodada
+## Evidência do baseline histórico
 
 - `npm run typecheck`: passou.
 - `node --test tests/*.test.mjs`: passou com 43 testes.

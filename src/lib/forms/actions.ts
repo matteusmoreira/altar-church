@@ -10,6 +10,7 @@ import { jsonbParam } from "@/lib/db/jsonb"
 import type {
   FormFieldMapTo,
   FormFieldType,
+  PublicAttributionInput,
   FormsActionResult,
   PublicSubmitInput,
   SaveFormFieldInput,
@@ -552,6 +553,27 @@ function splitName(fullName: string) {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") }
 }
 
+const publicSourceKinds = new Set(["qr", "instagram", "site", "referral", "event", "campaign", "direct", "other"])
+
+function bounded(value: unknown, max: number) {
+  return typeof value === "string" ? value.trim().slice(0, max) : ""
+}
+
+function normalizePublicAttribution(input?: PublicAttributionInput) {
+  const source = bounded(input?.source, 40).toLowerCase()
+  return {
+    sourceKind: publicSourceKinds.has(source) ? (source || "direct") : "other",
+    sourceLabel: bounded(input?.sourceLabel, 120),
+    utmSource: bounded(input?.utmSource, 120),
+    utmMedium: bounded(input?.utmMedium, 120),
+    utmCampaign: bounded(input?.utmCampaign, 160),
+    utmContent: bounded(input?.utmContent, 160),
+    utmTerm: bounded(input?.utmTerm, 160),
+    landingPath: bounded(input?.landingPath, 500),
+    referrer: bounded(input?.referrer, 500),
+  }
+}
+
 export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsActionResult> {
   try {
     const companySlug = z.string().trim().min(1).parse(input.companySlug)
@@ -800,6 +822,49 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
       returning id
     `
     const submissionId = submissionRows[0]?.id
+
+    const attribution = normalizePublicAttribution(input.attribution)
+    if (submissionId) {
+      await sql`
+        insert into public.public_acquisition_events (
+          company_id, event_kind, source_kind, source_label,
+          utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+          landing_path, referrer, form_id, form_submission_id, person_id, crm_card_id, idempotency_key
+        )
+        values (
+          ${company.id}, 'form_submission', ${attribution.sourceKind}, ${attribution.sourceLabel},
+          ${attribution.utmSource}, ${attribution.utmMedium}, ${attribution.utmCampaign},
+          ${attribution.utmContent}, ${attribution.utmTerm}, ${attribution.landingPath},
+          ${attribution.referrer}, ${form.id}, ${submissionId}, ${personId}, ${crmCardId},
+          ${`form_submission:${submissionId}`}
+        )
+        on conflict do nothing
+      `
+    }
+
+    if (personId && submissionId) {
+      const followUpRows = await sql<{ id: string }[]>`
+        insert into public.person_follow_up_tasks (
+          company_id, person_id, crm_card_id, title, notes, priority, status, origin, source_key
+        )
+        values (
+          ${company.id}, ${personId}, ${crmCardId}, 'Fazer primeiro contato com novo cadastro',
+          ${`Origem: ${form.title}. Tarefa criada automaticamente após envio público.`},
+          'normal', 'open', 'public_form', ${`public_form:${submissionId}`}
+        )
+        on conflict do nothing
+        returning id
+      `
+      if (followUpRows[0]?.id) {
+        await sql`
+          insert into public.audit_logs (company_id, action, entity_table, entity_id, metadata)
+          values (
+            ${company.id}, 'person_follow_up_task.public_form', 'person_follow_up_tasks', ${followUpRows[0].id},
+            ${JSON.stringify({ submissionId, personId, formId: form.id })}::jsonb
+          )
+        `
+      }
+    }
 
     // Outbound integrations (never fail the public submit)
     try {

@@ -122,4 +122,17 @@ export type PublicSubmitInput = {
   companySlug: string
   formSlug: string
   values: Record<string, string | boolean>
+  attribution?: PublicAttributionInput
+}
+
+export type PublicAttributionInput = {
+  source?: string
+  sourceLabel?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmContent?: string
+  utmTerm?: string
+  landingPath?: string
+  referrer?: string
 }

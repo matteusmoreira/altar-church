@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { FileText, Plug, Search, ShieldCheck } from "lucide-react"
+import Link from "next/link"
+import { Activity, FileText, Plug, Search, ShieldCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -73,6 +75,19 @@ export function SettingsClient({
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Configurações</h1>
         <p className="text-muted-foreground">Conta, acessos e integrações externas (API / webhooks).</p>
       </div>
+
+      <Card className="glass border-primary/20">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <div className="flex items-center gap-3">
+            <Activity className="h-5 w-5 text-primary" />
+            <div>
+              <p className="font-medium">Saúde operacional</p>
+              <p className="text-sm text-muted-foreground">Banco, migrations, filas, workers, cron e provedores.</p>
+            </div>
+          </div>
+          <Button variant="outline" render={<Link href="/configuracoes/operacao" />}>Abrir painel</Button>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="conta">
         <TabsList>

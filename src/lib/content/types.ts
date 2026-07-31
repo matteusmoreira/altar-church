@@ -134,4 +134,17 @@ export interface PublicChurchData {
     responsible: string
     address: string
   }[]
+  events: {
+    id: string
+    title: string
+    description: string
+    type: string
+    startsAt: string
+    endsAt: string | null
+    location: string
+    isOnline: boolean
+    onlineLink: string
+    registrationEnabled: boolean
+    maxCapacity: number
+  }[]
 }

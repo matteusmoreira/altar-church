@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, Baby, Bell, CalendarDays, CheckCircle2, HeartHandshake, Network, Sparkles } from "lucide-react"
+import { ArrowRight, Baby, Bell, CalendarDays, CheckCircle2, Heart, HeartHandshake, Network, Settings2, Sparkles, UserRound } from "lucide-react"
 import type { MemberPortalSummary } from "@/lib/member/types"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -75,6 +75,12 @@ export function MemberDashboard({ data }: { data: MemberPortalSummary }) {
             </CardContent>
           </Card>
         )}
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Link href="/membro/oracao" className="group"><Card className="rounded-2xl bg-card/85 transition-transform group-active:scale-[0.98]"><CardContent className="flex items-center gap-3 p-4"><Heart className="h-5 w-5 text-primary" /><span className="text-sm font-semibold">Pedido de oração</span></CardContent></Card></Link>
+        <Link href="/membro/perfil" className="group"><Card className="rounded-2xl bg-card/85 transition-transform group-active:scale-[0.98]"><CardContent className="flex items-center gap-3 p-4"><UserRound className="h-5 w-5 text-primary" /><span className="text-sm font-semibold">Meu cadastro</span></CardContent></Card></Link>
+        <Link href="/membro/preferencias" className="group"><Card className="rounded-2xl bg-card/85 transition-transform group-active:scale-[0.98]"><CardContent className="flex items-center gap-3 p-4"><Settings2 className="h-5 w-5 text-primary" /><span className="text-sm font-semibold">Preferências</span></CardContent></Card></Link>
       </section>
 
       <section className="space-y-3">

@@ -555,10 +555,16 @@ export function MembersClient({
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Pessoas</h1>
           <p className="text-muted-foreground">Cadastro real de membros, visitantes e voluntários.</p>
         </div>
-        <Button onClick={openCreateDialog} className="gradient-primary w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Nova pessoa
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button render={<Link href="/pessoas/follow-up" />} nativeButton={false} variant="outline" className="w-full sm:w-auto">
+            <Activity className="mr-2 h-4 w-4" />
+            Follow-up
+          </Button>
+          <Button onClick={openCreateDialog} className="gradient-primary w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Nova pessoa
+          </Button>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => value && void handleTabChange(value)}>
