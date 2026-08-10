@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db/client"
+import { jsonbParam, parseJsonbObject } from "@/lib/db/jsonb"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { buildUazapiPayload, directMediaTypeMatches, parseDirectMessageConfig, renderDirectMessage } from "./direct-message"
 import type { FormDirectMessage } from "./types"
@@ -97,7 +98,7 @@ async function sendDelivery(sql: Queryable, delivery: DeliveryRow): Promise<Prov
   if (!delivery.recipient) throw new Error("Formulário sem telefone para envio")
   if (!delivery.uazapi_instance_id) throw new Error("Formulário sem instância UAZAPI selecionada")
 
-  const message = parseDirectMessageConfig(delivery.message_snapshot)
+  const message = parseDirectMessageConfig(parseJsonbObject(delivery.message_snapshot))
   if (!message) throw new Error("Mensagem direta inválida ou não configurada")
   const mediaUrls = await getMediaUrls(sql, delivery, message)
   const request = buildUazapiPayload(message, {
@@ -184,7 +185,7 @@ export async function enqueueFormWhatsappDelivery(input: {
     )
     values (
       ${input.companyId}, ${input.formId}, ${input.submissionId}, ${input.personId}, ${input.instanceId},
-      ${input.recipient}, ${input.recipientName}, ${messageType}, ${JSON.stringify(snapshot ?? messageConfig ?? {})}::jsonb,
+      ${input.recipient}, ${input.recipientName}, ${messageType}, ${jsonbParam(sql, snapshot ?? messageConfig ?? {})},
       ${errorMessage ? "dead" : "pending"}, now(), ${errorMessage}, ${`form_whatsapp:${input.submissionId}`}
     )
     on conflict (delivery_key) do nothing

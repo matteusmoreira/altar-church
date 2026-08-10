@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { parseJsonbObject } from "../src/lib/db/jsonb.ts"
 import {
   buildUazapiPayload,
   parseDirectMessageConfig,
@@ -129,4 +130,18 @@ test("direct form rejects unknown variables", () => {
     () => validateTemplateVariables({ type: "text", text: "{{nao_permitida}}" }, new Set(["nome"])),
     /Variável.*nao_permitida/,
   )
+})
+
+test("direct form accepts legacy string snapshots from the delivery queue", () => {
+  const snapshot = JSON.stringify({
+    type: "button",
+    text: "Olá Ana",
+    footer: "Dignus Est",
+    buttons: [{ label: "Sim", action: "reply", value: "S" }],
+  })
+  const message = parseDirectMessageConfig(parseJsonbObject(snapshot))
+
+  assert.ok(message)
+  assert.equal(message.type, "button")
+  assert.equal(message.text, "Olá Ana")
 })
