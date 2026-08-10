@@ -53,13 +53,21 @@ test("dashboard shell uses multi-tenant church name instead of hard-coded label"
   assert.doesNotMatch(shell, /Igreja Batista Central/)
 })
 
-test("self-service registration is available for church slug onboarding", () => {
+test("self-service registration lets the member choose an active church", () => {
   const registerPage = readFileSync("src/app/(auth)/register/page.tsx", "utf8")
   const registerAction = readFileSync("src/lib/auth/register.ts", "utf8")
   const loginPage = readFileSync("src/app/(auth)/login/page.tsx", "utf8")
   assert.match(registerPage, /registerSelfServiceUser/)
-  assert.match(registerPage, /companySlug/)
+  assert.match(registerPage, /getPublicChurches/)
+  assert.match(registerPage, /register-church-select/)
+  assert.match(registerPage, /type=\{showPassword \? "text" : "password"\}/)
+  assert.match(registerPage, /Mostrar senha/)
+  assert.match(registerPage, /Selecione sua igreja/)
+  assert.doesNotMatch(registerPage, /companySlug|Slug da igreja/)
   assert.match(registerAction, /createUser/)
+  assert.match(registerAction, /companyId/)
+  assert.match(registerAction, /where active = true and status = 'active'/)
+  assert.doesNotMatch(registerAction, /companySlug|slug da igreja/i)
   assert.match(registerAction, /role.*member|member/)
   assert.match(loginPage, /\/register/)
 })

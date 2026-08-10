@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
-import { Building2, Lock, Mail, User } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Building2, Eye, EyeOff, Lock, Mail, User } from "lucide-react"
 import { toast } from "sonner"
-import { registerSelfServiceUser } from "@/lib/auth/register"
+import { getPublicChurches, registerSelfServiceUser, type PublicChurch } from "@/lib/auth/register"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AuthCard } from "@/components/auth/auth-card"
 
 const inputClasses =
@@ -20,7 +21,34 @@ export default function RegisterPage() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [companySlug, setCompanySlug] = useState("")
+  const [companyId, setCompanyId] = useState("")
+  const [churches, setChurches] = useState<PublicChurch[]>([])
+  const [churchesLoading, setChurchesLoading] = useState(true)
+  const [churchesError, setChurchesError] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void getPublicChurches()
+      .then((loadedChurches) => {
+        if (cancelled) return
+        setChurches(loadedChurches)
+        if (loadedChurches.length === 0) {
+          setChurchesError("Nenhuma igreja disponível para cadastro no momento.")
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setChurchesError("Não foi possível carregar as igrejas. Atualize a página e tente novamente.")
+      })
+      .finally(() => {
+        if (!cancelled) setChurchesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -30,7 +58,7 @@ export default function RegisterPage() {
         name,
         email,
         password,
-        companySlug,
+        companyId,
       })
       if (!result.ok) {
         toast.error(result.error ?? "Não foi possível criar a conta")
@@ -46,7 +74,7 @@ export default function RegisterPage() {
   return (
     <AuthCard
       title="Criar conta"
-      subtitle="Cadastre-se com o slug da sua igreja para acessar seu Portal do Membro."
+      subtitle="Selecione sua igreja para acessar seu Portal do Membro."
     >
       <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <div className="space-y-2">
@@ -92,38 +120,61 @@ export default function RegisterPage() {
             <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
             <Input
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               autoComplete="new-password"
               placeholder="Mínimo de 8 caracteres"
-              className={inputClasses}
+              className={`${inputClasses} pr-11`}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               minLength={8}
               required
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white/10 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+              onClick={() => setShowPassword((visible) => !visible)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              aria-pressed={showPassword}
+              title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="companySlug" className="text-[13px] font-medium text-slate-300">
-            Slug da igreja
+          <Label htmlFor="companyId" className="text-[13px] font-medium text-slate-300">
+            Igreja
           </Label>
           <div className="group relative">
             <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
-            <Input
-              id="companySlug"
-              className={inputClasses}
-              value={companySlug}
-              onChange={(event) => setCompanySlug(event.target.value.toLowerCase())}
-              placeholder="batista-central"
-              required
-            />
+            <Select
+              value={companyId}
+              onValueChange={(value) => setCompanyId(value ?? "")}
+              disabled={churchesLoading || churches.length === 0}
+            >
+              <SelectTrigger
+                id="companyId"
+                data-testid="register-church-select"
+                className={`${inputClasses} pr-9 data-placeholder:text-slate-500`}
+                aria-invalid={Boolean(churchesError && !companyId)}
+              >
+                <SelectValue placeholder={churchesLoading ? "Carregando igrejas..." : "Selecione sua igreja"} />
+              </SelectTrigger>
+              <SelectContent>
+                {churches.map((church) => (
+                  <SelectItem key={church.id} value={church.id}>
+                    {church.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <p className="text-xs text-slate-500">Ex.: batista-central, graca-viva</p>
+          {churchesError ? <p className="text-xs text-amber-300" role="status">{churchesError}</p> : null}
         </div>
         <Button
           type="submit"
           className="btn-shine relative h-11 w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 text-[15px] font-semibold text-white shadow-[0_10px_36px_-10px_rgba(59,130,246,0.65)] transition-all duration-300 hover:shadow-[0_14px_44px_-8px_rgba(59,130,246,0.8)] hover:brightness-110 active:scale-[0.99]"
-          disabled={loading}
+          disabled={loading || churchesLoading || !companyId || churches.length === 0}
         >
           {loading ? "Criando..." : "Criar conta"}
         </Button>

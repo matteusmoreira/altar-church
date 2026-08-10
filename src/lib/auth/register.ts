@@ -10,15 +10,27 @@ export type RegisterResult = {
   error?: string
 }
 
+export type PublicChurch = {
+  id: string
+  name: string
+}
+
+export async function getPublicChurches(): Promise<PublicChurch[]> {
+  const sql = getSql()
+
+  return sql<PublicChurch[]>`
+    select id, name
+    from public.companies
+    where active = true and status = 'active'
+    order by lower(name), name
+  `
+}
+
 const registerSchema = z.object({
   name: z.string().trim().min(2, "Nome obrigatório"),
   email: z.string().trim().email("E-mail inválido"),
   password: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
-  companySlug: z
-    .string()
-    .trim()
-    .min(2, "Slug da igreja obrigatório")
-    .regex(/^[a-z0-9-]+$/, "Use o slug da igreja (letras minúsculas, números e hífen)"),
+  companyId: z.string().uuid("Selecione uma igreja"),
 })
 
 export async function registerSelfServiceUser(input: z.input<typeof registerSchema>): Promise<RegisterResult> {
@@ -30,12 +42,13 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
     const companies = await sql<{ id: string; name: string; active: boolean }[]>`
       select id, name, active
       from public.companies
-      where slug = ${parsed.companySlug}
+      where id = ${parsed.companyId}
+        and active = true
+        and status = 'active'
       limit 1
     `
     const company = companies[0]
-    if (!company) throw new Error("Igreja não encontrada. Confira o slug informado.")
-    if (!company.active) throw new Error("Esta igreja está inativa no momento.")
+    if (!company) throw new Error("Igreja não encontrada ou indisponível.")
 
     const existing = await sql<{ id: string }[]>`
       select id
@@ -134,7 +147,7 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
         entityTable: "profiles",
         entityId: profileId,
         companyId: company.id,
-        metadata: { email, role: "member", companySlug: parsed.companySlug },
+        metadata: { email, role: "member", companyId: company.id },
       }).catch(() => {
         // Audit may fail without session; registration should still succeed.
       })
