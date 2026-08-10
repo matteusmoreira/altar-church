@@ -9,7 +9,6 @@ const friendlyRoutes = [
   "/informacoes",
   "/ministerios",
   "/programacao",
-  "/louvor",
   "/congregacoes",
   "/pessoas",
   "/visitantes",
@@ -49,7 +48,6 @@ const legacyRoutes = [
   "/reading-plans",
   "/reports",
   "/settings",
-  "/songs",
   "/visitors",
 ]
 

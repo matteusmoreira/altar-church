@@ -8,7 +8,6 @@ const friendlyRoutes = {
   "church-info": "informacoes",
   ministries: "ministerios",
   programming: "programacao",
-  songs: "louvor",
   congregations: "congregacoes",
   members: "pessoas",
   visitors: "visitantes",
@@ -41,6 +40,19 @@ test("friendly dashboard routes use one typed registry and real route folders", 
     assert.equal(existsSync(`src/app/(dashboard)/${slug}`), true, `missing /${slug} route folder`)
     assert.equal(existsSync(`src/app/(dashboard)/${moduleId}`), false, `legacy /${moduleId} route folder remains`)
   }
+})
+
+test("removed dashboard surfaces stay out of navigation and route registry", () => {
+  const layout = read("src/components/layout/dashboard-layout.tsx")
+  const registry = read("src/lib/navigation/routes.ts")
+  const settings = read("src/app/(dashboard)/configuracoes/settings-client.tsx")
+  const dashboard = read("src/app/(dashboard)/dashboard/dashboard-client.tsx")
+
+  assert.doesNotMatch(layout, /Louvor|dashboardRoutes\.songs/)
+  assert.doesNotMatch(registry, /louvor|songs|\/songs/)
+  assert.equal(existsSync("src/app/(dashboard)/louvor"), false)
+  assert.doesNotMatch(settings, /Saúde operacional|configuracoes\/operacao/)
+  assert.doesNotMatch(dashboard, /Saúde operacional|configuracoes\/operacao/)
 })
 
 test("shared select and dashboard shell are mobile-first", () => {

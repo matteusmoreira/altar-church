@@ -22,7 +22,6 @@ export const dashboardRoutes = {
   "reading-plans": "/discipulado",
   "reports": "/relatorios",
   "settings": "/configuracoes",
-  "songs": "/louvor",
   "visitors": "/visitantes",
   "volunteers": "/voluntariado",
 } as const
@@ -47,7 +46,6 @@ export const legacyDashboardRoutes = {
   "reading-plans": "/reading-plans",
   "reports": "/reports",
   "settings": "/settings",
-  "songs": "/songs",
   "visitors": "/visitors",
   "volunteers": "/volunteers",
 } as const satisfies Partial<Record<DashboardRouteId, string>>

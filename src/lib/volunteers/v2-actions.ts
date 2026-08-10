@@ -37,7 +37,6 @@ function refreshVolunteerPaths() {
   revalidatePath("/voluntariado");
   revalidatePath("/membro/voluntariado");
   revalidatePath("/eventos");
-  revalidatePath("/louvor");
   revalidatePath("/dashboard");
 }
 

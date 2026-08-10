@@ -97,7 +97,6 @@ function refreshProgrammingPaths() {
 }
 
 function refreshSongPaths() {
-  revalidatePath("/louvor")
   revalidatePath("/informacoes")
   revalidatePath("/dashboard")
 }

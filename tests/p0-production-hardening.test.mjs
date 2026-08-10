@@ -107,7 +107,6 @@ test("P1 operational dashboard routes use server-side module and permission layo
     discipulado: ["reading-plans", null],
     relatorios: ["reports", "reports.view"],
     configuracoes: ["settings", "settings.manage_settings"],
-    louvor: ["songs", null],
     visitantes: ["visitors", "visitors.view"],
   }
 

@@ -46,7 +46,7 @@ test("P1 pastoral modules expose real server data and audited mutations", () => 
     /action: "song\.save"/,
     /revalidatePath\("\/ministerios"\)/,
     /revalidatePath\("\/programacao"\)/,
-    /revalidatePath\("\/louvor"\)/,
+    /revalidatePath\("\/informacoes"\)/,
   ]) {
     assert.match(actions, expected)
   }
@@ -56,7 +56,6 @@ test("P1 pastoral module pages do not import mock data", () => {
   const routes = [
     { slug: "ministerios", client: "ministries" },
     { slug: "programacao", client: "programming" },
-    { slug: "louvor", client: "songs" },
   ]
 
   for (const route of routes) {
@@ -71,8 +70,6 @@ test("P1 pastoral module pages do not import mock data", () => {
 
   assert.match(read("src/app/(dashboard)/ministerios/page.tsx"), /listMinistries/)
   assert.match(read("src/app/(dashboard)/programacao/page.tsx"), /redirect\("\/voluntariado"\)/)
-  assert.match(read("src/app/(dashboard)/louvor/page.tsx"), /listSongs/)
   assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /saveMinistry/)
   assert.match(read("src/app/(dashboard)/programacao/programming-client.tsx"), /saveProgramming/)
-  assert.match(read("src/app/(dashboard)/louvor/songs-client.tsx"), /saveSong/)
 })
