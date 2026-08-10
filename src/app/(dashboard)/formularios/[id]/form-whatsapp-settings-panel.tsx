@@ -1,14 +1,15 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
-import { Copy, Plus, Save, Trash2 } from "lucide-react"
+import { CheckCheck, Copy, ExternalLink, FileText, Image as ImageIcon, List as ListIcon, MoreVertical, Paperclip, Phone, Plus, Save, Send, Smile, Trash2, Video } from "lucide-react"
 import { toast } from "sonner"
 import { saveFormWhatsAppSettings, uploadFormWhatsappMedia } from "@/lib/forms/actions"
-import { emptyDirectMessage } from "@/lib/forms/direct-message"
+import { emptyDirectMessage, renderDirectMessage } from "@/lib/forms/direct-message"
 import type {
   ChurchForm,
   FormButtonAction,
   FormDirectButton,
+  FormDirectCarouselCard,
   FormDirectMessage,
   FormField,
   FormUazapiInstanceOption,
@@ -64,7 +65,7 @@ function buttonEditor(
     <div className="space-y-3">
       {buttons.map((button, index) => (
         <div
-          key={`${index}-${button.label}`}
+          key={`button-${index}`}
           className="grid gap-3 rounded-xl border bg-background/60 p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1fr)_auto]"
         >
           <Input
@@ -112,6 +113,172 @@ function buttonEditor(
           <Plus className="mr-1 h-4 w-4" />{addLabel}
         </Button>
       )}
+    </div>
+  )
+}
+
+function PreviewActionButton({ button }: { button: FormDirectButton }) {
+  const Icon = button.action === "url"
+    ? ExternalLink
+    : button.action === "call"
+      ? Phone
+      : button.action === "copy"
+        ? Copy
+        : CheckCheck
+
+  return (
+    <div className="flex min-w-0 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-[#128c7e]">
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{button.label || actionLabels[button.action]}</span>
+    </div>
+  )
+}
+
+function PreviewMedia({ mediaType, filename }: { mediaType: FormDirectCarouselCard["mediaType"]; filename: string }) {
+  const Icon = mediaType === "video" ? Video : mediaType === "document" ? FileText : ImageIcon
+  const label = mediaType === "video" ? "Vídeo" : mediaType === "document" ? "Documento PDF" : "Imagem"
+
+  return (
+    <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 text-white">
+      <div className="absolute inset-0 bg-black/10" />
+      <div className="relative flex flex-col items-center gap-1 text-center">
+        <Icon className="h-7 w-7" />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">{label}</span>
+        {filename ? <span className="max-w-[12rem] truncate text-[10px] text-white/80">{filename}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+function FormWhatsappMobilePreview({ message, mediaFiles }: { message: FormDirectMessage; mediaFiles: FormWhatsappMedia[] }) {
+  const messageText = message.text.trim() || "A mensagem aparecerá aqui."
+  const optionCount = message.type === "list"
+    ? message.sections.reduce((total, section) => total + section.items.length, 0)
+    : 0
+
+  return (
+    <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="space-y-4">
+        <div>
+          <Badge className="mb-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-200">Prévia em tempo real</Badge>
+          <p className="max-w-xl text-sm text-muted-foreground">
+            Esta simulação usa dados de exemplo para mostrar como a mensagem ficará no WhatsApp. As variáveis serão substituídas pelos dados reais do formulário.
+          </p>
+        </div>
+        <div className="grid gap-2 rounded-xl border bg-background/70 p-4 text-sm shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Formato</span>
+            <span className="font-medium">{typeLabels[message.type]}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Variáveis</span>
+            <span className="font-medium">Dados de exemplo</span>
+          </div>
+          {message.type === "carousel" ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Cartões</span>
+              <span className="font-medium">{message.cards.length}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-[21rem]">
+        <div className="rounded-[2.75rem] border-[9px] border-slate-950 bg-slate-950 p-1 shadow-[0_24px_70px_-24px_rgba(15,23,42,0.75)] ring-1 ring-slate-900/10 dark:border-slate-800 dark:bg-slate-800">
+          <div className="relative overflow-hidden rounded-[2rem] bg-[#efeae2]">
+            <div className="absolute left-1/2 top-0 z-20 h-6 w-28 -translate-x-1/2 rounded-b-2xl bg-slate-950 dark:bg-slate-800" />
+            <div className="flex items-center gap-3 bg-[#075e54] px-4 pb-3 pt-8 text-white">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-bold">AC</div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">Altar Church</p>
+                <p className="text-[10px] text-white/75">online</p>
+              </div>
+              <MoreVertical className="h-4 w-4" />
+            </div>
+
+            <div className="min-h-[31rem] bg-[#efeae2] px-3 py-4">
+              <div className="mb-3 flex justify-center">
+                <span className="rounded-md bg-white/70 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500 shadow-sm">Hoje</span>
+              </div>
+              <div className="ml-auto max-w-[94%] rounded-xl rounded-tr-sm bg-[#d9fdd3] p-3 text-[12px] leading-relaxed text-slate-800 shadow-sm">
+                <p className="whitespace-pre-wrap break-words">{messageText}</p>
+
+                {message.type === "button" ? (
+                  <div className="mt-3 overflow-hidden rounded-lg border border-emerald-900/10 bg-white/80">
+                    {message.buttons.map((button, index) => (
+                      <div key={`preview-button-${index}`} className={index > 0 ? "border-t border-emerald-900/10" : undefined}>
+                        <PreviewActionButton button={button} />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {message.type === "list" ? (
+                  <div className="mt-3 overflow-hidden rounded-lg border border-emerald-900/10 bg-white/80">
+                    <div className="flex items-center justify-center gap-1.5 bg-white px-3 py-2 text-xs font-semibold text-[#128c7e]">
+                      <ListIcon className="h-3.5 w-3.5" />
+                      <span>{message.listButton || "Abrir lista"}</span>
+                    </div>
+                    <div className="space-y-2 border-t border-emerald-900/10 px-3 py-2">
+                      {message.sections.slice(0, 1).map((section, sectionIndex) => (
+                        <div key={`preview-section-${sectionIndex}`}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{section.title || "Opções"}</p>
+                          {section.items.slice(0, 3).map((item, itemIndex) => (
+                            <div key={`preview-item-${itemIndex}`} className="mt-1 border-t border-slate-200/70 pt-1 text-[11px]">
+                              <p className="font-medium">{item.label || "Item da lista"}</p>
+                              {item.description ? <p className="truncate text-[10px] text-slate-500">{item.description}</p> : null}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      <p className="text-center text-[10px] text-slate-500">{optionCount || 1} opção(ões) configurada(s)</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {message.type === "carousel" ? (
+                  <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+                    {message.cards.map((card, cardIndex) => {
+                      const media = card.mediaFileId ? mediaFiles.find((file) => file.id === card.mediaFileId) : null
+                      return (
+                        <div key={`preview-card-${cardIndex}`} className="w-[13.5rem] shrink-0 snap-start overflow-hidden rounded-lg border border-emerald-900/10 bg-white/85">
+                          <PreviewMedia mediaType={card.mediaType} filename={media?.originalName || card.filename} />
+                          <div className="space-y-2 p-2.5">
+                            <p className="whitespace-pre-wrap break-words text-[11px] font-medium">{card.text || "Texto do cartão"}</p>
+                            <div className="overflow-hidden rounded-md border border-emerald-900/10">
+                              {card.buttons.map((button, index) => (
+                                <div key={`preview-card-button-${index}`} className={index > 0 ? "border-t border-emerald-900/10" : undefined}>
+                                  <PreviewActionButton button={button} />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
+
+                <div className="mt-2 flex items-center justify-end gap-1 text-[9px] text-slate-500">
+                  <span>agora</span>
+                  <CheckCheck className="h-3 w-3 text-[#53bdeb]" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 bg-[#f0f2f5] p-2">
+              <div className="flex h-8 flex-1 items-center gap-2 rounded-full bg-white px-3 text-[10px] text-slate-400">
+                <Smile className="h-4 w-4" />
+                <span>Digite uma mensagem</span>
+                <Paperclip className="ml-auto h-4 w-4" />
+              </div>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#128c7e] text-white">
+                <Send className="h-3.5 w-3.5" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -213,6 +380,25 @@ export function FormWhatsappSettingsPanel({
   }
 
   const selectedInstance = instances.find((instance) => instance.id === instanceId)
+  const previewMessage = useMemo(() => {
+    const sampleValues: Record<string, unknown> = {
+      nome: "Ana",
+      telefone: "(11) 99999-9999",
+      email: "ana@exemplo.com",
+      form_title: form.title,
+      form_slug: form.slug,
+      source: "Site",
+    }
+    for (const variable of variables) {
+      if (!(variable in sampleValues)) sampleValues[variable] = "Exemplo"
+    }
+
+    try {
+      return renderDirectMessage(message, sampleValues)
+    } catch {
+      return message
+    }
+  }, [form.slug, form.title, message, variables])
 
   return (
     <Card className="glass overflow-hidden">
@@ -336,14 +522,14 @@ export function FormWhatsappSettingsPanel({
                   </div>
                   <div className="space-y-4">
                     {message.sections.map((section, sectionIndex) => (
-                      <div key={`${sectionIndex}-${section.title}`} className="space-y-4 rounded-xl border bg-background/60 p-4 shadow-sm">
+                      <div key={`section-${sectionIndex}`} className="space-y-4 rounded-xl border bg-background/60 p-4 shadow-sm">
                         <div className="flex gap-2">
                           <Input value={section.title} onChange={(event) => setMessage({ ...message, sections: message.sections.map((item, index) => index === sectionIndex ? { ...item, title: event.target.value } : item) })} placeholder="Nome da seção" aria-label={`Nome da seção ${sectionIndex + 1}`} />
                           <Button type="button" size="icon" variant="ghost" disabled={message.sections.length <= 1} onClick={() => setMessage({ ...message, sections: message.sections.filter((_item, index) => index !== sectionIndex) })} aria-label={`Remover seção ${sectionIndex + 1}`}><Trash2 className="h-4 w-4" /></Button>
                         </div>
                         <div className="space-y-3">
                           {section.items.map((item, itemIndex) => (
-                            <div key={`${itemIndex}-${item.label}`} className="grid gap-3 rounded-lg border border-dashed p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <div key={`item-${itemIndex}`} className="grid gap-3 rounded-lg border border-dashed p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
                               <Input value={item.label} onChange={(event) => setMessage({ ...message, sections: message.sections.map((currentSection, index) => index === sectionIndex ? { ...currentSection, items: currentSection.items.map((currentItem, itemPosition) => itemPosition === itemIndex ? { ...currentItem, label: event.target.value } : currentItem) } : currentSection) })} placeholder="Item" aria-label={`Item ${itemIndex + 1}`} />
                               <Input value={item.id} onChange={(event) => setMessage({ ...message, sections: message.sections.map((currentSection, index) => index === sectionIndex ? { ...currentSection, items: currentSection.items.map((currentItem, itemPosition) => itemPosition === itemIndex ? { ...currentItem, id: event.target.value } : currentItem) } : currentSection) })} placeholder="ID da resposta" aria-label={`ID do item ${itemIndex + 1}`} />
                               <Input value={item.description} onChange={(event) => setMessage({ ...message, sections: message.sections.map((currentSection, index) => index === sectionIndex ? { ...currentSection, items: currentSection.items.map((currentItem, itemPosition) => itemPosition === itemIndex ? { ...currentItem, description: event.target.value } : currentItem) } : currentSection) })} placeholder="Descrição" aria-label={`Descrição do item ${itemIndex + 1}`} />
@@ -374,7 +560,7 @@ export function FormWhatsappSettingsPanel({
                   {message.cards.map((card, cardIndex) => {
                     const media = card.mediaFileId ? mediaFiles.find((file) => file.id === card.mediaFileId) : null
                     return (
-                      <div key={`${cardIndex}-${card.text}`} className="space-y-4 rounded-xl border bg-background/60 p-4 shadow-sm">
+                      <div key={`card-${cardIndex}`} className="space-y-4 rounded-xl border bg-background/60 p-4 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold">Cartão {cardIndex + 1}</p>
                           <Button type="button" size="icon" variant="ghost" disabled={message.cards.length <= 1} onClick={() => setMessage({ ...message, cards: message.cards.filter((_item, index) => index !== cardIndex) })} aria-label={`Remover cartão ${cardIndex + 1}`}><Trash2 className="h-4 w-4" /></Button>
@@ -396,13 +582,13 @@ export function FormWhatsappSettingsPanel({
               </section>
             )}
 
-            <Card className="border-dashed bg-muted/20 shadow-none">
-              <CardHeader className="pb-3"><CardTitle className="text-sm">Prévia</CardTitle><CardDescription>Veja a estrutura que será enviada ao contato.</CardDescription></CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="rounded-xl border bg-background/80 p-4"><p className="whitespace-pre-wrap">{message.text || "A mensagem aparecerá aqui."}</p></div>
-                {message.type === "button" && <div className="flex flex-wrap gap-2">{message.buttons.map((button, index) => <Badge key={index} variant="outline">{button.label || "Botão"}</Badge>)}</div>}
-                {message.type === "list" && <Badge variant="outline">{message.listButton || "Abrir lista"}</Badge>}
-                {message.type === "carousel" && <p className="text-xs text-muted-foreground">{message.cards.length} cartão(ões) configurado(s).</p>}
+            <Card className="overflow-hidden border-dashed bg-gradient-to-br from-muted/30 via-background to-primary/5 shadow-none">
+              <CardHeader className="border-b bg-muted/10 pb-4">
+                <CardTitle className="text-sm">Prévia da mensagem</CardTitle>
+                <CardDescription>Veja como o contato receberá o conteúdo configurado.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6">
+                <FormWhatsappMobilePreview message={previewMessage} mediaFiles={mediaFiles} />
               </CardContent>
             </Card>
 
