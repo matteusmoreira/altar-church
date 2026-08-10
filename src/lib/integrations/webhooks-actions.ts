@@ -328,3 +328,129 @@ export async function retryIntegrationDelivery(input: {
     }
   }
 }
+
+const deliveryDeleteSchema = z.object({
+  id: z.string().uuid(),
+  companyId: nullableUuid,
+})
+
+const deliveryLogStatusSchema = z.enum(["sent", "failed", "dead"])
+
+export async function deleteIntegrationDelivery(input: {
+  id: string
+  companyId?: string | null
+}): Promise<IntegrationsActionResult> {
+  try {
+    const parsed = deliveryDeleteSchema.parse(input)
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, parsed.companyId)
+    const sql = getSql()
+
+    const existing = await sql<{
+      id: string
+      form_id: string | null
+      status: string
+    }[]>`
+      select d.id, e.form_id, d.status
+      from public.integration_delivery_outbox d
+      join public.integration_webhook_endpoints e on e.id = d.endpoint_id
+      where d.id = ${parsed.id}
+        and d.company_id = ${companyId}
+        and e.company_id = ${companyId}
+      limit 1
+    `
+    const delivery = existing[0]
+    if (!delivery) throw new Error("Log de webhook não encontrado")
+
+    if (delivery.form_id) {
+      await requirePermission("forms.edit", companyId)
+    } else {
+      await requirePermission("settings.manage_settings", companyId)
+    }
+
+    const status = deliveryLogStatusSchema.safeParse(delivery.status)
+    if (!status.success) {
+      throw new Error("Envios pendentes ou em processamento não podem ser excluídos")
+    }
+
+    const rows = await sql<{ id: string }[]>`
+      delete from public.integration_delivery_outbox
+      where id = ${parsed.id}
+        and company_id = ${companyId}
+        and status = ${status.data}
+      returning id
+    `
+    if (!rows[0]) throw new Error("O log já foi removido ou mudou de status")
+
+    await writeAuditLog({
+      action: "webhook_delivery.delete",
+      entityTable: "integration_delivery_outbox",
+      entityId: parsed.id,
+      companyId,
+      metadata: { formId: delivery.form_id, status: status.data },
+    })
+    revalidatePath("/configuracoes")
+    if (delivery.form_id) revalidatePath(`/formularios/${delivery.form_id}`)
+    return { ok: true, id: parsed.id }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Erro ao excluir log",
+    }
+  }
+}
+
+export async function clearIntegrationDeliveryLogs(input: {
+  companyId?: string | null
+  formId?: string | null
+}): Promise<IntegrationsActionResult> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, input.companyId)
+    const formId = input.formId ? z.string().uuid().parse(input.formId) : null
+    if (formId) {
+      await requirePermission("forms.edit", companyId)
+    } else {
+      await requirePermission("settings.manage_settings", companyId)
+    }
+
+    const sql = getSql()
+    const rows = formId
+      ? await sql<{ id: string }[]>`
+          delete from public.integration_delivery_outbox d
+          using public.integration_webhook_endpoints e
+          where d.endpoint_id = e.id
+            and d.company_id = ${companyId}
+            and e.company_id = ${companyId}
+            and e.form_id = ${formId}
+            and d.status in ('sent', 'failed', 'dead')
+          returning d.id
+        `
+      : await sql<{ id: string }[]>`
+          delete from public.integration_delivery_outbox d
+          using public.integration_webhook_endpoints e
+          where d.endpoint_id = e.id
+            and d.company_id = ${companyId}
+            and e.company_id = ${companyId}
+            and d.status in ('sent', 'failed', 'dead')
+          returning d.id
+        `
+
+    await writeAuditLog({
+      action: "webhook_delivery.clear_logs",
+      entityTable: "integration_delivery_outbox",
+      companyId,
+      metadata: { formId, deletedCount: rows.length },
+    })
+    revalidatePath("/configuracoes")
+    if (formId) revalidatePath(`/formularios/${formId}`)
+    return { ok: true, data: { deletedCount: rows.length } }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Erro ao limpar logs",
+    }
+  }
+}

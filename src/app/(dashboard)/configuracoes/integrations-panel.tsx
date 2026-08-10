@@ -6,6 +6,16 @@ import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Copy, KeyRound, Plus, RefreshCw, Trash2, Webhook } from "lucide-react"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,6 +49,8 @@ import {
   type WebhookEndpoint,
 } from "@/lib/integrations/types"
 import {
+  clearIntegrationDeliveryLogs,
+  deleteIntegrationDelivery,
   deleteWebhookEndpoint,
   retryIntegrationDelivery,
   saveWebhookEndpoint,
@@ -85,6 +97,8 @@ export function IntegrationsPanel({
   const [keyName, setKeyName] = useState("")
   const [keyScopes, setKeyScopes] = useState<ApiKeyScope[]>(["forms:read", "webhooks:manage"])
   const [revealedKey, setRevealedKey] = useState<string | null>(null)
+  const [deleteDeliveryTarget, setDeleteDeliveryTarget] = useState<DeliveryRow | null>(null)
+  const [clearDeliveryLogsOpen, setClearDeliveryLogsOpen] = useState(false)
 
   const eventOptions = useMemo(
     () => INTEGRATION_EVENTS.filter((e) => e !== "integration.test"),
@@ -197,6 +211,39 @@ export function IntegrationsPanel({
         return
       }
       toast.success("Reenvio enfileirado")
+      router.refresh()
+    })
+  }
+
+  function removeDelivery() {
+    if (!deleteDeliveryTarget) return
+    startTransition(async () => {
+      const result = await deleteIntegrationDelivery({ id: deleteDeliveryTarget.id, companyId })
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao excluir log")
+        return
+      }
+      toast.success("Log excluído")
+      setDeleteDeliveryTarget(null)
+      router.refresh()
+    })
+  }
+
+  function clearDeliveryLogs() {
+    startTransition(async () => {
+      const result = await clearIntegrationDeliveryLogs({ companyId })
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao limpar logs")
+        return
+      }
+      const deletedCount =
+        (result.data as { deletedCount?: number } | undefined)?.deletedCount ?? 0
+      toast.success(
+        deletedCount
+          ? `${deletedCount} log(s) excluído(s)`
+          : "Nenhum log encerrado para excluir",
+      )
+      setClearDeliveryLogsOpen(false)
       router.refresh()
     })
   }
@@ -338,6 +385,54 @@ export function IntegrationsPanel({
         </CardContent>
       </Card>
 
+      <AlertDialog
+        open={deleteDeliveryTarget !== null}
+        onOpenChange={(open) => !open && setDeleteDeliveryTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este log?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O registro será removido permanentemente do histórico. Envios em andamento não podem ser excluídos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={removeDelivery}
+            >
+              Excluir log
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={clearDeliveryLogsOpen}
+        onOpenChange={(open) => !open && setClearDeliveryLogsOpen(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar todos os logs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todos os logs encerrados desta igreja serão removidos. Envios pendentes ou em processamento serão preservados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={clearDeliveryLogs}
+            >
+              Limpar logs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Card className="glass">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
@@ -410,9 +505,24 @@ export function IntegrationsPanel({
       </Card>
 
       <Card className="glass">
-        <CardHeader>
-          <CardTitle className="text-base">Entregas recentes</CardTitle>
-          <CardDescription>Log do outbox de webhooks (retry automático com backoff).</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Entregas recentes</CardTitle>
+            <CardDescription>Log do outbox de webhooks (retry automático com backoff).</CardDescription>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={
+              pending ||
+              deliveries.every((row) => !["sent", "failed", "dead"].includes(row.status))
+            }
+            onClick={() => setClearDeliveryLogsOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Limpar logs
+          </Button>
         </CardHeader>
         <CardContent>
           <Table>
@@ -458,6 +568,19 @@ export function IntegrationsPanel({
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
                         Reenviar
+                      </Button>
+                    )}
+                    {["sent", "failed", "dead"].includes(row.status) && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Excluir log"
+                        aria-label="Excluir log"
+                        disabled={pending}
+                        onClick={() => setDeleteDeliveryTarget(row)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
                   </TableCell>

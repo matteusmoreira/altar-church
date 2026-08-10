@@ -6,6 +6,16 @@ import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Copy, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,6 +38,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  clearIntegrationDeliveryLogs,
+  deleteIntegrationDelivery,
   deleteWebhookEndpoint,
   saveWebhookEndpoint,
   testWebhookEndpoint,
@@ -67,6 +79,8 @@ export function FormWebhooksPanel({
   const [name, setName] = useState("")
   const [url, setUrl] = useState("")
   const [secret, setSecret] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeliveryRow | null>(null)
+  const [clearLogsOpen, setClearLogsOpen] = useState(false)
 
   function create() {
     startTransition(async () => {
@@ -123,6 +137,39 @@ export function FormWebhooksPanel({
       } else {
         toast.message("Teste enfileirado. Atualize a página e confira o log de webhooks abaixo.")
       }
+      router.refresh()
+    })
+  }
+
+  function removeDelivery() {
+    if (!deleteTarget) return
+    startTransition(async () => {
+      const result = await deleteIntegrationDelivery({ id: deleteTarget.id, companyId })
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao excluir log")
+        return
+      }
+      toast.success("Log excluído")
+      setDeleteTarget(null)
+      router.refresh()
+    })
+  }
+
+  function clearLogs() {
+    startTransition(async () => {
+      const result = await clearIntegrationDeliveryLogs({ companyId, formId })
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao limpar logs")
+        return
+      }
+      const deletedCount =
+        (result.data as { deletedCount?: number } | undefined)?.deletedCount ?? 0
+      toast.success(
+        deletedCount
+          ? `${deletedCount} log(s) excluído(s)`
+          : "Nenhum log encerrado para excluir",
+      )
+      setClearLogsOpen(false)
       router.refresh()
     })
   }
@@ -272,12 +319,27 @@ export function FormWebhooksPanel({
       </Card>
 
       <Card className="glass">
-        <CardHeader>
-          <CardTitle className="text-base">Log de webhooks (este form)</CardTitle>
-          <CardDescription>
-            Resultado dos POSTs para a URL configurada (incluindo o botão Testar). Diferente da aba
-            Envios, que lista quem preencheu o formulário.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Log de webhooks (este formulário)</CardTitle>
+            <CardDescription>
+              Resultado dos POSTs para a URL configurada (incluindo o botão Testar). Diferente da aba
+              Envios, que lista quem preencheu o formulário.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={
+              pending ||
+              deliveries.every((row) => !["sent", "failed", "dead"].includes(row.status))
+            }
+            onClick={() => setClearLogsOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Limpar logs
+          </Button>
         </CardHeader>
         <CardContent>
           <Table>
@@ -288,6 +350,7 @@ export function FormWebhooksPanel({
                 <TableHead>Endpoint</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Erro</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -313,6 +376,23 @@ export function FormWebhooksPanel({
                   <TableCell className="max-w-[220px] truncate text-[10px] text-destructive">
                     {row.lastError ?? "—"}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {["sent", "failed", "dead"].includes(row.status) ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Excluir log"
+                        aria-label="Excluir log"
+                        disabled={pending}
+                        onClick={() => setDeleteTarget(row)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Em andamento</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -325,6 +405,48 @@ export function FormWebhooksPanel({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este log?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O registro será removido permanentemente do histórico deste webhook. Envios em andamento não podem ser excluídos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={removeDelivery}
+            >
+              Excluir log
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={clearLogsOpen} onOpenChange={(open) => !open && setClearLogsOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar logs deste formulário?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Todos os logs encerrados deste formulário serão removidos. Envios pendentes ou em processamento serão preservados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending}
+              onClick={clearLogs}
+            >
+              Limpar logs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
