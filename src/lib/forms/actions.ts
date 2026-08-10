@@ -7,9 +7,15 @@ import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { jsonbParam } from "@/lib/db/jsonb"
+import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { enqueueFormWhatsappDelivery, processFormWhatsappOutbox, retryFormWhatsappDelivery } from "./direct-delivery"
+import { collectDirectMessageMediaFileIds, directMediaTypeMatches, directMessageSchema, validateTemplateVariables } from "./direct-message"
 import type {
+  FormAfterSubmitMode,
+  FormDirectMessage,
   FormFieldMapTo,
   FormFieldType,
+  FormMediaUploadResult,
   PublicAttributionInput,
   FormsActionResult,
   PublicSubmitInput,
@@ -50,6 +56,42 @@ const saveFormSchema = z.object({
   createPerson: z.boolean().optional().default(true),
   isActive: z.boolean().optional().default(true),
 })
+
+const formWhatsappSettingsSchema = z.object({
+  formId: z.string().uuid(),
+  companyId: nullableUuidSchema,
+  mode: z.enum(["webhook", "direct_message"] satisfies [FormAfterSubmitMode, FormAfterSubmitMode]),
+  instanceId: nullableUuidSchema,
+  message: z.unknown().nullable().optional(),
+})
+
+const formMediaUploadSchema = z.object({
+  formId: z.string().uuid(),
+  companyId: nullableUuidSchema,
+})
+
+const whatsappMediaMimeTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "video/mp4",
+  "application/pdf",
+])
+
+const whatsappMediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".pdf"])
+
+function whatsappUploadContentType(file: File) {
+  if (whatsappMediaMimeTypes.has(file.type)) return file.type
+  const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase()}` : ""
+  return {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".mp4": "video/mp4",
+    ".pdf": "application/pdf",
+  }[extension] ?? file.type
+}
 
 const saveFieldSchema = z.object({
   id: nullableUuidSchema,
@@ -347,6 +389,232 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
   }
 }
 
+export async function saveFormWhatsAppSettings(input: {
+  formId: string
+  companyId?: string | null
+  mode: FormAfterSubmitMode
+  instanceId?: string | null
+  message?: unknown
+}): Promise<FormsActionResult> {
+  try {
+    const parsed = formWhatsappSettingsSchema.parse(input)
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    await requirePermission("forms.edit", companyId)
+    const sql = getSql()
+
+    const formRows = await sql<{ id: string; slug: string }[]>`
+      select id, slug
+      from public.forms
+      where id = ${parsed.formId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    const form = formRows[0]
+    if (!form) throw new Error("FormulÃ¡rio nÃ£o encontrado")
+
+    let message: FormDirectMessage | null = null
+    if (parsed.mode === "direct_message" && parsed.message != null) {
+      const messageResult = directMessageSchema.safeParse(parsed.message)
+      if (!messageResult.success) {
+        throw new Error(messageResult.error.issues[0]?.message ?? "Mensagem direta invÃ¡lida")
+      }
+      message = messageResult.data as FormDirectMessage
+    }
+
+    if (parsed.mode === "direct_message") {
+      if (!parsed.instanceId) throw new Error("Selecione a instÃ¢ncia UAZAPI")
+      if (!message) throw new Error("Configure a mensagem direta")
+
+      const instanceRows = await sql<{ id: string }[]>`
+        select id
+        from public.uazapi_instances
+        where id = ${parsed.instanceId}
+          and company_id = ${companyId}
+          and active = true
+        limit 1
+      `
+      if (!instanceRows[0]) throw new Error("InstÃ¢ncia UAZAPI nÃ£o encontrada ou removida")
+
+      const fieldRows = await sql<{ field_key: string }[]>`
+        select field_key
+        from public.form_fields
+        where form_id = ${parsed.formId}
+          and company_id = ${companyId}
+          and deleted_at is null
+      `
+      const allowedKeys = new Set([
+        ...fieldRows.map((row) => row.field_key),
+        "nome",
+        "name",
+        "telefone",
+        "phone",
+        "celular",
+        "email",
+        "form_title",
+        "form_slug",
+        "source",
+      ])
+      validateTemplateVariables(message, allowedKeys)
+
+      const mediaIds = collectDirectMessageMediaFileIds(message)
+      if (mediaIds.length > 0) {
+        const mediaRows = await sql<{ id: string }[]>`
+          select id
+          from public.app_files
+          where company_id = ${companyId}
+            and id = any(${sql.array(mediaIds)}::uuid[])
+            and entity_table = 'forms'
+            and entity_id = ${parsed.formId}
+            and purpose = 'whatsapp-media'
+            and is_active = true
+            and deleted_at is null
+        `
+        if (mediaRows.length !== mediaIds.length) throw new Error("Uma ou mais mÃ­dias nÃ£o pertencem a este formulÃ¡rio")
+      }
+      if (message.type === "carousel") {
+        const carouselMediaIds = collectDirectMessageMediaFileIds(message)
+        const mediaRows = await sql<{ id: string; mime_type: string }[]>`
+          select id, mime_type
+          from public.app_files
+          where company_id = ${companyId}
+            and id = any(${sql.array(carouselMediaIds)}::uuid[])
+            and entity_table = 'forms'
+            and entity_id = ${parsed.formId}
+            and purpose = 'whatsapp-media'
+            and is_active = true
+            and deleted_at is null
+        `
+        const mimeById = new Map(mediaRows.map((row) => [row.id, row.mime_type]))
+        for (const card of message.cards) {
+          if (!card.mediaFileId || !card.mediaType || !directMediaTypeMatches(card.mediaType, mimeById.get(card.mediaFileId) ?? "")) {
+            throw new Error("O tipo da mÃƒÂ­dia do carrossel nÃƒÂ£o corresponde ao arquivo enviado")
+          }
+        }
+      }
+    }
+
+    await sql`
+      update public.forms
+      set after_submit_mode = ${parsed.mode},
+          whatsapp_instance_id = ${parsed.mode === "direct_message" ? parsed.instanceId : null},
+          whatsapp_message = ${jsonbParam(sql, message ?? {})},
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${parsed.formId}
+        and company_id = ${companyId}
+        and deleted_at is null
+    `
+
+    await writeAuditLog({
+      action: "form.whatsapp_settings.save",
+      entityTable: "forms",
+      entityId: parsed.formId,
+      companyId,
+      metadata: {
+        mode: parsed.mode,
+        instanceId: parsed.instanceId,
+        messageType: message && typeof message === "object" && "type" in message ? message.type : null,
+      },
+    })
+
+    const companySlug = await getCompanySlug(companyId)
+    await revalidateForms(companySlug, form.slug)
+    revalidatePath(`/formularios/${parsed.formId}`)
+    return { ok: true, id: parsed.formId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function uploadFormWhatsappMedia(formData: FormData): Promise<FormMediaUploadResult> {
+  try {
+    const parsed = formMediaUploadSchema.parse({
+      formId: formData.get("formId"),
+      companyId: formData.get("companyId"),
+    })
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    await requirePermission("forms.edit", companyId)
+    const sql = getSql()
+    const formRows = await sql<{ id: string }[]>`
+      select id
+      from public.forms
+      where id = ${parsed.formId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    if (!formRows[0]) throw new Error("FormulÃ¡rio nÃ£o encontrado")
+
+    const file = getOptionalFile(formData, "file")
+    if (!file) throw new Error("Arquivo obrigatÃ³rio")
+    const uploaded = await uploadManagedFile({
+      file,
+      companyId,
+      ownerProfileId: user.id,
+      entityTable: "forms",
+      entityId: parsed.formId,
+      purpose: "whatsapp-media",
+      visibility: "private",
+      allowedMimeTypes: whatsappMediaMimeTypes,
+      allowedExtensions: whatsappMediaExtensions,
+      allowGenericMimeByExtension: true,
+      contentType: whatsappUploadContentType(file),
+      maxSizeBytes: 10 * 1024 * 1024,
+      metadata: { formId: parsed.formId, purpose: "form-whatsapp" },
+    })
+    await writeAuditLog({
+      action: "form.whatsapp_media.upload",
+      entityTable: "app_files",
+      entityId: uploaded.id,
+      companyId,
+      metadata: {
+        formId: parsed.formId,
+        originalName: uploaded.originalName,
+        mimeType: uploaded.mimeType,
+        sizeBytes: uploaded.sizeBytes,
+      },
+    })
+
+    revalidatePath(`/formularios/${parsed.formId}`)
+    return {
+      ok: true,
+      id: uploaded.id,
+      originalName: uploaded.originalName,
+      mimeType: uploaded.mimeType,
+      sizeBytes: uploaded.sizeBytes,
+      signedUrl: null,
+    }
+  } catch (error) {
+    const result = toErrorResult(error)
+    return { ok: false, error: result.error }
+  }
+}
+
+export async function retryFormWhatsappDeliveryAction(input: {
+  deliveryId: string
+  companyId?: string | null
+}): Promise<FormsActionResult> {
+  try {
+    const parsed = z.object({ deliveryId: z.string().uuid(), companyId: nullableUuidSchema }).parse(input)
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    await requirePermission("forms.edit", companyId)
+    const retry = await retryFormWhatsappDelivery(parsed.deliveryId, companyId)
+    if (!retry) throw new Error("Entrega nÃ£o encontrada ou jÃ¡ processada")
+    await writeAuditLog({
+      action: "form.whatsapp_delivery.retry",
+      entityTable: "form_whatsapp_deliveries",
+      entityId: retry.id,
+      companyId,
+      metadata: { formId: retry.form_id, profileId: user.id },
+    })
+    revalidatePath(`/formularios/${retry.form_id}`)
+    return { ok: true, id: retry.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function deleteForm(input: {
   id: string
   companyId?: string | null
@@ -600,9 +868,13 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
         target_stage_id: string | null
         create_person: boolean
         success_message: string
+        after_submit_mode: "webhook" | "direct_message"
+        whatsapp_instance_id: string | null
+        whatsapp_message: unknown
       }[]
     >`
-      select id, title, slug, target_stage_id, create_person, success_message
+      select id, title, slug, target_stage_id, create_person, success_message,
+             after_submit_mode, whatsapp_instance_id, whatsapp_message
       from public.forms
       where company_id = ${company.id}
         and slug = ${formSlug}
@@ -866,8 +1138,50 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
       }
     }
 
-    // Outbound integrations (never fail the public submit)
-    try {
+    const templateFields: Record<string, unknown> = {
+      ...normalized,
+      form_title: form.title,
+      form_slug: form.slug,
+      source,
+    }
+    if (personName) {
+      templateFields.nome = personName
+      templateFields.name = personName
+    }
+    if (personPhone) {
+      templateFields.telefone = personPhone
+      templateFields.phone = personPhone
+      if (templateFields.celular == null || templateFields.celular === "") {
+        templateFields.celular = personPhone
+      }
+    }
+    if (personEmail) templateFields.email = personEmail
+
+    if (form.after_submit_mode === "direct_message") {
+      try {
+        if (submissionId) {
+          const directRecipient = personPhone.replace(/\D/g, "")
+          await enqueueFormWhatsappDelivery({
+            companyId: company.id,
+            formId: form.id,
+            submissionId,
+            personId,
+            instanceId: form.whatsapp_instance_id,
+            recipient: directRecipient.length >= 10 ? directRecipient : "",
+            recipientName: personName,
+            message: form.whatsapp_message,
+            templateFields,
+          })
+          afterResponse("form whatsapp outbox", async () => {
+            await processFormWhatsappOutbox(25)
+          })
+        }
+      } catch (directError) {
+        console.error("[form-whatsapp] enqueue failed", directError)
+      }
+    } else {
+      // Outbound integrations (never fail the public submit)
+      try {
       const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
       const personPayload = {
         id: personId,
@@ -953,6 +1267,7 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
       })
     } catch (integrationError) {
       console.error("[integrations] form submit emit failed", integrationError)
+    }
     }
 
     revalidatePath("/crm")

@@ -3,14 +3,19 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { parseJsonbObject } from "@/lib/db/jsonb"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
+import { listUazapiInstanceOptions } from "@/lib/uazapi/data"
+import { collectDirectMessageMediaFileIds, parseDirectMessageConfig } from "./direct-message"
 import type {
   ChurchForm,
+  FormAfterSubmitMode,
   FormBuilderData,
   FormField,
   FormFieldMapTo,
   FormFieldType,
   FormStatus,
   FormSubmission,
+  FormWhatsappDelivery,
+  FormWhatsappMedia,
   FormsDashboardData,
   PublicFormData,
 } from "./types"
@@ -28,6 +33,9 @@ interface FormRow {
   submit_button_label: string
   create_person: boolean
   is_active: boolean
+  after_submit_mode?: FormAfterSubmitMode | null
+  whatsapp_instance_id?: string | null
+  whatsapp_message?: unknown
   field_count?: number | string | null
   submission_count?: number | string | null
   created_at: Date | string
@@ -57,6 +65,25 @@ interface SubmissionRow {
   person_id: string | null
   payload: unknown
   created_at: Date | string
+}
+
+interface WhatsappDeliveryRow {
+  id: string
+  form_id: string
+  submission_id: string
+  person_id: string | null
+  uazapi_instance_id: string | null
+  instance_name: string | null
+  recipient: string
+  recipient_name: string
+  message_type: FormWhatsappDelivery["messageType"]
+  status: FormWhatsappDelivery["status"]
+  attempts: number
+  last_error: string | null
+  response_status: number | null
+  provider_id: string | null
+  created_at: Date | string
+  sent_at: Date | string | null
 }
 
 function toIso(value: Date | string | null | undefined) {
@@ -93,11 +120,35 @@ function toForm(row: FormRow, companySlug?: string): ChurchForm {
     submitButtonLabel: row.submit_button_label,
     createPerson: row.create_person,
     isActive: row.is_active,
+    afterSubmitMode: row.after_submit_mode ?? "webhook",
+    whatsappInstanceId: row.whatsapp_instance_id ?? null,
+    directMessage: parseDirectMessageConfig(row.whatsapp_message),
     fieldCount: row.field_count == null ? undefined : Number(row.field_count),
     submissionCount: row.submission_count == null ? undefined : Number(row.submission_count),
     publicUrl: companySlug ? `/f/${companySlug}/${row.slug}` : undefined,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
+  }
+}
+
+function toWhatsappDelivery(row: WhatsappDeliveryRow): FormWhatsappDelivery {
+  return {
+    id: row.id,
+    formId: row.form_id,
+    submissionId: row.submission_id,
+    personId: row.person_id,
+    instanceId: row.uazapi_instance_id,
+    instanceName: row.instance_name,
+    recipient: row.recipient,
+    recipientName: row.recipient_name,
+    messageType: row.message_type,
+    status: row.status,
+    attempts: Number(row.attempts ?? 0),
+    lastError: row.last_error,
+    responseStatus: row.response_status,
+    providerId: row.provider_id,
+    createdAt: toIso(row.created_at),
+    sentAt: toIso(row.sent_at),
   }
 }
 
@@ -223,6 +274,9 @@ export async function getFormBuilderData(
       f.submit_button_label,
       f.create_person,
       f.is_active,
+      f.after_submit_mode,
+      f.whatsapp_instance_id,
+      f.whatsapp_message,
       f.created_at,
       f.updated_at
     from public.forms f
@@ -236,7 +290,10 @@ export async function getFormBuilderData(
   const formRow = formRows[0]
   if (!formRow) return null
 
-  const [fieldRows, stageRows, submissionRows] = await Promise.all([
+  const directMessage = parseDirectMessageConfig(formRow.whatsapp_message)
+  const mediaIds = collectDirectMessageMediaFileIds(directMessage)
+
+  const [fieldRows, stageRows, submissionRows, instanceRows, mediaRows, deliveryRows] = await Promise.all([
     sql<FieldRow[]>`
       select *
       from public.form_fields
@@ -260,7 +317,54 @@ export async function getFormBuilderData(
       order by created_at desc
       limit 20
     `,
+    listUazapiInstanceOptions(companyId),
+    mediaIds.length > 0
+      ? sql<{ id: string; original_name: string; mime_type: string; size_bytes: number; storage_path: string }[]>`
+          select id, original_name, mime_type, size_bytes, storage_path
+          from public.app_files
+          where company_id = ${companyId}
+            and id = any(${sql.array(mediaIds)}::uuid[])
+            and entity_table = 'forms'
+            and entity_id = ${formId}
+            and purpose = 'whatsapp-media'
+            and is_active = true
+            and deleted_at is null
+        `
+      : Promise.resolve([] as { id: string; original_name: string; mime_type: string; size_bytes: number; storage_path: string }[]),
+    sql<WhatsappDeliveryRow[]>`
+      select
+        delivery.id,
+        delivery.form_id,
+        delivery.submission_id,
+        delivery.person_id,
+        delivery.uazapi_instance_id,
+        instance.name as instance_name,
+        delivery.recipient,
+        delivery.recipient_name,
+        delivery.message_type,
+        delivery.status,
+        delivery.attempts,
+        delivery.last_error,
+        delivery.response_status,
+        delivery.provider_id,
+        delivery.created_at,
+        delivery.sent_at
+      from public.form_whatsapp_deliveries delivery
+      left join public.uazapi_instances instance on instance.id = delivery.uazapi_instance_id
+      where delivery.form_id = ${formId}
+        and delivery.company_id = ${companyId}
+      order by delivery.created_at desc
+      limit 50
+    `,
   ])
+
+  const whatsappMediaFiles: FormWhatsappMedia[] = mediaRows.map((row) => ({
+    id: row.id,
+    originalName: row.original_name,
+    mimeType: row.mime_type,
+    sizeBytes: Number(row.size_bytes ?? 0),
+    signedUrl: null,
+  }))
 
   return {
     companyId,
@@ -269,6 +373,9 @@ export async function getFormBuilderData(
     fields: fieldRows.map(toField),
     stages: stageRows,
     recentSubmissions: submissionRows.map(toSubmission),
+    uazapiInstances: instanceRows,
+    whatsappMediaFiles,
+    whatsappDeliveries: deliveryRows.map(toWhatsappDelivery),
   }
 }
 

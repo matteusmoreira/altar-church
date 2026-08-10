@@ -1,5 +1,7 @@
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
+import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
+import type { FormUazapiInstanceOption } from "@/lib/forms/types"
 import type { UazapiInstanceItem, UazapiInstancesData, UazapiInstanceStatus } from "./types"
 
 interface InstanceRow {
@@ -45,4 +47,27 @@ export async function getUazapiInstancesData(): Promise<UazapiInstancesData | nu
   }))
 
   return { limit: limits[0]?.limit ?? 0, used: instances.length, instances }
+}
+
+/** Safe metadata for selecting a sending number; never returns provider tokens. */
+export async function listUazapiInstanceOptions(companyIdInput?: string | null): Promise<FormUazapiInstanceOption[]> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Acesso negado")
+  const companyId = requireUserCompanyId(user, companyIdInput)
+  await requirePermission("forms.view", companyId)
+  const sql = getSql()
+  const rows = await sql<FormUazapiInstanceOption[]>`
+    select
+      id,
+      name,
+      status,
+      profile_name as "profileName",
+      phone,
+      is_default as "isDefault"
+    from public.uazapi_instances
+    where company_id = ${companyId}
+      and active = true
+    order by is_default desc, created_at
+  `
+  return rows
 }

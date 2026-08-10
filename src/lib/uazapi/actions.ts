@@ -165,12 +165,34 @@ async function saveProviderInstance(input: {
 }) {
   const sql = getSql()
   return sql.begin(async (tx) => {
-    await assertQuota(tx, input.companyId)
+    await tx`select pg_advisory_xact_lock(hashtext(${`${input.companyId}:${input.provider.id}`}))`
+    const existingRows = await tx<{
+      id: string
+      active: boolean
+      is_default: boolean
+      vault_secret_id: string
+    }[]>`
+      select id, active, is_default, vault_secret_id
+      from public.uazapi_instances
+      where company_id = ${input.companyId}
+        and provider_instance_id = ${input.provider.id}
+      for update
+    `
+    const existing = existingRows[0]
     const current = await tx<{ total: number }[]>`
       select count(*)::int as total
       from public.uazapi_instances
       where company_id = ${input.companyId} and active = true
     `
+    const currentDefault = await tx<{ id: string }[]>`
+      select id
+      from public.uazapi_instances
+      where company_id = ${input.companyId}
+        and active = true
+        and is_default = true
+      limit 1
+    `
+    if (!existing) await assertQuota(tx, input.companyId)
     const secretName = `uazapi_${input.companyId}_${input.provider.id}`
     const secretRows = await tx<{ id: string }[]>`
       select vault.create_secret(
@@ -183,6 +205,9 @@ async function saveProviderInstance(input: {
     if (!secretId) throw new Error("Não foi possível proteger o token no Vault")
 
     try {
+      const shouldBeDefault = existing
+        ? existing.is_default || !currentDefault[0]
+        : (current[0]?.total ?? 0) === 0
       const rows = await tx<{ id: string }[]>`
         insert into public.uazapi_instances (
           company_id, provider_instance_id, name, status, profile_name, phone,
@@ -192,11 +217,25 @@ async function saveProviderInstance(input: {
           ${input.companyId}, ${input.provider.id},
           ${input.preferredName || input.provider.name}, ${input.provider.status},
           ${input.provider.profileName}, ${input.provider.phone}, ${secretId}::uuid,
-          ${(current[0]?.total ?? 0) === 0}, ${input.profileId}, ${input.profileId}, now()
+          ${shouldBeDefault}, ${input.profileId}, ${input.profileId}, now()
         )
+        on conflict (company_id, provider_instance_id) do update
+        set name = excluded.name,
+            status = excluded.status,
+            profile_name = excluded.profile_name,
+            phone = excluded.phone,
+            vault_secret_id = excluded.vault_secret_id,
+            is_default = ${shouldBeDefault},
+            active = true,
+            updated_by = excluded.updated_by,
+            last_checked_at = now(),
+            updated_at = now()
         returning id
       `
       if (!rows[0]?.id) throw new Error("Não foi possível salvar a instância")
+      if (existing?.vault_secret_id && existing.vault_secret_id !== secretId) {
+        await tx`delete from vault.secrets where id = ${existing.vault_secret_id}::uuid`
+      }
       return rows[0].id
     } catch (error) {
       await tx`delete from vault.secrets where id = ${secretId}::uuid`
@@ -319,7 +358,6 @@ export async function connectExistingUazapiInstance(
   try {
     const token = tokenSchema.parse(tokenInput)
     const { user, companyId } = await assertChurchAdmin()
-    await assertQuotaAvailable(companyId)
     const provider = normalizeProvider(await providerRequest("/instance/status", { token }))
     if (!provider.id) throw new Error("Token não identificou uma instância Uazapi")
     const instanceId = await saveProviderInstance({ companyId, profileId: user.id, token, provider })

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { processFormWhatsappOutbox } from "@/lib/forms/direct-delivery"
 import { processNotificationOutbox } from "@/lib/notifications/delivery"
 
 export const dynamic = "force-dynamic"
@@ -17,7 +18,11 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as { batchSize?: number }
     const batchSize = Number(body.batchSize ?? 25)
     const safeBatchSize = Number.isFinite(batchSize) ? Math.min(Math.max(batchSize, 1), 100) : 25
-    return NextResponse.json({ data: await processNotificationOutbox(safeBatchSize) })
+    const [notifications, formWhatsapp] = await Promise.all([
+      processNotificationOutbox(safeBatchSize),
+      processFormWhatsappOutbox(safeBatchSize),
+    ])
+    return NextResponse.json({ data: notifications, formWhatsapp })
   } catch (error) {
     return NextResponse.json(
       { error: { code: "INTERNAL", message: error instanceof Error ? error.message : "Erro no dispatch" } },

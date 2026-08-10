@@ -18,6 +18,7 @@ import { toast } from "sonner"
 import {
   deleteFormField,
   reorderFormFields,
+  retryFormWhatsappDeliveryAction,
   saveForm,
   saveFormField,
 } from "@/lib/forms/actions"
@@ -49,6 +50,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import type { DeliveryRow, WebhookEndpoint } from "@/lib/integrations/types"
 import { FormWebhooksPanel } from "./form-webhooks-panel"
+import { FormWhatsappSettingsPanel } from "./form-whatsapp-settings-panel"
 
 interface FormBuilderClientProps {
   data: FormBuilderData
@@ -253,6 +255,18 @@ export function FormBuilderClient({
         return
       }
       toast.success("Configurações salvas")
+      router.refresh()
+    })
+  }
+
+  function retryWhatsappDelivery(deliveryId: string) {
+    startTransition(async () => {
+      const result = await retryFormWhatsappDeliveryAction({ deliveryId, companyId: data.companyId })
+      if (!result.ok) {
+        toast.error(result.error ?? "NÃ£o foi possÃ­vel reenfileirar")
+        return
+      }
+      toast.success("Mensagem reenfileirada")
       router.refresh()
     })
   }
@@ -768,6 +782,14 @@ export function FormBuilderClient({
               </form>
             </CardContent>
           </Card>
+          <FormWhatsappSettingsPanel
+            companyId={data.companyId}
+            formId={data.form.id}
+            form={data.form}
+            fields={fields}
+            instances={data.uazapiInstances}
+            mediaFiles={data.whatsappMediaFiles}
+          />
         </TabsContent>
 
         <TabsContent value="webhooks" className="mt-4">
@@ -812,6 +834,29 @@ export function FormBuilderClient({
                   </div>
                 ))
               )}
+            </CardContent>
+          </Card>
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle className="text-base">Mensagens diretas</CardTitle>
+              <CardDescription>Entregas pelo nÃºmero selecionado no Altar Church. HTTP aceito pela UAZAPI nÃ£o substitui a confirmaÃ§Ã£o fÃ­sica no WhatsApp.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {data.whatsappDeliveries.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Nenhuma mensagem direta enviada.</p>
+              ) : data.whatsappDeliveries.map((delivery) => (
+                <div key={delivery.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{delivery.recipientName || "Visitante"} · final {delivery.recipient.slice(-4) || "----"}</p>
+                    <p className="text-xs text-muted-foreground">{delivery.messageType} · {delivery.instanceName ?? "InstÃ¢ncia removida"} · {new Date(delivery.createdAt).toLocaleString("pt-BR")}</p>
+                    {delivery.lastError ? <p className="mt-1 text-xs text-destructive">{delivery.lastError}</p> : null}
+                  </div>
+                  <Badge variant={delivery.status === "sent" ? "default" : delivery.status === "dead" ? "destructive" : "outline"}>{delivery.status}</Badge>
+                  {(delivery.status === "failed" || delivery.status === "dead") && (
+                    <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => retryWhatsappDelivery(delivery.id)}>Tentar novamente</Button>
+                  )}
+                </div>
+              ))}
             </CardContent>
           </Card>
         </TabsContent>
