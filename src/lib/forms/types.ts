@@ -146,6 +146,13 @@ export interface FormSubmission {
   createdAt: string
 }
 
+export interface FormSubmissionPagination {
+  total: number
+  page: number
+  pageSize: number
+  pageCount: number
+}
+
 export interface FormsDashboardData {
   companyId: string
   companySlug: string
@@ -160,6 +167,7 @@ export interface FormBuilderData {
   fields: FormField[]
   stages: { id: string; name: string; color: string }[]
   recentSubmissions: FormSubmission[]
+  submissionsPagination: FormSubmissionPagination
   uazapiInstances: FormUazapiInstanceOption[]
   whatsappMediaFiles: FormWhatsappMedia[]
   whatsappDeliveries: FormWhatsappDelivery[]
@@ -178,6 +186,7 @@ export interface PublicFormData {
 export type FormsActionResult = {
   ok: boolean
   id?: string
+  data?: unknown
   error?: string
 }
 

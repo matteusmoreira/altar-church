@@ -14,6 +14,7 @@ import type {
   FormFieldType,
   FormStatus,
   FormSubmission,
+  FormSubmissionPagination,
   FormWhatsappDelivery,
   FormWhatsappMedia,
   FormsDashboardData,
@@ -182,6 +183,51 @@ function toSubmission(row: SubmissionRow): FormSubmission {
   }
 }
 
+const FORM_SUBMISSIONS_PAGE_SIZE = 20
+
+function normalizePage(value: number | undefined) {
+  return Number.isFinite(value) ? Math.max(Math.floor(value as number), 1) : 1
+}
+
+function normalizePageSize(value: number | undefined) {
+  return Number.isFinite(value)
+    ? Math.min(Math.max(Math.floor(value as number), 1), 100)
+    : FORM_SUBMISSIONS_PAGE_SIZE
+}
+
+async function queryFormSubmissionsPage(
+  sql: ReturnType<typeof getSql>,
+  formId: string,
+  companyId: string,
+  requestedPage: number | undefined,
+  pageSize: number,
+): Promise<{ rows: SubmissionRow[]; pagination: FormSubmissionPagination }> {
+  const countRows = await sql<{ total: number }[]>`
+    select count(*)::int as total
+    from public.form_submissions
+    where form_id = ${formId}
+      and company_id = ${companyId}
+  `
+  const total = Number(countRows[0]?.total ?? 0)
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const page = Math.min(normalizePage(requestedPage), pageCount)
+  const offset = (page - 1) * pageSize
+  const rows = await sql<SubmissionRow[]>`
+    select *
+    from public.form_submissions
+    where form_id = ${formId}
+      and company_id = ${companyId}
+    order by created_at desc, id desc
+    limit ${pageSize}
+    offset ${offset}
+  `
+
+  return {
+    rows,
+    pagination: { total, page, pageSize, pageCount },
+  }
+}
+
 async function resolveCompanyId(companyIdInput?: string | null) {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
@@ -253,7 +299,8 @@ export async function getFormsDashboardData(companyIdInput?: string | null): Pro
 
 export async function getFormBuilderData(
   formId: string,
-  companyIdInput?: string | null
+  companyIdInput?: string | null,
+  options?: { submissionPage?: number },
 ): Promise<FormBuilderData | null> {
   const companyId = await resolveCompanyId(companyIdInput)
   await requirePermission("forms.view", companyId)
@@ -293,7 +340,7 @@ export async function getFormBuilderData(
   const directMessage = parseDirectMessageConfig(formRow.whatsapp_message)
   const mediaIds = collectDirectMessageMediaFileIds(directMessage)
 
-  const [fieldRows, stageRows, submissionRows, instanceRows, mediaRows, deliveryRows] = await Promise.all([
+  const [fieldRows, stageRows, submissionPage, instanceRows, mediaRows, deliveryRows] = await Promise.all([
     sql<FieldRow[]>`
       select *
       from public.form_fields
@@ -309,14 +356,13 @@ export async function getFormBuilderData(
         and deleted_at is null
       order by sort_order, created_at
     `,
-    sql<SubmissionRow[]>`
-      select *
-      from public.form_submissions
-      where form_id = ${formId}
-        and company_id = ${companyId}
-      order by created_at desc
-      limit 20
-    `,
+    queryFormSubmissionsPage(
+      sql,
+      formId,
+      companyId,
+      options?.submissionPage,
+      FORM_SUBMISSIONS_PAGE_SIZE,
+    ),
     listUazapiInstanceOptions(companyId),
     mediaIds.length > 0
       ? sql<{ id: string; original_name: string; mime_type: string; size_bytes: number; storage_path: string }[]>`
@@ -372,7 +418,8 @@ export async function getFormBuilderData(
     form: toForm(formRow, companySlug),
     fields: fieldRows.map(toField),
     stages: stageRows,
-    recentSubmissions: submissionRows.map(toSubmission),
+    recentSubmissions: submissionPage.rows.map(toSubmission),
+    submissionsPagination: submissionPage.pagination,
     uazapiInstances: instanceRows,
     whatsappMediaFiles,
     whatsappDeliveries: deliveryRows.map(toWhatsappDelivery),
@@ -396,9 +443,7 @@ export async function listFormSubmissions(
 ) {
   const companyId = await resolveCompanyId(companyIdInput)
   await requirePermission("forms.view", companyId)
-  const page = Math.max(options?.page ?? 1, 1)
-  const pageSize = Math.min(Math.max(options?.pageSize ?? 20, 1), 100)
-  const offset = (page - 1) * pageSize
+  const pageSize = normalizePageSize(options?.pageSize)
   const sql = getSql()
 
   const formOk = await sql<{ id: string }[]>`
@@ -410,33 +455,10 @@ export async function listFormSubmissions(
   `
   if (!formOk[0]) return null
 
-  const [countRows, rows] = await Promise.all([
-    sql<{ total: number }[]>`
-      select count(*)::int as total
-      from public.form_submissions
-      where form_id = ${formId}
-        and company_id = ${companyId}
-    `,
-    sql<SubmissionRow[]>`
-      select *
-      from public.form_submissions
-      where form_id = ${formId}
-        and company_id = ${companyId}
-      order by created_at desc
-      limit ${pageSize}
-      offset ${offset}
-    `,
-  ])
-
-  const total = Number(countRows[0]?.total ?? 0)
+  const result = await queryFormSubmissionsPage(sql, formId, companyId, options?.page, pageSize)
   return {
-    items: rows.map(toSubmission),
-    meta: {
-      total,
-      page,
-      pageSize,
-      pageCount: Math.max(1, Math.ceil(total / pageSize)),
-    },
+    items: result.rows.map(toSubmission),
+    meta: result.pagination,
   }
 }
 
@@ -465,9 +487,7 @@ export async function listFormSubmissionsForCompany(
   formId: string,
   options?: { page?: number; pageSize?: number },
 ) {
-  const page = Math.max(options?.page ?? 1, 1)
-  const pageSize = Math.min(Math.max(options?.pageSize ?? 20, 1), 100)
-  const offset = (page - 1) * pageSize
+  const pageSize = normalizePageSize(options?.pageSize)
   const sql = getSql()
 
   const formOk = await sql<{ id: string }[]>`
@@ -479,33 +499,10 @@ export async function listFormSubmissionsForCompany(
   `
   if (!formOk[0]) return null
 
-  const [countRows, rows] = await Promise.all([
-    sql<{ total: number }[]>`
-      select count(*)::int as total
-      from public.form_submissions
-      where form_id = ${formId}
-        and company_id = ${companyId}
-    `,
-    sql<SubmissionRow[]>`
-      select *
-      from public.form_submissions
-      where form_id = ${formId}
-        and company_id = ${companyId}
-      order by created_at desc
-      limit ${pageSize}
-      offset ${offset}
-    `,
-  ])
-
-  const total = Number(countRows[0]?.total ?? 0)
+  const result = await queryFormSubmissionsPage(sql, formId, companyId, options?.page, pageSize)
   return {
-    items: rows.map(toSubmission),
-    meta: {
-      total,
-      page,
-      pageSize,
-      pageCount: Math.max(1, Math.ceil(total / pageSize)),
-    },
+    items: result.rows.map(toSubmission),
+    meta: result.pagination,
   }
 }
 

@@ -113,6 +113,11 @@ const deleteSchema = z.object({
   companyId: nullableUuidSchema,
 })
 
+const clearSubmissionsSchema = z.object({
+  formId: z.string().uuid(),
+  companyId: nullableUuidSchema,
+})
+
 const reorderSchema = z.object({
   formId: z.string().uuid(),
   companyId: nullableUuidSchema,
@@ -610,6 +615,66 @@ export async function retryFormWhatsappDeliveryAction(input: {
     })
     revalidatePath(`/formularios/${retry.form_id}`)
     return { ok: true, id: retry.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function clearFormSubmissions(input: {
+  formId: string
+  companyId?: string | null
+}): Promise<FormsActionResult> {
+  try {
+    const parsed = clearSubmissionsSchema.parse(input)
+    const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
+    await requirePermission("forms.edit", companyId)
+    const sql = getSql()
+
+    const formRows = await sql<{ id: string }[]>`
+      select id
+      from public.forms
+      where id = ${parsed.formId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      limit 1
+    `
+    if (!formRows[0]) throw new Error("Formulário não encontrado")
+
+    const deletedRows = await sql.begin(async (tx) => {
+      // Lock the active queue rows before checking them so the worker cannot
+      // claim a delivery between the safety check and the cascading delete.
+      const activeDeliveryRows = await tx<{ id: string }[]>`
+        select id
+        from public.form_whatsapp_deliveries
+        where form_id = ${parsed.formId}
+          and company_id = ${companyId}
+          and status in ('pending', 'processing')
+        for update
+      `
+      if (activeDeliveryRows.length > 0) {
+        throw new Error(
+          `Não é possível limpar enquanto houver ${activeDeliveryRows.length} entrega(s) pendente(s) ou em processamento`,
+        )
+      }
+
+      return tx<{ id: string }[]>`
+        delete from public.form_submissions
+        where form_id = ${parsed.formId}
+          and company_id = ${companyId}
+        returning id
+      `
+    })
+
+    await writeAuditLog({
+      action: "form.submissions.clear",
+      entityTable: "form_submissions",
+      entityId: parsed.formId,
+      companyId,
+      metadata: { deletedCount: deletedRows.length, profileId: user.id },
+    })
+    revalidatePath("/formularios")
+    revalidatePath(`/formularios/${parsed.formId}`)
+    return { ok: true, id: parsed.formId, data: { deletedCount: deletedRows.length } }
   } catch (error) {
     return toErrorResult(error)
   }

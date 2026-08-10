@@ -26,7 +26,7 @@ export async function GET(
         : await listFormSubmissions(formId, auth.companyId, { page, pageSize })
 
     if (!result) throw notFound("Formulário não encontrado")
-    return jsonOk(result.items, { meta: result.meta })
+    return jsonOk(result.items, { meta: { ...result.meta } })
   } catch (error) {
     return jsonError(error)
   }

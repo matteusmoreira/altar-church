@@ -5,11 +5,19 @@ import { listDeliveries, listWebhookEndpoints } from "@/lib/integrations/webhook
 
 type PageProps = {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ submissionsPage?: string | string[] }>
 }
 
-export default async function FormBuilderPage({ params }: PageProps) {
+export default async function FormBuilderPage({ params, searchParams }: PageProps) {
   const { id } = await params
-  const data = await getFormBuilderData(id)
+  const query = await searchParams
+  const rawSubmissionPage = Array.isArray(query.submissionsPage)
+    ? query.submissionsPage[0]
+    : query.submissionsPage
+  const parsedSubmissionPage = Number.parseInt(rawSubmissionPage ?? "1", 10)
+  const data = await getFormBuilderData(id, undefined, {
+    submissionPage: Number.isFinite(parsedSubmissionPage) ? parsedSubmissionPage : 1,
+  })
   if (!data) notFound()
   let formWebhooks: Awaited<ReturnType<typeof listWebhookEndpoints>> = []
   let formDeliveries: Awaited<ReturnType<typeof listDeliveries>> = []

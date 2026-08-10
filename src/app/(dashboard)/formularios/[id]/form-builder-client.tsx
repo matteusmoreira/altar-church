@@ -8,6 +8,8 @@ import {
   ArrowLeft,
   ArrowUp,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   ExternalLink,
   Plus,
@@ -16,6 +18,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import {
+  clearFormSubmissions,
   deleteFormField,
   reorderFormFields,
   retryFormWhatsappDeliveryAction,
@@ -33,6 +36,16 @@ import { PageHeader } from "@/components/shared/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Dialog,
   DialogContent,
@@ -227,8 +240,10 @@ export function FormBuilderClient({
 
   const [fieldOpen, setFieldOpen] = useState(false)
   const [fieldForm, setFieldForm] = useState<FieldFormState>(emptyFieldForm)
+  const [clearSubmissionsOpen, setClearSubmissionsOpen] = useState(false)
 
   const publicPath = `/f/${data.companySlug}/${slug}`
+  const submissionsPagination = data.submissionsPagination
   const orderedFields = useMemo(
     () => [...fields].sort((a, b) => a.sortOrder - b.sortOrder),
     [fields]
@@ -267,6 +282,39 @@ export function FormBuilderClient({
         return
       }
       toast.success("Mensagem reenfileirada")
+      router.refresh()
+    })
+  }
+
+  function goToSubmissionPage(page: number) {
+    const nextPage = Math.max(1, Math.min(page, submissionsPagination.pageCount))
+    const url = new URL(window.location.href)
+    if (nextPage === 1) {
+      url.searchParams.delete("submissionsPage")
+    } else {
+      url.searchParams.set("submissionsPage", String(nextPage))
+    }
+    router.replace(`${url.pathname}${url.search}`, { scroll: false })
+  }
+
+  function clearSubmissions() {
+    startTransition(async () => {
+      const result = await clearFormSubmissions({
+        formId: data.form.id,
+        companyId: data.companyId,
+      })
+      if (!result.ok) {
+        toast.error(result.error ?? "Não foi possível limpar os envios")
+        return
+      }
+      const deletedCount = (result.data as { deletedCount?: number } | undefined)?.deletedCount ?? 0
+      toast.success(
+        deletedCount
+          ? `${deletedCount} envio(s) excluído(s)`
+          : "Nenhum envio para excluir",
+      )
+      setClearSubmissionsOpen(false)
+      router.replace(`/formularios/${data.form.id}`, { scroll: false })
       router.refresh()
     })
   }
@@ -803,12 +851,24 @@ export function FormBuilderClient({
 
         <TabsContent value="submissions" className="mt-4 space-y-6">
           <Card className="glass">
-            <CardHeader>
-              <CardTitle className="text-base">Envios recentes</CardTitle>
-              <CardDescription>
-                Pessoas que preencheram o formulário público (não é o log do webhook — esse fica na
-                aba Webhooks).
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">Envios do formulário</CardTitle>
+                <CardDescription>
+                  Pessoas que preencheram o formulário público (não é o log do webhook — esse fica na
+                  aba Webhooks).
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending || submissionsPagination.total === 0}
+                onClick={() => setClearSubmissionsOpen(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                Limpar envios
+              </Button>
             </CardHeader>
             <CardContent className="space-y-3">
               {data.recentSubmissions.length === 0 ? (
@@ -834,8 +894,67 @@ export function FormBuilderClient({
                   </div>
                 ))
               )}
+              {submissionsPagination.pageCount > 1 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                  <p className="text-sm text-muted-foreground">
+                    Página {submissionsPagination.page} de {submissionsPagination.pageCount} · {submissionsPagination.total} envios
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pending || submissionsPagination.page <= 1}
+                      onClick={() => goToSubmissionPage(submissionsPagination.page - 1)}
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" />
+                      Anterior
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pending || submissionsPagination.page >= submissionsPagination.pageCount}
+                      onClick={() => goToSubmissionPage(submissionsPagination.page + 1)}
+                    >
+                      Próxima
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
+
+          <AlertDialog
+            open={clearSubmissionsOpen}
+            onOpenChange={(open) => !open && setClearSubmissionsOpen(false)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Limpar todos os envios?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Todos os registros de preenchimento deste formulário serão removidos permanentemente,
+                  junto com as mensagens diretas já encerradas vinculadas a eles. Entregas pendentes ou
+                  em processamento precisam terminar antes da limpeza.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={pending}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    clearSubmissions()
+                  }}
+                >
+                  Limpar envios
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Mensagens diretas</CardTitle>
