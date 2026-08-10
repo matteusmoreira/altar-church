@@ -51,7 +51,7 @@ export const directMessageSchema = z.discriminatedUnion("type", [
     listButton: templateText.max(80),
     sections: z.array(listSectionSchema).min(1).max(10),
   }).refine((value) => value.sections.reduce((total, section) => total + section.items.length, 0) <= 10, {
-    message: "A lista pode ter no mÃ¡ximo 10 itens",
+    message: "A lista pode ter no máximo 10 itens",
     path: ["sections"],
   }),
   z.object({
@@ -79,8 +79,8 @@ export function emptyDirectMessage(type: FormDirectMessage["type"] = "text"): Fo
       type,
       text: "",
       footer: "",
-      listButton: "Ver opÃ§Ãµes",
-      sections: [{ title: "OpÃ§Ãµes", items: [{ label: "", id: "", description: "" }] }],
+      listButton: "Ver opções",
+      sections: [{ title: "Opções", items: [{ label: "", id: "", description: "" }] }],
     }
   }
   if (type === "carousel") {
@@ -135,7 +135,7 @@ export function collectTemplateVariables(message: unknown) {
 export function validateTemplateVariables(message: unknown, allowedKeys: ReadonlySet<string>) {
   const invalid = collectTemplateVariables(message).filter((key) => !allowedKeys.has(key))
   if (invalid.length > 0) {
-    throw new Error(`VariÃ¡vel(is) invÃ¡lida(s): ${invalid.map((key) => `{{${key}}}`).join(", ")}`)
+    throw new Error(`Variável(is) inválida(s): ${invalid.map((key) => `{{${key}}}`).join(", ")}`)
   }
 }
 
@@ -143,7 +143,7 @@ export function renderTemplate(value: string, variables: Record<string, unknown>
   return value.replace(placeholderPattern, (_full, key: string) => {
     const resolved = variables[key]
     if (resolved === true) return "Sim"
-    if (resolved === false) return "NÃ£o"
+    if (resolved === false) return "Não"
     return resolved == null ? "" : String(resolved)
   })
 }
@@ -291,7 +291,7 @@ export function buildUazapiPayload(
       text: message.text,
       carousel: message.cards.map((card) => {
         const mediaUrl = card.mediaFileId ? input.mediaUrls?.get(card.mediaFileId) : ""
-        if (!mediaUrl) throw new Error("MÃ­dia do carrossel nÃ£o encontrada")
+        if (!mediaUrl) throw new Error("Mídia do carrossel não encontrada")
         return {
           text: card.text,
           ...(card.mediaType === "video" ? { video: mediaUrl } : card.mediaType === "document" ? { document: mediaUrl, filename: card.filename || "arquivo.pdf" } : { image: mediaUrl }),

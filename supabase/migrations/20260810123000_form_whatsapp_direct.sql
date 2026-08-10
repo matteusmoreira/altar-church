@@ -1,4 +1,4 @@
--- FormulÃ¡rios: escolha entre webhook externo e mensagem direta pela instÃ¢ncia UAZAPI da igreja.
+-- Formulários: escolha entre webhook externo e mensagem direta pela instância UAZAPI da igreja.
 
 alter table public.forms
   add column if not exists after_submit_mode text not null default 'webhook',
@@ -99,7 +99,7 @@ $$;
 revoke all on function public.claim_form_whatsapp_delivery_batch(integer) from public;
 grant execute on function public.claim_form_whatsapp_delivery_batch(integer) to service_role;
 
--- Permite que o worker obtenha somente o token da instÃ¢ncia escolhida, nunca o navegador.
+-- Permite que o worker obtenha somente o token da instância escolhida, nunca o navegador.
 create or replace function public.get_uazapi_instance_credential(
   p_company_id uuid,
   p_instance_id uuid

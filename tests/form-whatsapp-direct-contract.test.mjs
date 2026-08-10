@@ -5,7 +5,7 @@ import { test } from "node:test"
 const read = (path) => readFileSync(path, "utf8")
 
 test("mensagem direta tem migration tenant-scoped, idempotente e protegida", () => {
-  const migration = read("supabase/migrations/20260810120000_form_whatsapp_direct.sql")
+  const migration = read("supabase/migrations/20260810123000_form_whatsapp_direct.sql")
   assert.match(migration, /after_submit_mode text not null default 'webhook'/)
   assert.match(migration, /whatsapp_instance_id uuid references public\.uazapi_instances\(id\) on delete set null/)
   assert.match(migration, /create table if not exists public\.form_whatsapp_deliveries/)

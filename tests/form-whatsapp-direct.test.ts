@@ -10,15 +10,15 @@ import {
 const mediaId = "11111111-1111-4111-8111-111111111111"
 
 test("direct form message renders variables and builds text payload", () => {
-  const message = parseDirectMessageConfig({ type: "text", text: "OlÃ¡ {{nome}}: {{telefone}}" })
+  const message = parseDirectMessageConfig({ type: "text", text: "Olá {{nome}}: {{telefone}}" })
   assert.ok(message)
   const rendered = renderDirectMessage(message, { nome: "Ana", telefone: "5511999999999" })
-  assert.deepEqual(rendered, { type: "text", text: "OlÃ¡ Ana: 5511999999999" })
+  assert.deepEqual(rendered, { type: "text", text: "Olá Ana: 5511999999999" })
   assert.deepEqual(buildUazapiPayload(rendered, { number: "5511999999999", trackId: "delivery-1" }), {
     endpoint: "/send/text",
     body: {
       number: "5511999999999",
-      text: "OlÃ¡ Ana: 5511999999999",
+      text: "Olá Ana: 5511999999999",
       linkPreview: false,
       async: true,
       track_source: "altar_church_form",
@@ -49,7 +49,7 @@ test("direct form buttons and lists use the UAZAPI menu shape", () => {
 
   const list = parseDirectMessageConfig({
     type: "list",
-    text: "ServiÃ§os",
+    text: "Serviços",
     footer: "Escolha",
     listButton: "Abrir",
     sections: [{ title: "Geral", items: [{ label: "Culto", id: "culto", description: "Domingo" }] }],
@@ -62,9 +62,9 @@ test("direct form buttons and lists use the UAZAPI menu shape", () => {
 test("direct form carousel resolves uploaded media and buttons", () => {
   const carousel = parseDirectMessageConfig({
     type: "carousel",
-    text: "OpÃ§Ãµes para {{nome}}",
+    text: "Opções para {{nome}}",
     cards: [{
-      text: "CartÃ£o {{nome}}",
+      text: "Cartão {{nome}}",
       mediaFileId: mediaId,
       mediaType: "image",
       filename: "",
@@ -127,6 +127,6 @@ test("direct form carousel maps video and PDF media fields", () => {
 test("direct form rejects unknown variables", () => {
   assert.throws(
     () => validateTemplateVariables({ type: "text", text: "{{nao_permitida}}" }, new Set(["nome"])),
-    /VariÃ¡vel.*nao_permitida/,
+    /Variável.*nao_permitida/,
   )
 })

@@ -263,7 +263,7 @@ export function FormBuilderClient({
     startTransition(async () => {
       const result = await retryFormWhatsappDeliveryAction({ deliveryId, companyId: data.companyId })
       if (!result.ok) {
-        toast.error(result.error ?? "NÃ£o foi possÃ­vel reenfileirar")
+        toast.error(result.error ?? "Não foi possível reenfileirar")
         return
       }
       toast.success("Mensagem reenfileirada")
@@ -658,7 +658,7 @@ export function FormBuilderClient({
           </div>
         </TabsContent>
 
-        <TabsContent value="settings" className="mt-4">
+        <TabsContent value="settings" className="mt-4 space-y-6">
           <Card className="glass max-w-3xl">
             <CardHeader>
               <CardTitle className="text-base">Configurações do formulário</CardTitle>
@@ -801,7 +801,7 @@ export function FormBuilderClient({
           />
         </TabsContent>
 
-        <TabsContent value="submissions" className="mt-4">
+        <TabsContent value="submissions" className="mt-4 space-y-6">
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Envios recentes</CardTitle>
@@ -839,7 +839,7 @@ export function FormBuilderClient({
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Mensagens diretas</CardTitle>
-              <CardDescription>Entregas pelo nÃºmero selecionado no Altar Church. HTTP aceito pela UAZAPI nÃ£o substitui a confirmaÃ§Ã£o fÃ­sica no WhatsApp.</CardDescription>
+              <CardDescription>Entregas pelo número selecionado no Altar Church. HTTP aceito pela UAZAPI não substitui a confirmação física no WhatsApp.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {data.whatsappDeliveries.length === 0 ? (
@@ -848,7 +848,7 @@ export function FormBuilderClient({
                 <div key={delivery.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{delivery.recipientName || "Visitante"} · final {delivery.recipient.slice(-4) || "----"}</p>
-                    <p className="text-xs text-muted-foreground">{delivery.messageType} · {delivery.instanceName ?? "InstÃ¢ncia removida"} · {new Date(delivery.createdAt).toLocaleString("pt-BR")}</p>
+                    <p className="text-xs text-muted-foreground">{delivery.messageType} · {delivery.instanceName ?? "Instância removida"} · {new Date(delivery.createdAt).toLocaleString("pt-BR")}</p>
                     {delivery.lastError ? <p className="mt-1 text-xs text-destructive">{delivery.lastError}</p> : null}
                   </div>
                   <Badge variant={delivery.status === "sent" ? "default" : delivery.status === "dead" ? "destructive" : "outline"}>{delivery.status}</Badge>

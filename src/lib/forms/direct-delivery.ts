@@ -60,13 +60,13 @@ async function getMediaUrls(sql: Queryable, delivery: DeliveryRow, message: Form
       and is_active = true
       and deleted_at is null
   `
-  if (files.length !== ids.length) throw new Error("MÃ­dia do carrossel nÃ£o encontrada")
+  if (files.length !== ids.length) throw new Error("Mídia do carrossel não encontrada")
 
   if (message.type === "carousel") {
     const mimeById = new Map(files.map((file) => [file.id, file.mime_type]))
     for (const card of message.cards) {
       if (!card.mediaFileId || !card.mediaType || !directMediaTypeMatches(card.mediaType, mimeById.get(card.mediaFileId) ?? "")) {
-        throw new Error("O tipo da mÃƒÂ­dia do carrossel nÃƒÂ£o corresponde ao arquivo enviado")
+        throw new Error("O tipo da mídia do carrossel não corresponde ao arquivo enviado")
       }
     }
   }
@@ -75,7 +75,7 @@ async function getMediaUrls(sql: Queryable, delivery: DeliveryRow, message: Form
   const urls = new Map<string, string>()
   for (const file of files) {
     const url = signed.get(file.storage_path)
-    if (!url) throw new Error("NÃ£o foi possÃ­vel gerar a URL da mÃ­dia")
+    if (!url) throw new Error("Não foi possível gerar a URL da mídia")
     urls.set(file.id, url)
   }
   return urls
@@ -88,17 +88,17 @@ async function getCredential(sql: Queryable, companyId: string, instanceId: stri
   `
   const credential = rows[0]
   if (!credential?.base_url || !credential.instance_token) {
-    throw new Error("InstÃ¢ncia UAZAPI desconectada ou removida")
+    throw new Error("Instância UAZAPI desconectada ou removida")
   }
   return { baseUrl: credential.base_url.replace(/\/$/, ""), token: credential.instance_token }
 }
 
 async function sendDelivery(sql: Queryable, delivery: DeliveryRow): Promise<ProviderResult> {
-  if (!delivery.recipient) throw new Error("FormulÃ¡rio sem telefone para envio")
-  if (!delivery.uazapi_instance_id) throw new Error("FormulÃ¡rio sem instÃ¢ncia UAZAPI selecionada")
+  if (!delivery.recipient) throw new Error("Formulário sem telefone para envio")
+  if (!delivery.uazapi_instance_id) throw new Error("Formulário sem instância UAZAPI selecionada")
 
   const message = parseDirectMessageConfig(delivery.message_snapshot)
-  if (!message) throw new Error("Mensagem direta invÃ¡lida ou nÃ£o configurada")
+  if (!message) throw new Error("Mensagem direta inválida ou não configurada")
   const mediaUrls = await getMediaUrls(sql, delivery, message)
   const request = buildUazapiPayload(message, {
     number: delivery.recipient,
@@ -163,17 +163,17 @@ export async function enqueueFormWhatsappDelivery(input: {
   let errorMessage: string | null = null
 
   if (!messageConfig) {
-    errorMessage = "Mensagem direta invÃ¡lida ou nÃ£o configurada"
+    errorMessage = "Mensagem direta inválida ou não configurada"
   } else {
     try {
       snapshot = renderDirectMessage(messageConfig, input.templateFields)
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : "NÃ£o foi possÃ­vel preencher a mensagem"
+      errorMessage = error instanceof Error ? error.message : "Não foi possível preencher a mensagem"
     }
   }
 
-  if (!input.recipient) errorMessage = "FormulÃ¡rio sem telefone para envio"
-  if (!input.instanceId) errorMessage = errorMessage ?? "FormulÃ¡rio sem instÃ¢ncia UAZAPI selecionada"
+  if (!input.recipient) errorMessage = "Formulário sem telefone para envio"
+  if (!input.instanceId) errorMessage = errorMessage ?? "Formulário sem instância UAZAPI selecionada"
 
   const messageType = snapshot?.type ?? messageConfig?.type ?? "text"
   await sql`

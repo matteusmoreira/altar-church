@@ -411,19 +411,19 @@ export async function saveFormWhatsAppSettings(input: {
       limit 1
     `
     const form = formRows[0]
-    if (!form) throw new Error("FormulÃ¡rio nÃ£o encontrado")
+    if (!form) throw new Error("Formulário não encontrado")
 
     let message: FormDirectMessage | null = null
     if (parsed.mode === "direct_message" && parsed.message != null) {
       const messageResult = directMessageSchema.safeParse(parsed.message)
       if (!messageResult.success) {
-        throw new Error(messageResult.error.issues[0]?.message ?? "Mensagem direta invÃ¡lida")
+        throw new Error(messageResult.error.issues[0]?.message ?? "Mensagem direta inválida")
       }
       message = messageResult.data as FormDirectMessage
     }
 
     if (parsed.mode === "direct_message") {
-      if (!parsed.instanceId) throw new Error("Selecione a instÃ¢ncia UAZAPI")
+      if (!parsed.instanceId) throw new Error("Selecione a instância UAZAPI")
       if (!message) throw new Error("Configure a mensagem direta")
 
       const instanceRows = await sql<{ id: string }[]>`
@@ -434,7 +434,7 @@ export async function saveFormWhatsAppSettings(input: {
           and active = true
         limit 1
       `
-      if (!instanceRows[0]) throw new Error("InstÃ¢ncia UAZAPI nÃ£o encontrada ou removida")
+      if (!instanceRows[0]) throw new Error("Instância UAZAPI não encontrada ou removida")
 
       const fieldRows = await sql<{ field_key: string }[]>`
         select field_key
@@ -470,7 +470,7 @@ export async function saveFormWhatsAppSettings(input: {
             and is_active = true
             and deleted_at is null
         `
-        if (mediaRows.length !== mediaIds.length) throw new Error("Uma ou mais mÃ­dias nÃ£o pertencem a este formulÃ¡rio")
+        if (mediaRows.length !== mediaIds.length) throw new Error("Uma ou mais mídias não pertencem a este formulário")
       }
       if (message.type === "carousel") {
         const carouselMediaIds = collectDirectMessageMediaFileIds(message)
@@ -488,7 +488,7 @@ export async function saveFormWhatsAppSettings(input: {
         const mimeById = new Map(mediaRows.map((row) => [row.id, row.mime_type]))
         for (const card of message.cards) {
           if (!card.mediaFileId || !card.mediaType || !directMediaTypeMatches(card.mediaType, mimeById.get(card.mediaFileId) ?? "")) {
-            throw new Error("O tipo da mÃƒÂ­dia do carrossel nÃƒÂ£o corresponde ao arquivo enviado")
+            throw new Error("O tipo da mídia do carrossel não corresponde ao arquivo enviado")
           }
         }
       }
@@ -544,10 +544,10 @@ export async function uploadFormWhatsappMedia(formData: FormData): Promise<FormM
         and deleted_at is null
       limit 1
     `
-    if (!formRows[0]) throw new Error("FormulÃ¡rio nÃ£o encontrado")
+    if (!formRows[0]) throw new Error("Formulário não encontrado")
 
     const file = getOptionalFile(formData, "file")
-    if (!file) throw new Error("Arquivo obrigatÃ³rio")
+    if (!file) throw new Error("Arquivo obrigatório")
     const uploaded = await uploadManagedFile({
       file,
       companyId,
@@ -600,7 +600,7 @@ export async function retryFormWhatsappDeliveryAction(input: {
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
     await requirePermission("forms.edit", companyId)
     const retry = await retryFormWhatsappDelivery(parsed.deliveryId, companyId)
-    if (!retry) throw new Error("Entrega nÃ£o encontrada ou jÃ¡ processada")
+    if (!retry) throw new Error("Entrega não encontrada ou já processada")
     await writeAuditLog({
       action: "form.whatsapp_delivery.retry",
       entityTable: "form_whatsapp_deliveries",
