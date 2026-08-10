@@ -1,0 +1,20 @@
+# Altar Church
+
+> Plataforma SaaS completa e inteligente para gestão de igrejas, células, eventos, ministérios e finanças.
+
+## Visão Geral
+O Altar Church é uma plataforma de gestão eclesiástica desenvolvida para simplificar e otimizar a rotina de líderes, pastores e voluntários. Com suporte a múltiplos ministérios, grupos pequenos (células/GCeus), check-in com QR Code para crianças (Altar Kids), escalas de voluntariado, tesouraria, doações e relatórios em tempo real, a plataforma unifica a comunicação e a liderança em um único ecossistema seguro e intuitivo.
+
+## Principais Soluções e Páginas
+- **Gestão de Membros & CRM Pastoral**: Cadastro completo de membros e visitantes, histórico de crescimento e acompanhamento pastoral - https://altarchurch.com.br/
+- **Células & GCeus**: Gestão de pequenos grupos com relatórios semanais, presença, multiplicação e supervisão em tempo real - https://altarchurch.com.br/
+- **Altar Kids**: Check-in seguro com QR Code e etiquetas impressas, gestão de salas e Portal da Família - https://altarchurch.com.br/kids/cadastro
+- **Eventos & Inscrições**: Agenda da igreja, inscrições online e chamada por QR Code - https://altarchurch.com.br/eventos/publico
+- **Voluntariado & Escalas**: Escalas inteligentes por ministério, confirmação de presença e notificações automáticas - https://altarchurch.com.br/
+- **Financeiro & Doações**: Dízimos, ofertas, campanhas e prestação de contas transparente - https://altarchurch.com.br/
+
+## Informações de Contato e Suporte
+- **Website Oficial**: https://altarchurch.com.br
+- **Acessar Sistema / Login**: https://altarchurch.com.br/login
+- **Criar Conta / Cadastro**: https://altarchurch.com.br/register
+- **Contato Direto**: contato@altarchurch.com.br

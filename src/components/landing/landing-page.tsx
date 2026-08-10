@@ -132,7 +132,8 @@ export function LandingPage() {
     <div className="min-h-screen bg-[#050917] font-sans text-slate-300 antialiased selection:bg-blue-500/30 selection:text-white">
       <LandingHeader />
 
-      {/* ============================= HERO ============================= */}
+      <main>
+        {/* ============================= HERO ============================= */}
       <section className="relative overflow-hidden pt-36 pb-20 lg:pt-44 lg:pb-28">
         {/* fundo decorativo */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -598,6 +599,7 @@ export function LandingPage() {
           </div>
         </Reveal>
       </section>
+      </main>
 
       {/* ============================ FOOTER ============================ */}
       <footer className="border-t border-white/8 py-12">
