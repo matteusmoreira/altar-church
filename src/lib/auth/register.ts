@@ -4,6 +4,7 @@ import { z } from "zod"
 import { writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { normalizeBrazilianWhatsapp } from "./phone"
 
 export type RegisterResult = {
   ok: boolean
@@ -30,6 +31,14 @@ const registerSchema = z.object({
   name: z.string().trim().min(2, "Nome obrigatório"),
   email: z.string().trim().email("E-mail inválido"),
   password: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
+  whatsapp: z.string().trim().transform((value, context) => {
+    const phone = normalizeBrazilianWhatsapp(value)
+    if (!phone) {
+      context.addIssue({ code: "custom", message: "Informe um WhatsApp móvel válido com DDD" })
+      return z.NEVER
+    }
+    return phone
+  }),
   companyId: z.string().uuid("Selecione uma igreja"),
 })
 
@@ -58,6 +67,14 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
     `
     if (existing[0]) throw new Error("Já existe um usuário com este e-mail.")
 
+    const existingPhone = await sql<{ id: string }[]>`
+      select id
+      from public.profiles
+      where login_phone = ${parsed.whatsapp}
+      limit 1
+    `
+    if (existingPhone[0]) throw new Error("Este WhatsApp já está vinculado a outra conta.")
+
     const supabase = createSupabaseAdminClient()
     if (!supabase) {
       throw new Error("Cadastro indisponível: configure SUPABASE_SERVICE_ROLE_KEY no servidor.")
@@ -83,8 +100,12 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
     try {
       const profileId = await sql.begin(async (tx) => {
         const rows = await tx<{ id: string }[]>`
-          insert into public.profiles (company_id, auth_user_id, name, email, role, active)
-          values (${company.id}, ${authUserId}, ${parsed.name}, ${email}, 'member', true)
+          insert into public.profiles (
+            company_id, auth_user_id, name, email, login_phone, role, active
+          )
+          values (
+            ${company.id}, ${authUserId}, ${parsed.name}, ${email}, ${parsed.whatsapp}, 'member', true
+          )
           returning id
         `
         const id = rows[0]?.id
@@ -93,8 +114,8 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
         const nameParts = parsed.name.trim().split(/\s+/)
         const firstName = nameParts[0] ?? parsed.name
         const lastName = nameParts.slice(1).join(" ")
-        const people = await tx<{ id: string }[]>`
-          select id
+        const people = await tx<{ id: string; phone: string }[]>`
+          select id, phone
           from public.people
           where company_id = ${company.id}
             and lower(coalesce(email, '')) = ${email}
@@ -103,14 +124,20 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
           order by created_at
           limit 1
         `
+        const existingPersonPhone = people[0]?.phone
+          ? normalizeBrazilianWhatsapp(people[0].phone)
+          : null
+        if (people[0]?.phone && existingPersonPhone !== parsed.whatsapp) {
+          throw new Error("O WhatsApp não confere com o cadastro existente. Procure a administração da igreja.")
+        }
         const personId = people[0]?.id ?? (
           await tx<{ id: string }[]>`
             insert into public.people (
-              company_id, first_name, last_name, full_name, email, access_profile,
+              company_id, first_name, last_name, full_name, email, phone, access_profile,
               status, person_type, is_active, profile_id, created_by, updated_by
             )
             values (
-              ${company.id}, ${firstName}, ${lastName}, ${parsed.name}, ${email}, 'member',
+              ${company.id}, ${firstName}, ${lastName}, ${parsed.name}, ${email}, ${parsed.whatsapp}, 'member',
               'active', 'member', true, ${id}, ${id}, ${id}
             )
             returning id
@@ -120,7 +147,7 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
 
         await tx`
           update public.people
-          set profile_id = ${id}, access_profile = 'member', updated_at = now()
+          set profile_id = ${id}, phone = ${parsed.whatsapp}, access_profile = 'member', updated_at = now()
           where id = ${personId} and (profile_id is null or profile_id = ${id})
         `
         await tx`
@@ -147,7 +174,7 @@ export async function registerSelfServiceUser(input: z.input<typeof registerSche
         entityTable: "profiles",
         entityId: profileId,
         companyId: company.id,
-        metadata: { email, role: "member", companyId: company.id },
+        metadata: { email, role: "member", companyId: company.id, whatsappRegistered: true },
       }).catch(() => {
         // Audit may fail without session; registration should still succeed.
       })

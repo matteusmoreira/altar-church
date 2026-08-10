@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Lock, Mail } from "lucide-react"
+import { Eye, EyeOff, Lock, Mail, MessageCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AuthCard } from "@/components/auth/auth-card"
 import { PwaInstallButton } from "@/components/pwa-install"
+import { loginWithIdentifier, type LoginMethod } from "@/lib/auth/login-actions"
+import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 
 const inputClasses =
   "h-11 md:h-11 rounded-xl border-white/10 bg-white/[0.04] pl-10 md:pl-10 text-[15px] md:text-[15px] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/20"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
+  const [whatsapp, setWhatsapp] = useState("")
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>("email")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -25,7 +29,7 @@ export default function LoginPage() {
     () => true,
     () => false
   )
-  const { login, isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
   const nextPath = () => {
     if (typeof window === "undefined") return "/dashboard"
@@ -43,12 +47,16 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const success = await login(email, password)
-      if (success) {
+      const result = await loginWithIdentifier({
+        method: loginMethod,
+        identifier: loginMethod === "email" ? email : whatsapp,
+        password,
+      })
+      if (result.ok) {
         toast.success("Bem-vindo de volta!")
-        router.push(nextPath())
+        window.location.assign(nextPath())
       } else {
-        toast.error("Credenciais invalidas ou perfil sem acesso")
+        toast.error("WhatsApp/e-mail ou senha inválidos")
       }
     } finally {
       setLoading(false)
@@ -73,28 +81,89 @@ export default function LoginPage() {
           void handleSubmit()
         }}
       >
+        <div
+          className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/20 p-1"
+          role="tablist"
+          aria-label="Forma de login"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={loginMethod === "whatsapp"}
+            data-testid="login-method-whatsapp"
+            className={`flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-all ${
+              loginMethod === "whatsapp"
+                ? "bg-emerald-500/15 text-emerald-300 shadow-sm ring-1 ring-emerald-400/20"
+                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            }`}
+            onClick={() => setLoginMethod("whatsapp")}
+          >
+            <MessageCircle className="h-4 w-4" />
+            Login por WhatsApp
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={loginMethod === "email"}
+            data-testid="login-method-email"
+            className={`flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-all ${
+              loginMethod === "email"
+                ? "bg-sky-500/15 text-sky-300 shadow-sm ring-1 ring-sky-400/20"
+                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            }`}
+            onClick={() => setLoginMethod("email")}
+          >
+            <Mail className="h-4 w-4" />
+            Login por e-mail
+          </button>
+        </div>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-[13px] font-medium text-slate-300">
-            E-mail
+          <Label htmlFor={loginMethod} className="text-[13px] font-medium text-slate-300">
+            {loginMethod === "email" ? "E-mail" : "WhatsApp"}
           </Label>
           <div className="group relative">
-            <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
-            <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              placeholder="seu@email.com"
-              className={inputClasses}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
+            {loginMethod === "email" ? (
+              <>
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="seu@email.com"
+                  className={inputClasses}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </>
+            ) : (
+              <>
+                <MessageCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-emerald-400" />
+                <Input
+                  id="whatsapp"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={15}
+                  placeholder="(11) 99999-9999"
+                  className={inputClasses}
+                  value={whatsapp}
+                  onChange={(event) => setWhatsapp(formatBrazilianWhatsapp(event.target.value))}
+                  required
+                />
+              </>
+            )}
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-[13px] font-medium text-slate-300">
-            Senha
-          </Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="password" className="text-[13px] font-medium text-slate-300">
+              Senha
+            </Label>
+            <Link href="/recuperar-senha" className="text-xs font-medium text-sky-400 transition-colors hover:text-sky-300">
+              Esqueci minha senha
+            </Link>
+          </div>
           <div className="group relative">
             <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-sky-400" />
             <Input

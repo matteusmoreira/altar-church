@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { getSql } from "@/lib/db/client"
 import { writeAuditLog } from "@/lib/auth/permissions"
+import { normalizeBrazilianWhatsapp } from "@/lib/auth/phone"
 import { requireMemberContext } from "./access"
 
 const uuid = z.string().uuid()
@@ -126,18 +127,33 @@ export async function updateMemberProfile(formData: FormData) {
   try {
     const email = value(formData, "email")
     if (email && !z.string().email().safeParse(email).success) throw new Error("E-mail inválido")
+    const phone = normalizeBrazilianWhatsapp(value(formData, "phone"))
+    if (!phone) throw new Error("Informe um WhatsApp móvel válido com DDD")
     const { user, companyId, personId } = await requireMemberContext()
-    const rows = await getSql()<{ id: string }[]>`
-      update public.people
-      set email = ${email || null}, phone = ${value(formData, "phone")}, address = ${value(formData, "address")},
-          address_number = ${value(formData, "addressNumber")}, address_complement = ${value(formData, "addressComplement")},
-          neighborhood = ${value(formData, "neighborhood")}, city = ${value(formData, "city")}, state = ${value(formData, "state")},
-          postal_code = ${value(formData, "postalCode")}, updated_by = ${user.id}, updated_at = now()
-      where company_id = ${companyId} and deleted_at is null
-        and (id = ${personId} or profile_id = ${user.id})
-      returning id
-    `
-    if (!rows[0]) throw new Error("Perfil não encontrado")
+    await getSql().begin(async (tx) => {
+      const duplicate = await tx<{ id: string }[]>`
+        select id from public.profiles
+        where login_phone = ${phone} and id <> ${user.id}
+        limit 1
+      `
+      if (duplicate[0]) throw new Error("Este WhatsApp já está vinculado a outra conta")
+      const rows = await tx<{ id: string }[]>`
+        update public.people
+        set email = ${email || null}, phone = ${phone}, address = ${value(formData, "address")},
+            address_number = ${value(formData, "addressNumber")}, address_complement = ${value(formData, "addressComplement")},
+            neighborhood = ${value(formData, "neighborhood")}, city = ${value(formData, "city")}, state = ${value(formData, "state")},
+            postal_code = ${value(formData, "postalCode")}, updated_by = ${user.id}, updated_at = now()
+        where company_id = ${companyId} and deleted_at is null
+          and (id = ${personId} or profile_id = ${user.id})
+        returning id
+      `
+      if (!rows[0]) throw new Error("Perfil não encontrado")
+      await tx`
+        update public.profiles
+        set login_phone = ${phone}, person_id = ${rows[0].id}, updated_at = now()
+        where id = ${user.id} and company_id = ${companyId}
+      `
+    })
     await writeAuditLog({ action: "member.profile.update", entityTable: "people", entityId: personId, companyId, metadata: { profileId: user.id, fields: ["email", "phone", "address"] } })
     revalidatePath("/membro/perfil")
     revalidatePath("/membro")

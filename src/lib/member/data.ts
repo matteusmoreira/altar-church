@@ -12,7 +12,7 @@ const iso = (value: DateValue | null) => value instanceof Date ? value.toISOStri
 export async function getMemberShellData() {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
-  const [companyRows, capabilityRows] = await Promise.all([
+  const [companyRows, capabilityRows, profileRows] = await Promise.all([
     sql<{ name: string }[]>`
       select name from public.companies where id = ${companyId} and active = true limit 1
     `,
@@ -31,11 +31,22 @@ export async function getMemberShellData() {
           and volunteer.deleted_at is null
       ) as has_volunteer_portal
     `,
+    sql<{ login_phone: string | null }[]>`
+      select login_phone
+      from public.profiles
+      where id = ${user.id} and company_id = ${companyId} and active = true
+      limit 1
+    `,
   ])
   const capabilities: MemberPortalCapabilities = {
     hasVolunteerPortal: capabilityRows[0]?.has_volunteer_portal ?? false,
   }
-  return { user, churchName: companyRows[0]?.name ?? "Altar Church", capabilities }
+  return {
+    user,
+    churchName: companyRows[0]?.name ?? "Altar Church",
+    capabilities,
+    whatsappPending: !profileRows[0]?.login_phone,
+  }
 }
 
 export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {

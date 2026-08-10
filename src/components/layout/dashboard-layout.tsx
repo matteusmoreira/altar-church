@@ -45,6 +45,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
+import { WhatsappPendingBanner } from "@/components/auth/whatsapp-pending-banner"
 
 type NavigationItem = {
   href: string
@@ -279,10 +280,12 @@ export function DashboardLayout({
   children,
   initialEnabledModuleIds,
   churchName = "Altar Church",
+  whatsappPending = false,
 }: {
   children: React.ReactNode
   initialEnabledModuleIds: string[] | null
   churchName?: string
+  whatsappPending?: boolean
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -367,6 +370,7 @@ export function DashboardLayout({
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">
             <PwaInstallBanner className="mb-4" />
+            <WhatsappPendingBanner pending={whatsappPending} />
             {adminBlocked ? (
               <div className="flex min-h-[55vh] items-center justify-center">
                 <div className="max-w-md rounded-lg border border-border/40 p-6 text-center">

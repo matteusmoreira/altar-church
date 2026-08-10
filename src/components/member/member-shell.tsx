@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
 import { Button } from "@/components/ui/button"
+import { WhatsappPendingBanner } from "@/components/auth/whatsapp-pending-banner"
 
 const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
@@ -22,11 +23,13 @@ export function MemberShell({
   memberName,
   churchName,
   hasVolunteerPortal,
+  whatsappPending,
 }: {
   children: React.ReactNode
   memberName: string
   churchName: string
   hasVolunteerPortal: boolean
+  whatsappPending: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -65,6 +68,7 @@ export function MemberShell({
 
       <main className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:pb-10 lg:pt-8">
         <PwaInstallBanner className="mb-5" />
+        <WhatsappPendingBanner pending={whatsappPending} />
         {children}
       </main>
 

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 
 export function MemberProfileForm({ profile }: { profile: MemberProfile }) {
   const router = useRouter()
@@ -29,5 +30,5 @@ export function MemberProfileForm({ profile }: { profile: MemberProfile }) {
     ["addressComplement", "Complemento", profile.addressComplement], ["neighborhood", "Bairro", profile.neighborhood],
     ["city", "Cidade", profile.city], ["state", "Estado", profile.state], ["postalCode", "CEP", profile.postalCode],
   ] as const
-  return <Card className="rounded-3xl bg-card/85"><CardHeader><CardTitle>Dados de contato</CardTitle></CardHeader><CardContent><form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">{fields.map(([name, label, value]) => <div key={name} className="grid gap-2"><Label htmlFor={`profile-${name}`}>{label}</Label><Input id={`profile-${name}`} name={name} defaultValue={value} /></div>)}<Button type="submit" disabled={pending} className="sm:col-span-2">Salvar alterações</Button></form></CardContent></Card>
+  return <Card className="rounded-3xl bg-card/85"><CardHeader><CardTitle>Dados de contato</CardTitle></CardHeader><CardContent><form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">{fields.map(([name, label, value]) => <div key={name} className="grid gap-2"><Label htmlFor={`profile-${name}`}>{name === "phone" ? "WhatsApp" : label}</Label><Input id={`profile-${name}`} name={name} type={name === "phone" ? "tel" : "text"} inputMode={name === "phone" ? "numeric" : undefined} maxLength={name === "phone" ? 15 : undefined} defaultValue={name === "phone" ? formatBrazilianWhatsapp(value) : value} onChange={name === "phone" ? (event) => { event.currentTarget.value = formatBrazilianWhatsapp(event.currentTarget.value) } : undefined} required={name === "phone"} /></div>)}<Button type="submit" disabled={pending} className="sm:col-span-2">Salvar alterações</Button></form></CardContent></Card>
 }

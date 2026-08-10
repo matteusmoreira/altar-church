@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { AuthProvider } from "@/lib/auth/context"
 import { isPortalRole } from "@/lib/member/access"
+import { getOwnWhatsappStatus } from "@/lib/auth/whatsapp-data"
 
 async function getChurchDisplayName(companyId?: string | null) {
   if (!companyId) return "Altar Church"
@@ -20,18 +21,23 @@ async function getChurchDisplayName(companyId?: string | null) {
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
   if (isPortalRole(user.role)) redirect("/membro")
-  const [initialEnabledModuleIds, churchName] = await Promise.all([
+  const [initialEnabledModuleIds, churchName, whatsappStatus] = await Promise.all([
     user.role === "superadmin"
       ? Promise.resolve(null)
       : user.churchId
         ? getCompanyEnabledModuleIds(user.churchId)
         : Promise.resolve([] as string[]),
     getChurchDisplayName(user.churchId),
+    getOwnWhatsappStatus(user),
   ])
 
   return (
     <AuthProvider initialUser={user}>
-      <DashboardLayout initialEnabledModuleIds={initialEnabledModuleIds} churchName={churchName}>
+      <DashboardLayout
+        initialEnabledModuleIds={initialEnabledModuleIds}
+        churchName={churchName}
+        whatsappPending={whatsappStatus.pending}
+      >
         {children}
       </DashboardLayout>
     </AuthProvider>

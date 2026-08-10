@@ -3,23 +3,27 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Building2, Eye, EyeOff, Lock, Mail, User } from "lucide-react"
+import { Building2, Eye, EyeOff, Lock, Mail, MessageCircle, User } from "lucide-react"
 import { toast } from "sonner"
+import { useAuth } from "@/lib/auth/context"
 import { getPublicChurches, registerSelfServiceUser, type PublicChurch } from "@/lib/auth/register"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AuthCard } from "@/components/auth/auth-card"
+import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 
 const inputClasses =
   "h-11 md:h-11 rounded-xl border-white/10 bg-white/[0.04] pl-10 md:pl-10 text-[15px] md:text-[15px] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/20"
 
 export default function RegisterPage() {
   const router = useRouter()
+  const { login } = useAuth()
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
+  const [whatsapp, setWhatsapp] = useState("")
   const [password, setPassword] = useState("")
   const [companyId, setCompanyId] = useState("")
   const [churches, setChurches] = useState<PublicChurch[]>([])
@@ -57,6 +61,7 @@ export default function RegisterPage() {
       const result = await registerSelfServiceUser({
         name,
         email,
+        whatsapp,
         password,
         companyId,
       })
@@ -64,8 +69,15 @@ export default function RegisterPage() {
         toast.error(result.error ?? "Não foi possível criar a conta")
         return
       }
-      toast.success("Conta criada. Faça login para continuar.")
-      router.push("/login")
+      const loggedIn = await login(email.trim().toLowerCase(), password)
+      if (!loggedIn) {
+        toast.error("Conta criada, mas não foi possível iniciar sua sessão. Faça login para continuar.")
+        router.replace("/login")
+        return
+      }
+
+      toast.success("Conta criada! Redirecionando...")
+      router.replace("/dashboard")
     } finally {
       setLoading(false)
     }
@@ -111,6 +123,30 @@ export default function RegisterPage() {
               required
             />
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="whatsapp" className="text-[13px] font-medium text-slate-300">
+            WhatsApp
+          </Label>
+          <div className="group relative">
+            <MessageCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition-colors group-focus-within:text-emerald-400" />
+            <Input
+              id="whatsapp"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={15}
+              placeholder="(11) 99999-9999"
+              className={inputClasses}
+              value={whatsapp}
+              onChange={(event) => setWhatsapp(formatBrazilianWhatsapp(event.target.value))}
+              aria-describedby="whatsapp-help"
+              required
+            />
+          </div>
+          <p id="whatsapp-help" className="text-xs text-slate-500">
+            Será usado para entrar e recuperar sua senha com segurança.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="password" className="text-[13px] font-medium text-slate-300">
