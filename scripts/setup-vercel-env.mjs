@@ -59,6 +59,7 @@ const envVars = [
   { key: "SUPABASE_ACCESS_TOKEN", value: process.env.SUPABASE_ACCESS_TOKEN, target: ["production"], type: "encrypted" },
   { key: "SUPABASE_PROJECT_REF", value: process.env.SUPABASE_PROJECT_REF, target: ["production"], type: "encrypted" },
   { key: "POSTGRES_URL", value: process.env.POSTGRES_URL, target: ["production"], type: "encrypted" },
+  { key: "AUTH_PASSWORD_RESET_PEPPER", value: process.env.AUTH_PASSWORD_RESET_PEPPER, target: ["production"], type: "encrypted" },
   { key: "INTEGRATION_WORKER_SECRET", value: process.env.INTEGRATION_WORKER_SECRET, target: ["production"], type: "encrypted" },
   { key: "INTEGRATION_WEBHOOK_HTTPS_ONLY", value: "1", target: ["production"], type: "encrypted" },
   { key: "KIDS_HEALTH_ENCRYPTION_KEY", value: process.env.KIDS_HEALTH_ENCRYPTION_KEY, target: ["production"], type: "encrypted" },

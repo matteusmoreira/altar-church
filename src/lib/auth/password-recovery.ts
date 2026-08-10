@@ -7,8 +7,16 @@ import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { generatePasswordResetCode, hashPasswordResetValue, verifyPasswordResetHash } from "./otp-security"
 import { buildPasswordResetUazapiPayload } from "./password-recovery-payload"
+import { normalizeBrazilianWhatsapp } from "./phone"
 
-const emailSchema = z.string().trim().email("E-mail inválido").max(160)
+const whatsappSchema = z.string().trim().transform((value, context) => {
+  const phone = normalizeBrazilianWhatsapp(value)
+  if (!phone) {
+    context.addIssue({ code: "custom", message: "Informe um WhatsApp móvel válido com DDD" })
+    return z.NEVER
+  }
+  return phone
+})
 const completeSchema = z.object({
   requestId: z.string().uuid("Solicitação inválida"),
   code: z.string().trim().regex(/^\d{6}$/, "Informe os 6 dígitos"),
@@ -35,13 +43,13 @@ async function markDelivery(requestId: string, status: "sent" | "failed", provid
   `
 }
 
-export async function requestPasswordReset(emailInput: string): Promise<RecoveryResult> {
+export async function requestPasswordReset(whatsappInput: string): Promise<RecoveryResult> {
   const requestId = randomUUID()
-  let email: string
+  let whatsapp: string
   try {
-    email = emailSchema.parse(emailInput).toLowerCase()
+    whatsapp = whatsappSchema.parse(whatsappInput)
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "E-mail inválido" }
+    return { ok: false, error: error instanceof Error ? error.message : "WhatsApp inválido" }
   }
 
   try {
@@ -58,7 +66,7 @@ export async function requestPasswordReset(emailInput: string): Promise<Recovery
         and company_id is not null
         and auth_user_id is not null
         and login_phone is not null
-        and lower(email) = ${email}
+        and login_phone = ${whatsapp}
       limit 1
     `
     const profile = profiles[0]

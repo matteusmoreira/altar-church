@@ -10,6 +10,14 @@ import type { UazapiActionResult, UazapiInstanceStatus } from "./types"
 
 const nameSchema = z.string().trim().min(2).max(80)
 const tokenSchema = z.string().trim().min(20).max(500)
+const pairingPhoneSchema = z
+  .string()
+  .trim()
+  .min(10, "Informe o número com DDI e DDD")
+  .max(25, "Número de telefone inválido")
+  .refine((value) => /^[+\d\s().-]+$/.test(value), "Número de telefone inválido")
+  .transform((value) => value.replace(/\D/g, ""))
+  .refine((value) => value.length >= 10 && value.length <= 15, "Use um número internacional válido")
 const idSchema = z.string().uuid()
 
 interface ProviderInstance {
@@ -39,10 +47,10 @@ async function assertChurchAdmin() {
 function normalizeProvider(payload: Record<string, unknown>): ProviderInstance {
   const raw = (payload.instance ?? payload) as Record<string, unknown>
   const statusValue = String(raw.status ?? "disconnected")
-  const status: UazapiInstanceStatus = ["disconnected", "connecting", "connected"].includes(statusValue)
+  const status: UazapiInstanceStatus = ["disconnected", "connecting", "connected", "error"].includes(statusValue)
     ? (statusValue as UazapiInstanceStatus)
     : "error"
-  const owner = String(raw.owner ?? "")
+  const owner = String(raw.owner ?? "").split("@")[0].replace(/\D/g, "")
   return {
     id: String(raw.id ?? ""),
     name: String(raw.name ?? raw.profileName ?? "WhatsApp"),
@@ -74,6 +82,35 @@ async function providerRequest(
     throw new Error(String(payload.message ?? payload.error ?? `Uazapi recusou a operação (${response.status})`))
   }
   return payload
+}
+
+async function startProviderConnection(token: string, phone?: string) {
+  const connectProvider = normalizeProvider(
+    await providerRequest("/instance/connect", {
+      token,
+      method: "POST",
+      body: phone ? { phone } : {},
+    }),
+  )
+  const statusProvider = normalizeProvider(await providerRequest("/instance/status", { token }))
+  const hasHandshake = Boolean(
+    connectProvider.qrcode ||
+      connectProvider.paircode ||
+      statusProvider.qrcode ||
+      statusProvider.paircode,
+  )
+
+  return {
+    ...statusProvider,
+    id: statusProvider.id || connectProvider.id,
+    status:
+      statusProvider.status === "disconnected" &&
+      (connectProvider.status === "connecting" || hasHandshake)
+        ? "connecting"
+        : statusProvider.status,
+    qrcode: statusProvider.qrcode ?? connectProvider.qrcode,
+    paircode: statusProvider.paircode ?? connectProvider.paircode,
+  } satisfies ProviderInstance
 }
 
 async function assertQuota(
@@ -127,7 +164,7 @@ async function saveProviderInstance(input: {
   preferredName?: string
 }) {
   const sql = getSql()
-  await sql.begin(async (tx) => {
+  return sql.begin(async (tx) => {
     await assertQuota(tx, input.companyId)
     const current = await tx<{ total: number }[]>`
       select count(*)::int as total
@@ -146,7 +183,7 @@ async function saveProviderInstance(input: {
     if (!secretId) throw new Error("Não foi possível proteger o token no Vault")
 
     try {
-      await tx`
+      const rows = await tx<{ id: string }[]>`
         insert into public.uazapi_instances (
           company_id, provider_instance_id, name, status, profile_name, phone,
           vault_secret_id, is_default, created_by, updated_by, last_checked_at
@@ -157,7 +194,10 @@ async function saveProviderInstance(input: {
           ${input.provider.profileName}, ${input.provider.phone}, ${secretId}::uuid,
           ${(current[0]?.total ?? 0) === 0}, ${input.profileId}, ${input.profileId}, now()
         )
+        returning id
       `
+      if (!rows[0]?.id) throw new Error("Não foi possível salvar a instância")
+      return rows[0].id
     } catch (error) {
       await tx`delete from vault.secrets where id = ${secretId}::uuid`
       throw error
@@ -165,14 +205,66 @@ async function saveProviderInstance(input: {
   })
 }
 
-function resultError(error: unknown): UazapiActionResult {
-  if (error instanceof z.ZodError) return { ok: false, error: error.issues[0]?.message }
-  return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+function resultError(
+  error: unknown,
+  data?: UazapiActionResult["data"],
+): UazapiActionResult {
+  if (error instanceof z.ZodError) return { ok: false, error: error.issues[0]?.message, data }
+  return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado", data }
+}
+
+function providerResult(
+  instanceId: string,
+  instanceName: string,
+  provider: ProviderInstance,
+): UazapiActionResult {
+  return {
+    ok: true,
+    data: {
+      instanceId,
+      instanceName,
+      qrCode: provider.qrcode,
+      pairCode: provider.paircode,
+      status: provider.status,
+      profileName: provider.profileName,
+      phone: provider.phone,
+    },
+  }
+}
+
+async function updateStoredProviderState(
+  companyId: string,
+  instanceId: string,
+  provider: ProviderInstance,
+) {
+  const sql = getSql()
+  await sql`
+    update public.uazapi_instances
+    set status = ${provider.status}, profile_name = ${provider.profileName},
+        phone = ${provider.phone}, last_checked_at = now()
+    where id = ${instanceId} and company_id = ${companyId} and active = true
+  `
+}
+
+async function markStoredProviderError(companyId: string, instanceId: string) {
+  try {
+    const sql = getSql()
+    await sql`
+      update public.uazapi_instances
+      set status = 'error', last_checked_at = now()
+      where id = ${instanceId} and company_id = ${companyId} and active = true
+    `
+  } catch {
+    // The original provider error is more useful to the caller than a cleanup failure.
+  }
 }
 
 export async function createUazapiInstance(nameInput: string): Promise<UazapiActionResult> {
+  let createdInstanceId: string | undefined
+  let createdInstanceName: string | undefined
   try {
     const name = nameSchema.parse(nameInput)
+    createdInstanceName = name
     const { user, companyId } = await assertChurchAdmin()
     await assertQuotaAvailable(companyId)
     const sql = getSql()
@@ -187,17 +279,37 @@ export async function createUazapiInstance(nameInput: string): Promise<UazapiAct
     const provider = normalizeProvider(payload)
     const token = String(payload.token ?? (payload.instance as Record<string, unknown> | undefined)?.token ?? "")
     if (!provider.id || !token) throw new Error("Uazapi não retornou ID/token da nova instância")
-    await saveProviderInstance({ companyId, profileId: user.id, token, provider, preferredName: name })
+    createdInstanceId = await saveProviderInstance({ companyId, profileId: user.id, token, provider, preferredName: name })
+
+    let connectedProvider: ProviderInstance
+    try {
+      connectedProvider = await startProviderConnection(token)
+      await updateStoredProviderState(companyId, createdInstanceId, connectedProvider)
+    } catch (error) {
+      await markStoredProviderError(companyId, createdInstanceId)
+      revalidatePath("/configuracoes")
+      return resultError(error, {
+        instanceId: createdInstanceId,
+        instanceName: name,
+        status: "error",
+      })
+    }
+
     await writeAuditLog({
       action: "uazapi.instance.create",
       entityTable: "uazapi_instances",
       companyId,
-      metadata: { providerInstanceId: provider.id, name },
+      metadata: { providerInstanceId: provider.id, name, status: connectedProvider.status },
     })
     revalidatePath("/configuracoes")
-    return { ok: true }
+    return providerResult(createdInstanceId, name, connectedProvider)
   } catch (error) {
-    return resultError(error)
+    return resultError(
+      error,
+      createdInstanceId
+        ? { instanceId: createdInstanceId, instanceName: createdInstanceName, status: "error" }
+        : undefined,
+    )
   }
 }
 
@@ -210,15 +322,32 @@ export async function connectExistingUazapiInstance(
     await assertQuotaAvailable(companyId)
     const provider = normalizeProvider(await providerRequest("/instance/status", { token }))
     if (!provider.id) throw new Error("Token não identificou uma instância Uazapi")
-    await saveProviderInstance({ companyId, profileId: user.id, token, provider })
+    const instanceId = await saveProviderInstance({ companyId, profileId: user.id, token, provider })
+    let finalProvider = provider
+
+    if (provider.status === "disconnected") {
+      try {
+        finalProvider = await startProviderConnection(token)
+        await updateStoredProviderState(companyId, instanceId, finalProvider)
+      } catch (error) {
+        await markStoredProviderError(companyId, instanceId)
+        revalidatePath("/configuracoes")
+        return resultError(error, {
+          instanceId,
+          instanceName: provider.name,
+          status: "error",
+        })
+      }
+    }
+
     await writeAuditLog({
       action: "uazapi.instance.connect_existing",
       entityTable: "uazapi_instances",
       companyId,
-      metadata: { providerInstanceId: provider.id, status: provider.status },
+      metadata: { providerInstanceId: provider.id, status: finalProvider.status },
     })
     revalidatePath("/configuracoes")
-    return { ok: true }
+    return providerResult(instanceId, provider.name, finalProvider)
   } catch (error) {
     return resultError(error)
   }
@@ -244,27 +373,49 @@ export async function requestUazapiQr(instanceIdInput: string): Promise<UazapiAc
     const instanceId = idSchema.parse(instanceIdInput)
     const { companyId } = await assertChurchAdmin()
     const token = await getStoredToken(companyId, instanceId)
-    const connectProvider = normalizeProvider(
-      await providerRequest("/instance/connect", { token, method: "POST", body: {} }),
-    )
-    const statusProvider = normalizeProvider(await providerRequest("/instance/status", { token }))
-    const provider = {
-      ...statusProvider,
-      qrcode: statusProvider.qrcode ?? connectProvider.qrcode,
-      paircode: statusProvider.paircode ?? connectProvider.paircode,
+    let provider: ProviderInstance
+    try {
+      provider = await startProviderConnection(token)
+    } catch (error) {
+      await markStoredProviderError(companyId, instanceId)
+      revalidatePath("/configuracoes")
+      return resultError(error, { instanceId, status: "error" })
     }
-    const sql = getSql()
-    await sql`
-      update public.uazapi_instances
-      set status = ${provider.status}, profile_name = ${provider.profileName},
-          phone = ${provider.phone}, last_checked_at = now()
-      where id = ${instanceId} and company_id = ${companyId}
-    `
+    await updateStoredProviderState(companyId, instanceId, provider)
     revalidatePath("/configuracoes")
-    return {
-      ok: true,
-      data: { qrCode: provider.qrcode, pairCode: provider.paircode, status: provider.status },
+    return providerResult(instanceId, provider.name, provider)
+  } catch (error) {
+    return resultError(error)
+  }
+}
+
+export async function requestUazapiPairCode(
+  instanceIdInput: string,
+  phoneInput: string,
+): Promise<UazapiActionResult> {
+  try {
+    const instanceId = idSchema.parse(instanceIdInput)
+    const phone = pairingPhoneSchema.parse(phoneInput)
+    const { companyId } = await assertChurchAdmin()
+    const token = await getStoredToken(companyId, instanceId)
+    let provider: ProviderInstance
+    try {
+      provider = await startProviderConnection(token, phone)
+    } catch (error) {
+      await markStoredProviderError(companyId, instanceId)
+      revalidatePath("/configuracoes")
+      return resultError(error, { instanceId, status: "error" })
     }
+    await updateStoredProviderState(companyId, instanceId, provider)
+    await writeAuditLog({
+      action: "uazapi.instance.pair_code",
+      entityTable: "uazapi_instances",
+      entityId: instanceId,
+      companyId,
+      metadata: { providerInstanceId: provider.id, mode: "pairing" },
+    })
+    revalidatePath("/configuracoes")
+    return providerResult(instanceId, provider.name, provider)
   } catch (error) {
     return resultError(error)
   }
@@ -282,10 +433,20 @@ export async function refreshUazapiInstance(instanceIdInput: string): Promise<Ua
       set status = ${provider.status}, name = ${provider.name},
           profile_name = ${provider.profileName}, phone = ${provider.phone},
           last_checked_at = now()
-      where id = ${instanceId} and company_id = ${companyId}
+      where id = ${instanceId} and company_id = ${companyId} and active = true
     `
-    revalidatePath("/configuracoes")
-    return { ok: true, data: { status: provider.status, qrCode: provider.qrcode, pairCode: provider.paircode } }
+    return {
+      ok: true,
+      data: {
+        instanceId,
+        instanceName: provider.name,
+        status: provider.status,
+        qrCode: provider.qrcode,
+        pairCode: provider.paircode,
+        profileName: provider.profileName,
+        phone: provider.phone,
+      },
+    }
   } catch (error) {
     return resultError(error)
   }

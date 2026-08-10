@@ -30,6 +30,32 @@ test("painel permite criar e vincular token somente pelo backend", () => {
   assert.match(panel, /data\.used < data\.limit/)
 })
 
+test("criação inicia conexão e painel acompanha QR, pareamento e status automaticamente", () => {
+  const actions = read("src/lib/uazapi/actions.ts")
+  const types = read("src/lib/uazapi/types.ts")
+  const panel = read("src/app/(dashboard)/configuracoes/uazapi-instances-panel.tsx")
+
+  assert.match(actions, /async function startProviderConnection/)
+  assert.match(actions, /await providerRequest\("\/instance\/connect"/)
+  assert.match(actions, /return providerResult\(createdInstanceId, name, connectedProvider\)/)
+  assert.match(actions, /pairingPhoneSchema/)
+  assert.match(actions, /export async function requestUazapiPairCode/)
+  assert.match(actions, /body: phone \? \{ phone \} : \{\}/)
+  assert.match(types, /instanceId\?: string/)
+  assert.match(types, /profileName\?: string \| null/)
+  assert.match(types, /phone\?: string \| null/)
+
+  assert.match(panel, /activeConnection/)
+  assert.match(panel, /setTimeout\(poll, 4000\)/)
+  assert.match(panel, /refreshUazapiInstance\(instanceId\)/)
+  assert.match(panel, /WhatsApp conectado/)
+  assert.match(panel, /Usar código de pareamento/)
+  assert.match(panel, /Gerar novo QR/)
+  assert.match(panel, /Copiar código/)
+  assert.match(panel, /navigator\.clipboard\.writeText\(activePairCode\)/)
+  assert.match(panel, /O QR Code expirou ou foi cancelado/)
+})
+
 test("workers resolvem token pelo company_id e não usam token global", () => {
   const volunteer = read("supabase/functions/volunteer-delivery-worker/index.ts")
   const kids = read("src/lib/kids/delivery.ts")

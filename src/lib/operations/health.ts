@@ -210,6 +210,19 @@ async function getInfrastructureChecks(sql: Queryable): Promise<HealthCheck[]> {
 
 async function providerChecks(sql: Queryable) {
   const baseUrl = env("UAZAPI_BASE_URL").replace(/\/$/, "")
+  const passwordReset: HealthCheck = (() => {
+    const pepperConfigured = env("AUTH_PASSWORD_RESET_PEPPER").length >= 32
+    const serviceRoleConfigured = Boolean(env("SUPABASE_SERVICE_ROLE_KEY"))
+    const configured = pepperConfigured && serviceRoleConfigured
+    return {
+      key: "password_reset",
+      label: "Recuperação de senha",
+      status: configured ? "healthy" : "not_configured",
+      detail: configured
+        ? "OTP por WhatsApp configurado"
+        : "AUTH_PASSWORD_RESET_PEPPER e SUPABASE_SERVICE_ROLE_KEY são obrigatórios",
+    }
+  })()
   const [uazapi, resend, pushSubscriptions] = await Promise.all([
     fetchCheck({
       key: "uazapi",
@@ -249,7 +262,7 @@ async function providerChecks(sql: Queryable) {
       }
     })(),
   ])
-  return [uazapi, resend, pushSubscriptions]
+  return [uazapi, resend, pushSubscriptions, passwordReset]
 }
 
 function migrationFiles() {

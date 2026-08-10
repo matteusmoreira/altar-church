@@ -21,8 +21,12 @@ export interface UazapiActionResult {
   ok: boolean
   error?: string
   data?: {
+    instanceId?: string
+    instanceName?: string
     qrCode?: string
     pairCode?: string
     status?: UazapiInstanceStatus
+    profileName?: string | null
+    phone?: string | null
   }
 }

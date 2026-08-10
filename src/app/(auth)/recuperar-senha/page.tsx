@@ -3,22 +3,24 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useState, useTransition } from "react"
-import { ArrowLeft, Eye, EyeOff, KeyRound, Mail, MessageCircle } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, KeyRound, MessageCircle } from "lucide-react"
 import { toast } from "sonner"
 import { AuthCard } from "@/components/auth/auth-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { completePasswordReset, requestPasswordReset } from "@/lib/auth/password-recovery"
+import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 
 const inputClasses =
-  "h-11 rounded-xl border-white/10 bg-white/[0.04] pl-10 text-[15px] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/20"
+  "h-11 rounded-xl border-white/10 bg-white/[0.04] text-[15px] text-white placeholder:text-slate-500 hover:border-white/20 focus-visible:border-sky-400/50 focus-visible:ring-sky-400/20"
+const iconInputClasses = `${inputClasses} !pl-11`
 
 export default function PasswordRecoveryPage() {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [step, setStep] = useState<"request" | "complete">("request")
-  const [email, setEmail] = useState("")
+  const [whatsapp, setWhatsapp] = useState("")
   const [requestId, setRequestId] = useState("")
   const [code, setCode] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -37,7 +39,7 @@ export default function PasswordRecoveryPage() {
   function sendCode(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
     startTransition(async () => {
-      const result = await requestPasswordReset(email)
+      const result = await requestPasswordReset(whatsapp)
       if (!result.ok || !result.requestId) {
         toast.error(result.error ?? "Não foi possível processar a solicitação")
         return
@@ -84,24 +86,30 @@ export default function PasswordRecoveryPage() {
               <MessageCircle className="h-4 w-4" /> Código pelo WhatsApp
             </p>
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              Por segurança, não informamos se o e-mail está cadastrado nem exibimos o número de destino.
+              Por segurança, não informamos se o número está cadastrado nem exibimos o número de destino.
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="recovery-email" className="text-[13px] font-medium text-slate-300">E-mail da conta</Label>
+            <Label htmlFor="recovery-whatsapp" className="text-[13px] font-medium text-slate-300">Número do WhatsApp</Label>
             <div className="group relative">
-              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 group-focus-within:text-sky-400" />
+              <MessageCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-400" />
               <Input
-                id="recovery-email"
-                type="email"
-                autoComplete="email"
-                className={inputClasses}
-                placeholder="seu@email.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                id="recovery-whatsapp"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                maxLength={15}
+                className={iconInputClasses}
+                placeholder="(11) 99999-9999"
+                value={whatsapp}
+                onChange={(event) => setWhatsapp(formatBrazilianWhatsapp(event.target.value))}
+                aria-describedby="recovery-whatsapp-help"
                 required
               />
             </div>
+            <p id="recovery-whatsapp-help" className="text-xs text-slate-500">
+              Use o mesmo WhatsApp cadastrado na igreja.
+            </p>
           </div>
           <Button type="submit" className="h-11 w-full rounded-xl" disabled={pending}>
             {pending ? "Processando..." : "Enviar código no WhatsApp"}
@@ -121,7 +129,7 @@ export default function PasswordRecoveryPage() {
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={6}
-                className={`${inputClasses} font-mono tracking-[0.35em]`}
+                className={`${iconInputClasses} font-mono tracking-[0.35em]`}
                 placeholder="000000"
                 value={code}
                 onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -139,7 +147,7 @@ export default function PasswordRecoveryPage() {
                 autoComplete="new-password"
                 minLength={8}
                 maxLength={128}
-                className={`${inputClasses} pr-11`}
+                className={`${iconInputClasses} !pr-12`}
                 placeholder="Mínimo de 8 caracteres"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}

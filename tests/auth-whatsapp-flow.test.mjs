@@ -21,6 +21,13 @@ test("migration protege login por WhatsApp e desafios OTP", () => {
 test("recuperação é anti-enumeração, limitada e exclui superadmin", () => {
   const recovery = read("src/lib/auth/password-recovery.ts")
   const payload = read("src/lib/auth/password-recovery-payload.ts")
+  const page = read("src/app/(auth)/recuperar-senha/page.tsx")
+  assert.match(recovery, /normalizeBrazilianWhatsapp/)
+  assert.match(recovery, /login_phone = \$\{whatsapp\}/)
+  assert.doesNotMatch(recovery, /lower\(email\)/)
+  assert.match(page, /recovery-whatsapp/)
+  assert.match(page, /formatBrazilianWhatsapp/)
+  assert.doesNotMatch(page, /recovery-email/)
   assert.match(recovery, /role <> 'superadmin'/)
   assert.match(recovery, /profile_requests[\s\S]*>= 3/)
   assert.match(recovery, /ip_requests[\s\S]*>= 20/)
@@ -32,6 +39,13 @@ test("recuperação é anti-enumeração, limitada e exclui superadmin", () => {
   assert.match(payload, /Copiar código\|copy:\$\{input\.code\}/)
   assert.match(payload, /track_source: "altar_church_auth"/)
   assert.doesNotMatch(recovery, /console\.(?:log|error)\([^\n]*(?:code|token|email|phone)/i)
+})
+
+test("configuracao de producao publica o pepper do OTP", () => {
+  const setup = read("scripts/setup-vercel-env.mjs")
+  const smoke = read("scripts/smoke-production.mjs")
+  assert.match(setup, /AUTH_PASSWORD_RESET_PEPPER/)
+  assert.match(smoke, /AUTH_PASSWORD_RESET_PEPPER/)
 })
 
 test("login oferece e-mail e WhatsApp sem revelar o e-mail resolvido", () => {

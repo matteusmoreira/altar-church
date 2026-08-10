@@ -21,7 +21,8 @@ test("login alterna profissionalmente entre e-mail e WhatsApp com máscara", asy
 
 test("recuperação mantém resposta genérica para conta inexistente", async ({ page }) => {
   await page.goto("/recuperar-senha", { waitUntil: "load" })
-  await page.locator("#recovery-email").fill(`nao-existe-${Date.now()}@altar-church.test`)
+  await page.locator("#recovery-whatsapp").fill("11987654321")
+  await expect(page.locator("#recovery-whatsapp")).toHaveValue("(11) 98765-4321")
   await page.getByRole("button", { name: "Enviar código no WhatsApp" }).click()
   await expect(page.getByText(/Se a conta possuir WhatsApp/)).toBeVisible()
   await expect(page.getByLabel("Código de 6 dígitos")).toBeVisible()
