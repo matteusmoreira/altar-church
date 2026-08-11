@@ -1,4 +1,5 @@
 import webpush from "web-push"
+import { toUazapiNumber } from "@/lib/auth/phone"
 import { getSql } from "@/lib/db/client"
 
 type DeliveryRow = {
@@ -79,7 +80,7 @@ async function sendWhatsApp(delivery: DeliveryRow, content: string): Promise<Pro
     method: "POST",
     headers: { "Content-Type": "application/json", token: credential.token },
     body: JSON.stringify({
-      number: delivery.recipient,
+      number: toUazapiNumber(delivery.recipient),
       text: content,
       async: true,
       track_source: "altar_church_notifications",
@@ -219,7 +220,7 @@ export async function processNotificationOutbox(batchSize = 25) {
       await sql`
         update public.notification_deliveries
         set status = 'sent', provider_id = ${result.providerId}, response_status = ${result.responseStatus},
-            sent_at = now(), delivered_at = now(), last_error = null, locked_at = null, updated_at = now()
+            sent_at = now(), delivered_at = null, last_error = null, locked_at = null, updated_at = now()
         where id = ${delivery.id} and status = 'processing'
       `
       sent += 1

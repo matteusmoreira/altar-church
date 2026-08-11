@@ -52,6 +52,15 @@ const SCALE_STATUS_LABELS = {
   ready: "Pronta",
   published: "Publicada",
 }
+const COMMUNICATION_STATUS_LABELS: Record<string, string> = {
+  draft: "Rascunho",
+  scheduled: "Agendada",
+  queued: "Na fila",
+  processing: "Processando",
+  completed: "Enviada ao provedor",
+  failed: "Falhou",
+  canceled: "Cancelada",
+}
 
 type TeamForm = {
   id: string
@@ -1854,7 +1863,12 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         {communication.method.toUpperCase()} · {communication.snapshotCount} destinatário(s) · {new Date(communication.createdAt).toLocaleString("pt-BR")}
                       </p>
                     </div>
-                    <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>{communication.status}</Badge>
+                    <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>
+                      {COMMUNICATION_STATUS_LABELS[communication.status] ?? communication.status}
+                    </Badge>
+                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/notificacao/${communication.id}`)}>
+                      Ver entregas
+                    </Button>
                     {canManage && (
                       <Button
                         type="button"

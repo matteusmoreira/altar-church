@@ -6,6 +6,8 @@ import { writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { createNotificationCampaignDeliveries, type NotificationAudience } from "@/lib/notifications/campaign"
+import { processNotificationOutbox } from "@/lib/notifications/delivery"
+import { afterResponse } from "@/lib/performance/after-response"
 import { rankVolunteersForShift, withManualSelectionRules, type SchedulerCandidateInput } from "@/lib/volunteers/scheduler"
 import { requireMinistryPermission } from "./access"
 
@@ -965,6 +967,7 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       return campaign.id
     })
     await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })
+    afterResponse("ministry notification outbox", () => processNotificationOutbox(25))
     refresh(parsed.ministryId)
     return { ok: true, id: saved }
   } catch (error) { return result(error) }
