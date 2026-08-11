@@ -1,6 +1,6 @@
 # Gestão de Ministérios 2.0 — Plano de desenvolvimento
 
-Status: planejado
+Status: MVP operacional implementado no código local; migration, typecheck, lint, build e testes autenticados continuam sendo gates separados.
 Data: 31/07/2026
 Produto: Altar Church
 
@@ -425,3 +425,18 @@ Rollback: código pode voltar para versão anterior, mas migration permanece apl
 - novo sistema de chat separado do Voluntariado.
 
 Esses itens ficam para fase posterior, após uso real do workspace e medição de adoção.
+
+## 10. Fluxo operacional implementado
+
+O workspace atual usa as mesmas entidades raiz e regras de escopo já existentes:
+
+- **Pessoas:** busca por nome, e-mail ou telefone e botão **Adicionar pessoa**. A ação somente cria ou reativa o vínculo em `ministry_memberships`; o cadastro da pessoa continua na área geral de Pessoas.
+- **Equipes:** criação e edição com nome, descrição, líderes, coordenador, dia, horário, local, capacidade e status. Capacidade `0` aparece como **Sem limite**. Membros só entram se estiverem ativos no ministério, e podem ser removidos da equipe sem perder o vínculo principal.
+- **Agenda e escalas:** a atividade é criada primeiro na Agenda. Em **Escalas**, o responsável escolhe a atividade, cadastra funções e vagas, seleciona membros ativos, revisa os faltantes e publica. O fluxo reutiliza `volunteer_departments`, `volunteer_event_positions`, `volunteer_schedules`, `volunteer_shifts`, `volunteer_assignments`, o motor de conflitos/disponibilidade e o outbox existente.
+- **Comunicação:** o público pode ser todo o ministério, uma equipe ou uma seleção de uma ou várias pessoas. A action valida o ministério, limita pessoas a membros ativos e remove duplicidades antes de criar a campanha.
+- **Acompanhamentos:** a aba explica que são tarefas de cuidado, como ligar, conversar ou acompanhar uma ausência. A lista mostra pessoa, próxima ação, detalhes, responsável, prazo, prioridade, origem e status em português; a geração automática por duas ausências não justificadas continua deduplicada por `source_key`.
+- **Configurações:** o formulário está separado em Identidade, Propósito, Contato, Reuniões, Entrada de membros e Responsável. Dia, horário, local, status e solicitação de entrada usam os campos reais persistidos. Líderes não alteram responsável principal nem status, inclusive pela action server-side.
+
+A migration `20260811100000_ministry_volunteer_scope.sql` adiciona índices de leitura, permite que líder/coordenador autorizado opere o departamento técnico do próprio ministério e restringe a geração automática de acompanhamento às ausências do mesmo ministério. Nenhuma tabela paralela de escala foi criada.
+
+O que ainda precisa de gate operacional: aplicar a migration em ambiente local/staging, executar testes com usuários admin/pastor/líder/coordenador/membro, verificar RLS e confirmar a entrega física dos provedores de WhatsApp, e-mail ou push. HTTP 200, fila preenchida ou outbox criado não provam entrega física.

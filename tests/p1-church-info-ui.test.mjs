@@ -28,6 +28,8 @@ test("church info page reads profile from server and saves social links with aud
   assert.match(client, /Salvar alterações/)
   assert.doesNotMatch(client, /Upload de logo em desenvolvimento/)
   assert.doesNotMatch(client, /mockChurches/)
+  assert.doesNotMatch(client, /TabsTrigger value="worship"/)
+  assert.doesNotMatch(client, /Louvor/)
 
   assert.match(routeActions, /saveChurchInfo/)
   assert.match(types, /ChurchInfoData/)

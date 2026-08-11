@@ -236,6 +236,9 @@ export function FormBuilderClient({
   const [successMessage, setSuccessMessage] = useState(data.form.successMessage)
   const [submitButtonLabel, setSubmitButtonLabel] = useState(data.form.submitButtonLabel)
   const [createPerson, setCreatePerson] = useState(data.form.createPerson)
+  const [createAccountAfterSubmit, setCreateAccountAfterSubmit] = useState(
+    data.form.createAccountAfterSubmit,
+  )
   const [isActive, setIsActive] = useState(data.form.isActive)
 
   const [fieldOpen, setFieldOpen] = useState(false)
@@ -263,6 +266,7 @@ export function FormBuilderClient({
         successMessage,
         submitButtonLabel,
         createPerson,
+        createAccountAfterSubmit,
         isActive,
       })
       if (!result.ok) {
@@ -812,7 +816,24 @@ export function FormBuilderClient({
                       Gera/atualiza cadastro a partir dos campos mapeados.
                     </p>
                   </div>
-                  <Switch checked={createPerson} onCheckedChange={setCreatePerson} />
+                  <Switch
+                    checked={createPerson || createAccountAfterSubmit}
+                    onCheckedChange={setCreatePerson}
+                    disabled={createAccountAfterSubmit}
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 p-3">
+                  <div>
+                    <p className="text-sm font-medium">Criar conta de usuário após preenchimento?</p>
+                    <p className="text-xs text-muted-foreground">
+                      Exige nome e telefone obrigatórios. O acesso será por WhatsApp com a senha inicial
+                      padrão configurada pelo sistema.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={createAccountAfterSubmit}
+                    onCheckedChange={setCreateAccountAfterSubmit}
+                  />
                 </div>
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <div>

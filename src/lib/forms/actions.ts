@@ -8,8 +8,13 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { jsonbParam } from "@/lib/db/jsonb"
 import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { normalizeBrazilianWhatsapp } from "@/lib/auth/phone"
 import { enqueueFormWhatsappDelivery, processFormWhatsappOutbox, retryFormWhatsappDelivery } from "./direct-delivery"
 import { collectDirectMessageMediaFileIds, directMediaTypeMatches, directMessageSchema, validateTemplateVariables } from "./direct-message"
+import {
+  deletePreparedAuthUser,
+  prepareFormAccount,
+} from "./account-provisioning"
 import type {
   FormAfterSubmitMode,
   FormDirectMessage,
@@ -54,6 +59,7 @@ const saveFormSchema = z.object({
   successMessage: z.string().trim().optional().default("Obrigado! Recebemos suas informações."),
   submitButtonLabel: z.string().trim().optional().default("Enviar"),
   createPerson: z.boolean().optional().default(true),
+  createAccountAfterSubmit: z.boolean().optional(),
   isActive: z.boolean().optional().default(true),
 })
 
@@ -254,7 +260,118 @@ async function assertStageBelongsToCompany(companyId: string, stageId: string | 
   return rows[0].id
 }
 
-async function insertDefaultFields(formId: string, companyId: string, userId: string) {
+type AccountFieldDefinition = {
+  id?: string
+  field_type: FormFieldType
+  map_to: FormFieldMapTo
+  required: boolean
+}
+
+function accountFieldConfigurationError(fields: AccountFieldDefinition[]) {
+  const nameFields = fields.filter((field) => field.map_to === "person_name")
+  const phoneFields = fields.filter((field) => field.map_to === "person_phone")
+
+  if (nameFields.length !== 1 || !nameFields[0]?.required) {
+    return "Para criar conta, mantenha exatamente um campo de nome mapeado e obrigatório."
+  }
+  if (
+    phoneFields.length !== 1 ||
+    phoneFields[0]?.field_type !== "phone" ||
+    !phoneFields[0]?.required
+  ) {
+    return "Para criar conta, mantenha exatamente um campo de telefone do tipo telefone, mapeado e obrigatório."
+  }
+  return null
+}
+
+async function assertFormAccountFieldsReady(
+  sql: ReturnType<typeof getSql>,
+  companyId: string,
+  formId: string,
+) {
+  const fields = await sql<AccountFieldDefinition[]>`
+    select id, field_type, map_to, required
+    from public.form_fields
+    where form_id = ${formId}
+      and company_id = ${companyId}
+      and deleted_at is null
+    order by sort_order, created_at
+  `
+  const error = accountFieldConfigurationError(fields)
+  if (error) throw new Error(error)
+}
+
+async function assertFieldSaveKeepsAccountReady(
+  sql: ReturnType<typeof getSql>,
+  companyId: string,
+  formId: string,
+  fieldId: string | null,
+  nextField: AccountFieldDefinition,
+) {
+  const formRows = await sql<{ create_account_after_submit: boolean }[]>`
+    select create_account_after_submit
+    from public.forms
+    where id = ${formId}
+      and company_id = ${companyId}
+      and deleted_at is null
+    limit 1
+  `
+  if (!formRows[0]) throw new Error("Formulário não encontrado")
+  if (!formRows[0].create_account_after_submit) return
+
+  const fields = await sql<AccountFieldDefinition[]>`
+    select id, field_type, map_to, required
+    from public.form_fields
+    where form_id = ${formId}
+      and company_id = ${companyId}
+      and deleted_at is null
+    order by sort_order, created_at
+  `
+  const prospective = fields.filter((field) => field.id !== fieldId)
+  prospective.push(nextField)
+  const error = accountFieldConfigurationError(prospective)
+  if (error) throw new Error(error)
+}
+
+async function assertFieldDeleteKeepsAccountReady(
+  sql: ReturnType<typeof getSql>,
+  companyId: string,
+  fieldId: string,
+) {
+  const formRows = await sql<{ form_id: string; create_account_after_submit: boolean }[]>`
+    select form_id, create_account_after_submit
+    from public.form_fields ff
+    join public.forms f on f.id = ff.form_id
+    where ff.id = ${fieldId}
+      and ff.company_id = ${companyId}
+      and ff.deleted_at is null
+      and f.company_id = ${companyId}
+      and f.deleted_at is null
+    limit 1
+  `
+  const form = formRows[0]
+  if (!form) throw new Error("Campo não encontrado")
+  if (!form.create_account_after_submit) return
+
+  const fields = await sql<AccountFieldDefinition[]>`
+    select id, field_type, map_to, required
+    from public.form_fields
+    where form_id = ${form.form_id}
+      and company_id = ${companyId}
+      and deleted_at is null
+      and id <> ${fieldId}
+    order by sort_order, created_at
+  `
+  const error = accountFieldConfigurationError(fields)
+  if (error) throw new Error(error)
+}
+
+async function insertDefaultFields(
+  formId: string,
+  companyId: string,
+  userId: string,
+  accountAfterSubmit = false,
+) {
   const sql = getSql()
   const defaults: {
     fieldType: FormFieldType
@@ -279,7 +396,7 @@ async function insertDefaultFields(formId: string, companyId: string, userId: st
       label: "Telefone",
       fieldKey: "telefone",
       mapTo: "person_phone",
-      required: false,
+      required: accountAfterSubmit,
       sortOrder: 20,
       placeholder: "(00) 00000-0000",
     },
@@ -337,8 +454,29 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
     )
     const sql = getSql()
     let formId = parsed.id
+    let createAccountAfterSubmit = parsed.createAccountAfterSubmit ?? false
 
     if (parsed.id) {
+      const currentRows = await sql<{
+        id: string
+        slug: string
+        create_account_after_submit: boolean
+      }[]>`
+        select id, slug, create_account_after_submit
+        from public.forms
+        where id = ${parsed.id}
+          and company_id = ${companyId}
+          and deleted_at is null
+        limit 1
+      `
+      const currentForm = currentRows[0]
+      if (!currentForm) throw new Error("Formulário não encontrado")
+      createAccountAfterSubmit =
+        parsed.createAccountAfterSubmit ?? currentForm.create_account_after_submit
+      if (createAccountAfterSubmit) {
+        await assertFormAccountFieldsReady(sql, companyId, parsed.id)
+      }
+
       const rows = await sql<{ id: string; slug: string }[]>`
         update public.forms
         set title = ${parsed.title},
@@ -348,7 +486,8 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
             target_stage_id = ${targetStageId},
             success_message = ${parsed.successMessage || "Obrigado! Recebemos suas informações."},
             submit_button_label = ${parsed.submitButtonLabel || "Enviar"},
-            create_person = ${parsed.createPerson},
+            create_person = ${parsed.createPerson || createAccountAfterSubmit},
+            create_account_after_submit = ${createAccountAfterSubmit},
             is_active = ${parsed.isActive},
             updated_by = ${user.id}
         where id = ${parsed.id}
@@ -362,7 +501,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
       const rows = await sql<{ id: string; slug: string }[]>`
         insert into public.forms (
           company_id, title, slug, description, status, target_stage_id,
-          success_message, submit_button_label, create_person, is_active,
+          success_message, submit_button_label, create_person, create_account_after_submit, is_active,
           created_by, updated_by
         )
         values (
@@ -370,12 +509,13 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
           ${targetStageId},
           ${parsed.successMessage || "Obrigado! Recebemos suas informações."},
           ${parsed.submitButtonLabel || "Enviar"},
-          ${parsed.createPerson}, ${parsed.isActive}, ${user.id}, ${user.id}
+          ${parsed.createPerson || createAccountAfterSubmit}, ${createAccountAfterSubmit},
+          ${parsed.isActive}, ${user.id}, ${user.id}
         )
         returning id, slug
       `
       formId = rows[0].id
-      await insertDefaultFields(formId!, companyId, user.id)
+      await insertDefaultFields(formId!, companyId, user.id, createAccountAfterSubmit)
     }
 
     await writeAuditLog({
@@ -746,6 +886,19 @@ export async function saveFormField(input: SaveFormFieldInput): Promise<FormsAct
     )
     const options = parsed.fieldType === "select" ? parsed.options.filter(Boolean) : []
 
+    await assertFieldSaveKeepsAccountReady(
+      sql,
+      companyId,
+      parsed.formId,
+      parsed.id,
+      {
+        id: parsed.id ?? undefined,
+        field_type: parsed.fieldType,
+        map_to: parsed.mapTo,
+        required: parsed.required,
+      },
+    )
+
     let fieldId = parsed.id
     if (parsed.id) {
       const rows = await sql<{ id: string }[]>`
@@ -814,6 +967,8 @@ export async function deleteFormField(input: {
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
     await requirePermission("forms.edit", companyId)
     const sql = getSql()
+
+    await assertFieldDeleteKeepsAccountReady(sql, companyId, parsed.id)
 
     const rows = await sql<{ id: string; form_id: string }[]>`
       update public.form_fields
@@ -907,6 +1062,476 @@ function normalizePublicAttribution(input?: PublicAttributionInput) {
   }
 }
 
+type PublicSubmitFormRow = {
+  id: string
+  title: string
+  slug: string
+  target_stage_id: string | null
+  create_person: boolean
+  create_account_after_submit: boolean
+  success_message: string
+  after_submit_mode: "webhook" | "direct_message"
+  whatsapp_instance_id: string | null
+  whatsapp_message: unknown
+}
+
+type PublicSubmitFieldRow = {
+  field_key: string
+  field_type: FormFieldType
+  label: string
+  required: boolean
+  map_to: FormFieldMapTo
+  options: unknown
+}
+
+async function submitPublicFormWithAccount(input: {
+  company: { id: string; slug: string; name: string }
+  form: PublicSubmitFormRow
+  fields: PublicSubmitFieldRow[]
+  normalized: Record<string, string | boolean>
+  personName: string
+  personEmail: string
+  personPhone: string
+  noteParts: string[]
+  attribution?: PublicAttributionInput
+}): Promise<FormsActionResult> {
+  const sql = getSql()
+  const phone = normalizeBrazilianWhatsapp(input.personPhone)
+  if (!input.personName.trim()) throw new Error("Nome é obrigatório para criar a conta")
+  if (!phone) throw new Error("Informe um WhatsApp móvel válido com DDD")
+
+  const configurationError = accountFieldConfigurationError(input.fields)
+  if (configurationError) throw new Error(configurationError)
+
+  const contactEmail = input.personEmail.trim().toLowerCase() || null
+  const notes = input.noteParts.join("\n")
+  const source = `Formulário: ${input.form.title}`
+  const attribution = normalizePublicAttribution(input.attribution)
+  let authUserCreatedId: string | null = null
+
+  try {
+    const account = await prepareFormAccount({
+      companyId: input.company.id,
+      name: input.personName,
+      phone,
+    })
+    if (account.authUserCreated) authUserCreatedId = account.authUserId
+
+    const result = await sql.begin(async (tx) => {
+      let personId: string | null = null
+      let profileId: string | null = null
+      let personWasCreated = false
+      let personWasUpdated = false
+      let accountProfile: {
+        id: string
+        company_id: string
+        auth_user_id: string | null
+        person_id: string | null
+        email: string
+      } | null = null
+
+      if (account.existingProfileId) {
+        const profileRows = await tx<{
+          id: string
+          company_id: string
+          auth_user_id: string | null
+          person_id: string | null
+          email: string
+        }[]>`
+          select id, company_id, auth_user_id, person_id, email
+          from public.profiles
+          where id = ${account.existingProfileId}
+            and company_id = ${input.company.id}
+          for update
+        `
+        accountProfile = profileRows[0] ?? null
+        if (!accountProfile) throw new Error("Conta existente não foi encontrada")
+        if (accountProfile.auth_user_id && accountProfile.auth_user_id !== account.authUserId) {
+          throw new Error("A conta existente mudou durante o envio; tente novamente")
+        }
+      }
+
+      let people: { id: string; profile_id: string | null }[] = accountProfile?.person_id
+        ? await tx<{ id: string; profile_id: string | null }[]>`
+            select id, profile_id
+            from public.people
+            where id = ${accountProfile.person_id}
+              and company_id = ${input.company.id}
+              and deleted_at is null
+            for update
+          `
+        : []
+
+      if (people.length === 0 && accountProfile) {
+        people = await tx<{ id: string; profile_id: string | null }[]>`
+          select id, profile_id
+          from public.people
+          where company_id = ${input.company.id}
+            and profile_id = ${accountProfile.id}
+            and deleted_at is null
+          limit 1
+          for update
+        `
+      }
+
+      const phonePeople = await tx<{ id: string; profile_id: string | null }[]>`
+        select id, profile_id
+        from public.people
+        where company_id = ${input.company.id}
+          and deleted_at is null
+          and (
+            regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = ${phone}
+            or regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = ${`55${phone}`}
+          )
+        order by created_at, id
+        for update
+      `
+      people = [...new Map([...people, ...phonePeople].map((person) => [person.id, person])).values()]
+
+      if (people.length > 1) {
+        throw new Error("Há mais de uma Pessoa com este telefone; corrija o cadastro antes de continuar")
+      }
+
+      const existingPerson = people[0]
+      if (existingPerson?.profile_id && existingPerson.profile_id !== accountProfile?.id) {
+        throw new Error("Este telefone já está vinculado a outra conta")
+      }
+
+      const { firstName, lastName } = splitName(input.personName)
+      if (existingPerson) {
+        personId = existingPerson.id
+        personWasUpdated = true
+        await tx`
+          update public.people
+          set first_name = ${firstName},
+              last_name = ${lastName},
+              full_name = ${input.personName},
+              email = coalesce(${contactEmail}, email),
+              phone = ${phone},
+              access_profile = 'member',
+              is_active = true,
+              updated_at = now()
+          where id = ${personId}
+            and company_id = ${input.company.id}
+            and deleted_at is null
+        `
+      } else {
+        const personRows = await tx<{ id: string }[]>`
+          insert into public.people (
+            company_id, first_name, last_name, full_name, email, phone,
+            access_profile, status, person_type, is_active
+          )
+          values (
+            ${input.company.id}, ${firstName}, ${lastName}, ${input.personName}, ${contactEmail}, ${phone},
+            'member', 'visitor', 'visitor', true
+          )
+          returning id
+        `
+        personId = personRows[0]?.id ?? null
+        personWasCreated = Boolean(personId)
+      }
+
+      if (!personId) throw new Error("Pessoa não foi criada para a conta")
+
+      if (accountProfile) {
+        profileId = accountProfile.id
+        await tx`
+          update public.profiles
+          set auth_user_id = coalesce(auth_user_id, ${account.authUserId}),
+              person_id = ${personId},
+              name = ${input.personName},
+              email = ${account.authEmail},
+              login_phone = ${phone},
+              role = 'member',
+              active = true,
+              updated_at = now()
+          where id = ${profileId}
+            and company_id = ${input.company.id}
+        `
+      } else {
+        const profileRows = await tx<{ id: string }[]>`
+          insert into public.profiles (
+            company_id, auth_user_id, person_id, name, email, login_phone, role, active
+          )
+          values (
+            ${input.company.id}, ${account.authUserId}, ${personId}, ${input.personName},
+            ${account.authEmail}, ${phone}, 'member', true
+          )
+          returning id
+        `
+        profileId = profileRows[0]?.id ?? null
+      }
+
+      if (!profileId) throw new Error("Perfil de acesso não foi criado")
+
+      await tx`
+        update public.people
+        set profile_id = ${profileId},
+            access_profile = 'member',
+            updated_at = now()
+        where id = ${personId}
+          and company_id = ${input.company.id}
+          and deleted_at is null
+      `
+
+      let stageId = input.form.target_stage_id
+      if (stageId) {
+        const stageRows = await tx<{ id: string }[]>`
+          select id
+          from public.crm_stages
+          where id = ${stageId}
+            and company_id = ${input.company.id}
+            and deleted_at is null
+          limit 1
+        `
+        if (!stageRows[0]) stageId = null
+      }
+      if (!stageId) {
+        const defaultRows = await tx<{ id: string }[]>`
+          select id
+          from public.crm_stages
+          where company_id = ${input.company.id}
+            and deleted_at is null
+          order by is_default desc, sort_order
+          limit 1
+        `
+        stageId = defaultRows[0]?.id ?? null
+      }
+      if (!stageId) throw new Error("Kanban sem colunas configuradas")
+
+      const cardRows = await tx<{ id: string }[]>`
+        insert into public.crm_cards (
+          company_id, person_id, person_name, person_phone, person_email,
+          stage_id, source, notes
+        )
+        values (
+          ${input.company.id}, ${personId}, ${input.personName}, ${phone}, ${input.personEmail},
+          ${stageId}, ${source}, ${notes}
+        )
+        returning id
+      `
+      const crmCardId = cardRows[0]?.id
+      if (!crmCardId) throw new Error("Não foi possível criar o card no Kanban")
+
+      const submissionRows = await tx<{ id: string }[]>`
+        insert into public.form_submissions (
+          company_id, form_id, crm_card_id, person_id, payload
+        )
+        values (
+          ${input.company.id}, ${input.form.id}, ${crmCardId}, ${personId}, ${tx.json(input.normalized)}
+        )
+        returning id
+      `
+      const submissionId = submissionRows[0]?.id
+      if (!submissionId) throw new Error("Não foi possível registrar o envio")
+
+      await tx`
+        insert into public.public_acquisition_events (
+          company_id, event_kind, source_kind, source_label,
+          utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+          landing_path, referrer, form_id, form_submission_id, person_id, crm_card_id, idempotency_key
+        )
+        values (
+          ${input.company.id}, 'form_submission', ${attribution.sourceKind}, ${attribution.sourceLabel},
+          ${attribution.utmSource}, ${attribution.utmMedium}, ${attribution.utmCampaign},
+          ${attribution.utmContent}, ${attribution.utmTerm}, ${attribution.landingPath},
+          ${attribution.referrer}, ${input.form.id}, ${submissionId}, ${personId}, ${crmCardId},
+          ${`form_submission:${submissionId}`}
+        )
+        on conflict do nothing
+      `
+
+      const followUpRows = await tx<{ id: string }[]>`
+        insert into public.person_follow_up_tasks (
+          company_id, person_id, crm_card_id, title, notes, priority, status, origin, source_key
+        )
+        values (
+          ${input.company.id}, ${personId}, ${crmCardId}, 'Fazer primeiro contato com novo cadastro',
+          ${`Origem: ${input.form.title}. Tarefa criada automaticamente após envio público.`},
+          'normal', 'open', 'public_form', ${`public_form:${submissionId}`}
+        )
+        on conflict do nothing
+        returning id
+      `
+      if (followUpRows[0]?.id) {
+        await tx`
+          insert into public.audit_logs (company_id, action, entity_table, entity_id, metadata)
+          values (
+            ${input.company.id}, 'person_follow_up_task.public_form', 'person_follow_up_tasks', ${followUpRows[0].id},
+            ${JSON.stringify({ submissionId, personId, formId: input.form.id })}::jsonb
+          )
+        `
+      }
+
+      await tx`
+        insert into public.audit_logs (company_id, action, entity_table, entity_id, metadata)
+        values (
+          ${input.company.id}, 'form.account_provisioned', 'profiles', ${profileId},
+          ${JSON.stringify({
+            formId: input.form.id,
+            submissionId,
+            personId,
+            accountReused: Boolean(account.existingProfileId),
+            authUserCreated: Boolean(account.authUserCreated),
+          })}::jsonb
+        )
+      `
+
+      const accountWasCreated = !account.existingProfileId
+      if (accountWasCreated) {
+        await tx`
+          update public.companies c
+          set user_count = counts.total
+          from (
+            select company_id, count(*)::integer as total
+            from public.profiles
+            where company_id is not null and active = true
+            group by company_id
+          ) counts
+          where c.id = counts.company_id
+            and c.id = ${input.company.id}
+        `
+      }
+
+      return {
+        personId,
+        profileId,
+        personWasCreated,
+        personWasUpdated,
+        accountWasCreated,
+        stageId,
+        crmCardId,
+        submissionId,
+      }
+    })
+
+    authUserCreatedId = null
+
+    const templateFields: Record<string, unknown> = {
+      ...input.normalized,
+      form_title: input.form.title,
+      form_slug: input.form.slug,
+      source,
+    }
+    templateFields.nome = input.personName
+    templateFields.name = input.personName
+    templateFields.telefone = phone
+    templateFields.phone = phone
+    if (templateFields.celular == null || templateFields.celular === "") {
+      templateFields.celular = phone
+    }
+    if (input.personEmail) templateFields.email = input.personEmail
+
+    if (input.form.after_submit_mode === "direct_message") {
+      try {
+        await enqueueFormWhatsappDelivery({
+          companyId: input.company.id,
+          formId: input.form.id,
+          submissionId: result.submissionId,
+          personId: result.personId,
+          instanceId: input.form.whatsapp_instance_id,
+          recipient: phone,
+          recipientName: input.personName,
+          message: input.form.whatsapp_message,
+          templateFields,
+        })
+        afterResponse("form whatsapp outbox", async () => {
+          await processFormWhatsappOutbox(25)
+        })
+      } catch (directError) {
+        console.error("[form-whatsapp] enqueue failed", directError)
+      }
+    } else {
+      try {
+        const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
+        const personPayload = {
+          id: result.personId,
+          name: input.personName,
+          email: input.personEmail || null,
+          phone,
+        }
+        if (result.personWasCreated) {
+          await enqueueIntegrationEventSafe({
+            companyId: input.company.id,
+            companySlug: input.company.slug,
+            companyName: input.company.name,
+            eventType: "person.created",
+            eventKey: `person.created:${result.personId}`,
+            data: { person: personPayload, source: "form" },
+          })
+        } else if (result.personWasUpdated) {
+          await enqueueIntegrationEventSafe({
+            companyId: input.company.id,
+            companySlug: input.company.slug,
+            companyName: input.company.name,
+            eventType: "person.updated",
+            eventKey: `person.updated:${result.personId}:form:${result.submissionId}`,
+            data: { person: personPayload, source: "form" },
+          })
+        }
+        await enqueueIntegrationEventSafe({
+          companyId: input.company.id,
+          companySlug: input.company.slug,
+          companyName: input.company.name,
+          formId: input.form.id,
+          eventType: "crm.card.created",
+          eventKey: `crm.card.created:${result.crmCardId}`,
+          data: {
+            crmCard: {
+              id: result.crmCardId,
+              stageId: result.stageId,
+              personName: input.personName,
+              personEmail: input.personEmail || null,
+              personPhone: phone,
+              personId: result.personId,
+              source,
+            },
+          },
+        })
+        await enqueueIntegrationEventSafe({
+          companyId: input.company.id,
+          companySlug: input.company.slug,
+          companyName: input.company.name,
+          formId: input.form.id,
+          eventType: "form.submitted",
+          eventKey: `form.submitted:${result.submissionId}`,
+          data: {
+            submissionId: result.submissionId,
+            form: { id: input.form.id, title: input.form.title, slug: input.form.slug },
+            crmCard: { id: result.crmCardId, stageId: result.stageId },
+            person: personPayload,
+            fields: templateFields,
+            source,
+          },
+        })
+        afterResponse("integration outbox", async () => {
+          const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
+          await processIntegrationOutbox(25)
+        })
+      } catch (integrationError) {
+        console.error("[integrations] form submit emit failed", integrationError)
+      }
+    }
+
+    revalidatePath("/crm")
+    revalidatePath("/formularios")
+    revalidatePath(`/formularios/${input.form.id}`)
+    revalidatePath("/visitantes")
+    revalidatePath("/pessoas")
+
+    return { ok: true, id: result.submissionId }
+  } catch (error) {
+    if (authUserCreatedId) {
+      try {
+        await deletePreparedAuthUser(authUserCreatedId)
+      } catch (cleanupError) {
+        console.error("[form-account] auth cleanup failed", cleanupError)
+      }
+    }
+    throw error
+  }
+}
+
 export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsActionResult> {
   try {
     const companySlug = z.string().trim().min(1).parse(input.companySlug)
@@ -932,13 +1557,14 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
         slug: string
         target_stage_id: string | null
         create_person: boolean
+        create_account_after_submit: boolean
         success_message: string
         after_submit_mode: "webhook" | "direct_message"
         whatsapp_instance_id: string | null
         whatsapp_message: unknown
       }[]
     >`
-      select id, title, slug, target_stage_id, create_person, success_message,
+      select id, title, slug, target_stage_id, create_person, create_account_after_submit, success_message,
              after_submit_mode, whatsapp_instance_id, whatsapp_message
       from public.forms
       where company_id = ${company.id}
@@ -1059,6 +1685,20 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
     if (personPhone) {
       const digits = personPhone.replace(/\D/g, "")
       personPhone = digits.length >= 10 ? digits : personPhone
+    }
+
+    if (form.create_account_after_submit) {
+      return await submitPublicFormWithAccount({
+        company,
+        form,
+        fields,
+        normalized,
+        personName,
+        personEmail,
+        personPhone,
+        noteParts,
+        attribution: input.attribution,
+      })
     }
 
     let personId: string | null = null

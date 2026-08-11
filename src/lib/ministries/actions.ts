@@ -6,9 +6,10 @@ import { writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { createNotificationCampaignDeliveries, type NotificationAudience } from "@/lib/notifications/campaign"
+import { rankVolunteersForShift, withManualSelectionRules, type SchedulerCandidateInput } from "@/lib/volunteers/scheduler"
 import { requireMinistryPermission } from "./access"
 
-type ActionResult = { ok: boolean; id?: string; error?: string }
+export type ActionResult = { ok: boolean; id?: string; error?: string; data?: unknown }
 
 const uuid = z.string().uuid()
 const optionalUuid = z.union([uuid, z.literal(""), z.null()]).optional().transform((value) => value || null)
@@ -34,15 +35,33 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.dashboard.view", parsed.companyId, { manage: true })
     const sql = getSql()
     const isAdmin = ["superadmin", "admin", "pastor"].includes(access.user.role)
-    const rows = await sql<{ id: string }[]>`
-      update public.ministries set
-        name = ${parsed.name}, ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
-        target_audience = ${parsed.targetAudience}, contact = ${parsed.contact}, meeting_day = ${parsed.meetingDay ?? null},
-        meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, image_file_id = ${parsed.imageFileId},
-        public_join_enabled = ${parsed.publicJoinEnabled}, is_active = ${parsed.isActive}, updated_by = ${access.user.id}, updated_at = now()
-      where id = ${parsed.ministryId} and company_id = ${access.companyId} and deleted_at is null
-      returning id
-    `
+    if (isAdmin && parsed.leaderPersonId) {
+      const leaderRows = await sql<{ id: string }[]>`
+        select id from public.people
+        where id = ${parsed.leaderPersonId} and company_id = ${access.companyId}
+          and is_active and deleted_at is null limit 1
+      `
+      if (!leaderRows[0]) throw new Error("O responsável precisa ser uma pessoa ativa da igreja")
+    }
+    const rows = isAdmin
+      ? await sql<{ id: string }[]>`
+          update public.ministries set
+            name = ${parsed.name}, ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
+            target_audience = ${parsed.targetAudience}, contact = ${parsed.contact}, meeting_day = ${parsed.meetingDay ?? null},
+            meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, image_file_id = ${parsed.imageFileId},
+            public_join_enabled = ${parsed.publicJoinEnabled}, is_active = ${parsed.isActive}, updated_by = ${access.user.id}, updated_at = now()
+          where id = ${parsed.ministryId} and company_id = ${access.companyId} and deleted_at is null
+          returning id
+        `
+      : await sql<{ id: string }[]>`
+          update public.ministries set
+            name = ${parsed.name}, ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
+            target_audience = ${parsed.targetAudience}, contact = ${parsed.contact}, meeting_day = ${parsed.meetingDay ?? null},
+            meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, image_file_id = ${parsed.imageFileId},
+            public_join_enabled = ${parsed.publicJoinEnabled}, updated_by = ${access.user.id}, updated_at = now()
+          where id = ${parsed.ministryId} and company_id = ${access.companyId} and deleted_at is null
+          returning id
+        `
     if (!rows[0]) throw new Error("Ministério não encontrado")
     if (isAdmin) {
       await sql`
@@ -87,6 +106,43 @@ export async function reviewMinistryMember(input: z.input<typeof membershipSchem
   } catch (error) { return result(error) }
 }
 
+const addMemberSchema = z.object({ ministryId: uuid, companyId: optionalUuid, personId: uuid })
+
+export async function addMinistryMember(input: z.input<typeof addMemberSchema>): Promise<ActionResult> {
+  try {
+    const parsed = addMemberSchema.parse(input)
+    const access = await requireMinistryPermission(parsed.ministryId, "ministries.members.manage", parsed.companyId, { manage: true })
+    const sql = getSql()
+    const people = await sql<{ id: string }[]>`
+      select id from public.people
+      where id = ${parsed.personId} and company_id = ${access.companyId}
+        and is_active and deleted_at is null
+      limit 1
+    `
+    if (!people[0]) throw new Error("Pessoa não encontrada ou inativa")
+    const rows = await sql<{ id: string }[]>`
+      insert into public.ministry_memberships (
+        company_id, ministry_id, person_id, role, status,
+        requested_by, reviewed_by, requested_at, reviewed_at, joined_at, left_at
+      ) values (
+        ${access.companyId}, ${parsed.ministryId}, ${parsed.personId}, 'member', 'active',
+        ${access.user.id}, ${access.user.id}, now(), now(), now(), null
+      )
+      on conflict (ministry_id, person_id) do update set
+        company_id = excluded.company_id,
+        role = case when public.ministry_memberships.role = 'leader' then 'leader' else 'member' end,
+        status = 'active', left_at = null, reviewed_by = excluded.reviewed_by,
+        reviewed_at = excluded.reviewed_at, joined_at = coalesce(public.ministry_memberships.joined_at, excluded.joined_at),
+        updated_at = now()
+      returning id
+    `
+    if (!rows[0]) throw new Error("Vínculo do ministério não foi salvo")
+    await writeAuditLog({ action: "ministry.membership.manual_add", entityTable: "ministry_memberships", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, personId: parsed.personId } })
+    refresh(parsed.ministryId)
+    return { ok: true, id: rows[0].id }
+  } catch (error) { return result(error) }
+}
+
 const teamSchema = z.object({ ministryId: uuid, companyId: optionalUuid, id: optionalUuid, name: z.string().trim().min(2).max(120), description: z.string().trim().max(2000).default(""), leaderPersonId: optionalUuid, coLeaderPersonId: optionalUuid, coordinatorPersonId: optionalUuid, meetingDay: z.string().trim().max(30).default(""), meetingTime: z.string().trim().max(20).nullable().optional(), meetingLocation: z.string().trim().max(300).default(""), maxCapacity: z.number().int().min(0).max(10000).default(0), isActive: z.boolean().default(true) })
 
 async function validateMinistryPeople(companyId: string, ministryId: string, people: (string | null)[]) {
@@ -106,6 +162,17 @@ export async function saveMinistryTeam(input: z.input<typeof teamSchema>): Promi
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.teams.manage", parsed.companyId, { manage: true })
     await validateMinistryPeople(access.companyId, parsed.ministryId, [parsed.leaderPersonId, parsed.coLeaderPersonId, parsed.coordinatorPersonId])
     const sql = getSql()
+    if (parsed.id && parsed.maxCapacity > 0) {
+      const countRows = await sql<{ total: number }[]>`
+        select count(member.id)::int as total
+        from public.group_members member
+        join public.groups team on team.id = member.group_id
+        where team.id = ${parsed.id} and team.company_id = ${access.companyId}
+          and team.ministry_id = ${parsed.ministryId} and team.type = 'ministry'
+          and team.deleted_at is null and member.status = 'active'
+      `
+      if (Number(countRows[0]?.total ?? 0) > parsed.maxCapacity) throw new Error("A capacidade nova nÃ£o pode ser menor que o nÃºmero atual de membros")
+    }
     const rows = parsed.id
       ? await sql<{ id: string }[]>`
           update public.groups set name = ${parsed.name}, description = ${parsed.description}, leader_person_id = ${parsed.leaderPersonId}, co_leader_person_id = ${parsed.coLeaderPersonId}, coordinator_person_id = ${parsed.coordinatorPersonId}, meeting_day = ${parsed.meetingDay}, meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, max_capacity = ${parsed.maxCapacity}, is_active = ${parsed.isActive}, updated_by = ${access.user.id}, updated_at = now()
@@ -129,17 +196,34 @@ export async function saveMinistryTeamMember(input: z.input<typeof teamMemberSch
     const parsed = teamMemberSchema.parse(input)
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.teams.manage", parsed.companyId, { manage: true })
     const sql = getSql()
-    const groupRows = await sql<{ id: string }[]>`select id from public.groups where id = ${parsed.groupId} and company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and type = 'ministry' and deleted_at is null limit 1`
+    const groupRows = await sql<{ id: string; max_capacity: number }[]>`
+      select id, max_capacity from public.groups
+      where id = ${parsed.groupId} and company_id = ${access.companyId}
+        and ministry_id = ${parsed.ministryId} and type = 'ministry' and deleted_at is null
+      limit 1
+    `
     if (!groupRows[0]) throw new Error("Equipe não encontrada")
     if (!parsed.remove) {
       await validateMinistryPeople(access.companyId, parsed.ministryId, [parsed.personId])
+      const existing = await sql<{ id: string }[]>`
+        select id from public.group_members
+        where company_id = ${access.companyId} and group_id = ${parsed.groupId}
+          and person_id = ${parsed.personId} and status = 'active' limit 1
+      `
+      if (!existing[0] && Number(groupRows[0].max_capacity) > 0) {
+        const counts = await sql<{ total: number }[]>`
+          select count(*)::int as total from public.group_members
+          where company_id = ${access.companyId} and group_id = ${parsed.groupId} and status = 'active'
+        `
+        if (Number(counts[0]?.total ?? 0) >= Number(groupRows[0].max_capacity)) throw new Error("A capacidade desta equipe já foi atingida")
+      }
       await sql`
         insert into public.group_members (company_id, group_id, person_id, role, status, joined_at, created_by, updated_by)
         values (${access.companyId}, ${parsed.groupId}, ${parsed.personId}, ${parsed.role}, 'active', current_date, ${access.user.id}, ${access.user.id})
         on conflict (group_id, person_id) do update set role = excluded.role, status = 'active', left_at = null, updated_by = excluded.updated_by, updated_at = now()
       `
     } else {
-      await sql`update public.group_members set status = 'inactive', left_at = current_date, updated_by = ${access.user.id}, updated_at = now() where group_id = ${parsed.groupId} and person_id = ${parsed.personId}`
+      await sql`update public.group_members set status = 'inactive', left_at = current_date, updated_by = ${access.user.id}, updated_at = now() where company_id = ${access.companyId} and group_id = ${parsed.groupId} and person_id = ${parsed.personId}`
     }
     await writeAuditLog({ action: parsed.remove ? "ministry.team.member.remove" : "ministry.team.member.add", entityTable: "group_members", companyId: access.companyId, metadata: { ministryId: parsed.ministryId, groupId: parsed.groupId, personId: parsed.personId } })
     refresh(parsed.ministryId)
@@ -169,6 +253,462 @@ export async function saveMinistryActivity(input: z.input<typeof agendaSchema>):
     await writeAuditLog({ action: parsed.id ? "ministry.activity.update" : "ministry.activity.create", entityTable: "programmings", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId } })
     refresh(parsed.ministryId)
     return { ok: true, id: rows[0].id }
+  } catch (error) { return result(error) }
+}
+
+const scalePositionSchema = z.object({
+  ministryId: uuid,
+  companyId: optionalUuid,
+  eventId: uuid,
+  positions: z.array(z.object({
+    roleName: z.string().trim().min(2).max(120),
+    requiredVolunteers: z.number().int().min(1).max(100),
+    instructions: z.string().trim().max(2000).default(""),
+  })).min(1).max(50),
+})
+
+async function ensureMinistryVolunteerDepartment(access: Awaited<ReturnType<typeof requireMinistryPermission>>) {
+  const sql = getSql()
+  const existing = await sql<{ id: string }[]>`
+    select id from public.volunteer_departments
+    where company_id = ${access.companyId} and ministry_id = ${access.ministryId}
+      and deleted_at is null limit 1
+  `
+  if (existing[0]) return existing[0].id
+  const ministryRows = await sql<{ name: string }[]>`
+    select name from public.ministries
+    where id = ${access.ministryId} and company_id = ${access.companyId} and deleted_at is null limit 1
+  `
+  if (!ministryRows[0]) throw new Error("Ministério não encontrado")
+  const rows = await sql<{ id: string }[]>`
+    insert into public.volunteer_departments (
+      company_id, ministry_id, manager_profile_id, name, description, is_active, created_by, updated_by
+    ) values (
+      ${access.companyId}, ${access.ministryId}, ${access.user.id},
+      ${`Ministério: ${ministryRows[0].name}`},
+      'Departamento técnico usado pelas escalas deste ministério.', true, ${access.user.id}, ${access.user.id}
+    ) returning id
+  `
+  if (!rows[0]) throw new Error("Departamento técnico do ministério não foi criado")
+  return rows[0].id
+}
+
+async function ensureMinistryVolunteerRole(companyId: string, departmentId: string, roleName: string, actorId: string, instructions: string) {
+  const sql = getSql()
+  const existing = await sql<{ id: string }[]>`
+    select id from public.volunteer_department_roles
+    where company_id = ${companyId} and department_id = ${departmentId}
+      and lower(name) = lower(${roleName}) and deleted_at is null limit 1
+  `
+  if (existing[0]) {
+    await sql`
+      update public.volunteer_department_roles
+      set name = ${roleName}, instructions = ${instructions}, is_active = true, updated_at = now()
+      where id = ${existing[0].id} and company_id = ${companyId}
+    `
+    return existing[0].id
+  }
+  const rows = await sql<{ id: string }[]>`
+    insert into public.volunteer_department_roles (
+      company_id, department_id, name, description, instructions, is_active
+    ) values (${companyId}, ${departmentId}, ${roleName}, '', ${instructions}, true) returning id
+  `
+  if (!rows[0]) throw new Error("Função da escala não foi criada")
+  void actorId
+  return rows[0].id
+}
+
+async function getMinistryScaleEvent(access: Awaited<ReturnType<typeof requireMinistryPermission>>, eventId: string) {
+  const sql = getSql()
+  const rows = await sql<{ id: string; title: string; starts_at: Date | string; ends_at: Date | string | null; status: string; volunteer_schedule_published_at: Date | string | null }[]>`
+    select id, title, starts_at, ends_at, status, volunteer_schedule_published_at
+    from public.events
+    where id = ${eventId} and company_id = ${access.companyId} and ministry_id = ${access.ministryId}
+      and deleted_at is null limit 1
+  `
+  if (!rows[0]) throw new Error("Atividade não pertence a este ministério")
+  if (rows[0].status === "cancelled") throw new Error("Atividade cancelada não pode receber escala")
+  return rows[0]
+}
+
+export async function saveMinistryScalePositions(input: z.input<typeof scalePositionSchema>): Promise<ActionResult> {
+  try {
+    const parsed = scalePositionSchema.parse(input)
+    const access = await requireMinistryPermission(parsed.ministryId, "ministries.agenda.manage", parsed.companyId, { manage: true })
+    const event = await getMinistryScaleEvent(access, parsed.eventId)
+    if (event.volunteer_schedule_published_at) throw new Error("A escala publicada não pode ser alterada")
+    const roleKeys = parsed.positions.map((position) => position.roleName.toLocaleLowerCase("pt-BR"))
+    if (new Set(roleKeys).size !== roleKeys.length) throw new Error("Cada função precisa ter um nome diferente")
+    const departmentId = await ensureMinistryVolunteerDepartment(access)
+    const roles = new Map<string, string>()
+    for (const position of parsed.positions) roles.set(position.roleName.toLocaleLowerCase("pt-BR"), await ensureMinistryVolunteerRole(access.companyId, departmentId, position.roleName, access.user.id, position.instructions))
+    const sql = getSql()
+    const saved = await sql.begin(async (tx) => {
+      const keptIds: string[] = []
+      for (const [index, position] of parsed.positions.entries()) {
+        const roleId = roles.get(position.roleName.toLocaleLowerCase("pt-BR"))
+        if (!roleId) throw new Error("Função inválida")
+        const rows = await tx<{ id: string }[]>`
+          insert into public.volunteer_event_positions (
+            company_id, event_id, department_id, role_id, role_name,
+            required_volunteers, instructions, sort_order, created_by, updated_by
+          ) values (
+            ${access.companyId}, ${parsed.eventId}, ${departmentId}, ${roleId}, ${position.roleName},
+            ${position.requiredVolunteers}, ${position.instructions}, ${index}, ${access.user.id}, ${access.user.id}
+          ) on conflict (event_id, department_id, role_id) do update set
+            role_name = excluded.role_name, required_volunteers = excluded.required_volunteers,
+            instructions = excluded.instructions, sort_order = excluded.sort_order,
+            updated_by = excluded.updated_by, updated_at = now()
+          returning id
+        `
+        if (rows[0]) keptIds.push(rows[0].id)
+      }
+      await tx`
+        delete from public.volunteer_event_positions
+        where event_id = ${parsed.eventId} and company_id = ${access.companyId}
+          and id <> all(${keptIds}::uuid[])
+      `
+      return keptIds
+    })
+    await writeAuditLog({ action: "ministry.scale.positions.save", entityTable: "volunteer_event_positions", entityId: parsed.eventId, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, positions: saved.length, departmentId } })
+    refresh(parsed.ministryId)
+    return { ok: true, id: parsed.eventId, data: { departmentId, positionIds: saved } }
+  } catch (error) { return result(error) }
+}
+
+export async function generateMinistryScale(input: { ministryId: string; eventId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const eventId = uuid.parse(input.eventId)
+    const access = await requireMinistryPermission(ministryId, "ministries.agenda.manage", input.companyId, { manage: true })
+    const event = await getMinistryScaleEvent(access, eventId)
+    if (event.volunteer_schedule_published_at) throw new Error("A escala deste evento já foi publicada")
+    const sql = getSql()
+    const positions = await sql<{ id: string; department_id: string; role_id: string; role_name: string; required_volunteers: number; instructions: string }[]>`
+      select id, department_id, role_id, role_name, required_volunteers, instructions
+      from public.volunteer_event_positions
+      where event_id = ${eventId} and company_id = ${access.companyId}
+      order by sort_order, role_name
+    `
+    if (!positions.length) throw new Error("Adicione ao menos uma função antes de montar a escala")
+    const monthRows = await sql<{ month: string }[]>`
+      select to_char(starts_at at time zone 'America/Sao_Paulo', 'YYYY-MM-01') as month
+      from public.events where id = ${eventId} limit 1
+    `
+    const month = monthRows[0]?.month
+    if (!month) throw new Error("Mês da escala não encontrado")
+    const scheduleRows = await sql<{ id: string; status: "draft" | "published" | "archived" }[]>`
+      insert into public.volunteer_schedules (company_id, month, created_by, updated_by)
+      values (${access.companyId}, ${month}::date, ${access.user.id}, ${access.user.id})
+      on conflict (company_id, month) do update set updated_by = excluded.updated_by, updated_at = now()
+      returning id, status
+    `
+    const schedule = scheduleRows[0]
+    if (!schedule) throw new Error("Escala não foi criada")
+    if (schedule.status === "published") throw new Error("O mês desta escala já foi publicado")
+    const startsAt = new Date(event.starts_at)
+    const endsAt = event.ends_at ? new Date(event.ends_at) : new Date(startsAt.getTime() + 2 * 60 * 60 * 1000)
+    const opensAt = new Date(startsAt.getTime() - 30 * 60 * 1000)
+    const closesAt = new Date(endsAt.getTime() + 30 * 60 * 1000)
+    const positionIds = positions.map((position) => position.id)
+    await sql.begin(async (tx) => {
+      await tx`
+        delete from public.volunteer_shifts
+        where schedule_id = ${schedule.id} and event_id = ${eventId}
+          and (event_position_id is null or event_position_id <> all(${positionIds}::uuid[]))
+      `
+      for (const position of positions) {
+        await tx`
+          insert into public.volunteer_shifts (
+            company_id, schedule_id, event_id, event_position_id, department_id, role_id,
+            role_name, required_volunteers, instructions, starts_at, ends_at,
+            checkin_opens_at, checkin_closes_at
+          ) values (
+            ${access.companyId}, ${schedule.id}, ${eventId}, ${position.id}, ${position.department_id}, ${position.role_id},
+            ${position.role_name}, ${position.required_volunteers}, ${position.instructions}, ${startsAt}, ${endsAt}, ${opensAt}, ${closesAt}
+          ) on conflict (schedule_id, event_id, event_position_id) where event_position_id is not null do update set
+            department_id = excluded.department_id, role_id = excluded.role_id, role_name = excluded.role_name,
+            required_volunteers = excluded.required_volunteers, instructions = excluded.instructions,
+            starts_at = excluded.starts_at, ends_at = excluded.ends_at,
+            checkin_opens_at = excluded.checkin_opens_at, checkin_closes_at = excluded.checkin_closes_at,
+            updated_at = now()
+        `
+      }
+    })
+    await writeAuditLog({ action: "ministry.scale.generate", entityTable: "volunteer_schedules", entityId: schedule.id, companyId: access.companyId, metadata: { ministryId, eventId, positions: positions.length } })
+    refresh(ministryId)
+    return { ok: true, id: schedule.id, data: { eventId, positions: positions.length } }
+  } catch (error) { return result(error) }
+}
+
+async function getMinistryShift(access: Awaited<ReturnType<typeof requireMinistryPermission>>, shiftId: string) {
+  const sql = getSql()
+  const rows = await sql<{ id: string; event_id: string; department_id: string; role_name: string; required_volunteers: number; starts_at: Date | string; ends_at: Date | string | null; event_title: string }[]>`
+    select shift.id, shift.event_id, shift.department_id, shift.role_name, shift.required_volunteers,
+      shift.starts_at, coalesce(shift.ends_at, shift.starts_at + interval '2 hours') as ends_at,
+      event.title as event_title
+    from public.volunteer_shifts shift
+    join public.events event on event.id = shift.event_id
+    where shift.id = ${shiftId} and shift.company_id = ${access.companyId}
+      and event.company_id = ${access.companyId} and event.ministry_id = ${access.ministryId}
+      and event.deleted_at is null limit 1
+  `
+  if (!rows[0]) throw new Error("Vaga da escala não encontrada")
+  return rows[0]
+}
+
+async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof requireMinistryPermission>>, shift: Awaited<ReturnType<typeof getMinistryShift>>) {
+  const sql = getSql()
+  const people = await sql<{ person_id: string; person_name: string; volunteer_id: string | null; registration_status: string | null; desired_services_per_month: number | null; max_services_per_month: number | null; minimum_rest_hours: number | null }[]>`
+    select membership.person_id, person.full_name as person_name, volunteer.id as volunteer_id,
+      volunteer.registration_status, volunteer.desired_services_per_month, volunteer.max_services_per_month,
+      volunteer.minimum_rest_hours
+    from public.ministry_memberships membership
+    join public.people person on person.id = membership.person_id
+      and person.company_id = ${access.companyId} and person.is_active and person.deleted_at is null
+    left join public.volunteer_profiles volunteer on volunteer.person_id = membership.person_id
+      and volunteer.company_id = ${access.companyId} and volunteer.deleted_at is null
+    where membership.company_id = ${access.companyId} and membership.ministry_id = ${access.ministryId}
+      and membership.status = 'active' and membership.left_at is null
+    order by person.full_name
+  `
+  const candidates: SchedulerCandidateInput[] = []
+  for (const person of people) {
+    const volunteerId = person.volunteer_id ? String(person.volunteer_id) : null
+    const [rules, exceptions, history] = volunteerId
+      ? await Promise.all([
+          sql<Record<string, unknown>[]>`select weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = ${volunteerId}`,
+          sql<Record<string, unknown>[]>`select starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId}`,
+          sql<Record<string, unknown>[]>`select other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = ${volunteerId} and assignment.company_id = ${access.companyId}`,
+        ])
+      : [[], [], []]
+    candidates.push({
+      id: volunteerId ?? person.person_id,
+      name: person.person_name,
+      active: true,
+      departmentIds: [shift.department_id],
+      roleNames: [shift.role_name],
+      desiredServicesPerMonth: Number(person.desired_services_per_month ?? 2),
+      maxServicesPerMonth: Number(person.max_services_per_month ?? 4),
+      minimumRestHours: Number(person.minimum_rest_hours ?? 12),
+      preference: 0,
+      availabilityRules: rules.map((row) => ({
+        weekday: Number(row.weekday), available: Boolean(row.available),
+        startsAt: row.starts_at ? String(row.starts_at).slice(0, 5) : null,
+        endsAt: row.ends_at ? String(row.ends_at).slice(0, 5) : null,
+        validFrom: row.valid_from ? String(row.valid_from).slice(0, 10) : null,
+        validUntil: row.valid_until ? String(row.valid_until).slice(0, 10) : null,
+      })),
+      availabilityExceptions: exceptions.map((row) => ({ startsAt: String(row.starts_at), endsAt: String(row.ends_at), available: Boolean(row.available) })),
+      assignments: history.map((row) => ({ startsAt: String(row.starts_at), endsAt: String(row.ends_at), status: String(row.status), roleName: String(row.role_name) })),
+    })
+  }
+  const ranked = rankVolunteersForShift(candidates, {
+    id: shift.id,
+    departmentId: shift.department_id,
+    roleName: shift.role_name,
+    requiredVolunteers: Number(shift.required_volunteers),
+    startsAt: new Date(shift.starts_at).toISOString(),
+    endsAt: new Date(shift.ends_at ?? shift.starts_at).toISOString(),
+    timezone: "America/Sao_Paulo",
+  })
+  const byId = new Map(people.map((person) => [person.volunteer_id ?? person.person_id, person]))
+  return ranked.map((candidate) => {
+    const person = byId.get(candidate.volunteerId)
+    const manual = withManualSelectionRules(candidate)
+    return {
+      personId: person?.person_id ?? candidate.volunteerId,
+      personName: person?.person_name ?? candidate.volunteerName,
+      volunteerId: person?.volunteer_id ?? null,
+      selectableManually: manual.selectableManually,
+      eligible: manual.eligible,
+      score: manual.score,
+      warnings: person?.volunteer_id ? manual.warnings : ["O vínculo técnico de voluntariado será criado ao selecionar."],
+      blockers: manual.blockers,
+    }
+  })
+}
+
+export async function listMinistryScaleCandidates(input: { ministryId: string; shiftId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const shiftId = uuid.parse(input.shiftId)
+    const access = await requireMinistryPermission(ministryId, "ministries.agenda.manage", input.companyId, { manage: true })
+    const shift = await getMinistryShift(access, shiftId)
+    return { ok: true, id: shiftId, data: await loadMinistryScaleCandidates(access, shift) }
+  } catch (error) { return result(error) }
+}
+
+const scaleAssignmentSchema = z.object({ ministryId: uuid, companyId: optionalUuid, shiftId: uuid, personId: uuid, remove: z.boolean().default(false) })
+
+async function ensureMinistryVolunteerProfile(companyId: string, personId: string, actorId: string) {
+  const sql = getSql()
+  const rows = await sql<{ id: string }[]>`
+    insert into public.volunteer_profiles (company_id, person_id, registration_status, whatsapp_enabled, email_enabled, created_by, updated_by)
+    values (${companyId}, ${personId}, 'active', false, false, ${actorId}, ${actorId})
+    on conflict (person_id) do update set registration_status = 'active', deleted_at = null, updated_by = excluded.updated_by, updated_at = now()
+      where public.volunteer_profiles.company_id = excluded.company_id
+    returning id
+  `
+  if (!rows[0]) throw new Error("Vínculo técnico de voluntariado não foi criado")
+  return rows[0].id
+}
+
+async function ensureMinistryVolunteerMembership(companyId: string, departmentId: string, volunteerId: string, roleId: string, roleName: string) {
+  const sql = getSql()
+  await sql`
+    insert into public.volunteer_department_memberships (
+      company_id, department_id, volunteer_id, role_name, role_id, preferred, is_active
+    ) values (${companyId}, ${departmentId}, ${volunteerId}, ${roleName}, ${roleId}, true, true)
+    on conflict (department_id, volunteer_id, role_name) do update set
+      role_id = excluded.role_id, preferred = true, is_active = true, updated_at = now()
+  `
+}
+
+export async function saveMinistryScaleAssignment(input: z.input<typeof scaleAssignmentSchema>): Promise<ActionResult> {
+  try {
+    const parsed = scaleAssignmentSchema.parse(input)
+    const access = await requireMinistryPermission(parsed.ministryId, "ministries.agenda.manage", parsed.companyId, { manage: true })
+    const shift = await getMinistryShift(access, parsed.shiftId)
+    const sql = getSql()
+    const memberRows = await sql<{ person_id: string }[]>`
+      select person_id from public.ministry_memberships
+      where company_id = ${access.companyId} and ministry_id = ${access.ministryId}
+        and person_id = ${parsed.personId} and status = 'active' and left_at is null limit 1
+    `
+    if (!memberRows[0]) throw new Error("Somente membros ativos do ministério podem ser escalados")
+    const departmentRows = await sql<{ id: string }[]>`select id from public.volunteer_departments where id = ${shift.department_id} and company_id = ${access.companyId} and ministry_id = ${access.ministryId} and deleted_at is null limit 1`
+    if (!departmentRows[0]) throw new Error("Departamento da escala fora do escopo")
+    const volunteerRows = await sql<{ id: string; registration_status: string }[]>`select id, registration_status from public.volunteer_profiles where company_id = ${access.companyId} and person_id = ${parsed.personId} and deleted_at is null limit 1`
+    if (parsed.remove) {
+      if (!volunteerRows[0]) throw new Error("Pessoa não está atribuída nesta escala")
+      const rows = await sql<{ id: string }[]>`
+        update public.volunteer_assignments assignment
+        set status = 'cancelled', updated_by = ${access.user.id}, updated_at = now()
+        where assignment.shift_id = ${shift.id} and assignment.volunteer_id = ${volunteerRows[0].id}
+          and assignment.status not in ('declined', 'cancelled') returning assignment.id
+      `
+      if (!rows[0]) throw new Error("Pessoa não está atribuída nesta escala")
+      await writeAuditLog({ action: "ministry.scale.assignment.remove", entityTable: "volunteer_assignments", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: access.ministryId, shiftId: shift.id, personId: parsed.personId } })
+      refresh(access.ministryId)
+      return { ok: true, id: rows[0].id }
+    }
+    const existingVolunteerId = volunteerRows[0]?.id
+    if (existingVolunteerId) {
+      const existing = await sql<{ id: string }[]>`
+        select id from public.volunteer_assignments
+        where shift_id = ${shift.id} and volunteer_id = ${existingVolunteerId}
+          and status not in ('declined', 'cancelled') limit 1
+      `
+      if (existing[0]) return { ok: true, id: existing[0].id }
+    }
+    const candidates = await loadMinistryScaleCandidates(access, shift)
+    const candidate = candidates.find((item) => item.personId === parsed.personId)
+    if (!candidate?.selectableManually) throw new Error(candidate?.blockers.join("; ") || "Pessoa indisponível para este horário")
+    const volunteerId = volunteerRows[0]?.registration_status === "active"
+      ? volunteerRows[0].id
+      : await ensureMinistryVolunteerProfile(access.companyId, parsed.personId, access.user.id)
+    const roleRows = await sql<{ id: string }[]>`
+      select id from public.volunteer_department_roles
+      where company_id = ${access.companyId} and department_id = ${shift.department_id}
+        and lower(name) = lower(${shift.role_name}) and deleted_at is null limit 1
+    `
+    if (!roleRows[0]) throw new Error("Função técnica da escala não encontrada")
+    await ensureMinistryVolunteerMembership(access.companyId, shift.department_id, volunteerId, roleRows[0].id, shift.role_name)
+    const capacity = await sql<{ filled: number }[]>`
+      select count(*) filter (where status not in ('declined', 'cancelled'))::int as filled
+      from public.volunteer_assignments where shift_id = ${shift.id}
+    `
+    if (Number(capacity[0]?.filled ?? 0) >= Number(shift.required_volunteers)) throw new Error("Todas as vagas desta função já foram preenchidas")
+    const rows = await sql<{ id: string }[]>`
+      insert into public.volunteer_assignments (
+        company_id, shift_id, volunteer_id, status, score, score_reasons, is_locked, created_by, updated_by
+      ) values (
+        ${access.companyId}, ${shift.id}, ${volunteerId}, 'proposed', ${candidate.score},
+        ${JSON.stringify([{ code: "manual", label: "Escolha manual do líder", points: 0 }])}::jsonb,
+        true, ${access.user.id}, ${access.user.id}
+      ) returning id
+    `
+    if (!rows[0]) throw new Error("Pessoa não foi adicionada à escala")
+    await writeAuditLog({ action: "ministry.scale.assignment.save", entityTable: "volunteer_assignments", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: access.ministryId, shiftId: shift.id, personId: parsed.personId } })
+    refresh(access.ministryId)
+    return { ok: true, id: rows[0].id }
+  } catch (error) { return result(error) }
+}
+
+export async function publishMinistryScale(input: { ministryId: string; eventId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const eventId = uuid.parse(input.eventId)
+    const access = await requireMinistryPermission(ministryId, "ministries.agenda.manage", input.companyId, { manage: true })
+    const event = await getMinistryScaleEvent(access, eventId)
+    if (event.volunteer_schedule_published_at) return { ok: true, id: eventId }
+    const sql = getSql()
+    const shifts = await sql<{ id: string; role_name: string; required_volunteers: number }[]>`
+      select id, role_name, required_volunteers from public.volunteer_shifts
+      where company_id = ${access.companyId} and event_id = ${eventId}
+    `
+    if (!shifts.length) throw new Error("Monte a escala antes de publicar")
+    const incomplete = await sql<{ role_name: string; missing: number }[]>`
+      select shift.role_name,
+        shift.required_volunteers - count(assignment.id) filter (where assignment.status not in ('declined', 'cancelled'))::int as missing
+      from public.volunteer_shifts shift
+      left join public.volunteer_assignments assignment on assignment.shift_id = shift.id
+      where shift.company_id = ${access.companyId} and shift.event_id = ${eventId}
+      group by shift.id, shift.role_name, shift.required_volunteers
+      having count(assignment.id) filter (where assignment.status not in ('declined', 'cancelled')) < shift.required_volunteers
+      order by shift.role_name
+    `
+    if (incomplete.length) throw new Error(`Faltam pessoas: ${incomplete.map((item) => `${item.role_name} (${item.missing})`).join(", ")}`)
+    const recipients = await sql<{ assignment_id: string; volunteer_id: string; email: string | null; phone: string; email_enabled: boolean; whatsapp_enabled: boolean; push_enabled: boolean }[]>`
+      select assignment.id as assignment_id, volunteer.id as volunteer_id, person.email, person.phone,
+        coalesce(preference.email_enabled, volunteer.email_enabled) as email_enabled,
+        coalesce(preference.whatsapp_enabled, volunteer.whatsapp_enabled) as whatsapp_enabled,
+        coalesce(preference.push_enabled, false) as push_enabled
+      from public.volunteer_assignments assignment
+      join public.volunteer_shifts shift on shift.id = assignment.shift_id
+      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
+        and volunteer.company_id = ${access.companyId} and volunteer.deleted_at is null
+      join public.people person on person.id = volunteer.person_id
+        and person.company_id = ${access.companyId} and person.deleted_at is null
+      left join public.volunteer_notification_preferences preference on preference.volunteer_id = volunteer.id
+      where assignment.company_id = ${access.companyId} and shift.company_id = ${access.companyId} and shift.event_id = ${eventId}
+        and assignment.status not in ('declined', 'cancelled')
+    `
+    await sql.begin(async (tx) => {
+      await tx`
+        update public.volunteer_assignments assignment
+        set status = 'notified', notified_at = coalesce(notified_at, now()), updated_by = ${access.user.id}, updated_at = now()
+        from public.volunteer_shifts shift
+        where assignment.shift_id = shift.id and shift.company_id = ${access.companyId}
+          and shift.event_id = ${eventId} and assignment.status = 'proposed'
+      `
+      for (const recipient of recipients) {
+        const content = `Sua escala foi publicada: ${event.title} em ${new Date(event.starts_at).toLocaleString("pt-BR")}.`
+        if (recipient.whatsapp_enabled && recipient.phone) await tx`
+          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
+          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+        `
+        if (recipient.email_enabled && recipient.email) await tx`
+          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
+          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala publicada', ${content})
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+        `
+        if (recipient.push_enabled) await tx`
+          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content, event_kind, payload)
+          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule', ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+        `
+      }
+      await tx`
+        update public.events set volunteer_schedule_published_at = now(), updated_by = ${access.user.id}, updated_at = now()
+        where id = ${eventId} and company_id = ${access.companyId}
+      `
+    })
+    await writeAuditLog({ action: "ministry.scale.publish", entityTable: "events", entityId: eventId, companyId: access.companyId, metadata: { ministryId, recipients: recipients.length } })
+    refresh(ministryId)
+    return { ok: true, id: eventId, data: { recipients: recipients.length } }
   } catch (error) { return result(error) }
 }
 
@@ -208,17 +748,27 @@ export async function createMinistryCommunication(input: z.input<typeof communic
     const sql = getSql()
     const audience: NotificationAudience = parsed.audience === "team" ? "ministry_team" : parsed.audience === "manual" ? "manual" : "ministry"
     let audienceRefId = parsed.audience === "team" ? parsed.audienceRefId : parsed.ministryId
-    let personIds = parsed.personIds
+    let personIds = [...new Set(parsed.personIds)]
     if (audience === "ministry_team") {
       if (!audienceRefId) throw new Error("Selecione uma equipe")
-      const teamRows = await sql<{ id: string }[]>`select id from public.groups where id = ${audienceRefId} and company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and type = 'ministry' and deleted_at is null limit 1`
+      const teamRows = await sql<{ id: string }[]>`select id from public.groups where id = ${audienceRefId} and company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and type = 'ministry' and is_active and deleted_at is null limit 1`
       if (!teamRows[0]) throw new Error("Equipe fora do escopo")
-      const rows = await sql<{ person_id: string }[]>`select person_id from public.group_members where company_id = ${access.companyId} and group_id = ${audienceRefId} and status = 'active'`
-      personIds = rows.map((row) => row.person_id)
+      const rows = await sql<{ person_id: string }[]>`
+        select distinct members.person_id
+        from public.group_members members
+        where members.company_id = ${access.companyId} and members.group_id = ${audienceRefId}
+          and members.status = 'active'
+          and exists (
+            select 1 from public.ministry_memberships membership
+            where membership.company_id = ${access.companyId} and membership.ministry_id = ${parsed.ministryId}
+              and membership.person_id = members.person_id and membership.status = 'active' and membership.left_at is null
+          )
+      `
+      personIds = [...new Set(rows.map((row) => row.person_id))]
     } else if (audience === "manual") {
       if (!personIds.length) throw new Error("Selecione ao menos uma pessoa")
-      const valid = await sql<{ person_id: string }[]>`select person_id from public.ministry_memberships where company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and status = 'active' and person_id = any(${sql.array(personIds)}::uuid[])`
-      if (valid.length !== personIds.length) throw new Error("A seleção contém pessoa fora do ministério")
+      const valid = await sql<{ person_id: string }[]>`select person_id from public.ministry_memberships where company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and status = 'active' and left_at is null and person_id = any(${sql.array(personIds)}::uuid[])`
+      if (valid.length !== new Set(personIds).size) throw new Error("A seleção contém pessoa fora do ministério")
       audienceRefId = null
     }
     const scheduledAt = parsed.scheduledAt ? new Date(parsed.scheduledAt).toISOString() : null
@@ -230,7 +780,7 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       const campaign = campaigns[0]
       if (!campaign) throw new Error("Campanha não foi criada")
       const snapshot = await createNotificationCampaignDeliveries(tx, { notificationId: campaign.id, companyId: access.companyId, channel: parsed.method, audience, audienceRefId, personIds, nextAttemptAt: scheduledAt })
-      await tx`update public.notifications set snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now() where id = ${campaign.id}`
+      await tx`update public.notifications set audience_person_ids = ${tx.json(snapshot.personIds)}, snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now() where id = ${campaign.id}`
       return campaign.id
     })
     await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })
@@ -246,8 +796,16 @@ export async function saveMinistryFollowUp(input: z.input<typeof followUpSchema>
     const parsed = followUpSchema.parse(input)
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.follow_up.manage", parsed.companyId, { manage: true })
     const sql = getSql()
-    const valid = await sql<{ id: string }[]>`select id from public.ministry_memberships where company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and person_id = ${parsed.personId} and status = 'active' limit 1`
+    const valid = await sql<{ id: string }[]>`select id from public.ministry_memberships where company_id = ${access.companyId} and ministry_id = ${parsed.ministryId} and person_id = ${parsed.personId} and status = 'active' and left_at is null limit 1`
     if (!valid[0]) throw new Error("Pessoa não é membro ativo do ministério")
+    if (parsed.responsibleProfileId) {
+      const responsible = await sql<{ id: string }[]>`
+        select id from public.profiles
+        where id = ${parsed.responsibleProfileId} and company_id = ${access.companyId} and active
+        limit 1
+      `
+      if (!responsible[0]) throw new Error("Responsável inválido")
+    }
     const rows = await sql<{ id: string }[]>`
       insert into public.person_follow_up_tasks (company_id, person_id, ministry_id, responsible_profile_id, title, notes, due_at, priority, status, origin, source_key, created_by, updated_by)
       values (${access.companyId}, ${parsed.personId}, ${parsed.ministryId}, ${parsed.responsibleProfileId}, ${parsed.title}, ${parsed.notes}, ${parsed.dueAt ? new Date(parsed.dueAt).toISOString() : null}, ${parsed.priority}, 'open', 'ministry_manual', ${parsed.sourceKey ?? null}, ${access.user.id}, ${access.user.id})

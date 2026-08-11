@@ -78,14 +78,15 @@ async function findAudiencePeople(tx: TransactionSql, input: CampaignInput) {
   if (input.audience === "ministry") {
     return tx<PersonRow[]>`
       ${base()}
-      and exists (
-        select 1
-        from public.ministry_memberships membership
-        where membership.company_id = ${input.companyId}
-          and membership.ministry_id = ${input.audienceRefId}
-          and membership.person_id = people.id
-          and membership.status = 'active'
-      )
+       and exists (
+         select 1
+         from public.ministry_memberships membership
+         where membership.company_id = ${input.companyId}
+           and membership.ministry_id = ${input.audienceRefId}
+           and membership.person_id = people.id
+           and membership.status = 'active'
+           and membership.left_at is null
+       )
       order by full_name, id
     `
   }
@@ -97,11 +98,20 @@ async function findAudiencePeople(tx: TransactionSql, input: CampaignInput) {
         from public.group_members member
         join public.groups team on team.id = member.group_id
           and team.type = 'ministry' and team.deleted_at is null
-        where member.company_id = ${input.companyId}
-          and member.group_id = ${input.audienceRefId}
-          and member.person_id = people.id
-          and member.status = 'active'
-      )
+         where member.company_id = ${input.companyId}
+           and member.group_id = ${input.audienceRefId}
+           and member.person_id = people.id
+           and member.status = 'active'
+           and exists (
+             select 1
+             from public.ministry_memberships membership
+             where membership.company_id = ${input.companyId}
+               and membership.ministry_id = team.ministry_id
+               and membership.person_id = member.person_id
+               and membership.status = 'active'
+               and membership.left_at is null
+           )
+       )
       order by full_name, id
     `
   }
@@ -202,5 +212,5 @@ export async function createNotificationCampaignDeliveries(tx: TransactionSql, i
   }
 
   if (inserted === 0) throw new Error("Nenhum destinatário possui contato ou consentimento para este canal")
-  return { recipientCount: people.length, deliveryCount: inserted }
+  return { recipientCount: people.length, deliveryCount: inserted, personIds }
 }

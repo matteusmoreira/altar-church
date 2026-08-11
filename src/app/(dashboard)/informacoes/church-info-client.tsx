@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Building2, Calendar, Image as ImageIcon, MapPin, Music, Upload, Users } from "lucide-react"
+import { Building2, Calendar, Image as ImageIcon, MapPin, Upload, Users } from "lucide-react"
 import { toast } from "sonner"
 import { saveChurchInfo, uploadChurchProfileAsset } from "./actions"
 import type { ChurchInfoData, SocialLinkItem } from "@/lib/church-info/types"
@@ -226,10 +226,6 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
           <TabsTrigger value="programming">
             <Calendar className="h-4 w-4" />
             Programação
-          </TabsTrigger>
-          <TabsTrigger value="worship">
-            <Music className="h-4 w-4" />
-            Louvor
           </TabsTrigger>
           <TabsTrigger value="congregations">
             <MapPin className="h-4 w-4" />
@@ -470,43 +466,6 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                         <TableCell>{formatDate(programming.startsAt)}</TableCell>
                         <TableCell>{statusBadge(programming.isLive)}</TableCell>
                         <TableCell>{statusBadge(programming.isActive)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="worship" className="mt-6">
-          <Card className="glass">
-            <CardHeader>
-              <CardTitle className="text-base">Louvor</CardTitle>
-              <CardDescription>Músicas cadastradas.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {churchInfoData.songs.length === 0 ? (
-                <EmptyState label="Nenhuma música cadastrada." />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Título</TableHead>
-                      <TableHead>Autor</TableHead>
-                      <TableHead>Tema</TableHead>
-                      <TableHead>Tom</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {churchInfoData.songs.map((song) => (
-                      <TableRow key={song.id}>
-                        <TableCell className="font-medium">{song.title}</TableCell>
-                        <TableCell>{song.author || "-"}</TableCell>
-                        <TableCell>{song.theme || "-"}</TableCell>
-                        <TableCell>{song.tone || "-"}</TableCell>
-                        <TableCell>{statusBadge(song.isActive)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

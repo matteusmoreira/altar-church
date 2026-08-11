@@ -4,6 +4,7 @@ export type MinistryType = "worship" | "kids" | "youth" | "care" | "discipleship
 export type MinistryMembershipRole = "member" | "leader" | "coordinator"
 export type MinistryMembershipStatus = "pending" | "active" | "rejected" | "inactive"
 export type MinistryOrigin = "ministry_absence" | "ministry_onboarding" | "ministry_manual"
+export type MinistryScaleStatus = "draft" | "incomplete" | "ready" | "published"
 
 export interface MinistryProfile {
   id: string
@@ -59,6 +60,23 @@ export interface MinistryTeam {
   isActive: boolean
 }
 
+export interface MinistryTeamMember {
+  id: string
+  groupId: string
+  personId: string
+  personName: string
+  role: "member" | "leader" | "co_leader" | "host"
+}
+
+export interface MinistryAvailablePerson {
+  id: string
+  fullName: string
+  email: string
+  phone: string
+  membershipStatus: MinistryMembershipStatus | null
+  membershipRole: MinistryMembershipRole | null
+}
+
 export interface MinistryActivity {
   id: string
   title: string
@@ -72,6 +90,47 @@ export interface MinistryActivity {
   volunteerPositions: number
   assignedVolunteers: number
   scaleComplete: boolean
+}
+
+export interface MinistryScaleAssignment {
+  id: string
+  personId: string
+  personName: string
+  volunteerId: string
+  status: string
+}
+
+export interface MinistryScalePosition {
+  id: string
+  shiftId: string | null
+  roleName: string
+  requiredVolunteers: number
+  assignedVolunteers: number
+  missingVolunteers: number
+  instructions: string
+  assignments: MinistryScaleAssignment[]
+}
+
+export interface MinistryScale {
+  eventId: string
+  eventTitle: string
+  startsAt: string
+  scheduleId: string | null
+  scheduleStatus: "draft" | "published" | "archived" | null
+  publishedAt: string | null
+  status: MinistryScaleStatus
+  positions: MinistryScalePosition[]
+}
+
+export interface MinistryScaleCandidate {
+  personId: string
+  personName: string
+  volunteerId: string | null
+  selectableManually: boolean
+  eligible: boolean
+  score: number
+  warnings: string[]
+  blockers: string[]
 }
 
 export interface MinistryAttendanceSummary {
@@ -168,14 +227,17 @@ export interface MinistryWorkspaceData {
   workspace: MinistryWorkspace
   members: MinistryMember[]
   teams: MinistryTeam[]
+  teamMembers: MinistryTeamMember[]
   agenda: MinistryActivity[]
+  scales: MinistryScale[]
   followUps: MinistryFollowUp[]
   onboarding: MinistryOnboardingItem[]
   onboardingTemplates: MinistryOnboardingTemplate[]
   resources: MinistryResource[]
   report: MinistryReport
-  people: { id: string; fullName: string; email: string; phone: string }[]
+  people: MinistryAvailablePerson[]
   leaderCandidates: { id: string; fullName: string }[]
+  responsibleCandidates: { id: string; fullName: string }[]
 }
 
 export interface MinistryFollowUp {

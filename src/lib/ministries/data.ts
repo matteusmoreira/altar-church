@@ -3,11 +3,16 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { requireMinistryPermission } from "./access"
 import type {
   MinistryActivity,
+  MinistryAvailablePerson,
   MinistryMember,
   MinistryProfile,
   MinistryReport,
   MinistryResource,
   MinistryOnboardingTemplate,
+  MinistryScale,
+  MinistryScaleAssignment,
+  MinistryScalePosition,
+  MinistryTeamMember,
   MinistryWorkspaceData,
   MinistryWorkspace,
 } from "./types"
@@ -45,6 +50,66 @@ function toActivity(row: Record<string, unknown>): MinistryActivity {
   }
 }
 
+function mapScaleRows(rows: Record<string, unknown>[]): MinistryScale[] {
+  const scales = new Map<string, MinistryScale>()
+  const positions = new Map<string, MinistryScalePosition>()
+
+  for (const row of rows) {
+    const eventId = String(row.event_id)
+    const scale = scales.get(eventId) ?? {
+      eventId,
+      eventTitle: String(row.event_title ?? "Atividade"),
+      startsAt: iso(row.event_starts_at as Date | string) ?? "",
+      scheduleId: row.schedule_id ? String(row.schedule_id) : null,
+      scheduleStatus: row.schedule_status as MinistryScale["scheduleStatus"],
+      publishedAt: iso(row.event_published_at as Date | string | null),
+      status: "draft" as MinistryScale["status"],
+      positions: [],
+    }
+    scales.set(eventId, scale)
+
+    const positionId = row.position_id ? String(row.position_id) : row.shift_id ? String(row.shift_id) : null
+    if (!positionId) continue
+    const position = positions.get(`${eventId}:${positionId}`) ?? {
+      id: row.position_id ? String(row.position_id) : positionId,
+      shiftId: row.shift_id ? String(row.shift_id) : null,
+      roleName: String(row.position_role_name ?? row.shift_role_name ?? "Função"),
+      requiredVolunteers: Number(row.position_required ?? row.shift_required ?? 1),
+      assignedVolunteers: 0,
+      missingVolunteers: 0,
+      instructions: String(row.position_instructions ?? ""),
+      assignments: [],
+    }
+    if (row.assignment_id) {
+      const assignment: MinistryScaleAssignment = {
+        id: String(row.assignment_id),
+        personId: String(row.assignment_person_id),
+        personName: String(row.assignment_person_name ?? "Pessoa"),
+        volunteerId: String(row.assignment_volunteer_id),
+        status: String(row.assignment_status ?? "proposed"),
+      }
+      if (!position.assignments.some((item) => item.id === assignment.id)) position.assignments.push(assignment)
+    }
+    positions.set(`${eventId}:${positionId}`, position)
+  }
+
+  for (const scale of scales.values()) {
+    scale.positions = [...positions.entries()]
+      .filter(([key]) => key.startsWith(`${scale.eventId}:`))
+      .map(([, position]) => {
+        position.assignedVolunteers = position.assignments.filter((assignment) => !["declined", "cancelled"].includes(assignment.status)).length
+        position.missingVolunteers = Math.max(0, position.requiredVolunteers - position.assignedVolunteers)
+        return position
+      })
+      .sort((a, b) => a.roleName.localeCompare(b.roleName, "pt-BR"))
+    const isPublished = Boolean(scale.publishedAt)
+    const hasPositions = scale.positions.length > 0
+    const complete = hasPositions && scale.positions.every((position) => position.missingVolunteers === 0)
+    scale.status = isPublished ? "published" : !hasPositions ? "draft" : complete ? "ready" : "incomplete"
+  }
+  return [...scales.values()]
+}
+
 async function getProfileRow(companyId: string, ministryId: string) {
   const sql = getSql()
   const rows = await sql<Record<string, unknown>[]>`
@@ -65,7 +130,7 @@ async function getProfileRow(companyId: string, ministryId: string) {
 export async function getMinistryWorkspaceData(ministryId: string, companyIdInput?: string | null): Promise<MinistryWorkspaceData> {
   const access = await requireMinistryPermission(ministryId, "ministries.dashboard.view", companyIdInput)
   const sql = getSql()
-  const [profile, indicators, activityRows, attendanceRows, members, teams, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, lastCommunication] = await Promise.all([
+  const [profile, indicators, activityRows, attendanceRows, members, teams, teamMemberRows, scaleRows, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, responsibleCandidates, lastCommunication] = await Promise.all([
     getProfileRow(access.companyId, ministryId),
     sql<{ active_members: number; pending_members: number; inactive_members: number; active_teams: number; open_team_slots: number; upcoming_activities: number; attendance_present: number; attendance_absent: number; incomplete_scales: number; open_followups: number; overdue_followups: number }[]>`
       select
@@ -131,6 +196,45 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
       order by g.is_active desc, g.name
     `,
     sql<Record<string, unknown>[]>`
+      select gm.id, gm.group_id, gm.person_id, person.full_name as person_name, gm.role
+      from public.group_members gm
+      join public.groups team on team.id = gm.group_id
+        and team.company_id = ${access.companyId}
+        and team.ministry_id = ${ministryId}
+        and team.type = 'ministry'
+        and team.deleted_at is null
+      join public.people person on person.id = gm.person_id
+        and person.company_id = ${access.companyId}
+        and person.deleted_at is null
+      where gm.company_id = ${access.companyId} and gm.status = 'active'
+      order by team.name, person.full_name
+    `,
+    sql<Record<string, unknown>[]>`
+      select event.id as event_id, event.title as event_title, event.starts_at as event_starts_at,
+        event.volunteer_schedule_published_at as event_published_at,
+        schedule.id as schedule_id, schedule.status as schedule_status,
+        position.id as position_id, position.role_name as position_role_name,
+        position.required_volunteers as position_required, position.instructions as position_instructions,
+        shift.id as shift_id, shift.role_name as shift_role_name, shift.required_volunteers as shift_required,
+        assignment.id as assignment_id, assigned_volunteer.person_id as assignment_person_id,
+        assignment.volunteer_id as assignment_volunteer_id, assignment.status as assignment_status,
+        assigned_person.full_name as assignment_person_name
+      from public.events event
+      left join public.volunteer_event_positions position
+        on position.event_id = event.id and position.company_id = ${access.companyId}
+      left join public.volunteer_shifts shift
+        on shift.event_id = event.id and shift.company_id = ${access.companyId}
+        and (shift.event_position_id = position.id or (position.id is null and shift.event_position_id is null))
+      left join public.volunteer_schedules schedule on schedule.id = shift.schedule_id and schedule.company_id = ${access.companyId}
+      left join public.volunteer_assignments assignment
+        on assignment.shift_id = shift.id and assignment.company_id = ${access.companyId}
+      left join public.volunteer_profiles assigned_volunteer on assigned_volunteer.id = assignment.volunteer_id
+      left join public.people assigned_person on assigned_person.id = assigned_volunteer.person_id
+      where event.company_id = ${access.companyId} and event.ministry_id = ${ministryId}
+        and event.deleted_at is null and event.starts_at >= now() - interval '1 day'
+      order by event.starts_at, position.sort_order, position.role_name, assigned_person.full_name
+    `,
+    sql<Record<string, unknown>[]>`
       select task.id, task.person_id, person.full_name as person_name, task.title, task.notes, task.due_at, task.priority, task.status, task.origin,
         task.responsible_profile_id, responsible.name as responsible_name
       from public.person_follow_up_tasks task
@@ -173,13 +277,27 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
       order by resource.sort_order, resource.title
     `,
     getMinistryReportRows(access.companyId, ministryId),
-    sql<{ id: string; full_name: string; email: string; phone: string }[]>`
-      select id, full_name, coalesce(email, '') as email, phone from public.people
-      where company_id = ${access.companyId} and deleted_at is null and is_active
-      order by full_name limit 1000
+    sql<{ id: string; full_name: string; email: string; phone: string; membership_status: string | null; membership_role: string | null }[]>`
+      select person.id, person.full_name, coalesce(person.email, '') as email, person.phone,
+        membership.status as membership_status, membership.role as membership_role
+      from public.people person
+      left join public.ministry_memberships membership
+        on membership.person_id = person.id and membership.ministry_id = ${ministryId}
+        and membership.company_id = ${access.companyId}
+      where person.company_id = ${access.companyId} and person.deleted_at is null and person.is_active
+      order by person.full_name limit 1000
     `,
     sql<{ id: string; full_name: string }[]>`
       select id, full_name from public.people where company_id = ${access.companyId} and deleted_at is null and is_active order by full_name limit 1000
+    `,
+    sql<{ id: string; full_name: string }[]>`
+      select person.id, person.full_name
+      from public.people person
+      join public.profiles profile on profile.person_id = person.id
+      where person.company_id = ${access.companyId} and person.deleted_at is null and person.is_active
+        and profile.company_id = ${access.companyId} and profile.active
+        and profile.role in ('superadmin', 'admin', 'pastor', 'ministry_leader', 'volunteer')
+      order by person.full_name limit 500
     `,
     sql<{ id: string; title: string; status: string; created_at: Date | string }[]>`
       select id, title, status, created_at from public.notifications
@@ -201,6 +319,10 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
     coordinatorName: row.coordinator_name ? String(row.coordinator_name) : null, meetingDay: String(row.meeting_day ?? ""), meetingTime: row.meeting_time ? String(row.meeting_time) : null,
     meetingLocation: String(row.meeting_location ?? ""), maxCapacity: number(row.max_capacity), memberCount: number(row.member_count),
     openSlots: Math.max(0, number(row.max_capacity) - number(row.member_count)), isActive: Boolean(row.is_active),
+  }))
+  const mappedTeamMembers: MinistryTeamMember[] = teamMemberRows.map((row) => ({
+    id: String(row.id), groupId: String(row.group_id), personId: String(row.person_id),
+    personName: String(row.person_name ?? "Pessoa"), role: row.role as MinistryTeamMember["role"],
   }))
   const mappedFollowUps = followUps.map((row) => ({
     id: String(row.id), personId: String(row.person_id), personName: String(row.person_name), title: String(row.title), notes: String(row.notes ?? ""),
@@ -229,11 +351,12 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
   }
   const resourceUrls = await createSignedUrlsByStoragePath(resources.map((row) => String(row.file_storage_path ?? "")).filter(Boolean))
   const mappedActivities = activityRows.map(toActivity)
+  const mappedScales = mapScaleRows(scaleRows)
   const alerts = [
     { kind: "leader_missing" as const, label: "Ministério sem líder principal", count: profile.leaderPersonId ? 0 : 1, href: "#configuracoes" },
     { kind: "team_without_leader" as const, label: "Equipe sem responsável", count: mappedTeams.filter((team) => team.isActive && !team.leaderPersonId).length, href: "#equipes" },
     { kind: "activity_without_scale" as const, label: "Atividade com escala incompleta", count: mappedActivities.filter((activity) => !activity.scaleComplete && activity.volunteerPositions > 0).length, href: "#agenda" },
-    { kind: "follow_up_overdue" as const, label: "Follow-ups vencidos", count: number(indicator?.overdue_followups), href: "#follow-up" },
+    { kind: "follow_up_overdue" as const, label: "Acompanhamentos vencidos", count: number(indicator?.overdue_followups), href: "#acompanhamentos" },
   ].filter((alert) => alert.count > 0)
   const workspace: MinistryWorkspace = {
     profile, actorRole: access.user.role, canManage: access.canManage,
@@ -243,7 +366,33 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
     activities: mappedActivities, attendance: attendanceRows.map((row) => ({ day: iso(row.day) ?? String(row.day), present: number(row.present), absent: number(row.absent), justified: number(row.justified) })), alerts,
     lastCommunication: lastCommunication[0] ? { id: lastCommunication[0].id, title: lastCommunication[0].title, status: lastCommunication[0].status, createdAt: iso(lastCommunication[0].created_at) ?? "" } : null,
   }
-  return { workspace, members: mappedMembers, teams: mappedTeams, agenda: mappedActivities, followUps: mappedFollowUps, onboarding: mappedOnboarding, onboardingTemplates: [...onboardingTemplates.values()], resources: resources.map((row) => ({ id: String(row.id), title: String(row.title), description: String(row.description ?? ""), category: String(row.category ?? "geral"), fileId: row.file_id ? String(row.file_id) : null, fileName: row.file_name ? String(row.file_name) : null, fileUrl: row.file_storage_path ? resourceUrls.get(String(row.file_storage_path)) ?? null : null, externalUrl: row.external_url ? String(row.external_url) : null, visibility: row.visibility as MinistryResource["visibility"], sortOrder: number(row.sort_order) })), report, people: people.map((row) => ({ id: row.id, fullName: row.full_name, email: row.email, phone: row.phone })), leaderCandidates: leaderCandidates.map((row) => ({ id: row.id, fullName: row.full_name })) }
+  return {
+    workspace,
+    members: mappedMembers,
+    teams: mappedTeams,
+    teamMembers: mappedTeamMembers,
+    agenda: mappedActivities,
+    scales: mappedScales,
+    followUps: mappedFollowUps,
+    onboarding: mappedOnboarding,
+    onboardingTemplates: [...onboardingTemplates.values()],
+    resources: resources.map((row) => ({
+      id: String(row.id), title: String(row.title), description: String(row.description ?? ""),
+      category: String(row.category ?? "geral"), fileId: row.file_id ? String(row.file_id) : null,
+      fileName: row.file_name ? String(row.file_name) : null,
+      fileUrl: row.file_storage_path ? resourceUrls.get(String(row.file_storage_path)) ?? null : null,
+      externalUrl: row.external_url ? String(row.external_url) : null,
+      visibility: row.visibility as MinistryResource["visibility"], sortOrder: number(row.sort_order),
+    })),
+    report,
+    people: people.map((row) => ({
+      id: row.id, fullName: row.full_name, email: row.email, phone: String(row.phone ?? ""),
+      membershipStatus: row.membership_status as MinistryAvailablePerson["membershipStatus"],
+      membershipRole: row.membership_role as MinistryAvailablePerson["membershipRole"],
+    })),
+    leaderCandidates: leaderCandidates.map((row) => ({ id: row.id, fullName: row.full_name })),
+    responsibleCandidates: responsibleCandidates.map((row) => ({ id: row.id, fullName: row.full_name })),
+  }
 }
 
 async function getMinistryReportRows(companyId: string, ministryId: string): Promise<MinistryReport> {

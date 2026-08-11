@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
       successMessage: body.successMessage != null ? String(body.successMessage) : undefined,
       submitButtonLabel: body.submitButtonLabel != null ? String(body.submitButtonLabel) : undefined,
       createPerson: body.createPerson != null ? Boolean(body.createPerson) : undefined,
+      createAccountAfterSubmit:
+        body.createAccountAfterSubmit != null ? Boolean(body.createAccountAfterSubmit) : undefined,
       isActive: body.isActive != null ? Boolean(body.isActive) : undefined,
     })
 

@@ -33,6 +33,7 @@ interface FormRow {
   success_message: string
   submit_button_label: string
   create_person: boolean
+  create_account_after_submit: boolean
   is_active: boolean
   after_submit_mode?: FormAfterSubmitMode | null
   whatsapp_instance_id?: string | null
@@ -120,6 +121,7 @@ function toForm(row: FormRow, companySlug?: string): ChurchForm {
     successMessage: row.success_message,
     submitButtonLabel: row.submit_button_label,
     createPerson: row.create_person,
+    createAccountAfterSubmit: row.create_account_after_submit,
     isActive: row.is_active,
     afterSubmitMode: row.after_submit_mode ?? "webhook",
     whatsappInstanceId: row.whatsapp_instance_id ?? null,
@@ -262,6 +264,7 @@ export async function getFormsDashboardData(companyIdInput?: string | null): Pro
         f.success_message,
         f.submit_button_label,
         f.create_person,
+        f.create_account_after_submit,
         f.is_active,
         f.created_at,
         f.updated_at,
@@ -320,6 +323,7 @@ export async function getFormBuilderData(
       f.success_message,
       f.submit_button_label,
       f.create_person,
+      f.create_account_after_submit,
       f.is_active,
       f.after_submit_mode,
       f.whatsapp_instance_id,
@@ -514,6 +518,7 @@ export async function listFormsForCompany(companyId: string) {
       f.id, f.company_id, f.title, f.slug, f.description, f.status,
       f.target_stage_id, s.name as target_stage_name,
       f.success_message, f.submit_button_label, f.create_person, f.is_active,
+      f.create_account_after_submit,
       f.created_at, f.updated_at,
       (select count(*)::int from public.form_fields ff where ff.form_id = f.id and ff.deleted_at is null) as field_count,
       (select count(*)::int from public.form_submissions fs where fs.form_id = f.id) as submission_count
@@ -587,6 +592,7 @@ export async function getPublicFormData(
       f.success_message,
       f.submit_button_label,
       f.create_person,
+      f.create_account_after_submit,
       f.is_active,
       f.created_at,
       f.updated_at

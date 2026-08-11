@@ -125,6 +125,7 @@ export interface ChurchForm {
   successMessage: string
   submitButtonLabel: string
   createPerson: boolean
+  createAccountAfterSubmit: boolean
   isActive: boolean
   afterSubmitMode: FormAfterSubmitMode
   whatsappInstanceId: string | null
@@ -211,6 +212,7 @@ export type SaveFormInput = {
   successMessage?: string
   submitButtonLabel?: string
   createPerson?: boolean
+  createAccountAfterSubmit?: boolean
   isActive?: boolean
   afterSubmitMode?: FormAfterSubmitMode
   whatsappInstanceId?: string | null
