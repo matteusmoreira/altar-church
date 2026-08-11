@@ -91,3 +91,27 @@ test("every ministry workspace form has an explicit submit button", () => {
   assert.equal(forms.length, 11)
   for (const form of forms) assert.match(form, /<Button\b[^>]*\btype="submit"/)
 })
+
+test("ministry workspace exposes scoped deletion for every managed creation surface", () => {
+  const actions = read("src/lib/ministries/actions.ts")
+  const workspace = read("src/components/ministries/ministry-workspace.tsx")
+  const delivery = read("src/lib/notifications/delivery.ts")
+  const migration = read("supabase/migrations/20260811140000_ministry_management_deletion_scope.sql")
+
+  for (const action of [
+    "removeMinistryTeam",
+    "removeMinistryActivity",
+    "removeMinistryScale",
+    "removeMinistryAttendance",
+    "removeMinistryCommunication",
+    "removeMinistryFollowUp",
+  ]) assert.match(actions, new RegExp(`export async function ${action}`))
+  for (const scope of ["company_id = ${access.companyId}", "ministry_id = ${ministryId}", "requireMinistryPermission"]) assert.match(actions, new RegExp(scope.replace(/[${}]/g, "\\$&")))
+  assert.match(actions, /volunteer_schedule_published_at is null/)
+  assert.match(actions, /status = 'canceled'/)
+  assert.match(actions, /ministry_id,.*title/s)
+  assert.match(workspace, /removeMinistryActivity|removeMinistryScale|removeMinistryAttendance|removeMinistryTeam|removeMinistryCommunication|removeMinistryFollowUp/)
+  assert.match(workspace, /confirmRemoval/)
+  assert.match(delivery, /status = 'processing'/)
+  assert.match(migration, /add column if not exists ministry_id uuid references public\.ministries/i)
+})

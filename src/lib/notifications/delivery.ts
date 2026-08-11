@@ -150,7 +150,7 @@ async function markFailure(delivery: DeliveryRow, error: unknown) {
     await sql`
       update public.notification_deliveries
       set status = 'dead', last_error = ${message}, locked_at = null, updated_at = now()
-      where id = ${delivery.id}
+      where id = ${delivery.id} and status = 'processing'
     `
     return "dead" as const
   }
@@ -163,7 +163,7 @@ async function markFailure(delivery: DeliveryRow, error: unknown) {
         next_attempt_at = now() + (${delay}::text || ' minutes')::interval,
         locked_at = null,
         updated_at = now()
-    where id = ${delivery.id}
+    where id = ${delivery.id} and status = 'processing'
   `
   return "failed" as const
 }
@@ -205,13 +205,22 @@ export async function processNotificationOutbox(batchSize = 25) {
 
   for (const delivery of claimed) {
     try {
+      const activeRows = await sql<{ id: string }[]>`
+        select id from public.notification_deliveries
+        where id = ${delivery.id} and status = 'processing'
+        limit 1
+      `
+      if (!activeRows[0]) {
+        await refreshCampaignStatus(delivery.notification_id)
+        continue
+      }
       const campaign = await campaignText(delivery.notification_id)
       const result = await sendDelivery(delivery, campaign.title, campaign.content)
       await sql`
         update public.notification_deliveries
         set status = 'sent', provider_id = ${result.providerId}, response_status = ${result.responseStatus},
             sent_at = now(), delivered_at = now(), last_error = null, locked_at = null, updated_at = now()
-        where id = ${delivery.id}
+        where id = ${delivery.id} and status = 'processing'
       `
       sent += 1
     } catch (error) {

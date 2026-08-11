@@ -140,6 +140,16 @@ export interface MinistryAttendanceSummary {
   justified: number
 }
 
+export interface MinistryAttendanceRecord {
+  id: string
+  eventId: string
+  eventTitle: string
+  personId: string | null
+  personName: string
+  occurredOn: string
+  status: string
+}
+
 export interface MinistryAlert {
   kind: "leader_missing" | "team_without_leader" | "activity_without_scale" | "follow_up_overdue"
   label: string
@@ -223,17 +233,29 @@ export interface MinistryResource {
   sortOrder: number
 }
 
+export interface MinistryCommunication {
+  id: string
+  title: string
+  status: string
+  method: string
+  audienceKind: string
+  snapshotCount: number
+  createdAt: string
+}
+
 export interface MinistryWorkspaceData {
   workspace: MinistryWorkspace
   members: MinistryMember[]
   teams: MinistryTeam[]
   teamMembers: MinistryTeamMember[]
   agenda: MinistryActivity[]
+  attendanceRecords: MinistryAttendanceRecord[]
   scales: MinistryScale[]
   followUps: MinistryFollowUp[]
   onboarding: MinistryOnboardingItem[]
   onboardingTemplates: MinistryOnboardingTemplate[]
   resources: MinistryResource[]
+  communications: MinistryCommunication[]
   report: MinistryReport
   people: MinistryAvailablePerson[]
   leaderCandidates: { id: string; fullName: string }[]

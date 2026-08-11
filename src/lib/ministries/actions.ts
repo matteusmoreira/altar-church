@@ -189,6 +189,34 @@ export async function saveMinistryTeam(input: z.input<typeof teamSchema>): Promi
   } catch (error) { return result(error) }
 }
 
+export async function removeMinistryTeam(input: { ministryId: string; teamId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const teamId = uuid.parse(input.teamId)
+    const access = await requireMinistryPermission(ministryId, "ministries.teams.manage", input.companyId, { manage: true })
+    const sql = getSql()
+    const removed = await sql.begin(async (tx) => {
+      const rows = await tx<{ id: string; name: string }[]>`
+        update public.groups
+        set deleted_at = now(), is_active = false, updated_by = ${access.user.id}, updated_at = now()
+        where id = ${teamId} and company_id = ${access.companyId}
+          and ministry_id = ${ministryId} and type = 'ministry' and deleted_at is null
+        returning id, name
+      `
+      if (!rows[0]) throw new Error("Equipe não encontrada")
+      await tx`
+        update public.group_members
+        set status = 'inactive', left_at = current_date, updated_by = ${access.user.id}, updated_at = now()
+        where company_id = ${access.companyId} and group_id = ${teamId} and status = 'active'
+      `
+      return rows[0]
+    })
+    await writeAuditLog({ action: "ministry.team.delete", entityTable: "groups", entityId: removed.id, companyId: access.companyId, metadata: { ministryId, name: removed.name } })
+    refresh(ministryId)
+    return { ok: true, id: removed.id }
+  } catch (error) { return result(error) }
+}
+
 const teamMemberSchema = z.object({ ministryId: uuid, companyId: optionalUuid, groupId: uuid, personId: uuid, role: z.enum(["member", "leader", "co_leader", "host"]).default("member"), remove: z.boolean().default(false) })
 
 export async function saveMinistryTeamMember(input: z.input<typeof teamMemberSchema>): Promise<ActionResult> {
@@ -253,6 +281,78 @@ export async function saveMinistryActivity(input: z.input<typeof agendaSchema>):
     await writeAuditLog({ action: parsed.id ? "ministry.activity.update" : "ministry.activity.create", entityTable: "programmings", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId } })
     refresh(parsed.ministryId)
     return { ok: true, id: rows[0].id }
+  } catch (error) { return result(error) }
+}
+
+export async function removeMinistryActivity(input: { ministryId: string; eventId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const eventId = uuid.parse(input.eventId)
+    const access = await requireMinistryPermission(ministryId, "ministries.agenda.manage", input.companyId, { manage: true })
+    const sql = getSql()
+    const events = await sql<{ id: string; title: string; programming_id: string | null; volunteer_schedule_published_at: Date | string | null }[]>`
+      select id, title, programming_id, volunteer_schedule_published_at
+      from public.events
+      where id = ${eventId} and company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
+      limit 1
+    `
+    const event = events[0]
+    if (!event) throw new Error("Atividade nÃ£o encontrada")
+    const published = event.programming_id
+      ? await sql<{ total: number }[]>`
+          select count(*)::int as total
+          from public.events
+          where programming_id = ${event.programming_id} and company_id = ${access.companyId}
+            and volunteer_schedule_published_at is not null and deleted_at is null
+        `
+      : [{ total: event.volunteer_schedule_published_at ? 1 : 0 }]
+    await sql.begin(async (tx) => {
+      if (event.programming_id) {
+        await tx`
+          delete from public.volunteer_shifts
+          where company_id = ${access.companyId}
+            and event_id in (
+              select id from public.events
+              where programming_id = ${event.programming_id} and company_id = ${access.companyId}
+                and volunteer_schedule_published_at is null and deleted_at is null
+            )
+        `
+        await tx`
+          delete from public.events
+          where programming_id = ${event.programming_id} and company_id = ${access.companyId}
+            and volunteer_schedule_published_at is null and deleted_at is null
+        `
+        const programmingRows = await tx<{ id: string }[]>`
+          update public.programmings
+          set is_active = false, deleted_at = now(), updated_by = ${access.user.id}, updated_at = now()
+          where id = ${event.programming_id} and company_id = ${access.companyId}
+            and ministry_id = ${ministryId} and deleted_at is null
+          returning id
+        `
+        if (!programmingRows[0]) throw new Error("Agenda nÃ£o encontrada")
+      } else {
+        await tx`
+          delete from public.volunteer_shifts
+          where company_id = ${access.companyId} and event_id = ${eventId}
+        `
+        const deletedRows = await tx<{ id: string }[]>`
+          delete from public.events
+          where id = ${eventId} and company_id = ${access.companyId} and ministry_id = ${ministryId}
+            and volunteer_schedule_published_at is null and deleted_at is null
+          returning id
+        `
+        if (!deletedRows[0]) throw new Error("Atividade publicada nÃ£o pode ser excluÃ­da")
+      }
+    })
+    await writeAuditLog({
+      action: "ministry.activity.delete",
+      entityTable: event.programming_id ? "programmings" : "events",
+      entityId: event.programming_id ?? event.id,
+      companyId: access.companyId,
+      metadata: { ministryId, eventId, title: event.title, preservedPublishedOccurrences: Number(published[0]?.total ?? 0) },
+    })
+    refresh(ministryId)
+    return { ok: true, id: event.programming_id ?? event.id, data: { preservedPublishedOccurrences: Number(published[0]?.total ?? 0) } }
   } catch (error) { return result(error) }
 }
 
@@ -712,6 +812,43 @@ export async function publishMinistryScale(input: { ministryId: string; eventId:
   } catch (error) { return result(error) }
 }
 
+export async function removeMinistryScale(input: { ministryId: string; eventId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const eventId = uuid.parse(input.eventId)
+    const access = await requireMinistryPermission(ministryId, "ministries.agenda.manage", input.companyId, { manage: true })
+    const sql = getSql()
+    const events = await sql<{ id: string; title: string; volunteer_schedule_published_at: Date | string | null }[]>`
+      select id, title, volunteer_schedule_published_at
+      from public.events
+      where id = ${eventId} and company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
+      limit 1
+    `
+    const event = events[0]
+    if (!event) throw new Error("Atividade da escala nÃ£o encontrada")
+    if (event.volunteer_schedule_published_at) throw new Error("Escala publicada nÃ£o pode ser excluÃ­da; o histÃ³rico precisa ser preservado")
+    const deleted = await sql.begin(async (tx) => {
+      const shifts = await tx<{ id: string }[]>`
+        select id from public.volunteer_shifts
+        where company_id = ${access.companyId} and event_id = ${eventId}
+      `
+      await tx`
+        delete from public.volunteer_shifts
+        where company_id = ${access.companyId} and event_id = ${eventId}
+      `
+      const positions = await tx<{ id: string }[]>`
+        delete from public.volunteer_event_positions
+        where company_id = ${access.companyId} and event_id = ${eventId}
+        returning id
+      `
+      return { shifts: shifts.length, positions: positions.length }
+    })
+    await writeAuditLog({ action: "ministry.scale.delete", entityTable: "events", entityId: eventId, companyId: access.companyId, metadata: { ministryId, title: event.title, shifts: deleted.shifts, positions: deleted.positions } })
+    refresh(ministryId)
+    return { ok: true, id: eventId, data: deleted }
+  } catch (error) { return result(error) }
+}
+
 const attendanceSchema = z.object({ ministryId: uuid, companyId: optionalUuid, eventId: uuid, personId: uuid, status: z.enum(["present", "absent", "justified"]), occurredOn: z.string().date() })
 
 export async function recordMinistryAttendance(input: z.input<typeof attendanceSchema>): Promise<ActionResult> {
@@ -736,6 +873,39 @@ export async function recordMinistryAttendance(input: z.input<typeof attendanceS
     await writeAuditLog({ action: "ministry.attendance.save", entityTable: "attendance_records", entityId: saved[0]?.id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, eventId: parsed.eventId, personId: parsed.personId, status: parsed.status } })
     refresh(parsed.ministryId)
     return { ok: true, id: saved[0]?.id }
+  } catch (error) { return result(error) }
+}
+
+const removeAttendanceSchema = z.object({ ministryId: uuid, companyId: optionalUuid, attendanceId: uuid })
+
+export async function removeMinistryAttendance(input: z.input<typeof removeAttendanceSchema>): Promise<ActionResult> {
+  try {
+    const parsed = removeAttendanceSchema.parse(input)
+    const access = await requireMinistryPermission(parsed.ministryId, "ministries.attendance.manage", parsed.companyId, { manage: true })
+    const sql = getSql()
+    const rows = await sql<{ id: string; event_ref_id: string; person_id: string | null; status: string }[]>`
+      select attendance.id, attendance.event_ref_id, attendance.person_id, attendance.status
+      from public.attendance_records attendance
+      join public.events event on event.id = attendance.event_ref_id
+        and event.company_id = ${access.companyId}
+        and event.ministry_id = ${parsed.ministryId}
+        and event.deleted_at is null
+      where attendance.id = ${parsed.attendanceId}
+        and attendance.company_id = ${access.companyId}
+        and attendance.event_type = 'ministry'
+        and attendance.deleted_at is null
+      limit 1
+    `
+    if (!rows[0]) throw new Error("Presença fora do escopo do ministério")
+    const deleted = await sql<{ id: string }[]>`
+      update public.attendance_records
+      set deleted_at = now(), updated_at = now()
+      where id = ${parsed.attendanceId} and company_id = ${access.companyId} and event_type = 'ministry' and deleted_at is null
+      returning id
+    `
+    await writeAuditLog({ action: "ministry.attendance.delete", entityTable: "attendance_records", entityId: deleted[0]?.id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, eventId: rows[0].event_ref_id, personId: rows[0].person_id, status: rows[0].status } })
+    refresh(parsed.ministryId)
+    return { ok: true, id: deleted[0]?.id }
   } catch (error) { return result(error) }
 }
 
@@ -774,8 +944,8 @@ export async function createMinistryCommunication(input: z.input<typeof communic
     const scheduledAt = parsed.scheduledAt ? new Date(parsed.scheduledAt).toISOString() : null
     const saved = await sql.begin(async (tx) => {
       const campaigns = await tx<{ id: string }[]>`
-        insert into public.notifications (company_id, title, content, method, type, target_group, scheduled_send, send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, created_by, updated_by)
-        values (${access.companyId}, ${parsed.title}, ${parsed.content}, ${parsed.method}, 'group', ${audienceRefId ?? ""}, ${Boolean(scheduledAt)}, ${scheduledAt ? scheduledAt.slice(0, 10) : null}, ${scheduledAt}, ${audience}, ${audienceRefId}, ${tx.json(personIds)}, now(), 0, ${scheduledAt ? "scheduled" : "queued"}, ${access.user.id}, ${access.user.id}) returning id
+        insert into public.notifications (company_id, ministry_id, title, content, method, type, target_group, scheduled_send, send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, created_by, updated_by)
+        values (${access.companyId}, ${parsed.ministryId}, ${parsed.title}, ${parsed.content}, ${parsed.method}, 'group', ${audienceRefId ?? ""}, ${Boolean(scheduledAt)}, ${scheduledAt ? scheduledAt.slice(0, 10) : null}, ${scheduledAt}, ${audience}, ${audienceRefId}, ${tx.json(personIds)}, now(), 0, ${scheduledAt ? "scheduled" : "queued"}, ${access.user.id}, ${access.user.id}) returning id
       `
       const campaign = campaigns[0]
       if (!campaign) throw new Error("Campanha não foi criada")
@@ -786,6 +956,45 @@ export async function createMinistryCommunication(input: z.input<typeof communic
     await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })
     refresh(parsed.ministryId)
     return { ok: true, id: saved }
+  } catch (error) { return result(error) }
+}
+
+export async function removeMinistryCommunication(input: { ministryId: string; communicationId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const communicationId = uuid.parse(input.communicationId)
+    const access = await requireMinistryPermission(ministryId, "ministries.communication.send", input.companyId, { manage: true })
+    const sql = getSql()
+    const removed = await sql.begin(async (tx) => {
+      const campaigns = await tx<{ id: string; title: string; status: string }[]>`
+        select id, title, status
+        from public.notifications
+        where id = ${communicationId} and company_id = ${access.companyId}
+          and ministry_id = ${ministryId} and deleted_at is null
+        limit 1
+      `
+      const campaign = campaigns[0]
+      if (!campaign) throw new Error("ComunicaÃ§Ã£o nÃ£o encontrada")
+      const deliveries = await tx<{ id: string }[]>`
+        update public.notification_deliveries
+        set status = 'canceled', locked_at = null, updated_at = now()
+        where notification_id = ${communicationId} and company_id = ${access.companyId}
+          and status in ('pending', 'failed', 'processing')
+        returning id
+      `
+      const rows = await tx<{ id: string }[]>`
+        update public.notifications
+        set status = 'canceled', canceled_at = now(), deleted_at = now(), updated_by = ${access.user.id}, updated_at = now()
+        where id = ${communicationId} and company_id = ${access.companyId}
+          and ministry_id = ${ministryId} and deleted_at is null
+        returning id
+      `
+      if (!rows[0]) throw new Error("ComunicaÃ§Ã£o nÃ£o encontrada")
+      return { id: rows[0].id, title: campaign.title, status: campaign.status, canceledDeliveries: deliveries.length }
+    })
+    await writeAuditLog({ action: "ministry.communication.delete", entityTable: "notifications", entityId: removed.id, companyId: access.companyId, metadata: { ministryId, title: removed.title, previousStatus: removed.status, canceledDeliveries: removed.canceledDeliveries } })
+    refresh(ministryId)
+    return { ok: true, id: removed.id, data: { canceledDeliveries: removed.canceledDeliveries } }
   } catch (error) { return result(error) }
 }
 
@@ -826,6 +1035,24 @@ export async function completeMinistryFollowUp(input: { ministryId: string; task
     const rows = await sql<{ id: string }[]>`update public.person_follow_up_tasks set status = ${status}, completed_at = case when ${status} = 'completed' then now() else null end, updated_by = ${access.user.id}, updated_at = now() where id = ${taskId} and ministry_id = ${ministryId} and company_id = ${access.companyId} and deleted_at is null returning id`
     if (!rows[0]) throw new Error("Follow-up não encontrado")
     refresh(ministryId); return { ok: true, id: rows[0].id }
+  } catch (error) { return result(error) }
+}
+
+export async function removeMinistryFollowUp(input: { ministryId: string; taskId: string; companyId?: string | null }): Promise<ActionResult> {
+  try {
+    const ministryId = uuid.parse(input.ministryId)
+    const taskId = uuid.parse(input.taskId)
+    const access = await requireMinistryPermission(ministryId, "ministries.follow_up.manage", input.companyId, { manage: true })
+    const rows = await getSql()<{ id: string; title: string }[]>`
+      update public.person_follow_up_tasks
+      set deleted_at = now(), updated_by = ${access.user.id}, updated_at = now()
+      where id = ${taskId} and ministry_id = ${ministryId} and company_id = ${access.companyId} and deleted_at is null
+      returning id, title
+    `
+    if (!rows[0]) throw new Error("Follow-up nÃ£o encontrado")
+    await writeAuditLog({ action: "ministry.follow_up.delete", entityTable: "person_follow_up_tasks", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId, title: rows[0].title } })
+    refresh(ministryId)
+    return { ok: true, id: rows[0].id }
   } catch (error) { return result(error) }
 }
 

@@ -3,7 +3,9 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { requireMinistryPermission } from "./access"
 import type {
   MinistryActivity,
+  MinistryAttendanceRecord,
   MinistryAvailablePerson,
+  MinistryCommunication,
   MinistryMember,
   MinistryProfile,
   MinistryReport,
@@ -130,7 +132,7 @@ async function getProfileRow(companyId: string, ministryId: string) {
 export async function getMinistryWorkspaceData(ministryId: string, companyIdInput?: string | null): Promise<MinistryWorkspaceData> {
   const access = await requireMinistryPermission(ministryId, "ministries.dashboard.view", companyIdInput)
   const sql = getSql()
-  const [profile, indicators, activityRows, attendanceRows, members, teams, teamMemberRows, scaleRows, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, responsibleCandidates, lastCommunication] = await Promise.all([
+  const [profile, indicators, activityRows, attendanceRows, attendanceRecordRows, members, teams, teamMemberRows, scaleRows, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, responsibleCandidates, communications, lastCommunication] = await Promise.all([
     getProfileRow(access.companyId, ministryId),
     sql<{ active_members: number; pending_members: number; inactive_members: number; active_teams: number; open_team_slots: number; upcoming_activities: number; attendance_present: number; attendance_absent: number; incomplete_scales: number; open_followups: number; overdue_followups: number }[]>`
       select
@@ -166,6 +168,19 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
         and a.occurred_on >= current_date - 30
         and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId})
       group by a.occurred_on order by a.occurred_on
+    `,
+    sql<Record<string, unknown>[]>`
+      select a.id, a.event_ref_id as event_id, e.title as event_title, a.person_id, a.person_name, a.occurred_on::text as occurred_on, a.status
+      from public.attendance_records a
+      join public.events e on e.id = a.event_ref_id
+        and e.company_id = ${access.companyId}
+        and e.ministry_id = ${ministryId}
+        and e.deleted_at is null
+      where a.company_id = ${access.companyId}
+        and a.event_type = 'ministry'
+        and a.deleted_at is null
+      order by a.occurred_on desc, e.starts_at desc, a.person_name
+      limit 200
     `,
     sql<Record<string, unknown>[]>`
       select membership.id, membership.person_id, person.full_name as person_name, coalesce(person.email, '') as email, person.phone,
@@ -299,9 +314,15 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
         and profile.role in ('superadmin', 'admin', 'pastor', 'ministry_leader', 'volunteer')
       order by person.full_name limit 500
     `,
+    sql<{ id: string; title: string; status: string; method: string; audience_kind: string; snapshot_count: number; created_at: Date | string }[]>`
+      select id, title, status, method, audience_kind, snapshot_count, created_at
+      from public.notifications
+      where company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
+      order by created_at desc limit 100
+    `,
     sql<{ id: string; title: string; status: string; created_at: Date | string }[]>`
       select id, title, status, created_at from public.notifications
-      where company_id = ${access.companyId} and audience_kind = 'ministry' and audience_ref_id = ${ministryId} and deleted_at is null
+      where company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
       order by created_at desc limit 1
     `,
   ])
@@ -328,6 +349,15 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
     id: String(row.id), personId: String(row.person_id), personName: String(row.person_name), title: String(row.title), notes: String(row.notes ?? ""),
     dueAt: iso(row.due_at as Date | string | null), priority: String(row.priority), status: String(row.status), origin: String(row.origin),
     responsibleProfileId: row.responsible_profile_id ? String(row.responsible_profile_id) : null, responsibleName: row.responsible_name ? String(row.responsible_name) : null,
+  }))
+  const mappedCommunications: MinistryCommunication[] = communications.map((row) => ({
+    id: String(row.id), title: String(row.title), status: String(row.status), method: String(row.method),
+    audienceKind: String(row.audience_kind), snapshotCount: number(row.snapshot_count), createdAt: iso(row.created_at) ?? "",
+  }))
+  const mappedAttendanceRecords: MinistryAttendanceRecord[] = attendanceRecordRows.map((row) => ({
+    id: String(row.id), eventId: String(row.event_id), eventTitle: String(row.event_title ?? "Atividade"),
+    personId: row.person_id ? String(row.person_id) : null, personName: String(row.person_name ?? "Pessoa"),
+    occurredOn: String(row.occurred_on ?? ""), status: String(row.status ?? ""),
   }))
   const mappedOnboarding = onboarding.map((row) => {
     const total = number(row.total); const completed = number(row.completed)
@@ -372,10 +402,12 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
     teams: mappedTeams,
     teamMembers: mappedTeamMembers,
     agenda: mappedActivities,
+    attendanceRecords: mappedAttendanceRecords,
     scales: mappedScales,
     followUps: mappedFollowUps,
     onboarding: mappedOnboarding,
     onboardingTemplates: [...onboardingTemplates.values()],
+    communications: mappedCommunications,
     resources: resources.map((row) => ({
       id: String(row.id), title: String(row.title), description: String(row.description ?? ""),
       category: String(row.category ?? "geral"), fileId: row.file_id ? String(row.file_id) : null,

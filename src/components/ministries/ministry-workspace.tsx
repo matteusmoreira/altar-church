@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, publishMinistryScale, recordMinistryAttendance, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryResource } from "@/lib/ministries/actions"
+import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, publishMinistryScale, recordMinistryAttendance, removeMinistryActivity, removeMinistryAttendance, removeMinistryCommunication, removeMinistryFollowUp, removeMinistryScale, removeMinistryTeam, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryResource } from "@/lib/ministries/actions"
 import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
 
@@ -245,6 +245,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
         toast.error(error instanceof Error ? error.message : "Não foi possível concluir")
       }
     })
+  }
+
+  function confirmRemoval(label: string) {
+    return window.confirm(`Excluir ${label}? Esta ação não poderá ser desfeita.`)
   }
 
   const normalizedPeopleSearch = peopleSearch.trim().toLocaleLowerCase("pt-BR")
@@ -574,6 +578,29 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           Reativar
                         </Button>
                       )}
+                      {member.status === "active" && canManage && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          disabled={pending}
+                          onClick={() => {
+                            if (!confirmRemoval(`${member.personName} do ministério`)) return
+                            run(
+                              () =>
+                                reviewMinistryMember({
+                                  ministryId: profile.id,
+                                  membershipId: member.id,
+                                  decision: "remove",
+                                }),
+                              "Pessoa removida do ministério",
+                            )
+                          }}
+                        >
+                          <UserMinus className="mr-1 h-3.5 w-3.5" />
+                          Remover
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -846,6 +873,25 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               >
                                 <UserMinus className="mr-1 h-3.5 w-3.5" />
                                 Inativar
+                              </Button>
+                            )}
+                            {canManage && (
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                disabled={pending}
+                                aria-label={`Excluir equipe ${team.name}`}
+                                onClick={() => {
+                                  if (!confirmRemoval(`a equipe ${team.name}`)) return
+                                  run(
+                                    () => removeMinistryTeam({ ministryId: profile.id, teamId: team.id }),
+                                    "Equipe excluída",
+                                  )
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </div>
@@ -1121,6 +1167,25 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       </p>
                     </div>
                     <Badge variant={activity.volunteerPositions ? (activity.scaleComplete ? "default" : "destructive") : "outline"}>{activity.volunteerPositions ? `${activity.assignedVolunteers}/${activity.volunteerPositions} pessoas` : "Sem funções"}</Badge>
+                    {canManage && (
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={pending}
+                        aria-label={`Excluir atividade ${activity.title}`}
+                        onClick={() => {
+                          if (!confirmRemoval(`a atividade ${activity.title} e as ocorrências não publicadas`)) return
+                          run(
+                            () => removeMinistryActivity({ ministryId: profile.id, eventId: activity.id }),
+                            "Atividade excluída",
+                          )
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 ))}
                 {data.agenda.length === 0 && <p className="py-6 text-sm text-muted-foreground">Nenhuma atividade cadastrada. Crie a primeira para liberar as escalas.</p>}
@@ -1302,7 +1367,28 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             <p className="font-medium">{scale.eventTitle}</p>
                             <p className="text-xs text-muted-foreground">{formatDateTime(scale.startsAt)}</p>
                           </div>
-                          <Badge variant={scale.status === "published" ? "default" : scale.status === "ready" ? "outline" : scale.status === "incomplete" ? "destructive" : "secondary"}>{SCALE_STATUS_LABELS[scale.status]}</Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={scale.status === "published" ? "default" : scale.status === "ready" ? "outline" : scale.status === "incomplete" ? "destructive" : "secondary"}>{SCALE_STATUS_LABELS[scale.status]}</Badge>
+                            {canManage && scale.status !== "published" && (
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                disabled={pending}
+                                aria-label={`Excluir escala de ${scale.eventTitle}`}
+                                onClick={() => {
+                                  if (!confirmRemoval(`a escala de ${scale.eventTitle}`)) return
+                                  run(
+                                    () => removeMinistryScale({ ministryId: profile.id, eventId: scale.eventId }),
+                                    "Escala excluída",
+                                  )
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         {scale.positions.length ? (
                           <div className="mt-3 space-y-3">
@@ -1508,6 +1594,40 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       Salvar presença
                     </Button>
                   </form>
+                  {data.attendanceRecords.length > 0 && (
+                    <div className="mt-6 space-y-2 border-t pt-4">
+                      <p className="text-sm font-medium">Registros recentes</p>
+                      {data.attendanceRecords.slice(0, 20).map((record) => (
+                        <div key={record.id} className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{record.personName}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {record.eventTitle} · {record.occurredOn.split("-").reverse().join("/")} · {record.status === "present" ? "Presente" : record.status === "absent" ? "Ausente" : "Justificado"}
+                            </p>
+                          </div>
+                          {canManage && (
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              className="shrink-0 text-destructive hover:text-destructive"
+                              disabled={pending}
+                              aria-label={`Excluir presença de ${record.personName}`}
+                              onClick={() => {
+                                if (!confirmRemoval(`o registro de presença de ${record.personName}`)) return
+                                run(
+                                  () => removeMinistryAttendance({ ministryId: profile.id, attendanceId: record.id }),
+                                  "Presença excluída",
+                                )
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -1665,6 +1785,43 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   Enviar para fila
                 </Button>
               </form>
+              <div className="mt-6 space-y-2 border-t pt-4">
+                <div>
+                  <p className="font-medium">Comunicações criadas</p>
+                  <p className="text-xs text-muted-foreground">Excluir remove a campanha da operação; mensagens já entregues não podem ser desfeitas.</p>
+                </div>
+                {data.communications.map((communication) => (
+                  <div key={communication.id} className="flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{communication.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {communication.method.toUpperCase()} · {communication.snapshotCount} destinatário(s) · {new Date(communication.createdAt).toLocaleString("pt-BR")}
+                      </p>
+                    </div>
+                    <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>{communication.status}</Badge>
+                    {canManage && (
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={pending}
+                        aria-label={`Excluir comunicação ${communication.title}`}
+                        onClick={() => {
+                          if (!confirmRemoval(`a comunicação ${communication.title}`)) return
+                          run(
+                            () => removeMinistryCommunication({ ministryId: profile.id, communicationId: communication.id }),
+                            "Comunicação excluída",
+                          )
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {data.communications.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma comunicação criada.</p>}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1853,6 +2010,25 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             <Check className="h-4 w-4" />
                           </Button>
                         )}
+                        {canManage && (
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            disabled={pending}
+                            aria-label={`Excluir acompanhamento de ${task.personName}`}
+                            onClick={() => {
+                              if (!confirmRemoval(`o acompanhamento de ${task.personName}`)) return
+                              run(
+                                () => removeMinistryFollowUp({ ministryId: profile.id, taskId: task.id }),
+                                "Acompanhamento excluído",
+                              )
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1927,7 +2103,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           size="icon-sm"
                           variant="ghost"
                           disabled={pending}
-                          onClick={() =>
+                          onClick={() => {
+                            if (!confirmRemoval(`o checklist ${template.name}`)) return
                             run(
                               () =>
                                 removeMinistryOnboardingTemplate({
@@ -1936,7 +2113,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                 }),
                               "Checklist removida",
                             )
-                          }
+                          }}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1956,7 +2133,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               size="icon-xs"
                               variant="ghost"
                               disabled={pending}
-                              onClick={() =>
+                              onClick={() => {
+                                if (!confirmRemoval(`a etapa ${step.title}`)) return
                                 run(
                                   () =>
                                     removeMinistryOnboardingStep({
@@ -1965,7 +2143,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                     }),
                                   "Etapa removida",
                                 )
-                              }
+                              }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2230,7 +2408,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         size="icon-sm"
                         variant="ghost"
                         disabled={pending}
-                        onClick={() =>
+                        onClick={() => {
+                          if (!confirmRemoval(`o recurso ${resource.title}`)) return
                           run(
                             () =>
                               removeMinistryResource({
@@ -2239,7 +2418,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               }),
                             "Recurso removido",
                           )
-                        }
+                        }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
