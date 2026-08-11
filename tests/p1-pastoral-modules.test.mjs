@@ -34,6 +34,7 @@ test("P1 pastoral modules expose real server data and audited mutations", () => 
   for (const expected of [
     /"use server"/,
     /export async function saveMinistry/,
+    /leaderPersonId[\s\S]*company_id = \$\{companyId\}[\s\S]*Lider nao encontrado nesta igreja/,
     /export async function deleteMinistry/,
     /export async function saveProgramming/,
     /export async function deleteProgramming/,

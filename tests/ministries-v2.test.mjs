@@ -83,3 +83,11 @@ test("ministry workspace route exists and administrative list links to it", () =
   assert.ok(fs.existsSync(path.join(root, "src/app/api/ministerios/[id]/export/route.ts")))
   assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /ministerios\/\$\{ministry\.id\}/)
 })
+
+test("every ministry workspace form has an explicit submit button", () => {
+  const workspace = read("src/components/ministries/ministry-workspace.tsx")
+  const forms = [...workspace.matchAll(/<form\b[\s\S]*?<\/form>/g)].map((match) => match[0])
+
+  assert.equal(forms.length, 11)
+  for (const form of forms) assert.match(form, /<Button\b[^>]*\btype="submit"/)
+})

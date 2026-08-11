@@ -109,6 +109,17 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
     await requirePermission(parsed.id ? "ministries.edit" : "ministries.create", companyId)
 
     const sql = getSql()
+    if (parsed.leaderPersonId) {
+      const leaderRows = await sql<{ id: string }[]>`
+        select id from public.people
+        where id = ${parsed.leaderPersonId}
+          and company_id = ${companyId}
+          and is_active
+          and deleted_at is null
+        limit 1
+      `
+      if (!leaderRows[0]) throw new Error("Lider nao encontrado nesta igreja")
+    }
     let ministryId = parsed.id
 
     if (parsed.id) {

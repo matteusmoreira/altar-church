@@ -19,6 +19,8 @@ test("admin abre workspace de ministério e vê operação principal", async ({ 
   await expect(page.getByRole("tab", { name: "Escalas" })).toBeVisible()
   await expect(page.getByRole("tab", { name: "Acompanhamentos" })).toBeVisible()
   await expect(page.getByRole("tab", { name: "Configurações" })).toBeVisible()
+  await page.getByRole("tab", { name: "Equipes" }).click()
+  await expect(page.getByRole("button", { name: "Criar equipe" })).toHaveAttribute("type", "submit")
   await expectNoDevError(page)
 })
 
