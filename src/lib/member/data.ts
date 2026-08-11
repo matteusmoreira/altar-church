@@ -167,6 +167,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     title: string
     description: string
     type: string
+    ministry_name: string | null
     starts_at: DateValue
     ends_at: DateValue | null
     location: string
@@ -174,16 +175,27 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     max_capacity: number | null
     going_count: number
     waitlisted_count: number
+    confirmed_people: string[]
     my_status: MemberAgendaEvent["myStatus"]
     registration_enabled: boolean
   }[]>`
-    select event.id, event.title, event.description, event.type, event.starts_at, event.ends_at,
+    select event.id, event.title, event.description, event.type, ministry.name as ministry_name,
+      event.starts_at, event.ends_at,
       event.location, event.online_link, event.max_capacity,
       count(rsvp.id) filter (where rsvp.status = 'going')::integer as going_count,
       count(rsvp.id) filter (where rsvp.status = 'waitlisted')::integer as waitlisted_count,
+      coalesce(
+        array_agg(person.full_name order by person.full_name)
+          filter (where rsvp.status = 'going' and person.id is not null),
+        '{}'::text[]
+      ) as confirmed_people,
       own.status as my_status, event.registration_enabled
     from public.events event
+    left join public.ministries ministry
+      on ministry.id = event.ministry_id and ministry.company_id = ${companyId} and ministry.deleted_at is null
     left join public.member_event_rsvps rsvp on rsvp.event_id = event.id and rsvp.company_id = ${companyId}
+    left join public.people person
+      on person.id = rsvp.person_id and person.company_id = ${companyId} and person.deleted_at is null
     left join public.member_event_rsvps own on own.event_id = event.id and own.person_id = ${personId} and own.company_id = ${companyId}
     where event.company_id = ${companyId} and event.deleted_at is null
       and event.status not in ('canceled', 'cancelled', 'draft')
@@ -193,7 +205,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
           and membership.person_id = ${personId} and membership.status = 'active' and membership.left_at is null
       ))
       and event.starts_at >= now() - interval '1 day'
-    group by event.id, own.status
+    group by event.id, ministry.name, own.status
     order by event.starts_at
     limit 100
   `
@@ -202,6 +214,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     title: row.title,
     description: row.description,
     type: row.type,
+    ministryName: row.ministry_name,
     startsAt: iso(row.starts_at) ?? "",
     endsAt: iso(row.ends_at),
     location: row.location,
@@ -209,6 +222,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     maxCapacity: row.max_capacity,
     goingCount: Number(row.going_count ?? 0),
     waitlistedCount: Number(row.waitlisted_count ?? 0),
+    confirmedPeople: row.confirmed_people ?? [],
     myStatus: row.my_status,
     canRsvp: row.registration_enabled,
   }))

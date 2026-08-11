@@ -92,6 +92,17 @@ test("every ministry workspace form has an explicit submit button", () => {
   for (const form of forms) assert.match(form, /<Button\b[^>]*\btype="submit"/)
 })
 
+test("ministry agenda captures the description shown in the member portal", () => {
+  const workspace = read("src/components/ministries/ministry-workspace.tsx")
+  assert.match(workspace, /label="Descrição" help="Esta informação aparecerá na Agenda do Portal do Membro\."/)
+  assert.match(workspace, /value=\{activityForm\.description\}/)
+  assert.match(workspace, /activity\.description \|\| "Sem descrição"/)
+  assert.match(workspace, /id: activityForm\.id \|\| undefined/)
+  assert.match(workspace, /Editar atividade/)
+  assert.match(workspace, /Atualizar atividade/)
+  assert.match(read("src/lib/ministries/actions.ts"), /programming_id = \$\{rows\[0\]\.id\}[\s\S]*volunteer_schedule_published_at is not null/)
+})
+
 test("ministry workspace exposes scoped deletion for every managed creation surface", () => {
   const actions = read("src/lib/ministries/actions.ts")
   const workspace = read("src/components/ministries/ministry-workspace.tsx")

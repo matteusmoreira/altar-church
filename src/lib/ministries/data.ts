@@ -44,7 +44,12 @@ function toActivity(row: Record<string, unknown>): MinistryActivity {
   const positions = number(row.volunteer_positions)
   const assigned = number(row.assigned_volunteers)
   return {
-    id: String(row.id), title: String(row.title ?? ""), description: String(row.description ?? ""),
+    id: String(row.id), programmingId: row.programming_id ? String(row.programming_id) : null,
+    title: String(row.title ?? ""), description: String(row.description ?? ""),
+    programmingStartsAt: iso((row.programming_starts_at ?? row.starts_at) as Date | string) ?? "",
+    durationMinutes: number(row.duration_minutes) || 60,
+    recurrenceFrequency: (row.recurrence_frequency ?? "none") as MinistryActivity["recurrenceFrequency"],
+    recurrenceWeekdays: Array.isArray(row.recurrence_weekdays) ? row.recurrence_weekdays.map(number) : [],
     startsAt: iso(row.starts_at as Date | string) ?? "", endsAt: iso(row.ends_at as Date | string | null),
     location: String(row.location ?? ""), status: String(row.status ?? ""), recurring: Boolean(row.recurring),
     attendanceCount: number(row.attendance_count), volunteerPositions: positions, assignedVolunteers: assigned,
@@ -149,11 +154,16 @@ export async function getMinistryWorkspaceData(ministryId: string, companyIdInpu
         (select count(*) from public.person_follow_up_tasks t where t.company_id = ${access.companyId} and t.ministry_id = ${ministryId} and t.deleted_at is null and t.status in ('open','in_progress') and t.due_at < now()) as overdue_followups
     `,
     sql<Record<string, unknown>[]>`
-      select e.id, e.title, e.description, e.starts_at, e.ends_at, e.location, e.status, e.recurring,
+      select e.id, e.programming_id, e.title, e.description, e.starts_at, e.ends_at, e.location, e.status, e.recurring,
+        programming.starts_at as programming_starts_at, programming.duration_minutes,
+        programming.recurrence_frequency, programming.recurrence_weekdays,
         (select count(*) from public.attendance_records a where a.event_ref_id = e.id and a.event_type = 'ministry' and a.status = 'present' and a.deleted_at is null) as attendance_count,
         (select coalesce(sum(p.required_volunteers), 0) from public.volunteer_event_positions p where p.event_id = e.id) as volunteer_positions,
         (select count(*) from public.volunteer_assignments a join public.volunteer_shifts s on s.id = a.shift_id where s.event_id = e.id and a.status not in ('cancelled','declined')) as assigned_volunteers
       from public.events e
+      left join public.programmings programming
+        on programming.id = e.programming_id and programming.company_id = ${access.companyId}
+          and programming.ministry_id = ${ministryId} and programming.deleted_at is null
       where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null
         and e.starts_at >= now() - interval '1 day' and e.status <> 'cancelled'
       order by e.starts_at asc limit 20

@@ -23,6 +23,8 @@ function refresh(ministryId: string) {
   revalidatePath(`/ministerios/${ministryId}`)
   revalidatePath("/ministerios")
   revalidatePath("/membro/ministerios")
+  revalidatePath("/membro/agenda")
+  revalidatePath("/membro/voluntariado")
 }
 
 const profileSchema = z.object({
@@ -278,6 +280,15 @@ export async function saveMinistryActivity(input: z.input<typeof agendaSchema>):
         `
     if (!rows[0]) throw new Error("Atividade não encontrada")
     await sql`select public.materialize_volunteer_programmings(${access.companyId}::uuid, 90)`
+    await sql`
+      update public.events
+      set title = ${parsed.title}, description = ${parsed.description}, type = ${parsed.kind},
+        location = ${parsed.location}, registration_enabled = true,
+        updated_by = ${access.user.id}, updated_at = now()
+      where company_id = ${access.companyId} and ministry_id = ${parsed.ministryId}
+        and programming_id = ${rows[0].id} and volunteer_schedule_published_at is not null
+        and deleted_at is null
+    `
     await writeAuditLog({ action: parsed.id ? "ministry.activity.update" : "ministry.activity.create", entityTable: "programmings", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: parsed.ministryId } })
     refresh(parsed.ministryId)
     return { ok: true, id: rows[0].id }

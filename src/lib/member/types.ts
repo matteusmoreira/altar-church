@@ -53,6 +53,7 @@ export interface MemberAgendaEvent {
   title: string
   description: string
   type: string
+  ministryName: string | null
   startsAt: string
   endsAt: string | null
   location: string
@@ -60,6 +61,7 @@ export interface MemberAgendaEvent {
   maxCapacity: number | null
   goingCount: number
   waitlistedCount: number
+  confirmedPeople: string[]
   myStatus: "going" | "waitlisted" | "canceled" | null
   canRsvp: boolean
 }

@@ -19,14 +19,28 @@ export async function rsvpMemberEvent(formData: FormData) {
     const eventId = uuid.parse(value(formData, "eventId"))
     const { user, companyId, personId } = await requireMemberContext()
     const result = await getSql().begin(async (tx) => {
-      const events = await tx<{ id: string; registration_enabled: boolean; max_capacity: number | null; status: string }[]>`
-        select id, registration_enabled, max_capacity, status
+      const events = await tx<{ id: string; ministry_id: string | null; registration_enabled: boolean; max_capacity: number | null; status: string }[]>`
+        select id, ministry_id, registration_enabled, max_capacity, status
         from public.events
         where id = ${eventId} and company_id = ${companyId} and deleted_at is null
         for update
       `
       const event = events[0]
       if (!event || !event.registration_enabled || ["canceled", "cancelled", "draft"].includes(event.status)) throw new Error("Evento não aceita RSVP")
+      if (event.ministry_id) {
+        const memberships = await tx<{ allowed: boolean }[]>`
+          select exists(
+            select 1
+            from public.ministry_memberships membership
+            where membership.company_id = ${companyId}
+              and membership.ministry_id = ${event.ministry_id}
+              and membership.person_id = ${personId}
+              and membership.status = 'active'
+              and membership.left_at is null
+          ) as allowed
+        `
+        if (!memberships[0]?.allowed) throw new Error("Esta agenda é exclusiva para membros ativos do ministério")
+      }
       const existing = await tx<{ id: string; status: "going" | "waitlisted" | "canceled" }[]>`
         select id, status from public.member_event_rsvps
         where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}

@@ -79,8 +79,13 @@ export interface MinistryAvailablePerson {
 
 export interface MinistryActivity {
   id: string
+  programmingId: string | null
   title: string
   description: string
+  programmingStartsAt: string
+  durationMinutes: number
+  recurrenceFrequency: "none" | "weekly" | "monthly"
+  recurrenceWeekdays: number[]
   startsAt: string
   endsAt: string | null
   location: string

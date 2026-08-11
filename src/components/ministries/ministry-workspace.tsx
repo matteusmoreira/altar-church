@@ -112,6 +112,11 @@ function toTimeInput(value: string | null | undefined) {
   return value ? value.slice(0, 5) : ""
 }
 
+function toDateTimeLocal(value: string) {
+  const date = new Date(value)
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("pt-BR", {
     dateStyle: "short",
@@ -156,6 +161,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
     role: "member" as "member" | "leader" | "co_leader" | "host",
   })
   const [activityForm, setActivityForm] = useState({
+    id: "",
     title: "",
     description: "",
     startsAt: "",
@@ -274,6 +280,21 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
       meetingLocation: team.meetingLocation,
       maxCapacity: String(team.maxCapacity),
       isActive: team.isActive,
+    })
+  }
+
+  function editActivity(activity: (typeof data.agenda)[number]) {
+    if (!activity.programmingId) return
+    setActivityForm({
+      id: activity.programmingId,
+      title: activity.title,
+      description: activity.description,
+      startsAt: toDateTimeLocal(activity.programmingStartsAt),
+      durationMinutes: String(activity.durationMinutes),
+      kind: "meeting",
+      location: activity.location,
+      recurrenceFrequency: activity.recurrenceFrequency,
+      recurrenceWeekdays: activity.recurrenceWeekdays,
     })
   }
 
@@ -1048,6 +1069,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       () =>
                         saveMinistryActivity({
                           ministryId: profile.id,
+                          id: activityForm.id || undefined,
                           title: activityForm.title,
                           description: activityForm.description,
                           startsAt: new Date(activityForm.startsAt).toISOString(),
@@ -1058,7 +1080,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           recurrenceWeekdays: activityForm.recurrenceWeekdays,
                           isActive: true,
                         }),
-                      "Atividade salva",
+                      activityForm.id ? "Atividade atualizada" : "Atividade salva",
                     )
                   }}
                 >
@@ -1071,6 +1093,20 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         setActivityForm({
                           ...activityForm,
                           title: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Descrição" help="Esta informação aparecerá na Agenda do Portal do Membro.">
+                    <Textarea
+                      required
+                      placeholder="Explique o objetivo, orientações e o que o membro precisa saber."
+                      maxLength={4000}
+                      value={activityForm.description}
+                      onChange={(event) =>
+                        setActivityForm({
+                          ...activityForm,
+                          description: event.target.value,
                         })
                       }
                     />
@@ -1145,10 +1181,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       ))}
                     </div>
                   )}
-                  <Button type="submit" className="w-full" disabled={pending || !canManage}>
-                    <Save className="mr-2 h-4 w-4" />
-                    Salvar atividade
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="submit" className="flex-1" disabled={pending || !canManage}>
+                      <Save className="mr-2 h-4 w-4" />
+                      {activityForm.id ? "Atualizar atividade" : "Salvar atividade"}
+                    </Button>
+                    {activityForm.id && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => setActivityForm({ id: "", title: "", description: "", startsAt: "", durationMinutes: "60", kind: "meeting", location: "", recurrenceFrequency: "none", recurrenceWeekdays: [] })}
+                      >
+                        Cancelar edição
+                      </Button>
+                    )}
+                  </div>
                 </form>
               </CardContent>
             </Card>
@@ -1162,29 +1210,37 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   <div key={activity.id} className="flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{activity.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{activity.description || "Sem descrição"}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatDateTime(activity.startsAt)} · {activity.location || "Sem local"}
                       </p>
                     </div>
                     <Badge variant={activity.volunteerPositions ? (activity.scaleComplete ? "default" : "destructive") : "outline"}>{activity.volunteerPositions ? `${activity.assignedVolunteers}/${activity.volunteerPositions} pessoas` : "Sem funções"}</Badge>
                     {canManage && (
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        disabled={pending}
-                        aria-label={`Excluir atividade ${activity.title}`}
-                        onClick={() => {
-                          if (!confirmRemoval(`a atividade ${activity.title} e as ocorrências não publicadas`)) return
-                          run(
-                            () => removeMinistryActivity({ ministryId: profile.id, eventId: activity.id }),
-                            "Atividade excluída",
-                          )
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        {activity.programmingId && (
+                          <Button type="button" size="icon-sm" variant="ghost" disabled={pending} aria-label={`Editar atividade ${activity.title}`} onClick={() => editActivity(activity)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          disabled={pending}
+                          aria-label={`Excluir atividade ${activity.title}`}
+                          onClick={() => {
+                            if (!confirmRemoval(`a atividade ${activity.title} e as ocorrências não publicadas`)) return
+                            run(
+                              () => removeMinistryActivity({ ministryId: profile.id, eventId: activity.id }),
+                              "Atividade excluída",
+                            )
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
