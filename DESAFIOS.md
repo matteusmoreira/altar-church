@@ -7,3 +7,5 @@
 - PowerShell desta máquina pode exibir arquivos UTF-8 como mojibake quando `Get-Content` é usado sem `-Encoding utf8`. Usar leitura UTF-8 explícita antes de diagnosticar ou editar texto em português.
 
 - A Supabase CLI 2.113.0 rejeita tokens versionados no formato `sbp_v0_...`; para operações de banco, usar conexão PostgreSQL SSL direta com a senha fornecida ou solicitar um PAT no formato `sbp_...`, sem persistir credenciais no projeto.
+
+- Preferências de visualização persistidas em Client Components devem usar `useSyncExternalStore` com snapshot do servidor; o lint `react-hooks/set-state-in-effect` rejeita hidratação via `setState` síncrono em `useEffect`.

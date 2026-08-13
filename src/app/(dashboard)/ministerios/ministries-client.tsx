@@ -1,11 +1,11 @@
 "use client"
 
-import { FormEvent, useState } from "react"
+import { FormEvent, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Edit, Heart, MoreVertical, Plus, Search, Trash2, User, Users } from "lucide-react"
+import { Edit, Grid2X2, Heart, List, MoreVertical, Plus, Search, Trash2, User, Users } from "lucide-react"
 import { toast } from "sonner"
 import { deleteMinistry, saveMinistry } from "@/lib/pastoral/actions"
 import type { MinistriesListResult, MinistryListItem, PastoralListFilters } from "@/lib/pastoral/types"
@@ -78,6 +78,29 @@ const emptyForm: MinistryFormState = {
   isActive: true,
 }
 
+type ViewMode = "list" | "grid"
+
+const MINISTRIES_VIEW_MODE_KEY = "altar-church:ministries-view-mode"
+const MINISTRIES_VIEW_MODE_EVENT = "altar-church:ministries-view-mode-change"
+let currentMinistriesViewMode: ViewMode = "grid"
+
+function subscribeToMinistriesViewMode(callback: () => void) {
+  window.addEventListener(MINISTRIES_VIEW_MODE_EVENT, callback)
+  return () => window.removeEventListener(MINISTRIES_VIEW_MODE_EVENT, callback)
+}
+
+function getMinistriesViewMode(): ViewMode {
+  try {
+    const storedViewMode = window.localStorage.getItem(MINISTRIES_VIEW_MODE_KEY)
+    if (storedViewMode === "list" || storedViewMode === "grid") currentMinistriesViewMode = storedViewMode
+  } catch { }
+  return currentMinistriesViewMode
+}
+
+function getServerViewMode(): ViewMode {
+  return "grid"
+}
+
 function formatDate(value: string) {
   return format(parseISO(value), "dd/MM/yyyy", { locale: ptBR })
 }
@@ -112,6 +135,7 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
   const [editingMinistry, setEditingMinistry] = useState<MinistryListItem | null>(null)
   const [deletingMinistry, setDeletingMinistry] = useState<MinistryListItem | null>(null)
   const [formData, setFormData] = useState<MinistryFormState>(emptyForm)
+  const viewMode = useSyncExternalStore(subscribeToMinistriesViewMode, getMinistriesViewMode, getServerViewMode)
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
     isActive: toFilterChoice(filters.isActive),
@@ -202,6 +226,14 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
 
   const goToPage = (page: number) => updateRoute(filterState, page)
 
+  const changeViewMode = (nextViewMode: ViewMode) => {
+    currentMinistriesViewMode = nextViewMode
+    try {
+      window.localStorage.setItem(MINISTRIES_VIEW_MODE_KEY, nextViewMode)
+    } catch { }
+    window.dispatchEvent(new Event(MINISTRIES_VIEW_MODE_EVENT))
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -283,13 +315,37 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
         <Button type="submit" variant="outline" className="w-full sm:w-auto">
           Filtrar
         </Button>
+        <div className="flex w-fit self-end rounded-md border p-1 sm:self-auto" aria-label="Modo de visualização">
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "secondary" : "ghost"}
+            size="icon-sm"
+            aria-label="Ver ministérios em lista"
+            aria-pressed={viewMode === "list"}
+            title="Lista"
+            onClick={() => changeViewMode("list")}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "grid" ? "secondary" : "ghost"}
+            size="icon-sm"
+            aria-label="Ver ministérios em grade"
+            aria-pressed={viewMode === "grid"}
+            title="Grade"
+            onClick={() => changeViewMode("grid")}
+          >
+            <Grid2X2 className="h-4 w-4" />
+          </Button>
+        </div>
       </form>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className={viewMode === "grid" ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
         {ministries.map((ministry) => (
           <Card key={ministry.id} className="glass overflow-hidden group">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
+            <CardHeader className={viewMode === "grid" ? "pb-3" : "pb-2"}>
+              <div className={viewMode === "grid" ? "flex items-start justify-between gap-3" : "flex items-center justify-between gap-3"}>
                 <div className="min-w-0 space-y-1">
                   <CardTitle className="truncate text-base">{ministry.name}</CardTitle>
                   <Badge
@@ -325,11 +381,11 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
                 </DropdownMenu>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="line-clamp-2 text-sm text-muted-foreground">
+            <CardContent className={viewMode === "grid" ? "space-y-3" : "flex flex-col gap-3 p-4 pt-0 sm:flex-row sm:items-center sm:py-4"}>
+              <p className={viewMode === "grid" ? "line-clamp-2 text-sm text-muted-foreground" : "min-w-0 flex-1 text-sm text-muted-foreground sm:line-clamp-1"}>
                 {ministry.description || "Sem descrição cadastrada."}
               </p>
-              <div className="space-y-2 text-sm text-muted-foreground">
+              <div className={viewMode === "grid" ? "space-y-2 text-sm text-muted-foreground" : "flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground"}>
                 <div className="flex items-center gap-2">
                   <User className="h-3.5 w-3.5" />
                   <span className="truncate">{ministry.leaderName || "Responsável não informado"}</span>
@@ -340,7 +396,7 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
                 </div>
                 <p className="text-xs">Atualizado em {formatDate(ministry.updatedAt)}</p>
               </div>
-              <Link href={`/ministerios/${ministry.id}`} className="inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground">Abrir gestão</Link>
+              <Link href={`/ministerios/${ministry.id}`} className={viewMode === "grid" ? "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground" : "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto sm:min-w-36"}>Abrir gestão</Link>
             </CardContent>
           </Card>
         ))}
