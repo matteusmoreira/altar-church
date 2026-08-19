@@ -144,6 +144,11 @@ const personTypeLabels: Record<PersonType, string> = {
   volunteer: "Voluntário",
 }
 
+function personTypeLabel(person: PersonListItem) {
+  if (person.cellIds.length > 0) return accessRoleLabels.cell_leader
+  return personTypeLabels[person.personType]
+}
+
 const emptyForm: PersonFormState = {
   id: null,
   companyId: null,
@@ -796,7 +801,7 @@ export function MembersClient({
                           </div>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {personTypeLabels[person.personType]}
+                          {personTypeLabel(person)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {person.congregationName ?? "-"}
@@ -880,7 +885,7 @@ export function MembersClient({
                           <Badge className={statusColors[person.status]}>
                             {statusLabels[person.status]}
                           </Badge>
-                          <Badge variant="outline">{personTypeLabels[person.personType]}</Badge>
+                          <Badge variant="outline">{personTypeLabel(person)}</Badge>
                           {person.hasSystemAccess ? (
                             <Badge variant="outline" className="border-success/30 text-success">
                               Com acesso

@@ -146,6 +146,7 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 
 function refreshGroupsPaths() {
   revalidatePath("/celulas")
+  revalidatePath("/pessoas")
   revalidatePath("/dashboard")
   revalidatePath("/informacoes")
   revalidatePath("/presenca")
@@ -346,6 +347,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
       companyId,
       metadata: {
         type: "cell",
+        leaderPersonId: parsed.leaderPersonId,
         isActive: parsed.isActive,
         acceptsRequests: parsed.acceptsRequests,
       },

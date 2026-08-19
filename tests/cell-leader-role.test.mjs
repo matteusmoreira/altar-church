@@ -38,6 +38,7 @@ test("leader workspace and actions stay scoped to owned cells", () => {
 
 test("cell leader assignment requires valid active cells and syncs membership", () => {
   const migration = read("supabase/migrations/20260730220000_cell_leader_assignments.sql")
+  const roleMigration = read("supabase/migrations/20260819100000_sync_cell_leader_role.sql")
   const peopleActions = read("src/lib/people/actions.ts")
   const adminActions = read("src/lib/admin/actions.ts")
   const adminUi = read("src/components/admin/superadmin-console.tsx")
@@ -48,6 +49,11 @@ test("cell leader assignment requires valid active cells and syncs membership", 
   assert.match(migration, /group_row\.is_active = true/)
   assert.match(migration, /sync_cell_leader_assignments/)
   assert.match(migration, /insert into public\.group_members/)
+  assert.match(roleMigration, /set role = 'cell_leader'/)
+  assert.match(roleMigration, /access_profile = case when (?:person\.)?access_profile = 'member' then 'cell_leader'/)
+  assert.match(roleMigration, /person_type = 'leader'/)
+  assert.match(roleMigration, /profile\.role = 'member'/)
+  assert.match(roleMigration, /profile\.role = 'cell_leader'/)
   assert.match(peopleActions, /validateCellLeaderCells/)
   assert.match(peopleActions, /syncCellLeaderAssignments\(companyId, result\.personId, \[\]\)/)
   assert.match(adminActions, /cellIds: z\.array/)
@@ -65,8 +71,10 @@ test("people forms carry leader cell assignments", () => {
 
   assert.match(types, /cellIds\?: string\[\]/)
   assert.match(data, /cell_ids/)
+  assert.match(data, /cell\.leader_person_id = p\.id and cell\.is_active = true/)
   assert.match(list, /formData\.cellIds\.length === 0/)
   assert.match(list, /formOptions\.cells\.map/)
+  assert.match(list, /if \(person\.cellIds\.length > 0\) return accessRoleLabels\.cell_leader/)
   assert.match(detail, /setCellIds\(person\.cellIds\)/)
   assert.match(detail, /cellIds: accessRole === "cell_leader" \? cellIds : \[\]/)
 })
