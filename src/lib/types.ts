@@ -493,7 +493,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   cell_leader: [
     "cells.self.view", "cells.self.checkin", "cells.self.prayer",
     "ministries.self.view", "ministries.self.request", "kids.guardian.self",
-    "cells.study.manage", "cells.checkin.manage", "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage",
+    "cells.study.manage", "cells.meeting.manage", "cells.checkin.manage", "cells.photo.manage", "cells.notice.manage", "cells.prayer.manage",
     "cells.leader.manage",
   ],
   communication: [

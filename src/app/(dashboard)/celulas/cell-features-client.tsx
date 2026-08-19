@@ -4,7 +4,7 @@ import Image from "next/image"
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { QRCodeSVG } from "qrcode.react"
-import { BarChart3, BookOpen, Camera, CheckCircle2, ClipboardCheck, Download, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
+import { BarChart3, BookOpen, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Download, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import {
   closeCellCheckin,
@@ -19,6 +19,8 @@ import {
   uploadCellPhotos,
 } from "@/lib/cells/actions"
 import type { CellActionResult, CellFeaturesData, CellNotice } from "@/lib/cells/types"
+import { saveGroupMeeting } from "@/lib/groups/actions"
+import type { SaveGroupMeetingInput } from "@/lib/groups/types"
 import { CellLeaderWorkspace } from "@/components/member/cell-leader-workspace"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,6 +35,34 @@ import { Textarea } from "@/components/ui/textarea"
 
 const dateTime = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
 const prayerLabels = { open: "Aberto", praying: "Em oração", answered: "Respondido", archived: "Arquivado" }
+
+type MeetingFormState = {
+  groupId: string
+  title: string
+  startsAt: string
+  endsAt: string
+  studyId: string
+  location: string
+  notes: string
+}
+
+function localDateTimeInput(date = new Date()) {
+  const local = new Date(date)
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset())
+  return local.toISOString().slice(0, 16)
+}
+
+function emptyMeetingForm(groupId = ""): MeetingFormState {
+  return {
+    groupId,
+    title: "Reunião da célula",
+    startsAt: localDateTimeInput(),
+    endsAt: "",
+    studyId: "none",
+    location: "",
+    notes: "",
+  }
+}
 
 function NoticeText({ notice }: { notice: CellNotice }) {
   return (
@@ -79,6 +109,8 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   const [noticeAudience, setNoticeAudience] = useState<"all" | "selected">("selected")
   const [activeTab, setActiveTab] = useState("estudos")
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false)
+  const [meetingForm, setMeetingForm] = useState<MeetingFormState>(() => emptyMeetingForm(data.cells[0]?.id))
   const [selectedSummaryCellId, setSelectedSummaryCellId] = useState(data.meetings[0]?.groupId ?? data.cells[0]?.id ?? "")
   const activeMeetingId = data.meetings.some((meeting) => meeting.id === selectedMeetingId) ? selectedMeetingId : data.meetings[0]?.id ?? ""
   const selectedMeeting = data.meetings.find((meeting) => meeting.id === activeMeetingId)
@@ -87,6 +119,8 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   const qrUrl = displayedQrToken && typeof window !== "undefined" ? `${window.location.origin}/celulas/check-in?token=${displayedQrToken}` : ""
   const selectedCellSummary = getCellSummary(data, selectedSummaryCellId)
   const activeCellSummary = getCellSummary(data, selectedMeeting?.groupId ?? selectedSummaryCellId)
+  const activeMeetingCellId = data.cells.some((cell) => cell.id === meetingForm.groupId) ? meetingForm.groupId : data.cells[0]?.id ?? ""
+  const availableMeetingStudies = data.studies.filter((study) => study.audience === "all" || study.groupIds.includes(activeMeetingCellId))
 
   function submitForm(event: FormEvent<HTMLFormElement>, action: (formData: FormData) => Promise<CellActionResult>, success: string) {
     event.preventDefault()
@@ -111,6 +145,34 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
     })
   }
 
+  function submitMeeting(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activeMeetingCellId) return toast.error("Selecione uma célula")
+
+    const input: SaveGroupMeetingInput = {
+      groupId: activeMeetingCellId,
+      title: meetingForm.title,
+      startsAt: new Date(meetingForm.startsAt).toISOString(),
+      endsAt: meetingForm.endsAt ? new Date(meetingForm.endsAt).toISOString() : null,
+      studyId: meetingForm.studyId === "none" ? null : meetingForm.studyId,
+      location: meetingForm.location,
+      notes: meetingForm.notes,
+      reportStatus: "scheduled",
+      presentCount: 0,
+      visitorCount: 0,
+    }
+
+    startTransition(async () => {
+      const result = await saveGroupMeeting(input)
+      if (!result.ok) return toast.error(result.error ?? "Não foi possível criar reunião")
+      setSelectedMeetingId(result.id ?? "")
+      setMeetingForm(emptyMeetingForm(activeMeetingCellId))
+      setMeetingDialogOpen(false)
+      toast.success("Reunião criada")
+      router.refresh()
+    })
+  }
+
   if (data.mode === "portal") {
     return (
       <div className="space-y-6">
@@ -131,14 +193,14 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   }
 
   const advancedOperations = (
-    <Card className="glass"><CardHeader><CardTitle>Operação avançada de Células</CardTitle><CardDescription>Resumo, estudos, QR, presença, mural, oração e avisos.</CardDescription></CardHeader><CardContent>
+    <Card className="glass"><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Operação avançada de Células</CardTitle><CardDescription>Reuniões, resumo, estudos, QR, presença, mural, oração e avisos.</CardDescription></div><Button data-testid="cell-meeting-create-button" type="button" disabled={pending || data.cells.length === 0} onClick={() => setMeetingDialogOpen(true)}><CalendarPlus />Nova reunião</Button></CardHeader><CardContent>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex h-auto flex-wrap"><TabsTrigger value="estudos"><BookOpen />Estudos</TabsTrigger><TabsTrigger value="checkin"><QrCode />Check-in</TabsTrigger><TabsTrigger value="resumo"><BarChart3 />Resumo</TabsTrigger><TabsTrigger value="mural"><Camera />Mural</TabsTrigger><TabsTrigger value="oracao"><Heart />Oração</TabsTrigger><TabsTrigger value="avisos"><Megaphone />Avisos</TabsTrigger></TabsList>
 
         <TabsContent value="estudos" className="grid gap-6 lg:grid-cols-2"><form onSubmit={(event) => submitForm(event, saveCellStudy, "Estudo publicado")} className="space-y-3"><Label>Título</Label><Input name="title" required minLength={3} maxLength={160} /><Label>Descrição</Label><Textarea name="description" maxLength={3000} /><Label>Referência bíblica</Label><Input name="scriptureRef" maxLength={300} /><Label>Arquivo — PDF, Word, Excel ou TXT; até 30 MB</Label><Input name="file" type="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" /><Label>Destino</Label><Select name="audience" value={studyAudience} onValueChange={(value) => setStudyAudience((value ?? "selected") as "all" | "selected")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="selected">Células selecionadas</SelectItem>{data.canPublishToAll && <SelectItem value="all">Todas as células (somente admin)</SelectItem>}</SelectContent></Select>{studyAudience === "selected" && <CellCheckboxes cells={data.cells} />}<Button type="submit" disabled={pending}><Upload />Enviar estudo</Button></form><div className="space-y-3">{data.studies.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum estudo publicado. Envie o primeiro estudo para as células.</CardContent></Card> : data.studies.map((study) => <Card key={study.id}><CardContent className="space-y-2 pt-5"><div className="flex items-start justify-between gap-3"><strong>{study.title}</strong>{data.canDeleteStudies && (data.mode !== "leader" || study.canDelete) && <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={() => removeStudy(study.id, study.title)}><Trash2 />Excluir</Button>}</div><p className="text-sm text-muted-foreground">{study.description}</p><Button render={<a href={study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline"><Download />{study.fileName}</Button></CardContent></Card>)}</div></TabsContent>
 
         <TabsContent value="checkin" className="space-y-6">
-          {data.meetings.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum encontro disponível. Crie um encontro em “Participantes e reuniões”; o estudo é opcional.</CardContent></Card> : <>
+          {data.meetings.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Nenhum encontro disponível. Use “Nova reunião” acima; estudo é opcional.</CardContent></Card> : <>
             <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]"><Select value={activeMeetingId} onValueChange={(value) => { setSelectedMeetingId(value ?? ""); setQrToken(data.sessions.find((session) => session.meetingId === value && session.active)?.token ?? "") }}><SelectTrigger><SelectValue placeholder="Selecione encontro" /></SelectTrigger><SelectContent>{data.meetings.map((meeting) => <SelectItem key={meeting.id} value={meeting.id}>{meeting.groupName} · {meeting.title} · {dateTime(meeting.startsAt)}</SelectItem>)}</SelectContent></Select><Button disabled={pending || !activeMeetingId} onClick={() => startTransition(async () => { const result = await openCellCheckin(activeMeetingId); if (!result.ok) return toast.error(result.error); setQrToken(result.token ?? ""); toast.success("QR aberto"); router.refresh() })}><QrCode />Abrir QR</Button><Button variant="outline" disabled={pending || !activeMeetingId} onClick={() => startTransition(async () => { const result = await closeCellCheckin(activeMeetingId); if (!result.ok) return toast.error(result.error); setQrToken(""); toast.success("Encontro encerrado"); router.refresh() })}><CheckCircle2 />Encerrar</Button></div>
             {qrUrl && <div className="mx-auto flex max-w-sm flex-col items-center gap-3 rounded-xl border bg-white p-5 text-black"><QRCodeSVG value={qrUrl} size={240} /><p className="break-all text-center text-xs">{qrUrl}</p></div>}
             <Card><CardHeader><CardTitle>Check-in manual</CardTitle><CardDescription>Dia e horário ficam registrados em cada presença.</CardDescription></CardHeader><CardContent><form onSubmit={(event) => submitForm(event, manualCellCheckin, "Presença registrada")} className="grid gap-3 md:grid-cols-2"><input type="hidden" name="meetingId" value={activeMeetingId} /><Select name="personId"><SelectTrigger><SelectValue placeholder="Pessoa cadastrada (opcional)" /></SelectTrigger><SelectContent>{data.people.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select><div /><Input name="visitorName" placeholder="Nome do visitante" /><Input name="visitorPhone" placeholder="Telefone do visitante" /><Button type="submit" disabled={pending || !activeMeetingId}><ClipboardCheck />Registrar</Button></form></CardContent></Card>
@@ -156,7 +218,9 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
 
         <TabsContent value="avisos" className="grid gap-6 lg:grid-cols-2"><form onSubmit={(event) => submitForm(event, saveCellNotice, "Aviso publicado")} className="space-y-3"><Label>Título</Label><Input name="title" required minLength={3} maxLength={160} /><RichTextEditor name="content" label="Conteúdo" placeholder="Escreva o aviso. Use a barra para formatar ou inserir botão." maxLength={10000} /><Select name="audience" value={noticeAudience} onValueChange={(value) => setNoticeAudience((value ?? "selected") as "all" | "selected")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="selected">Células selecionadas</SelectItem>{data.canPublishToAll && <SelectItem value="all">Todas as células (somente admin)</SelectItem>}</SelectContent></Select>{noticeAudience === "selected" && <CellCheckboxes cells={data.cells} />}<Button type="submit" disabled={pending}><Megaphone />Publicar aviso</Button></form><div className="space-y-3">{data.notices.map((notice) => <Card key={notice.id}><CardHeader><CardTitle>{notice.title}</CardTitle><CardDescription>{notice.authorName} · {dateTime(notice.publishedAt)}</CardDescription></CardHeader><CardContent><NoticeText notice={notice} /></CardContent></Card>)}</div></TabsContent>
       </Tabs>
-    </CardContent></Card>
+    </CardContent>
+    <Dialog open={meetingDialogOpen} onOpenChange={setMeetingDialogOpen}><DialogContent className="sm:max-w-2xl"><form onSubmit={submitMeeting} className="space-y-5"><DialogHeader><DialogTitle>Nova reunião da célula</DialogTitle><DialogDescription>Agende encontro. Depois use Check-in para registrar presenças.</DialogDescription></DialogHeader><div className="grid gap-4 md:grid-cols-2"><div className="grid gap-2 md:col-span-2"><Label>Célula</Label><Select value={activeMeetingCellId} onValueChange={(value) => setMeetingForm((current) => ({ ...current, groupId: value ?? "", studyId: "none" }))}><SelectTrigger data-testid="cell-meeting-group-select" className="w-full"><SelectValue placeholder="Selecione célula" /></SelectTrigger><SelectContent>{data.cells.map((cell) => <SelectItem key={cell.id} value={cell.id}>{cell.name}</SelectItem>)}</SelectContent></Select></div><div className="grid gap-2 md:col-span-2"><Label>Título</Label><Input data-testid="cell-meeting-title-input" value={meetingForm.title} onChange={(event) => setMeetingForm((current) => ({ ...current, title: event.target.value }))} required minLength={3} maxLength={160} /></div><div className="grid gap-2"><Label>Início</Label><Input data-testid="cell-meeting-start-input" type="datetime-local" value={meetingForm.startsAt} onChange={(event) => setMeetingForm((current) => ({ ...current, startsAt: event.target.value }))} required /></div><div className="grid gap-2"><Label>Fim (opcional)</Label><Input type="datetime-local" min={meetingForm.startsAt} value={meetingForm.endsAt} onChange={(event) => setMeetingForm((current) => ({ ...current, endsAt: event.target.value }))} /></div><div className="grid gap-2"><Label>Estudo (opcional)</Label><Select value={meetingForm.studyId} onValueChange={(value) => setMeetingForm((current) => ({ ...current, studyId: value ?? "none" }))}><SelectTrigger data-testid="cell-meeting-study-select" className="w-full"><SelectValue placeholder="Sem estudo" /></SelectTrigger><SelectContent><SelectItem value="none">Sem estudo</SelectItem>{availableMeetingStudies.map((study) => <SelectItem key={study.id} value={study.id}>{study.title}</SelectItem>)}</SelectContent></Select></div><div className="grid gap-2"><Label>Local</Label><Input data-testid="cell-meeting-location-input" value={meetingForm.location} onChange={(event) => setMeetingForm((current) => ({ ...current, location: event.target.value }))} maxLength={300} /></div><div className="grid gap-2 md:col-span-2"><Label>Observações</Label><Textarea data-testid="cell-meeting-notes-input" value={meetingForm.notes} onChange={(event) => setMeetingForm((current) => ({ ...current, notes: event.target.value }))} maxLength={5000} rows={4} /></div></div><div className="flex justify-end gap-3"><Button type="button" variant="outline" onClick={() => setMeetingDialogOpen(false)}>Cancelar</Button><Button data-testid="cell-meeting-save-button" type="submit" disabled={pending || !activeMeetingCellId}><CalendarPlus />Criar reunião</Button></div></form></DialogContent></Dialog>
+    </Card>
   )
 
   if (data.mode === "leader") {

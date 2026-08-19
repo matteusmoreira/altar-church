@@ -102,6 +102,20 @@ test("admin has a dedicated cell summary option", () => {
   assert.match(client, /setSelectedSummaryCellId\(cell\.id\)/)
 })
 
+test("admins and cell leaders create meetings inside the scoped cells workspace", () => {
+  const client = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
+  const groupActions = read("src/lib/groups/actions.ts")
+  const permissions = read("src/lib/types.ts")
+
+  assert.match(client, /cell-meeting-create-button/)
+  assert.match(client, /Nova reunião da célula/)
+  assert.match(client, /saveGroupMeeting/)
+  assert.match(client, /reportStatus: "scheduled"/)
+  assert.match(groupActions, /requirePermission\("cells\.meeting\.manage"/)
+  assert.match(groupActions, /requireManagedCell\(await getCellContext\(companyId\), parsed\.groupId\)/)
+  assert.match(permissions, /cell_leader:[\s\S]*"cells\.meeting\.manage"/)
+})
+
 test("admins and cell leaders can delete studies only inside their allowed scope", () => {
   const actions = read("src/lib/cells/actions.ts")
   const data = read("src/lib/cells/data.ts")
