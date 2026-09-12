@@ -20,6 +20,7 @@
 
 # next.js
 /.next/
+/.next.stale-*/
 /out/
 
 # production
@@ -39,8 +40,15 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+
+# credenciais locais — nunca versionar (mesmo que alguém peça)
 Supabase.txt
 *Supabase*.txt
+resend.txt
+*credentials*.txt
+*secret*.txt
+*.credentials
+*.zip
 
 # vercel
 .vercel

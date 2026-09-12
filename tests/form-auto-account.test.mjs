@@ -41,8 +41,11 @@ test("servidor exige nome e telefone mapeados, obrigatórios e valida novamente 
   assert.match(actions, /if \(form\.create_account_after_submit\)/)
 })
 
-test("provisionamento usa senha fixa apenas no Auth e compensa falhas de banco", () => {
-  assert.match(account, /FORM_AUTO_ACCOUNT_PASSWORD = "@mudar123"/)
+test("provisionamento gera senha descartavel aleatoria e compensa falhas de banco", () => {
+  assert.match(account, /randomBytes\(32\)\.toString\("base64url"\)/)
+  assert.match(account, /password: generateDisposablePassword\(\)/)
+  assert.doesNotMatch(account, /FORM_AUTO_ACCOUNT_PASSWORD/)
+  assert.doesNotMatch(account, /@mudar123/)
   assert.match(account, /accounts\.altar-church\.invalid/)
   assert.match(account, /auth\.admin\.createUser/)
   assert.match(account, /auth\.admin\.deleteUser/)
@@ -64,5 +67,5 @@ test("mensagem e integrações só são enfileiradas depois do commit", () => {
   assert.ok(transactionEnd > 0)
   assert.ok(whatsappQueue > transactionEnd)
   assert.ok(integrationQueue > transactionEnd)
-  assert.doesNotMatch(actions.slice(transactionEnd, whatsappQueue), /@mudar123/)
+  assert.doesNotMatch(actions.slice(transactionEnd, whatsappQueue), /password|@mudar123/i)
 })

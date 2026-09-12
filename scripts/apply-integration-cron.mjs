@@ -14,9 +14,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import postgres from "postgres"
+import { resolveSupabaseProjectRef } from "./lib/resolve-project-ref.mjs"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
-const projectRef = process.env.SUPABASE_PROJECT_REF || "zsldqioutjxchgmmwtfi"
+const projectRef = resolveSupabaseProjectRef()
 const jobName = "integration-delivery-dispatch-every-2-minutes"
 
 function loadEnvLocal() {

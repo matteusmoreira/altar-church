@@ -5,6 +5,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import postgres from "postgres"
+import { resolveSupabaseProjectRef } from "./lib/resolve-project-ref.mjs"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -30,7 +31,7 @@ loadEnvLocal()
 const connectionString = process.env.POSTGRES_URL
 if (!connectionString) { console.error("POSTGRES_URL obrigatório"); process.exit(1) }
 
-const projectRef = process.env.SUPABASE_PROJECT_REF || "zsldqioutjxchgmmwtfi"
+const projectRef = resolveSupabaseProjectRef()
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 const integrationWorkerSecret = process.env.INTEGRATION_WORKER_SECRET || ""
 const volunteerWorkerSecret = process.env.VOLUNTEER_WORKER_SECRET || ""

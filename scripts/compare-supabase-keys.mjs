@@ -1,17 +1,31 @@
 import { createClient } from "@supabase/supabase-js"
 
-const url = "https://zsldqioutjxchgmmwtfi.supabase.co"
-const publishable = "sb_publishable_-8KTZHp7WFeY4hSc27_2XQ_F46GI_8x"
-const anon =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzbGRxaW91dGp4Y2hnbW13dGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMjQ1NjEsImV4cCI6MjA5NTYwMDU2MX0.ZyPINpRsGaLdiSiBWpKAc9qFfcNeDPTpT1zKTu8bF0Y"
+// Nenhuma credencial fica versionada aqui. Informe via ambiente:
+//   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, NEXT_PUBLIC_SUPABASE_ANON_KEY
+//   E2E_SUPERADMIN_EMAIL, E2E_DEFAULT_PASSWORD
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+if (!url) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
+}
 
-for (const [name, key] of [
-  ["publishable", publishable],
-  ["anon", anon],
-]) {
-  const { error } = await createClient(url, key).auth.signInWithPassword({
-    email: "e2e.superadmin@altar-church.test",
-    password: "AltarChurch-E2E-2026!",
-  })
+const candidates = [
+  ["publishable", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY],
+  ["anon", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY],
+].filter(([, key]) => Boolean(key))
+
+if (candidates.length === 0) {
+  throw new Error(
+    "Nenhuma chave configurada: defina NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ou NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  )
+}
+
+const email = process.env.E2E_SUPERADMIN_EMAIL ?? "e2e.superadmin@altar-church.test"
+const password = process.env.E2E_DEFAULT_PASSWORD
+if (!password) {
+  throw new Error("E2E_DEFAULT_PASSWORD nao configurado no ambiente")
+}
+
+for (const [name, key] of candidates) {
+  const { error } = await createClient(url, key).auth.signInWithPassword({ email, password })
   console.log(name, error?.message ?? "ok")
 }

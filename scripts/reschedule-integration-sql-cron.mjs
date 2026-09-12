@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import postgres from "postgres"
+import { resolveSupabaseProjectRef } from "./lib/resolve-project-ref.mjs"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 const envPath = path.join(root, ".env.local")
@@ -23,7 +24,7 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const projectRef = process.env.SUPABASE_PROJECT_REF || "zsldqioutjxchgmmwtfi"
+const projectRef = resolveSupabaseProjectRef()
 const dbPassword = process.env.SUPABASE_DB_PASSWORD || process.env.DB_PASSWORD
 const connectionString =
   process.env.POSTGRES_URL ||

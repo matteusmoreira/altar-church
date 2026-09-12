@@ -13,6 +13,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs && npm run test:auth && npm run test:forms-whatsapp && npm run test:volunteers:v2 && npm run test:operations",
+    "test:coverage": "node --experimental-test-coverage --test tests/*.test.mjs",
     "test:auth": "node --experimental-strip-types --test tests/auth-whatsapp-pure.test.ts",
     "test:forms-whatsapp": "node --experimental-strip-types --test tests/form-whatsapp-direct.test.ts",
     "test:operations": "node --experimental-strip-types --test tests/operations-health.test.mjs",
@@ -27,7 +28,8 @@
     "db:audit": "node --env-file-if-exists=.env.local scripts/audit-database.mjs",
     "db:optimize": "node --env-file-if-exists=.env.local scripts/optimize-database.mjs",
     "member:verify": "node --env-file-if-exists=.env.local scripts/verify-member-portal.mjs",
-    "kids:configure-pin": "node scripts/configure-kids-pin-pepper.mjs"
+    "kids:configure-pin": "node scripts/configure-kids-pin-pepper.mjs",
+    "secrets:check": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -44,7 +46,7 @@
     "date-fns": "^4.3.0",
     "fabric": "^7.4.0",
     "lucide-react": "^1.16.0",
-    "next": "^16.2.7",
+    "next": "^16.3.5",
     "next-themes": "^0.4.6",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
@@ -71,11 +73,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.7",
+    "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
   "overrides": {
-    "postcss": "8.5.15"
+    "postcss": "^8.5.28"
   }
 }

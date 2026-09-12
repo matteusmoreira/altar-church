@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { z } from "zod"
 import { getSql } from "@/lib/db/client"
 import { createClient } from "@/lib/supabase/server"
+import { enforceRateLimits, rateLimitMessage, requestClientIp } from "@/lib/security/rate-limit"
 import { normalizeBrazilianWhatsapp } from "./phone"
 
 const loginSchema = z.object({
@@ -14,9 +15,29 @@ const loginSchema = z.object({
 
 export type LoginMethod = z.infer<typeof loginSchema>["method"]
 
-export async function loginWithIdentifier(input: z.input<typeof loginSchema>) {
+export type LoginResult = { ok: boolean; error?: string }
+
+/**
+ * Janelas de força bruta. O limite por identificador é o que realmente importa;
+ * o limite por IP evita varredura de muitas contas a partir de uma mesma origem.
+ */
+const LOGIN_RATE_LIMITS = {
+  perIp: { bucket: "auth.login.ip", max: 30, windowSeconds: 900 },
+  perIdentifier: { bucket: "auth.login.identifier", max: 8, windowSeconds: 900 },
+} as const
+
+export async function loginWithIdentifier(input: z.input<typeof loginSchema>): Promise<LoginResult> {
   try {
     const parsed = loginSchema.parse(input)
+
+    const verdict = await enforceRateLimits([
+      { ...LOGIN_RATE_LIMITS.perIp, identifier: await requestClientIp() },
+      { ...LOGIN_RATE_LIMITS.perIdentifier, identifier: `${parsed.method}:${parsed.identifier}` },
+    ])
+    if (!verdict.allowed) {
+      return { ok: false, error: rateLimitMessage(verdict.retryAfterSeconds) }
+    }
+
     const sql = getSql()
     const normalizedPhone = parsed.method === "whatsapp"
       ? normalizeBrazilianWhatsapp(parsed.identifier)

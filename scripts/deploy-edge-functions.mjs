@@ -7,6 +7,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { resolveSupabaseProjectRef } from "./lib/resolve-project-ref.mjs"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -30,7 +31,7 @@ function loadEnvLocal() {
 loadEnvLocal()
 
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN
-const projectRef = process.env.SUPABASE_PROJECT_REF || "zsldqioutjxchgmmwtfi"
+const projectRef = resolveSupabaseProjectRef()
 
 if (!accessToken) { console.error("SUPABASE_ACCESS_TOKEN obrigatório"); process.exit(1) }
 

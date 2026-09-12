@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { resolveSupabaseProjectRef } from "./lib/resolve-project-ref.mjs"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -36,7 +37,7 @@ function loadEnvLocal() {
 loadEnvLocal()
 
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN
-const projectRef = process.env.SUPABASE_PROJECT_REF || "zsldqioutjxchgmmwtfi"
+const projectRef = resolveSupabaseProjectRef()
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || `https://${projectRef}.supabase.co`
 const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY
 

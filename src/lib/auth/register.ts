@@ -4,6 +4,7 @@ import { z } from "zod"
 import { writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { enforceRateLimits, rateLimitMessage, requestClientIp } from "@/lib/security/rate-limit"
 import { normalizeBrazilianWhatsapp } from "./phone"
 
 export type RegisterResult = {
@@ -45,6 +46,14 @@ const registerSchema = z.object({
 export async function registerSelfServiceUser(input: z.input<typeof registerSchema>): Promise<RegisterResult> {
   try {
     const parsed = registerSchema.parse(input)
+
+    const verdict = await enforceRateLimits([
+      { bucket: "auth.register.ip", max: 10, windowSeconds: 3600, identifier: await requestClientIp() },
+    ])
+    if (!verdict.allowed) {
+      return { ok: false, error: rateLimitMessage(verdict.retryAfterSeconds) }
+    }
+
     const email = parsed.email.toLowerCase()
     const sql = getSql()
 

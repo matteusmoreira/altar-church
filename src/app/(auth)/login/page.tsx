@@ -56,7 +56,7 @@ export default function LoginPage() {
         toast.success("Bem-vindo de volta!")
         window.location.assign(nextPath())
       } else {
-        toast.error("WhatsApp/e-mail ou senha inválidos")
+        toast.error(result.error ?? "WhatsApp/e-mail ou senha inválidos")
       }
     } finally {
       setLoading(false)

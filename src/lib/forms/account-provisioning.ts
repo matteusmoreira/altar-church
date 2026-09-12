@@ -1,7 +1,19 @@
+import { randomBytes } from "node:crypto"
 import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 
-export const FORM_AUTO_ACCOUNT_PASSWORD = "@mudar123"
+/**
+ * Gera uma senha aleatória e descartável para a conta técnica.
+ *
+ * O e-mail da conta é derivado do telefone (`phone-<telefone>@...`), portanto
+ * previsível. Uma senha fixa aqui permitiria que qualquer pessoa que conheça o
+ * telefone de um membro assumisse a conta. O usuário nunca recebe este valor:
+ * o primeiro acesso acontece pelo fluxo de recuperação por WhatsApp, que define
+ * a senha definitiva.
+ */
+function generateDisposablePassword() {
+  return randomBytes(32).toString("base64url")
+}
 
 const FORM_ACCOUNT_EMAIL_DOMAIN = "accounts.altar-church.invalid"
 
@@ -49,7 +61,7 @@ async function createAuthUser(input: {
 
   const created = await supabase.auth.admin.createUser({
     email: input.email,
-    password: FORM_AUTO_ACCOUNT_PASSWORD,
+    password: generateDisposablePassword(),
     email_confirm: true,
     user_metadata: {
       name: input.name,
