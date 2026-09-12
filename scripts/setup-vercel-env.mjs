@@ -56,7 +56,6 @@ const envVars = [
   // Seguras (production only)
   { key: "SUPABASE_URL", value: process.env.SUPABASE_URL, target: ["production"], type: "encrypted" },
   { key: "SUPABASE_SERVICE_ROLE_KEY", value: process.env.SUPABASE_SERVICE_ROLE_KEY, target: ["production"], type: "encrypted" },
-  { key: "SUPABASE_ACCESS_TOKEN", value: process.env.SUPABASE_ACCESS_TOKEN, target: ["production"], type: "encrypted" },
   { key: "SUPABASE_PROJECT_REF", value: process.env.SUPABASE_PROJECT_REF, target: ["production"], type: "encrypted" },
   { key: "POSTGRES_URL", value: process.env.POSTGRES_URL, target: ["production"], type: "encrypted" },
   { key: "AUTH_PASSWORD_RESET_PEPPER", value: process.env.AUTH_PASSWORD_RESET_PEPPER, target: ["production"], type: "encrypted" },

@@ -9,6 +9,7 @@ import { getSql } from "@/lib/db/client"
 import { jsonbParam } from "@/lib/db/jsonb"
 import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { normalizeBrazilianWhatsapp } from "@/lib/auth/phone"
+import { consumePublicRateLimit } from "@/lib/security/public-rate-limit"
 import { enqueueFormWhatsappDelivery, processFormWhatsappOutbox, retryFormWhatsappDelivery } from "./direct-delivery"
 import { collectDirectMessageMediaFileIds, directMediaTypeMatches, directMessageSchema, validateTemplateVariables } from "./direct-message"
 import {
@@ -1576,6 +1577,14 @@ export async function submitPublicForm(input: PublicSubmitInput): Promise<FormsA
     `
     const form = formRows[0]
     if (!form) throw new Error("Formulário indisponível")
+
+    const allowed = await consumePublicRateLimit({
+      companyId: company.id,
+      scope: "form",
+      resourceId: form.id,
+      limit: form.create_account_after_submit ? 10 : 30,
+    })
+    if (!allowed) throw new Error("Muitas tentativas. Aguarde uma hora e tente novamente.")
 
     const fields = await sql<
       {

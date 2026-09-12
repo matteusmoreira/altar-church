@@ -76,8 +76,14 @@ async function checkRateLimit(companyId: string, key: string, limit: number): Pr
 
 async function clientKey(): Promise<string> {
   const headerStore = await headers()
-  const forwarded = headerStore.get("x-forwarded-for") ?? ""
-  return forwarded.split(",")[0]?.trim() || "desconhecido"
+  const candidates = [
+    headerStore.get("x-real-ip"),
+    headerStore.get("cf-connecting-ip"),
+    headerStore.get("x-vercel-forwarded-for"),
+    headerStore.get("x-forwarded-for"),
+  ]
+  const value = candidates.find((candidate) => candidate?.trim()) ?? ""
+  return value.split(",")[0]?.trim() || "desconhecido"
 }
 
 // ---------------------------------------------------------------------------
@@ -803,6 +809,9 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
           limit 1
         `
         guardianPersonId = found[0]?.id ?? null
+      }
+      if (guardianPersonId) {
+        throw new Error("Já existe um cadastro para este contato. Procure a recepção para vincular a criança.")
       }
       if (!guardianPersonId) {
         const inserted = await tx<{ id: string }[]>`

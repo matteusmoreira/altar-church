@@ -8,6 +8,7 @@ import { getSql } from "@/lib/db/client"
 import { getPublicEventByToken } from "./data"
 import { eventCommunicationTemplates } from "./types"
 import type { EventPublicRegistration } from "./types"
+import { consumePublicRateLimit } from "@/lib/security/public-rate-limit"
 
 const uuid = z.string().uuid()
 const phone = z.string().trim().max(30).default("")
@@ -87,6 +88,14 @@ export async function registerGuestForEvent(input: {
     const event = eventRows[0]
     if (!event) throw new Error("Evento não encontrado")
     if (new Date(event.starts_at).getTime() < Date.now() - 24 * 60 * 60 * 1000) throw new Error("As inscrições deste evento foram encerradas")
+
+    const allowed = await consumePublicRateLimit({
+      companyId: event.company_id,
+      scope: "event-registration",
+      resourceId: event.id,
+      limit: 20,
+    })
+    if (!allowed) throw new Error("Muitas tentativas. Aguarde uma hora e tente novamente.")
 
     let lockedEvent = event
     const registration = await getSql().begin(async (tx) => {
@@ -368,7 +377,26 @@ export async function checkInEventSession(input: { sessionToken: string; fullNam
     const parsed = z.object({ sessionToken: uuid, fullName: z.string().trim().min(2, "Informe o nome").max(200), phone: z.string().trim().min(8, "Informe um telefone").max(30) }).parse(input)
     const normalizedPhone = normalizePhone(parsed.phone)
     if (normalizedPhone.length < 8) throw new Error("Telefone inválido")
-    const resultRow = await getSql().begin(async (tx) => {
+    const sql = getSql()
+    const sessionScope = await sql<{ company_id: string; event_id: string }[]>`
+      select company_id, event_id
+      from public.event_checkin_sessions
+      where token = ${parsed.sessionToken}::uuid
+        and closed_at is null
+        and now() between opens_at and expires_at
+      limit 1
+    `
+    const scope = sessionScope[0]
+    if (!scope) throw new Error("QR do evento inválido, expirado ou encerrado")
+    const allowed = await consumePublicRateLimit({
+      companyId: scope.company_id,
+      scope: "event-checkin",
+      resourceId: scope.event_id,
+      limit: 60,
+    })
+    if (!allowed) throw new Error("Muitas tentativas. Aguarde uma hora e tente novamente.")
+
+    const resultRow = await sql.begin(async (tx) => {
       const sessions = await tx<{ token: string; company_id: string; event_id: string; event_title: string }[]>`
         select session.token, session.company_id, session.event_id, event.title as event_title
         from public.event_checkin_sessions session join public.events event on event.id = session.event_id and event.status = 'published' and event.deleted_at is null

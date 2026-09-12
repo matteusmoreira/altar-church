@@ -58,7 +58,10 @@ async function getProfileForAuthUser(authUserId: string, email?: string | null) 
     where p.active = true
       and (
         p.auth_user_id = ${authUserId}
-        or (${email ?? ""} <> '' and lower(p.email) = lower(${email ?? ""}) and p.auth_user_id is null)
+        or (${email ?? ""} <> ''
+          and lower(p.email) = lower(${email ?? ""})
+          and p.auth_user_id is null
+          and p.role in ('member', 'visitor', 'attendee'))
       )
     order by p.auth_user_id nulls last
     limit 1

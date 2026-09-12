@@ -38,9 +38,9 @@ export async function consumeRateLimit(rule: RateLimitRule): Promise<RateLimitVe
     const allowed = rows[0]?.allowed ?? true
     return allowed ? ALLOWED : { allowed: false, retryAfterSeconds: rule.windowSeconds }
   } catch {
-    // Rate limit é mitigação, não o controle primário de acesso. Se a checagem
-    // falhar (ex.: migration ainda não aplicada), não derrubamos o login.
-    return ALLOWED
+    console.error("[rate-limit] backend indisponível", { bucket: rule.bucket })
+    const failOpen = process.env.NODE_ENV !== "production" || process.env.AUTH_RATE_LIMIT_FAIL_OPEN === "1"
+    return failOpen ? ALLOWED : { allowed: false, retryAfterSeconds: rule.windowSeconds }
   }
 }
 
@@ -56,8 +56,14 @@ export async function enforceRateLimits(rules: RateLimitRule[]): Promise<RateLim
 /** IP do cliente atrás do proxy da Vercel. */
 export async function requestClientIp() {
   const headerStore = await headers()
-  const forwarded = headerStore.get("x-forwarded-for") ?? ""
-  return forwarded.split(",")[0]?.trim() || headerStore.get("x-real-ip") || "unknown"
+  const candidates = [
+    headerStore.get("x-real-ip"),
+    headerStore.get("cf-connecting-ip"),
+    headerStore.get("x-vercel-forwarded-for"),
+    headerStore.get("x-forwarded-for"),
+  ]
+  const value = candidates.find((candidate) => candidate?.trim()) ?? ""
+  return value.split(",")[0]?.trim() || "unknown"
 }
 
 /** Mensagem padrão para o usuário quando o limite é atingido. */

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import path from "node:path"
 
 export type E2ERole = "superadmin" | "admin" | "member"
@@ -21,6 +22,12 @@ export interface E2EAccountDocument {
 }
 
 const defaultDocPath = path.join(process.cwd(), "docs", "testing", "e2e-accounts.local.md")
+const runId = process.env.E2E_RUN_ID?.trim() || `${Date.now()}-${randomUUID().slice(0, 8)}`
+
+export function e2eRunPrefix(scope: string) {
+  const safeScope = scope.replace(/[^a-z0-9-]/gi, "-").toLowerCase()
+  return `e2e-${runId}-${safeScope}`
+}
 
 function buildPortalAccounts(password: string, companyLegacyId: string): NonNullable<E2EAccountDocument["portalAccounts"]> {
   return {
@@ -40,7 +47,10 @@ function buildDefaultAccountDocument(): E2EAccountDocument {
   if (!password) {
     throw new Error("E2E_DEFAULT_PASSWORD nao configurado no ambiente")
   }
-  const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID ?? "c1"
+  const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID?.trim()
+  if (!companyLegacyId) {
+    throw new Error("E2E_COMPANY_LEGACY_ID obrigatório; o setup não escolhe tenant por fallback")
+  }
 
   return {
     baseUrl: process.env.E2E_BASE_URL ?? "http://localhost:3000",
@@ -85,6 +95,38 @@ export function readE2EAccounts(docPath = process.env.E2E_ACCOUNTS_DOC ?? defaul
   }
 
   const document = JSON.parse(match[1]) as E2EAccountDocument
+  const configuredCompanyLegacyId = process.env.E2E_COMPANY_LEGACY_ID?.trim()
+  if (!configuredCompanyLegacyId) {
+    throw new Error("E2E_COMPANY_LEGACY_ID obrigatório; o setup não escolhe tenant por fallback")
+  }
+  if (document.companyLegacyId !== configuredCompanyLegacyId) {
+    throw new Error("E2E_COMPANY_LEGACY_ID não corresponde ao tenant declarado no documento E2E")
+  }
+  const accounts = [
+    ...Object.values(document.accounts ?? {}),
+    ...Object.values(document.portalAccounts ?? {}),
+  ]
+  const emails = new Set<string>()
+  for (const account of accounts) {
+    const email = account?.email?.trim().toLowerCase()
+    if (!email || emails.has(email)) throw new Error("Documento E2E contém e-mails ausentes ou duplicados")
+    emails.add(email)
+    if (account.role === "superadmin" ? account.companyLegacyId !== null : account.companyLegacyId !== configuredCompanyLegacyId) {
+      throw new Error(`Conta E2E ${email} aponta para tenant diferente do configurado`)
+    }
+  }
+  const configuredSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  if (!configuredSupabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
+  const expectedUrl = new URL(configuredSupabaseUrl)
+  const supabaseUrl = new URL(document.supabaseUrl)
+  const expectedProjectRef = process.env.SUPABASE_PROJECT_REF?.trim() ?? expectedUrl.hostname.split(".")[0]
+  if (
+    supabaseUrl.origin !== expectedUrl.origin ||
+    supabaseUrl.hostname !== expectedUrl.hostname ||
+    document.supabaseProjectRef !== expectedProjectRef
+  ) {
+    throw new Error("supabaseUrl/supabaseProjectRef do documento E2E não correspondem ao ambiente configurado")
+  }
   document.accounts.member.role = "member"
   document.portalAccounts ??= buildPortalAccounts(document.accounts.member.password, document.companyLegacyId)
   return document

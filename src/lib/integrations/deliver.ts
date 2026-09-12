@@ -1,6 +1,6 @@
 import { getSql } from "@/lib/db/client"
 import { jsonbPayloadToHttpBody } from "@/lib/db/jsonb"
-import { assertSafeWebhookUrl, signWebhookBody } from "./crypto"
+import { assertResolvableSafeWebhookUrl, signWebhookBody } from "./crypto"
 
 interface ClaimedRow {
   id: string
@@ -70,7 +70,7 @@ export async function processIntegrationOutbox(batchSize = 25): Promise<{
     }
 
     try {
-      assertSafeWebhookUrl(endpoint.url)
+      await assertResolvableSafeWebhookUrl(endpoint.url)
       // payload pode ser objeto ou string legada (double JSON) — body HTTP sempre objeto serializado
       const rawBody = jsonbPayloadToHttpBody(row.payload)
       const timestamp = String(Math.floor(Date.now() / 1000))
@@ -82,6 +82,7 @@ export async function processIntegrationOutbox(batchSize = 25): Promise<{
       try {
         response = await fetch(endpoint.url, {
           method: "POST",
+          redirect: "error",
           headers: {
             "Content-Type": "application/json",
             "User-Agent": "AltarChurch-Webhooks/1.0",

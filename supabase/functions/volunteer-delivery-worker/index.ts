@@ -27,6 +27,7 @@ const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? ""
 const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? ""
 const vapidPublicKey = Deno.env.get("NEXT_PUBLIC_VAPID_PUBLIC_KEY") ?? ""
 const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY") ?? ""
+const FETCH_TIMEOUT_MS = 10_000
 
 function headers(extra: HeadersInit = {}) {
   return {
@@ -42,9 +43,19 @@ function escapeHtml(value: string) {
 }
 
 async function rest(path: string, init: RequestInit = {}) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, { ...init, headers: headers(init.headers) })
+  const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/${path}`, { ...init, headers: headers(init.headers) })
   if (!response.ok) throw new Error(`Banco recusou entrega: ${response.status}`)
   return response
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function updateDelivery(id: string, patch: Record<string, unknown>) {
@@ -82,7 +93,7 @@ function retryAt(attempt: number) {
 
 async function sendWhatsApp(delivery: Delivery) {
   const credential = await getUazapiCredential(delivery.company_id)
-  const response = await fetch(`${credential.base_url}/send/text`, {
+  const response = await fetchWithTimeout(`${credential.base_url}/send/text`, {
     method: "POST",
     headers: { "Content-Type": "application/json", token: credential.instance_token },
     body: JSON.stringify({
@@ -101,7 +112,7 @@ async function sendWhatsApp(delivery: Delivery) {
 
 async function sendEmail(delivery: Delivery) {
   if (!resendApiKey || !resendFrom) throw new Error("Resend não configurado")
-  const response = await fetch("https://api.resend.com/emails", {
+  const response = await fetchWithTimeout("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
@@ -179,7 +190,7 @@ async function reconcileWhatsApp() {
     } catch {
       continue
     }
-    const lookup = await fetch(`${credential.base_url}/message/find`, {
+    const lookup = await fetchWithTimeout(`${credential.base_url}/message/find`, {
       method: "POST",
       headers: { "Content-Type": "application/json", token: credential.instance_token },
       body: JSON.stringify({
@@ -210,7 +221,15 @@ Deno.serve(async (request: Request) => {
       body: JSON.stringify({ batch_size: 25 }),
     })
     const deliveries = await response.json() as Delivery[]
-    await Promise.all(deliveries.map(processDelivery))
+    const concurrency = Math.min(5, deliveries.length)
+    let cursor = 0
+    await Promise.all(Array.from({ length: concurrency }, async () => {
+      while (cursor < deliveries.length) {
+        const delivery = deliveries[cursor]
+        cursor += 1
+        await processDelivery(delivery)
+      }
+    }))
     return Response.json({ processed: deliveries.length })
   } catch {
     return new Response("Worker indisponível", { status: 500 })

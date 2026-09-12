@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions";
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
+import { assertCompanyScope } from "@/lib/security/tenant-scope";
 import { createSignedUrlsByStoragePath, uploadManagedFile } from "@/lib/files/server";
 import type { Permission } from "@/lib/types";
 import {
@@ -48,10 +49,12 @@ function refreshVolunteerChatPaths() {
 async function managerContext(
   permission: Permission,
   departmentId?: string | null,
+  expectedCompanyId?: string | null,
 ) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Acesso negado");
   const companyId = requireUserCompanyId(user);
+  if (expectedCompanyId) assertCompanyScope(companyId, expectedCompanyId);
   await requirePermission(permission, companyId);
   if (
     user.role === "superadmin" ||
@@ -283,29 +286,46 @@ export async function saveVolunteerAvailabilityForManager(
 ): Promise<VolunteerActionResult> {
   try {
     const volunteerId = uuid.parse(input.volunteerId);
-    const rows = await getSql()<{ department_id: string }[]>`
-      select department_id from public.volunteer_department_memberships where volunteer_id = ${volunteerId} and is_active
+    const rows = await getSql()<
+      { company_id: string; department_id: string | null }[]
+    >`
+      select volunteer.company_id, membership.department_id
+      from public.volunteer_profiles volunteer
+      left join public.volunteer_department_memberships membership
+        on membership.volunteer_id = volunteer.id
+        and membership.company_id = volunteer.company_id
+        and membership.is_active
+      where volunteer.id = ${volunteerId} and volunteer.deleted_at is null
     `;
-    if (rows.length === 0) {
-      const access = await managerContext("volunteers.edit");
-      if (!["superadmin", "admin", "pastor"].includes(access.user.role))
-        throw new Error("Acesso negado");
+    const target = rows[0];
+    if (!target) throw new Error("Voluntário não encontrado");
+    const departmentIds = rows.flatMap((row) =>
+      row.department_id ? [row.department_id] : [],
+    );
+    const access = await managerContext(
+      "volunteers.edit",
+      departmentIds[0] ?? null,
+      target.company_id,
+    );
+    if (
+      departmentIds.length === 0 &&
+      !["superadmin", "admin", "pastor"].includes(access.user.role)
+    ) {
+      throw new Error("Acesso negado");
     }
-    for (const row of rows)
-      await managerContext("volunteers.edit", row.department_id);
-    const current = await getCurrentUser();
-    if (!current) throw new Error("Acesso negado");
+    for (const departmentId of departmentIds.slice(1))
+      await managerContext("volunteers.edit", departmentId, target.company_id);
     // Manager flow uses the same durable writes, but cannot impersonate self action.
     const parsed = availabilitySchema.parse(input);
-    const companyId = requireUserCompanyId(current);
+    const { user, companyId } = access;
     const sql = getSql();
     await sql.begin(async (tx) => {
       await tx`update public.volunteer_profiles set desired_services_per_month = ${parsed.desiredServicesPerMonth},
-        max_services_per_month = ${parsed.maxServicesPerMonth}, minimum_rest_hours = ${parsed.minimumRestHours}, updated_by = ${current.id}
+        max_services_per_month = ${parsed.maxServicesPerMonth}, minimum_rest_hours = ${parsed.minimumRestHours}, updated_by = ${user.id}
         where id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`delete from public.volunteer_availability_rules where volunteer_id = ${volunteerId}`;
-      await tx`delete from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId}`;
-      await tx`delete from public.volunteer_role_preferences where volunteer_id = ${volunteerId}`;
+      await tx`delete from public.volunteer_availability_rules where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
+      await tx`delete from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
+      await tx`delete from public.volunteer_role_preferences where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
       for (const rule of parsed.rules)
         await tx`insert into public.volunteer_availability_rules(company_id, volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until)
         values (${companyId}, ${volunteerId}, ${rule.weekday}, ${rule.available}, ${rule.startsAt}, ${rule.endsAt}, ${rule.validFrom}, ${rule.validUntil})`;
@@ -340,7 +360,7 @@ export async function generateSmartVolunteerSchedule(
     >`select company_id from public.volunteer_schedules where id = ${scheduleId}`;
     const companyId = scheduleRows[0]?.company_id;
     if (!companyId) throw new Error("Escala não encontrada");
-    const { user } = await managerContext("schedules.edit");
+    const { user } = await managerContext("schedules.edit", null, companyId);
     const settingRows = await sql<{ timezone: string }[]>`
       select timezone from public.volunteer_module_settings where company_id = ${companyId}
     `;
@@ -529,9 +549,14 @@ export async function getVolunteerShiftCandidates(
       coalesce(ends_at, starts_at + interval '2 hours') as ends_at from public.volunteer_shifts where id = ${shiftId}`;
     const shiftRow = shifts[0];
     if (!shiftRow) throw new Error("Vaga não encontrada");
-    await managerContext("schedules.view", String(shiftRow.department_id));
+    const companyId = String(shiftRow.company_id);
+    await managerContext(
+      "schedules.view",
+      String(shiftRow.department_id),
+      companyId,
+    );
     const settingRows = await sql<{ timezone: string }[]>`
-      select timezone from public.volunteer_module_settings where company_id = ${String(shiftRow.company_id)}
+      select timezone from public.volunteer_module_settings where company_id = ${companyId}
     `;
     const timezone = settingRows[0]?.timezone ?? "America/Sao_Paulo";
     const volunteers = await sql<Record<string, unknown>[]>`
@@ -541,12 +566,13 @@ export async function getVolunteerShiftCandidates(
         coalesce(array_agg(distinct membership.department_id::text) filter (where membership.department_id is not null), '{}') as department_ids,
         coalesce(array_agg(distinct membership.role_name) filter (where membership.role_name is not null), '{}') as role_names,
         coalesce(preference.preference, 0) as preference
-      from public.volunteer_profiles volunteer join public.people person on person.id = volunteer.person_id
-      left join public.app_files photo on photo.id = person.photo_file_id and photo.is_active and photo.deleted_at is null
-      left join public.volunteer_department_memberships membership on membership.volunteer_id = volunteer.id and membership.is_active
-      left join public.volunteer_role_preferences preference on preference.volunteer_id = volunteer.id
+      from public.volunteer_profiles volunteer
+      join public.people person on person.id = volunteer.person_id and person.company_id = volunteer.company_id
+      left join public.app_files photo on photo.id = person.photo_file_id and photo.company_id = volunteer.company_id and photo.is_active and photo.deleted_at is null
+      left join public.volunteer_department_memberships membership on membership.volunteer_id = volunteer.id and membership.company_id = volunteer.company_id and membership.is_active
+      left join public.volunteer_role_preferences preference on preference.volunteer_id = volunteer.id and preference.company_id = volunteer.company_id
         and preference.department_id = ${String(shiftRow.department_id)} and lower(preference.role_name) = lower(${String(shiftRow.role_name)})
-      where volunteer.company_id = ${String(shiftRow.company_id)} and volunteer.deleted_at is null
+      where volunteer.company_id = ${companyId} and volunteer.deleted_at is null
         and volunteer.registration_status = 'active'
       group by volunteer.id, person.full_name, photo.storage_path, preference.preference
     `;
@@ -557,14 +583,14 @@ export async function getVolunteerShiftCandidates(
       const [rules, exceptions, history] = await Promise.all([
         sql<
           Record<string, unknown>[]
-        >`select weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = ${String(volunteer.id)}`,
+        >`select weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = ${String(volunteer.id)} and company_id = ${companyId}`,
         sql<
           Record<string, unknown>[]
-        >`select starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = ${String(volunteer.id)}`,
+        >`select starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = ${String(volunteer.id)} and company_id = ${companyId}`,
         sql<
           Record<string, unknown>[]
         >`select shift.starts_at, coalesce(shift.ends_at, shift.starts_at + interval '2 hours') as ends_at, assignment.status, shift.role_name
-          from public.volunteer_assignments assignment join public.volunteer_shifts shift on shift.id = assignment.shift_id where assignment.volunteer_id = ${String(volunteer.id)}`,
+          from public.volunteer_assignments assignment join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = assignment.company_id where assignment.volunteer_id = ${String(volunteer.id)} and assignment.company_id = ${companyId}`,
       ]);
       candidates.push({
         id: String(volunteer.id),
@@ -677,8 +703,21 @@ export async function requestVolunteerSwap(
       select ${companyId}, assignment.id, ${volunteerId}, ${parsed.replacementVolunteerId},
         case when ${parsed.replacementVolunteerId}::uuid is null then 'open' else 'offered' end, ${parsed.reason}
       from public.volunteer_assignments assignment
-      where assignment.id = ${parsed.assignmentId} and assignment.volunteer_id = ${volunteerId}
-        and assignment.status in ('notified', 'confirmed') returning id
+      where assignment.id = ${parsed.assignmentId}
+        and assignment.company_id = ${companyId}
+        and assignment.volunteer_id = ${volunteerId}
+        and assignment.status in ('notified', 'confirmed')
+        and (
+          ${parsed.replacementVolunteerId}::uuid is null
+          or exists (
+            select 1
+            from public.volunteer_profiles replacement
+            where replacement.id = ${parsed.replacementVolunteerId}::uuid
+              and replacement.company_id = ${companyId}
+              and replacement.registration_status = 'active'
+              and replacement.deleted_at is null
+          )
+        ) returning id
     `;
     if (!rows[0]?.id) throw new Error("Escala não pode ser trocada");
     await audit(
@@ -718,8 +757,8 @@ export async function acceptVolunteerSwap(
     if (accept && !swap.require_approval) {
       await sql.begin(async (tx) => {
         await tx`update public.volunteer_assignments assignment set volunteer_id = ${volunteerId}, status = 'confirmed', responded_at = now(), updated_at = now()
-          where assignment.id = ${swap.assignment_id}`;
-        await tx`update public.volunteer_swap_requests set status = 'approved', reviewed_at = now() where id = ${swapId}`;
+          where assignment.id = ${swap.assignment_id} and assignment.company_id = ${companyId}`;
+        await tx`update public.volunteer_swap_requests set status = 'approved', reviewed_at = now() where id = ${swapId} and company_id = ${companyId}`;
       });
     }
     await audit(
@@ -751,21 +790,31 @@ export async function reviewVolunteerSwap(
       }[]
     >`
       select swap.company_id, swap.assignment_id, swap.replacement_volunteer_id, shift.department_id
-      from public.volunteer_swap_requests swap join public.volunteer_assignments assignment on assignment.id = swap.assignment_id
-      join public.volunteer_shifts shift on shift.id = assignment.shift_id where swap.id = ${swapId} and swap.status in ('open', 'accepted')
+      from public.volunteer_swap_requests swap
+      join public.volunteer_assignments assignment on assignment.id = swap.assignment_id and assignment.company_id = swap.company_id
+      join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = assignment.company_id
+      left join public.volunteer_profiles replacement
+        on replacement.id = swap.replacement_volunteer_id
+        and replacement.company_id = swap.company_id
+        and replacement.registration_status = 'active'
+        and replacement.deleted_at is null
+      where swap.id = ${swapId}
+        and swap.status in ('open', 'accepted')
+        and (swap.replacement_volunteer_id is null or replacement.id is not null)
     `;
     const swap = swapRows[0];
     if (!swap) throw new Error("Troca não encontrada");
     const { user, companyId } = await managerContext(
       "volunteer_swap.manage",
       swap.department_id,
+      swap.company_id,
     );
     if (approve && !swap.replacement_volunteer_id)
       throw new Error("Substituto obrigatório");
     await sql.begin(async (tx) => {
-      await tx`update public.volunteer_swap_requests set status = ${approve ? "approved" : "rejected"}, reviewed_by = ${user.id}, reviewed_at = now(), updated_at = now() where id = ${swapId}`;
+      await tx`update public.volunteer_swap_requests set status = ${approve ? "approved" : "rejected"}, reviewed_by = ${user.id}, reviewed_at = now(), updated_at = now() where id = ${swapId} and company_id = ${companyId}`;
       if (approve)
-        await tx`update public.volunteer_assignments set volunteer_id = ${swap.replacement_volunteer_id}, status = 'confirmed', responded_at = now(), updated_by = ${user.id}, updated_at = now() where id = ${swap.assignment_id}`;
+        await tx`update public.volunteer_assignments set volunteer_id = ${swap.replacement_volunteer_id}, status = 'confirmed', responded_at = now(), updated_by = ${user.id}, updated_at = now() where id = ${swap.assignment_id} and company_id = ${companyId}`;
     });
     await audit(
       approve ? "volunteer_swap.approve" : "volunteer_swap.reject",
@@ -1875,7 +1924,11 @@ export async function softDeleteVolunteer(
     `;
     const row = rows[0];
     if (!row) throw new Error("Voluntário não encontrado");
-    let access = await managerContext("volunteers.edit", row.department_ids[0]);
+    let access = await managerContext(
+      "volunteers.edit",
+      row.department_ids[0],
+      row.company_id,
+    );
     if (
       row.department_ids.length === 0 &&
       !["superadmin", "admin", "pastor"].includes(access.user.role)
@@ -1883,14 +1936,14 @@ export async function softDeleteVolunteer(
       throw new Error("Voluntário sem departamento exige administrador");
     }
     for (const departmentId of row.department_ids.slice(1)) {
-      access = await managerContext("volunteers.edit", departmentId);
+      access = await managerContext("volunteers.edit", departmentId, row.company_id);
     }
     const { user, companyId } = access;
     if (!["superadmin", "admin"].includes(user.role))
       throw new Error("Somente administrador pode excluir voluntário");
     await sql.begin(async (tx) => {
       await tx`update public.volunteer_profiles set registration_status = 'inactive', deleted_at = now(), updated_by = ${user.id} where id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`update public.volunteer_department_memberships set is_active = false, updated_at = now() where volunteer_id = ${volunteerId}`;
+      await tx`update public.volunteer_department_memberships set is_active = false, updated_at = now() where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
     });
     await audit(
       "volunteer.delete",

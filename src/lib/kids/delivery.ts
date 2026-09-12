@@ -258,7 +258,9 @@ export async function enqueueLessonReportNotification(input: {
   } else if (input.sessionClassroomId) {
     const rows = await sql<{ kid_id: string }[]>`
       select distinct kid_id from public.kid_attendances
-      where company_id = ${input.companyId} and session_classroom_id = ${input.sessionClassroomId}
+      where company_id = ${input.companyId}
+        and session_id = ${input.sessionId}
+        and session_classroom_id = ${input.sessionClassroomId}
         and status in ('checked_in', 'checkout_requested', 'checked_out')
     `
     kidIds = rows.map((row) => row.kid_id)

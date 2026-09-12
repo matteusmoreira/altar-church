@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test"
 import { loginAs } from "./helpers/auth"
-import { readE2EAccounts } from "./helpers/accounts"
+import { e2eRunPrefix, readE2EAccounts } from "./helpers/accounts"
 
 const e2e = readE2EAccounts()
 const samples = 5
+const runPrefix = e2eRunPrefix("performance")
 
 function p95(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
@@ -25,7 +26,7 @@ test("mutacoes comuns ficam abaixo da meta em producao", async ({ page }, testIn
   const timings = { people: [] as number[], ministries: [] as number[], volunteers: [] as number[] }
 
   for (let index = 0; index < samples + 1; index += 1) {
-    const stamp = `${Date.now()}-${index}`
+    const stamp = `${runPrefix}-${index}`
     let personId = ""
     let ministryId = ""
     let volunteerId = ""

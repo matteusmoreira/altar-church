@@ -1,16 +1,17 @@
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
 import { loginAs } from "./helpers/auth"
-import { readE2EAccounts } from "./helpers/accounts"
+import { e2eRunPrefix, readE2EAccounts } from "./helpers/accounts"
 
 const e2e = readE2EAccounts()
 const volunteerAccount = e2e.portalAccounts?.volunteer
 const connection = process.env.POSTGRES_URL
+const runPrefix = e2eRunPrefix("volunteer-chat")
 
 test("chat avisa ADM e voluntário sem precisar abrir a conversa", async ({ browser }) => {
   test.skip(!connection || !volunteerAccount, "Conta/DB E2E não configurados")
   const sql = postgres(connection!, { max: 1, prepare: false })
-  const suffix = `${Date.now()}`
+  const suffix = runPrefix
   const title = `Chat E2E ${suffix}`
   const endpoints = [`https://example.invalid/push/admin-${suffix}`, `https://example.invalid/push/volunteer-${suffix}`]
   let eventId = ""

@@ -1,13 +1,18 @@
 export type CsvCell = string | number | boolean | null | undefined
 
-function escapeCell(value: CsvCell) {
-  const text = value == null ? "" : String(value)
+function neutralizeFormula(value: CsvCell) {
+  if (typeof value !== "string") return value == null ? "" : String(value)
+  return /^[\t\r\n ]*[=+\-@]/.test(value) ? `'${value}` : value
+}
+
+export function escapeCsvCell(value: CsvCell) {
+  const text = neutralizeFormula(value)
   if (!/[",\r\n;]/.test(text)) return text
   return `"${text.replace(/"/g, '""')}"`
 }
 
 export function toCsv(rows: CsvCell[][]) {
-  return rows.map((row) => row.map(escapeCell).join(";")).join("\n")
+  return rows.map((row) => row.map(escapeCsvCell).join(";")).join("\n")
 }
 
 export function csvResponse(filename: string, rows: CsvCell[][]) {

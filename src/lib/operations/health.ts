@@ -55,7 +55,15 @@ export type OperationalHealthData = {
 
 type Queryable = ReturnType<typeof getSql>
 
-const CHECK_TIMEOUT_MS = 5_000
+const CHECK_TIMEOUT_MS = 2_000
+const PUBLIC_READINESS_CACHE_MS = 5_000
+
+class HealthTimeoutError extends Error {
+  constructor() {
+    super("timeout")
+    this.name = "HealthTimeoutError"
+  }
+}
 
 function env(name: string) {
   return process.env[name]?.trim() ?? ""
@@ -77,13 +85,16 @@ function environmentName() {
   return env("APP_ENV") || env("VERCEL_ENV") || env("NODE_ENV") || "local"
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs = CHECK_TIMEOUT_MS) {
+async function withTimeout<T>(promise: Promise<T>, timeoutMs = CHECK_TIMEOUT_MS, controller?: AbortController) {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs)
+        timer = setTimeout(() => {
+          controller?.abort()
+          reject(new HealthTimeoutError())
+        }, timeoutMs)
       }),
     ])
   } finally {
@@ -109,8 +120,13 @@ async function fetchCheck(input: {
   }
 
   const startedAt = Date.now()
+  const controller = new AbortController()
   try {
-    const response = await withTimeout(fetch(input.url, input.init))
+    const response = await withTimeout(
+      fetch(input.url, { ...input.init, redirect: "error", signal: controller.signal }),
+      CHECK_TIMEOUT_MS,
+      controller,
+    )
     const status = input.healthyStatuses.includes(response.status) ? "healthy" : response.status >= 500 ? "unavailable" : "degraded"
     return {
       key: input.key,
@@ -124,7 +140,7 @@ async function fetchCheck(input: {
       key: input.key,
       label: input.label,
       status: "unavailable" as const,
-      detail: error instanceof Error && error.message === "timeout" ? "Timeout" : "Falha de conexão",
+      detail: error instanceof HealthTimeoutError ? "Timeout" : "Falha de conexão",
       latencyMs: Date.now() - startedAt,
     }
   }
@@ -146,7 +162,7 @@ async function databaseCheck(sql: Queryable): Promise<HealthCheck> {
       key: "database",
       label: "Banco de dados",
       status: "unavailable",
-      detail: error instanceof Error && error.message === "timeout" ? "Timeout" : "Falha na conexão SQL",
+      detail: error instanceof HealthTimeoutError ? "Timeout" : "Falha na conexão SQL",
       latencyMs: Date.now() - startedAt,
     }
   }
@@ -509,15 +525,63 @@ export async function getAuthorizedOperationalHealthData(companyIdInput?: string
   return getOperationalHealthData(user.role === "superadmin" && !companyIdInput ? null : companyId)
 }
 
-export async function getPublicHealthData() {
-  const sql = getSql()
-  const checks = await getInfrastructureChecks(sql)
-  const publicChecks = checks.filter((check) => ["database", "storage", "auth", "integration_worker", "volunteer_worker"].includes(check.key))
+type PublicHealthData = {
+  status: HealthStatus
+  checkedAt: string
+  checks: { key: string; label: string; status: HealthStatus; latencyMs?: number }[]
+}
+
+let publicReadinessCache: { expiresAt: number; data: PublicHealthData } | null = null
+let publicReadinessInFlight: Promise<PublicHealthData> | null = null
+
+export function getPublicLivenessData() {
   return {
-    status: overallHealthStatus(publicChecks),
+    status: "healthy" as const,
     checkedAt: new Date().toISOString(),
-    checks: publicChecks.map(({ key, label, status, latencyMs }) => ({ key, label, status, latencyMs })),
+    checks: [],
   }
+}
+
+export async function getPublicReadinessData(): Promise<PublicHealthData> {
+  if (publicReadinessCache && publicReadinessCache.expiresAt > Date.now()) {
+    return publicReadinessCache.data
+  }
+  if (publicReadinessInFlight) return publicReadinessInFlight
+
+  publicReadinessInFlight = (async () => {
+    const sql = getSql()
+    const [checks, migrations] = await Promise.all([
+      getInfrastructureChecks(sql),
+      migrationStatus(sql),
+    ])
+    const publicChecks = checks.filter((check) => ["database", "storage", "auth", "integration_worker", "volunteer_worker"].includes(check.key))
+    const migrationCheck: HealthCheck = {
+      key: "migrations",
+      label: "Migrations",
+      status: migrations.status,
+      detail: migrations.detail,
+    }
+    const data: PublicHealthData = {
+      status: overallHealthStatus([...publicChecks, migrationCheck]),
+      checkedAt: new Date().toISOString(),
+      checks: [
+        ...publicChecks.map(({ key, label, status, latencyMs }) => ({ key, label, status, latencyMs })),
+        { key: migrationCheck.key, label: migrationCheck.label, status: migrationCheck.status },
+      ],
+    }
+    publicReadinessCache = { expiresAt: Date.now() + PUBLIC_READINESS_CACHE_MS, data }
+    return data
+  })()
+
+  try {
+    return await publicReadinessInFlight
+  } finally {
+    publicReadinessInFlight = null
+  }
+}
+
+export async function getPublicHealthData() {
+  return getPublicReadinessData()
 }
 
 export { healthLabel }

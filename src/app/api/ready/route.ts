@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
-import { getPublicHealthData } from "@/lib/operations/health"
+import { getPublicReadinessData } from "@/lib/operations/health"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
-    const data = await getPublicHealthData()
+    const data = await getPublicReadinessData()
     const ready = data.status === "healthy"
     return NextResponse.json(
       { status: ready ? "ready" : "not_ready", checkedAt: data.checkedAt, checks: data.checks },

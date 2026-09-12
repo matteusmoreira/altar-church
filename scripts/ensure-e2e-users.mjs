@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
@@ -7,6 +8,14 @@ import { createClient } from "@supabase/supabase-js"
 const root = process.cwd()
 const accountDocPath = process.env.E2E_ACCOUNTS_DOC ?? path.join(root, "docs", "testing", "e2e-accounts.local.md")
 const envPath = path.join(root, ".env.local")
+
+function requiredE2ECompanyLegacyId() {
+  const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID?.trim()
+  if (!companyLegacyId) {
+    throw new Error("E2E_COMPANY_LEGACY_ID obrigatório; o setup não escolhe tenant por fallback")
+  }
+  return companyLegacyId
+}
 
 function readKeyValueFile(filePath) {
   if (!existsSync(filePath)) return { ...process.env }
@@ -30,6 +39,37 @@ function buildPortalAccounts(password, companyLegacyId) {
   }
 }
 
+function validateE2EAccountDocument(document, configuredCompanyLegacyId) {
+  if (!document || typeof document !== "object") throw new Error("Documento E2E inválido")
+  const accounts = [
+    ...Object.values(document.accounts ?? {}),
+    ...Object.values(document.portalAccounts ?? {}),
+  ]
+  const emails = new Set()
+  for (const account of accounts) {
+    const email = String(account?.email ?? "").trim().toLowerCase()
+    if (!email || emails.has(email)) throw new Error("Documento E2E contém e-mails ausentes ou duplicados")
+    emails.add(email)
+    if (account.role === "superadmin") {
+      if (account.companyLegacyId !== null) throw new Error("Conta superadmin E2E deve ter companyLegacyId nulo")
+    } else if (account.companyLegacyId !== configuredCompanyLegacyId) {
+      throw new Error(`Conta E2E ${email} aponta para tenant diferente do configurado`)
+    }
+  }
+  const configuredSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+  if (!configuredSupabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
+  const expectedUrl = new URL(configuredSupabaseUrl)
+  const url = new URL(document.supabaseUrl)
+  const expectedProjectRef = process.env.SUPABASE_PROJECT_REF?.trim() ?? expectedUrl.hostname.split(".")[0]
+  if (
+    url.origin !== expectedUrl.origin ||
+    url.hostname !== expectedUrl.hostname ||
+    document.supabaseProjectRef !== expectedProjectRef
+  ) {
+    throw new Error("supabaseUrl/supabaseProjectRef do documento E2E não correspondem ao ambiente configurado")
+  }
+}
+
 function buildDefaultAccountDocument() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL nao configurado no ambiente")
@@ -42,7 +82,7 @@ function buildDefaultAccountDocument() {
     throw new Error("E2E_DEFAULT_PASSWORD nao configurado no ambiente")
   }
 
-  const companyLegacyId = process.env.E2E_COMPANY_LEGACY_ID ?? "c1"
+  const companyLegacyId = requiredE2ECompanyLegacyId()
   return {
     baseUrl,
     supabaseProjectRef,
@@ -409,6 +449,12 @@ async function main() {
   const env = { ...process.env, ...readKeyValueFile(envPath) }
   Object.assign(process.env, env)
   const doc = readAccountDocument()
+  const configuredCompanyLegacyId = requiredE2ECompanyLegacyId()
+  if (doc.companyLegacyId !== configuredCompanyLegacyId) {
+    throw new Error("E2E_COMPANY_LEGACY_ID não corresponde ao tenant declarado no documento E2E")
+  }
+  validateE2EAccountDocument(doc, configuredCompanyLegacyId)
+  const runId = process.env.E2E_RUN_ID?.trim() || `${Date.now()}-${randomUUID().slice(0, 8)}`
   const sql = postgres(env.POSTGRES_URL, { max: 1, idle_timeout: 5, connect_timeout: 10, prepare: false })
   const serviceRoleKey = tryGetServiceRoleKey(doc.supabaseProjectRef)
   const supabase = serviceRoleKey
@@ -421,23 +467,17 @@ async function main() {
     : null
 
   try {
-    let [company] = await sql`
-      select id
+    const [company] = await sql`
+      select id, status
       from public.companies
-      where legacy_id = ${doc.companyLegacyId}
+      where legacy_id = ${configuredCompanyLegacyId}
+        and status = 'test'
+        and active = true
       limit 1
     `
     if (!company?.id) {
-      const activeCompanies = await sql`
-        select id
-        from public.companies
-        where active = true
-        order by created_at
-        limit 2
-      `
-      if (activeCompanies.length === 1) company = activeCompanies[0]
+      throw new Error(`Tenant E2E ${configuredCompanyLegacyId} não encontrado com status=test e active=true`)
     }
-    if (!company?.id) throw new Error(`Empresa ${doc.companyLegacyId} nao encontrada`)
 
     await sql`
       insert into public.company_modules (company_id, module_id, enabled)
@@ -462,10 +502,23 @@ async function main() {
       ...Object.entries(doc.portalAccounts ?? {}),
     ]
     for (const [key, account] of accountEntries) {
+      const expectedCompanyId = account.companyLegacyId === null ? null : company.id
+      if (account.role === "superadmin" ? expectedCompanyId !== null : account.companyLegacyId !== configuredCompanyLegacyId) {
+        throw new Error(`Conta E2E ${account.email} não pode ser vinculada ao tenant selecionado`)
+      }
+      const [existingProfile] = await sql`
+        select company_id
+        from public.profiles
+        where lower(email) = lower(${account.email})
+        limit 1
+      `
+      if (existingProfile && existingProfile.company_id !== expectedCompanyId) {
+        throw new Error(`E-mail E2E ${account.email} já pertence a outro tenant; setup abortado`)
+      }
       const authUserId = supabase
         ? await ensureAuthUser(supabase, account)
         : await ensureAuthUserDirect(sql, account)
-      const companyId = account.companyLegacyId ? company.id : null
+      const companyId = expectedCompanyId
 
       const [profile] = await sql`
         insert into public.profiles (auth_user_id, company_id, name, email, role, active)
@@ -481,7 +534,7 @@ async function main() {
       `
 
       await ensurePortalIdentity(sql, { key, account, companyId, profileId: profile.id })
-      console.log(`ok ${key}: ${account.email}`)
+      console.log(`ok ${key}: ${account.email} (${runId})`)
     }
   } finally {
     await sql.end()

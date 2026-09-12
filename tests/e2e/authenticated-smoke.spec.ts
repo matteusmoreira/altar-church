@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test"
 import { loginAs, expectNoDevError, resetSession } from "./helpers/auth"
-import { readE2EAccounts, type E2ERole } from "./helpers/accounts"
+import { e2eRunPrefix, readE2EAccounts, type E2ERole } from "./helpers/accounts"
 
 const e2e = readE2EAccounts()
+const runPrefix = e2eRunPrefix("authenticated")
 
 const roles: E2ERole[] = ["superadmin", "admin", "member"]
 
@@ -79,7 +80,7 @@ test("admin logado revisa duplicidades em Pessoas", async ({ page }) => {
 })
 
 test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
-  const stamp = Date.now()
+  const stamp = runPrefix
   const name = `Congregacao E2E ${stamp}`
   const updatedResponsible = `Responsavel E2E ${stamp}`
 
@@ -108,7 +109,7 @@ test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
 })
 
 test("admin logado salva informacoes reais da igreja", async ({ page }) => {
-  const stamp = Date.now()
+  const stamp = runPrefix
   const publicName = `Igreja E2E ${stamp}`
   const website = `https://igreja-e2e-${stamp}.test`
   const instagram = `https://instagram.com/e2e_${stamp}`
@@ -170,7 +171,7 @@ test("portal público da igreja consome conteúdo real publicado", async ({ page
 
 test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   test.setTimeout(90_000)
-  const stamp = Date.now()
+  const stamp = runPrefix
   const name = `GCEU E2E ${stamp}`
   const description = `Grupo E2E criado pelo fluxo autenticado ${stamp}`
   const updatedDescription = `Grupo E2E atualizado pelo fluxo autenticado ${stamp}`

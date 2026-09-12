@@ -2450,7 +2450,8 @@ export async function saveKidLessonReport(input: z.input<typeof kidLessonReportS
       if (!parsed.sessionClassroomId) throw new Error("Voluntário deve informar a sala")
       const assignment = await sql<{ id: string }[]>`
         select id from public.kid_staff_assignments
-        where session_id = ${parsed.sessionId}
+        where company_id = ${companyId}
+          and session_id = ${parsed.sessionId}
           and profile_id = ${user.id}
           and session_classroom_id = ${parsed.sessionClassroomId}
         limit 1
@@ -2458,17 +2459,52 @@ export async function saveKidLessonReport(input: z.input<typeof kidLessonReportS
       if (!assignment[0]?.id) throw new Error("Acesso negado")
     }
 
+    const sessionRows = await sql<{ id: string }[]>`
+      select id from public.kid_sessions
+      where id = ${parsed.sessionId} and company_id = ${companyId} and deleted_at is null
+      limit 1
+    `
+    if (!sessionRows[0]?.id) throw new Error("Sessão Kids não encontrada")
+
     let classroomName = ""
     if (parsed.sessionClassroomId) {
       const classroomRows = await sql<{ name: string }[]>`
         select classroom.name
         from public.kid_session_classrooms sc
         join public.kid_classrooms classroom on classroom.id = sc.classroom_id and classroom.deleted_at is null
-        where sc.id = ${parsed.sessionClassroomId} and sc.company_id = ${companyId}
+        where sc.id = ${parsed.sessionClassroomId}
+          and sc.session_id = ${parsed.sessionId}
+          and sc.company_id = ${companyId}
         limit 1
       `
       if (!classroomRows[0]?.name) throw new Error("Sala não encontrada nesta sessão")
       classroomName = classroomRows[0].name
+    }
+
+    if (parsed.kidId) {
+      const attendanceRows = parsed.sessionClassroomId
+        ? await sql<{ id: string }[]>`
+            select attendance.id
+            from public.kid_attendances attendance
+            join public.kid_profiles kid on kid.id = attendance.kid_id and kid.company_id = attendance.company_id
+            where attendance.company_id = ${companyId}
+              and attendance.session_id = ${parsed.sessionId}
+              and attendance.session_classroom_id = ${parsed.sessionClassroomId}
+              and attendance.kid_id = ${parsed.kidId}
+              and attendance.status in ('checked_in', 'checkout_requested', 'checked_out')
+            limit 1
+          `
+        : await sql<{ id: string }[]>`
+            select attendance.id
+            from public.kid_attendances attendance
+            join public.kid_profiles kid on kid.id = attendance.kid_id and kid.company_id = attendance.company_id
+            where attendance.company_id = ${companyId}
+              and attendance.session_id = ${parsed.sessionId}
+              and attendance.kid_id = ${parsed.kidId}
+              and attendance.status in ('checked_in', 'checkout_requested', 'checked_out')
+            limit 1
+          `
+      if (!attendanceRows[0]?.id) throw new Error("Criança não está vinculada à sessão autorizada")
     }
 
     const rows = await sql<{ id: string }[]>`

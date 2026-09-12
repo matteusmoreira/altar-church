@@ -6,13 +6,15 @@ const migrationsDir = path.join(process.cwd(), "supabase", "migrations")
 const connectionString =
   process.env.POSTGRES_URL ??
   (process.env.SUPABASE_DB_PASSWORD && process.env.SUPABASE_PROJECT_REF
-    ? `postgresql://postgres:${process.env.SUPABASE_DB_PASSWORD}@db.${process.env.SUPABASE_PROJECT_REF}.supabase.co:5432/postgres`
+    ? `postgresql://postgres:${encodeURIComponent(process.env.SUPABASE_DB_PASSWORD)}@db.${process.env.SUPABASE_PROJECT_REF}.supabase.co:5432/postgres?sslmode=require`
     : null)
 
 if (!connectionString) {
   throw new Error("POSTGRES_URL ou SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF obrigatorios")
 }
 
+// POSTGRES_URL já carrega sslmode=require; não force rejectUnauthorized aqui,
+// pois o pooler Supabase pode apresentar a cadeia CA via configuração da URL.
 const sql = postgres(connectionString, { max: 1 })
 
 try {
