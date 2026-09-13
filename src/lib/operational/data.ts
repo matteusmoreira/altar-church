@@ -21,11 +21,6 @@ import type {
   ReadingPlan,
   ReadingPlanStep,
   Revenue,
-  Subscription,
-  SubscriptionCollection,
-  SubscriptionContent,
-  SubscriptionPlan,
-  SubscriptionTag,
   Supplier,
 } from "@/lib/types"
 
@@ -391,84 +386,6 @@ interface DonationRecurrenceRow {
   updated_at: Date | string
 }
 
-interface SubscriptionPlanRow {
-  id: string
-  company_id: string
-  code: string
-  name: string
-  description: string
-  billing_cycle: SubscriptionPlan["billingCycle"]
-  billing_interval: number
-  auto_renew: boolean
-  discount_type: SubscriptionPlan["discountType"]
-  discount_value: string | number
-  price: string | number
-  signup_fee: string | number
-  is_active: boolean
-  created_at: Date | string
-}
-
-interface SubscriptionTagRow {
-  id: string
-  company_id: string
-  name: string
-  created_at: Date | string
-}
-
-interface SubscriptionRow {
-  id: string
-  company_id: string
-  user_id: string | null
-  user_name: string
-  plan_id: string | null
-  plan_name: string
-  price: string | number
-  start_date: Date | string
-  end_date: Date | string | null
-  status: Subscription["status"]
-  created_at: Date | string
-}
-
-interface SubscriptionContentRow {
-  id: string
-  company_id: string
-  title: string
-  description: string
-  tags: unknown
-  production_year: string
-  content_type: SubscriptionContent["contentType"]
-  content_code: string
-  highlight_image_url: string
-  cover_image_url: string
-  highlight_file_id: string | null
-  cover_file_id: string | null
-  highlight_storage_path: string | null
-  cover_storage_path: string | null
-  is_draft: boolean
-  is_featured: boolean
-  is_coming_soon: boolean
-  is_active: boolean
-  created_at: Date | string
-}
-
-interface SubscriptionCollectionRow {
-  id: string
-  company_id: string
-  title: string
-  description: string
-  tags: unknown
-  highlight_image_url: string
-  cover_image_url: string
-  highlight_file_id: string | null
-  cover_file_id: string | null
-  highlight_storage_path: string | null
-  cover_storage_path: string | null
-  is_featured: boolean
-  is_coming_soon: boolean
-  is_active: boolean
-  created_at: Date | string
-}
-
 export interface FinanceData {
   revenues: Revenue[]
   expenses: Expense[]
@@ -481,14 +398,6 @@ export interface FinanceData {
 export interface DonationData {
   donations: Donation[]
   recurrences: DonationRecurrence[]
-}
-
-export interface InpeaceData {
-  plans: SubscriptionPlan[]
-  tags: SubscriptionTag[]
-  subscriptions: Subscription[]
-  contents: SubscriptionContent[]
-  collections: SubscriptionCollection[]
 }
 
 async function resolveCompanyId(companyId?: string | null) {
@@ -873,86 +782,6 @@ function toDonationRecurrence(row: DonationRecurrenceRow): DonationRecurrence {
     pending: row.pending,
     createdAt: toIso(row.created_at) ?? "",
     updatedAt: toIso(row.updated_at) ?? "",
-  }
-}
-
-function toSubscriptionPlan(row: SubscriptionPlanRow): SubscriptionPlan {
-  return {
-    id: row.id,
-    churchId: row.company_id,
-    code: row.code,
-    name: row.name,
-    description: row.description,
-    billingCycle: row.billing_cycle,
-    billingInterval: row.billing_interval,
-    autoRenew: row.auto_renew,
-    discountType: row.discount_type,
-    discountValue: toNumber(row.discount_value),
-    price: toNumber(row.price),
-    signupFee: toNumber(row.signup_fee),
-    active: row.is_active,
-    createdAt: toIso(row.created_at) ?? "",
-  }
-}
-
-function toSubscriptionTag(row: SubscriptionTagRow): SubscriptionTag {
-  return {
-    id: row.id,
-    churchId: row.company_id,
-    name: row.name,
-    createdAt: toIso(row.created_at) ?? "",
-  }
-}
-
-function toSubscription(row: SubscriptionRow): Subscription {
-  return {
-    id: row.id,
-    churchId: row.company_id,
-    userId: row.user_id ?? "",
-    userName: row.user_name,
-    planId: row.plan_id ?? "",
-    planName: row.plan_name,
-    price: toNumber(row.price),
-    startDate: toDate(row.start_date),
-    endDate: toDate(row.end_date),
-    status: row.status,
-    createdAt: toIso(row.created_at) ?? "",
-  }
-}
-
-function toSubscriptionContent(row: SubscriptionContentRow, signedUrls = new Map<string, string>()): SubscriptionContent {
-  return {
-    id: row.id,
-    churchId: row.company_id,
-    title: row.title,
-    description: row.description,
-    tags: toStringArray(row.tags),
-    productionYear: row.production_year,
-    contentType: row.content_type,
-    contentCode: row.content_code,
-    highlightImage: signedFileUrl(row.highlight_storage_path, row.highlight_image_url, signedUrls),
-    coverImage: signedFileUrl(row.cover_storage_path, row.cover_image_url, signedUrls),
-    isDraft: row.is_draft,
-    isFeatured: row.is_featured,
-    isComingSoon: row.is_coming_soon,
-    active: row.is_active,
-    createdAt: toIso(row.created_at) ?? "",
-  }
-}
-
-function toSubscriptionCollection(row: SubscriptionCollectionRow, signedUrls = new Map<string, string>()): SubscriptionCollection {
-  return {
-    id: row.id,
-    churchId: row.company_id,
-    title: row.title,
-    description: row.description,
-    tags: toStringArray(row.tags),
-    highlightImage: signedFileUrl(row.highlight_storage_path, row.highlight_image_url, signedUrls),
-    coverImage: signedFileUrl(row.cover_storage_path, row.cover_image_url, signedUrls),
-    isFeatured: row.is_featured,
-    isComingSoon: row.is_coming_soon,
-    active: row.is_active,
-    createdAt: toIso(row.created_at) ?? "",
   }
 }
 
@@ -1558,91 +1387,5 @@ export async function getDonationData(companyIdInput?: string | null): Promise<D
   return {
     donations: donations.map(toDonation),
     recurrences: recurrences.map(toDonationRecurrence),
-  }
-}
-
-export async function getInpeaceData(companyIdInput?: string | null): Promise<InpeaceData> {
-  const companyId = await resolveCompanyId(companyIdInput)
-  await requirePermission("subscription.view", companyId)
-
-  const sql = getSql()
-  const [plans, tags, subscriptions, contents, collections] = await Promise.all([
-    sql<SubscriptionPlanRow[]>`
-      select *
-      from public.subscription_plans
-      where company_id = ${companyId}
-        and deleted_at is null
-      order by created_at desc
-      limit 200
-    `,
-    sql<SubscriptionTagRow[]>`
-      select id, company_id, name, created_at
-      from public.subscription_tags
-      where company_id = ${companyId}
-        and deleted_at is null
-      order by name
-      limit 200
-    `,
-    sql<SubscriptionRow[]>`
-      select *
-      from public.subscriptions
-      where company_id = ${companyId}
-        and deleted_at is null
-      order by start_date desc
-      limit 300
-    `,
-    sql<SubscriptionContentRow[]>`
-      select c.*,
-             highlight_file.storage_path as highlight_storage_path,
-             cover_file.storage_path as cover_storage_path
-      from public.subscription_contents c
-      left join public.app_files highlight_file
-        on highlight_file.id = c.highlight_file_id
-       and highlight_file.company_id = c.company_id
-       and highlight_file.is_active = true
-       and highlight_file.deleted_at is null
-      left join public.app_files cover_file
-        on cover_file.id = c.cover_file_id
-       and cover_file.company_id = c.company_id
-       and cover_file.is_active = true
-       and cover_file.deleted_at is null
-      where c.company_id = ${companyId}
-        and c.deleted_at is null
-      order by c.created_at desc
-      limit 200
-    `,
-    sql<SubscriptionCollectionRow[]>`
-      select c.*,
-             highlight_file.storage_path as highlight_storage_path,
-             cover_file.storage_path as cover_storage_path
-      from public.subscription_collections c
-      left join public.app_files highlight_file
-        on highlight_file.id = c.highlight_file_id
-       and highlight_file.company_id = c.company_id
-       and highlight_file.is_active = true
-       and highlight_file.deleted_at is null
-      left join public.app_files cover_file
-        on cover_file.id = c.cover_file_id
-       and cover_file.company_id = c.company_id
-       and cover_file.is_active = true
-       and cover_file.deleted_at is null
-      where c.company_id = ${companyId}
-        and c.deleted_at is null
-      order by c.created_at desc
-      limit 200
-    `,
-  ])
-
-  const signedUrls = await createSignedUrlsByStoragePath([
-    ...contents.flatMap((content) => [content.highlight_storage_path ?? "", content.cover_storage_path ?? ""]),
-    ...collections.flatMap((collection) => [collection.highlight_storage_path ?? "", collection.cover_storage_path ?? ""]),
-  ])
-
-  return {
-    plans: plans.map(toSubscriptionPlan),
-    tags: tags.map(toSubscriptionTag),
-    subscriptions: subscriptions.map(toSubscription),
-    contents: contents.map((content) => toSubscriptionContent(content, signedUrls)),
-    collections: collections.map((collection) => toSubscriptionCollection(collection, signedUrls)),
   }
 }

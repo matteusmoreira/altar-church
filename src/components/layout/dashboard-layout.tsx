@@ -28,7 +28,6 @@ import {
   Newspaper,
   PanelLeftClose,
   PanelLeftOpen,
-  Play,
   Settings,
   Shield,
   Users,
@@ -85,7 +84,6 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
       { href: dashboardRoutes.content, label: "Conteúdo", icon: Newspaper, moduleId: "content" },
       { href: dashboardRoutes.notifications, label: "Notificação", icon: Bell, moduleId: "notifications" },
       { href: dashboardRoutes.communication, label: "Comunicação", icon: MessageSquare, moduleId: "communication" },
-      { href: dashboardRoutes["inpeace-play"], label: "Altar Pay", icon: Play, moduleId: "inpeace-play" },
     ],
   },
   {

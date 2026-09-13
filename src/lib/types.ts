@@ -83,10 +83,6 @@ export type Permission =
   | "donation.create"
   | "donation.edit"
   | "donation.export"
-  | "subscription.view"
-  | "subscription.create"
-  | "subscription.edit"
-  | "subscription.delete"
   | "groups.view"
   | "groups.create"
   | "groups.edit"
@@ -444,7 +440,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "content.view", "content.create", "content.edit", "content.delete", "content.publish",
     "notification.view", "notification.create", "notification.edit", "notification.delete", "notification.send", "notification.approve",
     "donation.view", "donation.create", "donation.edit", "donation.export",
-    "subscription.view", "subscription.create", "subscription.edit", "subscription.delete",
     "groups.view", "groups.create", "groups.edit", "groups.delete", "groups.approve",
     "volunteers.view", "volunteers.create", "volunteers.edit", "volunteers.invite",
     "schedules.view", "schedules.create", "schedules.edit", "schedules.publish",
@@ -506,7 +501,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "finance.view", "finance.create", "finance.edit", "finance.delete", "finance.export",
     "reports.view", "reports.export",
     "donation.view", "donation.create", "donation.edit", "donation.export",
-    "subscription.view", "subscription.create", "subscription.edit",
   ],
   volunteer: [
     "volunteer.self.view", "volunteer.self.checkin", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
@@ -754,76 +748,6 @@ export interface NotificationGroup {
   filters: Record<string, string>
   createdAt: string
   updatedAt: string
-}
-
-export interface SubscriptionPlan {
-  id: string
-  churchId: string
-  code: string
-  name: string
-  description: string
-  billingCycle: "daily" | "monthly" | "yearly"
-  billingInterval: number
-  autoRenew: boolean
-  discountType: "none" | "percentage" | "fixed"
-  discountValue: number
-  price: number
-  signupFee: number
-  active: boolean
-  createdAt: string
-}
-
-export interface SubscriptionTag {
-  id: string
-  churchId: string
-  name: string
-  createdAt: string
-}
-
-export interface Subscription {
-  id: string
-  churchId: string
-  userId: string
-  userName: string
-  planId: string
-  planName: string
-  price: number
-  startDate: string
-  endDate: string
-  status: "active" | "expired" | "suspended" | "pending" | "awaiting_payment"
-  createdAt: string
-}
-
-export interface SubscriptionContent {
-  id: string
-  churchId: string
-  title: string
-  description: string
-  tags: string[]
-  productionYear: string
-  contentType: "youtube" | "vimeo"
-  contentCode: string
-  highlightImage: string
-  coverImage: string
-  isDraft: boolean
-  isFeatured: boolean
-  isComingSoon: boolean
-  active: boolean
-  createdAt: string
-}
-
-export interface SubscriptionCollection {
-  id: string
-  churchId: string
-  title: string
-  description: string
-  tags: string[]
-  highlightImage: string
-  coverImage: string
-  isFeatured: boolean
-  isComingSoon: boolean
-  active: boolean
-  createdAt: string
 }
 
 export interface Revenue {

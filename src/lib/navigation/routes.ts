@@ -12,7 +12,6 @@ export const dashboardRoutes = {
   "donations": "/doacao",
   "events": "/eventos",
   "finance": "/financeiro",
-  "inpeace-play": "/inpeace-play",
   "kids": "/kids",
   "members": "/pessoas",
   "ministries": "/ministerios",

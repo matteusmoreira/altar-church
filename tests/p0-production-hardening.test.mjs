@@ -98,7 +98,6 @@ test("P1 operational dashboard routes use server-side module and permission layo
     doacao: ["donations", "donation.view"],
     eventos: ["events", "events.view"],
     financeiro: ["finance", "finance.view"],
-    "inpeace-play": ["inpeace-play", "subscription.view"],
     pessoas: ["members", "members.view"],
     ministerios: ["ministries", "ministries.view"],
     notificacao: ["notifications", "notification.view"],

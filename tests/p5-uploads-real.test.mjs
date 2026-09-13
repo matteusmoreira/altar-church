@@ -88,32 +88,18 @@ test("financial receipts use app_files for revenues, expenses and donations", ()
   assert.match(donationsPage, /name="receiptFile"/)
 })
 
-test("operational media uses app_files for reading plans and premium content", () => {
+test("operational media uses app_files for reading plans", () => {
   const migration = read("supabase/migrations/20260605140000_p5_operational_media_files.sql")
   const operationalActions = read("src/lib/operational/actions.ts")
-  const operationalData = read("src/lib/operational/data.ts")
   const readingPlansPage = read("src/app/(dashboard)/discipulado/page.tsx")
-  const inpeacePage = read("src/app/(dashboard)/inpeace-play/page.tsx")
 
   assert.match(migration, /alter table public\.reading_plans/i)
   assert.match(migration, /cover_file_id uuid references public\.app_files\(id\)/i)
-  assert.match(migration, /alter table public\.subscription_contents/i)
-  assert.match(migration, /highlight_file_id uuid references public\.app_files\(id\)/i)
-  assert.match(migration, /alter table public\.subscription_collections/i)
 
   assert.match(operationalActions, /attachOperationalMediaFile/)
   assert.match(operationalActions, /operational_media\.upload/)
   assert.match(operationalActions, /entityTable: "reading_plans"/)
-  assert.match(operationalActions, /entityTable: "subscription_contents"/)
-  assert.match(operationalActions, /entityTable: "subscription_collections"/)
   assert.match(operationalActions, /fileColumn: "cover_file_id"/)
-  assert.match(operationalActions, /fileColumn: "highlight_file_id"/)
-
-  assert.match(operationalData, /createSignedUrlsByStoragePath/)
-  assert.match(operationalData, /cover_file\.storage_path as cover_storage_path/)
-  assert.match(operationalData, /highlight_file\.storage_path as highlight_storage_path/)
 
   assert.match(readingPlansPage, /name="coverFile"/)
-  assert.match(inpeacePage, /name="highlightFile"/)
-  assert.match(inpeacePage, /name="coverFile"/)
 })

@@ -256,7 +256,6 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
     { path: "/celulas/saude", heading: /Saúde das células/i },
     { path: "/financeiro", heading: /Financeiro/i },
     { path: "/doacao", heading: /Doa/i },
-    { path: "/inpeace-play", heading: /InPeace Play/i },
     { path: "/relatorios", heading: /Relat/i },
   ]
 

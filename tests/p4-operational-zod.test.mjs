@@ -28,11 +28,6 @@ test("P4 operational server actions validate form payloads with Zod schemas", ()
     "supplierSchema",
     "donationSchema",
     "donationRecurrenceSchema",
-    "subscriptionPlanSchema",
-    "subscriptionTagSchema",
-    "subscriptionSchema",
-    "subscriptionContentSchema",
-    "subscriptionCollectionSchema",
   ]) {
     assert.match(actions, new RegExp(`const ${schema} = z\\.object`))
     assert.match(actions, new RegExp(`validateActionForm\\(formData, ${schema}\\)`))

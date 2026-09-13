@@ -12,7 +12,6 @@ const operationalPages = [
   "crm",
   "doacao",
   "financeiro",
-  "inpeace-play",
 ]
 
 test("operational dashboard pages do not import mock data", () => {

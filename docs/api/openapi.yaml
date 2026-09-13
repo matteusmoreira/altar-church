@@ -333,23 +333,6 @@ paths:
   /donations/recurrences:
     post:
       summary: Criar recorrência
-  /subscriptions:
-    get:
-      summary: Dados InPeace Play / assinaturas
-    post:
-      summary: Criar assinatura
-  /subscriptions/plans:
-    post:
-      summary: Criar plano
-  /subscriptions/tags:
-    post:
-      summary: Criar tag
-  /subscriptions/contents:
-    post:
-      summary: Criar conteúdo premium
-  /subscriptions/collections:
-    post:
-      summary: Criar coletânea
   /volunteers/dashboard:
     get:
       summary: Dashboard de voluntários

@@ -20,7 +20,6 @@ const friendlyRoutes = [
   "/conteudo",
   "/notificacao",
   "/comunicacao",
-  "/inpeace-play",
   "/presenca",
   "/crm",
   "/financeiro",
