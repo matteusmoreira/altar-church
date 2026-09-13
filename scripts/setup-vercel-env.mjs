@@ -52,6 +52,7 @@ const envVars = [
   { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", value: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, target: ["production", "preview", "development"], type: "plain" },
   { key: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", value: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, target: ["production", "preview", "development"], type: "plain" },
   { key: "NEXT_PUBLIC_VAPID_PUBLIC_KEY", value: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, target: ["production", "preview", "development"], type: "plain" },
+  { key: "PUBLIC_RATE_LIMIT_TRUSTED_PROXY", value: process.env.PUBLIC_RATE_LIMIT_TRUSTED_PROXY || "vercel", target: ["production", "preview"], type: "plain" },
 
   // Seguras (production only)
   { key: "SUPABASE_URL", value: process.env.SUPABASE_URL, target: ["production"], type: "encrypted" },

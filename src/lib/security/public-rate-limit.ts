@@ -25,9 +25,19 @@ export async function getPublicRequestAddress(): Promise<string | null> {
       ? headerStore.get("cf-connecting-ip")
       : provider === "nginx"
         ? headerStore.get("x-real-ip")
-        : null
+        : (
+            // Auto-detecção resiliente de headers padrão quando o provedor não estiver explicitamente configurado
+            headerStore.get("x-vercel-forwarded-for") ||
+            headerStore.get("cf-connecting-ip") ||
+            headerStore.get("x-real-ip") ||
+            headerStore.get("x-forwarded-for")
+          )
   const normalized = normalizeAddress(address)
   if (normalized) return normalized
+  // Fallback quando não há header de proxy ou provedor não configurado, evitando bloquear formulários legítimos
+  if (!provider || process.env.PUBLIC_RATE_LIMIT_FAIL_OPEN === "1") {
+    return "unknown"
+  }
   return process.env.NODE_ENV === "production" ? null : "unknown"
 }
 
@@ -38,24 +48,32 @@ export function hashPublicRateLimitKey(scope: string, resourceId: string, addres
 }
 
 export async function consumePublicRateLimit(input: PublicRateLimitInput) {
+  if (process.env.PUBLIC_RATE_LIMIT_DISABLED === "1") {
+    return true
+  }
   const limit = Math.max(1, Math.floor(input.limit))
   const address = await getPublicRequestAddress()
   if (!address) return false
   const ipHash = hashPublicRateLimitKey(input.scope, input.resourceId, address)
-  const rows = await getSql()<
-    { submission_count: number }[]
-  >`
-    insert into public.public_registration_rate_limits (
-      company_id, ip_hash, window_start, submission_count
-    )
-    values (${input.companyId}, ${ipHash}, date_trunc('hour', now()), 1)
-    on conflict (company_id, ip_hash, window_start)
-    do update set submission_count = public.public_registration_rate_limits.submission_count + 1,
-                  updated_at = now()
-    returning submission_count
-  `
-  schedulePublicRateLimitPrune()
-  return Number(rows[0]?.submission_count ?? 1) <= limit
+  try {
+    const rows = await getSql()<
+      { submission_count: number }[]
+    >`
+      insert into public.public_registration_rate_limits (
+        company_id, ip_hash, window_start, submission_count
+      )
+      values (${input.companyId}, ${ipHash}, date_trunc('hour', now()), 1)
+      on conflict (company_id, ip_hash, window_start)
+      do update set submission_count = public.public_registration_rate_limits.submission_count + 1,
+                    updated_at = now()
+      returning submission_count
+    `
+    schedulePublicRateLimitPrune()
+    return Number(rows[0]?.submission_count ?? 1) <= limit
+  } catch (error) {
+    console.error("[public-rate-limit] erro ao registrar rate limit", error)
+    return true // fail-open para não travar formulários legítimos em caso de indisponibilidade momentânea
+  }
 }
 
 function schedulePublicRateLimitPrune() {

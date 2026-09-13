@@ -1,7 +1,4 @@
 import { GroupsClient } from "../gceus/groups-client"
-import Link from "next/link"
-import { Activity } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { CellFeaturesClient } from "./cell-features-client"
 import { getCellFeaturesData } from "@/lib/cells/data"
 import { getGroupFormOptions, getGroupsDashboardData, listGroupMeetingReports, listGroupMembers, listGroups } from "@/lib/groups/data"
@@ -16,6 +13,7 @@ export default async function CellsPage({ searchParams }: { searchParams?: Promi
 
   const params = (await searchParams) ?? {}
   const page = Number(first(params.page))
+  const aba = first(params.aba)
   const filters: GroupListFilters = {
     search: first(params.search)?.trim() ?? "",
     categoryId: first(params.categoryId) ?? "all",
@@ -29,10 +27,15 @@ export default async function CellsPage({ searchParams }: { searchParams?: Promi
     listGroups(filters), getGroupsDashboardData(), getGroupFormOptions(), listGroupMeetingReports(), listGroupMembers(),
   ])
   return (
-    <div className="space-y-8">
-      <div className="flex justify-end"><Button render={<Link href="/celulas/saude" />} nativeButton={false} variant="outline"><Activity className="h-4 w-4" /> Saúde das células</Button></div>
-      <GroupsClient dashboard={dashboard} filters={filters} formOptions={formOptions} groupsResult={groupsResult} members={members} meetings={meetings} />
-      <CellFeaturesClient data={features} />
-    </div>
+    <GroupsClient
+      dashboard={dashboard}
+      filters={filters}
+      formOptions={formOptions}
+      groupsResult={groupsResult}
+      members={members}
+      meetings={meetings}
+      cellFeatures={features}
+      initialTab={aba}
+    />
   )
 }

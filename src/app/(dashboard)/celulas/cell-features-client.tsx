@@ -193,7 +193,7 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   }
 
   const advancedOperations = (
-    <Card className="glass"><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Operação avançada de Células</CardTitle><CardDescription>Reuniões, resumo, estudos, QR, presença, mural, oração e avisos.</CardDescription></div><Button data-testid="cell-meeting-create-button" type="button" disabled={pending || data.cells.length === 0} onClick={() => setMeetingDialogOpen(true)}><CalendarPlus />Nova reunião</Button></CardHeader><CardContent>
+    <Card className="glass"><CardHeader className="flex flex-row items-start justify-between gap-4"><div><CardTitle>Gestão de Células</CardTitle><CardDescription>Estudos bíblicos, Check-in via QR Code, Presenças, Resumo geral, Mural de fotos, Oração e Avisos.</CardDescription></div><Button data-testid="cell-meeting-create-button" type="button" disabled={pending || data.cells.length === 0} onClick={() => setMeetingDialogOpen(true)}><CalendarPlus />Nova reunião</Button></CardHeader><CardContent>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex h-auto flex-wrap"><TabsTrigger value="estudos"><BookOpen />Estudos</TabsTrigger><TabsTrigger value="checkin"><QrCode />Check-in</TabsTrigger><TabsTrigger value="resumo"><BarChart3 />Resumo</TabsTrigger><TabsTrigger value="mural"><Camera />Mural</TabsTrigger><TabsTrigger value="oracao"><Heart />Oração</TabsTrigger><TabsTrigger value="avisos"><Megaphone />Avisos</TabsTrigger></TabsList>
 

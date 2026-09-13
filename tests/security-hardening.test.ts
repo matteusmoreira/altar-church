@@ -68,4 +68,7 @@ test("fluxos corrigidos mantêm invariantes de tenant e rate limit público", ()
   assert.match(v2, /replacement\.company_id = \$\{companyId\}/)
   assert.match(v2, /membership\.company_id = volunteer\.company_id/)
   assert.match(publicRateLimit, /if \(!address\) return false/)
+  assert.match(publicRateLimit, /x-vercel-forwarded-for/)
+  assert.match(publicRateLimit, /PUBLIC_RATE_LIMIT_DISABLED/)
 })
+

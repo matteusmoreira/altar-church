@@ -1404,6 +1404,82 @@ const movePersonToKanbanSchema = z.object({
   stageId: optionalUuidField,
 })
 
+const moveCrmCardSchema = z.object({
+  cardId: requiredUuidField,
+  stageId: requiredUuidField,
+})
+
+export async function moveCrmCardStage(input: {
+  cardId: string
+  stageId: string
+}): Promise<ActionResult> {
+  try {
+    const parsed = moveCrmCardSchema.parse(input)
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, null)
+    await requirePermission("crm.edit", companyId)
+
+    const stageId = await resolveCrmStageId(companyId, parsed.stageId)
+    const sql = getSql()
+    const rows = await sql<
+      {
+        id: string
+        person_id: string | null
+        person_name: string
+        person_phone: string
+        person_email: string
+        source: string
+        notes: string
+      }[]
+    >`
+      update public.crm_cards
+      set stage_id = ${stageId},
+          updated_by = ${user.id}
+      where id = ${parsed.cardId}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id, person_id, person_name, person_phone, person_email, source, notes
+    `
+    const updatedCard = rows[0]
+    if (!updatedCard) throw new Error("Card não encontrado")
+
+    await audit("crm_card.move", "crm_cards", updatedCard.id, companyId)
+
+    try {
+      const { enqueueIntegrationEventSafe } = await import("@/lib/integrations/enqueue")
+      await enqueueIntegrationEventSafe({
+        companyId,
+        eventType: "crm.card.updated",
+        eventKey: `crm.card.updated:${updatedCard.id}:${Date.now()}`,
+        data: {
+          crmCard: {
+            id: updatedCard.id,
+            personId: updatedCard.person_id,
+            personName: updatedCard.person_name,
+            personPhone: updatedCard.person_phone,
+            personEmail: updatedCard.person_email,
+            stageId,
+            source: updatedCard.source,
+            notes: updatedCard.notes,
+          },
+        },
+      })
+      afterResponse("integration outbox", async () => {
+        const { processIntegrationOutbox } = await import("@/lib/integrations/deliver")
+        await processIntegrationOutbox(25)
+      })
+    } catch (integrationError) {
+      console.error("[integrations] crm card emit failed", integrationError)
+    }
+
+    refresh(["/crm", "/dashboard"])
+    return { ok: true, id: updatedCard.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function movePersonToKanbanStage(input: {
   personId: string
   stageId?: string | null

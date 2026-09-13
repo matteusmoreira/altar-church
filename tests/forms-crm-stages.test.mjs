@@ -61,3 +61,24 @@ test("form defaults and builder expose automation variables", () => {
   assert(builder.includes("suggestVariableFromLabel"))
   assert(builder.includes("formatAutomationVar"))
 })
+
+test("crm board supports card drag-and-drop, quick move, whatsapp and search", () => {
+  const actions = readFileSync("src/lib/operational/actions.ts", "utf8")
+  const crmClient = readFileSync("src/app/(dashboard)/crm/crm-client.tsx", "utf8")
+
+  assert(actions.includes("export async function moveCrmCardStage"), "missing moveCrmCardStage action")
+  assert(actions.includes("moveCrmCardSchema"), "missing moveCrmCardSchema validation")
+  assert(actions.includes('audit("crm_card.move"'), "move action must record audit log")
+
+  assert(crmClient.includes("moveCrmCardStage"), "CRM client must call moveCrmCardStage")
+  assert(crmClient.includes("draggable"), "cards must be draggable")
+  assert(crmClient.includes("handleDragStart"), "missing handleDragStart")
+  assert(crmClient.includes("handleDrop"), "missing handleDrop")
+  assert(crmClient.includes("handleDragOver"), "missing handleDragOver")
+  assert(crmClient.includes("handleMoveCard"), "missing handleMoveCard")
+  assert(crmClient.includes("wa.me"), "missing direct WhatsApp link")
+  assert(crmClient.includes("searchTerm"), "missing quick search filter")
+  assert(crmClient.includes("Mover para"), "missing quick move submenu for mobile/accessibility")
+})
+
+

@@ -1,18 +1,23 @@
 "use client"
 
-import { FormEvent, useMemo, useState, useTransition } from "react"
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
+  Activity,
   CalendarDays,
   Edit,
   Filter,
+  LayoutGrid,
+  List,
   MapPin,
   MoreVertical,
   Network,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   UserCheck,
   UsersRound,
@@ -35,13 +40,16 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CellFeaturesClient } from "../celulas/cell-features-client"
+import type { CellFeaturesData } from "@/lib/cells/types"
 import type {
   GroupDashboardData,
   GroupCategory,
@@ -90,13 +98,15 @@ type FilterState = {
   meetingDay: string
 }
 
-interface GroupsClientProps {
+export interface GroupsClientProps {
   dashboard: GroupDashboardData
   filters: GroupListFilters
   formOptions: GroupFormOptions
   groupsResult: GroupListResult
   members: GroupMember[]
   meetings: GroupMeeting[]
+  cellFeatures?: CellFeaturesData
+  initialTab?: string
 }
 
 const typeLabels: Record<GroupType, string> = {
@@ -228,7 +238,16 @@ function Metric({ title, value, icon: Icon }: { title: string; value: string | n
   )
 }
 
-export function GroupsClient({ dashboard, filters, formOptions, groupsResult, members, meetings }: GroupsClientProps) {
+export function GroupsClient({
+  dashboard,
+  filters,
+  formOptions,
+  groupsResult,
+  members,
+  meetings,
+  cellFeatures,
+  initialTab,
+}: GroupsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [isPending, startTransition] = useTransition()
@@ -248,6 +267,44 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
     meetingDay: filters.meetingDay ?? "all",
   })
 
+  const [activeTab, setActiveTab] = useState(initialTab || "celulas")
+  const [selectedCellForOps, setSelectedCellForOps] = useState<string>(groupsResult.groups[0]?.id ?? "")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("altar_cells_view_mode")
+      if (saved === "grid" || saved === "list") {
+        setViewMode(saved)
+      }
+    } catch {
+      // ignore in environments with restricted storage
+    }
+  }, [])
+
+  function handleTabChange(tab: string) {
+    setActiveTab(tab)
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      params.set("aba", tab)
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    }
+  }
+
+  function handleViewModeChange(mode: "grid" | "list") {
+    setViewMode(mode)
+    try {
+      localStorage.setItem("altar_cells_view_mode", mode)
+    } catch {
+      // ignore
+    }
+  }
+
+  function goToCellParticipants(groupId: string) {
+    setSelectedCellForOps(groupId)
+    handleTabChange("participantes")
+  }
+
   const categories = useMemo(() => {
     const byId = new Map([...formOptions.categories, ...createdCategories].map((category) => [category.id, category]))
     return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name))
@@ -255,7 +312,10 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const currentParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
     const params = new URLSearchParams()
+    const currentAba = currentParams.get("aba") || activeTab
+    if (currentAba) params.set("aba", currentAba)
     if (filterState.search.trim()) params.set("search", filterState.search.trim())
     if (filterState.categoryId !== "all") params.set("categoryId", filterState.categoryId)
     params.set("type", "cell")
@@ -265,7 +325,10 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
   }
 
   function goToPage(page: number) {
+    const currentParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
     const params = new URLSearchParams()
+    const currentAba = currentParams.get("aba") || activeTab
+    if (currentAba) params.set("aba", currentAba)
     if (filters.search) params.set("search", filters.search)
     if (filters.categoryId && filters.categoryId !== "all") params.set("categoryId", filters.categoryId)
     if (filters.type && filters.type !== "all") params.set("type", filters.type)
@@ -355,196 +418,426 @@ export function GroupsClient({ dashboard, filters, formOptions, groupsResult, me
   return (
     <div className="space-y-6">
       <PageHeader title="Células" description="Gestão de células, supervisão, liderança, participantes e encontros.">
-        <Button onClick={openCreate} className="gradient-primary">
-          <Plus className="mr-2 h-4 w-4" />
-          Nova célula
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button render={<Link href="/celulas/saude" />} nativeButton={false} variant="outline">
+            <Activity className="mr-2 h-4 w-4 text-emerald-500" />
+            Saúde das células
+          </Button>
+          <Button onClick={openCreate} className="gradient-primary">
+            <Plus className="mr-2 h-4 w-4" />
+            Nova célula
+          </Button>
+        </div>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric title="Células" value={dashboard.total} icon={Network} />
-        <Metric title="Ativos" value={dashboard.active} icon={UserCheck} />
-        <Metric title="Inativos" value={dashboard.inactive} icon={Filter} />
-        <Metric title="Participantes" value={dashboard.members} icon={UsersRound} />
-        <Metric title="Vagas abertas" value={dashboard.openCapacity} icon={CalendarDays} />
-      </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 h-auto p-1 bg-muted/60">
+          <TabsTrigger value="celulas" className="flex items-center gap-2 py-2.5">
+            <Network className="h-4 w-4" />
+            <span>Células</span>
+          </TabsTrigger>
+          <TabsTrigger value="participantes" className="flex items-center gap-2 py-2.5">
+            <UsersRound className="h-4 w-4" />
+            <span>Participantes</span>
+          </TabsTrigger>
+          <TabsTrigger value="reunioes" className="flex items-center gap-2 py-2.5">
+            <CalendarDays className="h-4 w-4" />
+            <span>Reuniões</span>
+          </TabsTrigger>
+          <TabsTrigger value="gestao" className="flex items-center gap-2 py-2.5">
+            <Sparkles className="h-4 w-4" />
+            <span>Gestão de Células</span>
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
-          <CardDescription>Busque por nome, descrição, líder, categoria, tipo e dia da semana.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-6">
-            <div className="relative md:col-span-2">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={filterState.search}
-                onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-                className="pl-9 md:pl-9"
-                placeholder="Buscar célula ou líder"
-              />
-            </div>
-            <Select value={filterState.categoryId} onValueChange={(value) => setFilterState({ ...filterState, categoryId: value ?? "all" })}>
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {filterState.categoryId === "all"
-                    ? "Todas categorias"
-                    : categories.find((category) => category.id === filterState.categoryId)?.name ?? "Todas categorias"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas categorias</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filterState.status} onValueChange={(value) => setFilterState({ ...filterState, status: value ?? "all" })}>
-              <SelectTrigger className="w-full">
-                <SelectValue>{filterState.status === "all" ? "Todos status" : filterState.status === "active" ? "Ativos" : "Inativos"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos status</SelectItem>
-                <SelectItem value="active">Ativos</SelectItem>
-                <SelectItem value="inactive">Inativos</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button type="submit">
-              <Filter className="mr-2 h-4 w-4" />
-              Filtrar
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        {/* ABA 1: CÉLULAS */}
+        <TabsContent value="celulas" className="space-y-6 mt-0">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Metric title="Células" value={dashboard.total} icon={Network} />
+            <Metric title="Ativos" value={dashboard.active} icon={UserCheck} />
+            <Metric title="Inativos" value={dashboard.inactive} icon={Filter} />
+            <Metric title="Participantes" value={dashboard.members} icon={UsersRound} />
+            <Metric title="Vagas abertas" value={dashboard.openCapacity} icon={CalendarDays} />
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Células cadastradas</CardTitle>
-          <CardDescription>{groupsResult.total} células encontradas</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {groupsResult.groups.length === 0 ? (
-            <EmptyState
-              icon={UsersRound}
-              title="Nenhuma célula encontrada"
-              description="Crie a primeira célula para iniciar o acompanhamento."
-              action={<Button onClick={openCreate}>Criar célula</Button>}
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Célula</TableHead>
-                    <TableHead>Liderança</TableHead>
-                    <TableHead>Encontro</TableHead>
-                    <TableHead>Participantes</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-12" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {groupsResult.groups.map((group) => (
-                    <TableRow key={group.id}>
-                      <TableCell>
-                        <div className="max-w-md">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium">{group.name}</p>
-                            <Badge className={typeColors[group.type]}>{typeLabels[group.type]}</Badge>
-                          </div>
-                          <p className="line-clamp-1 text-sm text-muted-foreground">{group.categoryName ?? "Sem categoria"} · {group.description || "Sem descrição"}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <p>{group.leaderName ?? "Sem líder"}</p>
-                        {group.coLeaderName && <p className="text-xs text-muted-foreground">Vice: {group.coLeaderName}</p>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <p>{group.meetingDay || "Sem dia"} {group.meetingTime ? `às ${group.meetingTime.slice(0, 5)}` : ""}</p>
-                          <p className="flex items-center gap-1 text-muted-foreground">
-                            <MapPin className="h-3.5 w-3.5" />
-                            {group.meetingLocation || group.city || "-"}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>{group.memberCount}/{group.maxCapacity || "-"}</TableCell>
-                      <TableCell>
-                        {group.isActive ? <Badge className="border-success/20 bg-success/10 text-success">Ativo</Badge> : <Badge variant="secondary">Inativo</Badge>}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            disabled={isPending}
-                            aria-label={`Ações de ${group.name}`}
-                            className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(group)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive" onClick={() => openDelete(group)}>
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {groupsResult.pageCount > 1 && (
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <Button variant="outline" disabled={groupsResult.page <= 1} onClick={() => goToPage(groupsResult.page - 1)}>
-                Anterior
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Página {groupsResult.page} de {groupsResult.pageCount}
-              </span>
-              <Button variant="outline" disabled={groupsResult.page >= groupsResult.pageCount} onClick={() => goToPage(groupsResult.page + 1)}>
-                Próxima
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <GroupOperationsPanel
-        formOptions={formOptions}
-        groups={groupsResult.groups}
-        members={members}
-        meetings={meetings}
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Reuniões recentes</CardTitle>
-          <CardDescription>Relatórios e agenda de encontros persistidos.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {meetings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma reunião futura registrada.</p>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {meetings.map((meeting) => (
-                <div key={meeting.id} className="rounded-lg border p-4">
-                  <p className="font-medium">{meeting.title || meeting.groupName}</p>
-                  <p className="text-sm text-muted-foreground">{meeting.groupName}</p>
-                  <p className="mt-2 text-sm">{formatDate(meeting.startsAt)}</p>
+          <Card>
+            <CardHeader>
+              <CardTitle>Filtros</CardTitle>
+              <CardDescription>Busque por nome, descrição, líder, categoria, tipo e dia da semana.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-6">
+                <div className="relative md:col-span-2">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={filterState.search}
+                    onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
+                    className="pl-9 md:pl-9"
+                    placeholder="Buscar célula ou líder"
+                  />
                 </div>
-              ))}
-            </div>
+                <Select value={filterState.categoryId} onValueChange={(value) => setFilterState({ ...filterState, categoryId: value ?? "all" })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      {filterState.categoryId === "all"
+                        ? "Todas categorias"
+                        : categories.find((category) => category.id === filterState.categoryId)?.name ?? "Todas categorias"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas categorias</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterState.status} onValueChange={(value) => setFilterState({ ...filterState, status: value ?? "all" })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>{filterState.status === "all" ? "Todos status" : filterState.status === "active" ? "Ativos" : "Inativos"}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos status</SelectItem>
+                    <SelectItem value="active">Ativos</SelectItem>
+                    <SelectItem value="inactive">Inativos</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button type="submit">
+                  <Filter className="mr-2 h-4 w-4" />
+                  Filtrar
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>Células cadastradas</CardTitle>
+                <CardDescription>{groupsResult.total} células encontradas</CardDescription>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1">
+                <Button
+                  type="button"
+                  variant={viewMode === "grid" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 px-2.5 text-xs gap-1.5"
+                  onClick={() => handleViewModeChange("grid")}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  Grade
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === "list" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 px-2.5 text-xs gap-1.5"
+                  onClick={() => handleViewModeChange("list")}
+                >
+                  <List className="h-4 w-4" />
+                  Lista
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {groupsResult.groups.length === 0 ? (
+                <EmptyState
+                  icon={UsersRound}
+                  title="Nenhuma célula encontrada"
+                  description="Crie a primeira célula para iniciar o acompanhamento."
+                  action={<Button onClick={openCreate}>Criar célula</Button>}
+                />
+              ) : viewMode === "grid" ? (
+                /* GRID / CARDS VIEW */
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {groupsResult.groups.map((group) => {
+                    const memberCount = group.memberCount || 0
+                    const maxCapacity = group.maxCapacity || 0
+                    const occupancyPercent = maxCapacity > 0 ? Math.min(100, Math.round((memberCount / maxCapacity) * 100)) : 0
+                    const openSpots = maxCapacity > 0 ? Math.max(0, maxCapacity - memberCount) : null
+
+                    return (
+                      <Card key={group.id} className="flex flex-col justify-between overflow-hidden border-border/80 transition-all hover:shadow-md hover:border-primary/40">
+                        <CardHeader className="pb-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="font-semibold text-lg leading-snug">{group.name}</h3>
+                                <Badge className={typeColors[group.type]}>{typeLabels[group.type]}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {group.categoryName ?? "Sem categoria"}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {group.isActive ? (
+                                <Badge className="border-success/20 bg-success/10 text-success text-xs">Ativo</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Inativo</Badge>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  disabled={isPending}
+                                  aria-label={`Ações de ${group.name}`}
+                                  className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => goToCellParticipants(group.id)}>
+                                    <UsersRound className="mr-2 h-4 w-4" />
+                                    Ver participantes
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => openEdit(group)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="text-destructive" onClick={() => openDelete(group)}>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Excluir
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                          {group.description && (
+                            <p className="line-clamp-2 text-xs text-muted-foreground">{group.description}</p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-3 pb-3 text-sm">
+                          <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <UserCheck className="h-3.5 w-3.5 text-primary" />
+                              <span>Liderança:</span>
+                              <span className="font-medium text-foreground">{group.leaderName ?? "Sem líder"}</span>
+                            </div>
+                            {group.coLeaderName && (
+                              <div className="text-xs text-muted-foreground pl-5">
+                                Vice: <span className="font-medium text-foreground">{group.coLeaderName}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              <CalendarDays className="h-3.5 w-3.5 text-primary/80" />
+                              <span>
+                                {group.meetingDay || "Dia não definido"}
+                                {group.meetingTime ? ` às ${group.meetingTime.slice(0, 5)}` : ""}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="h-3.5 w-3.5 text-primary/80" />
+                              <span className="line-clamp-1">{group.meetingLocation || group.city || "Local não informado"}</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 pt-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-muted-foreground">Participantes:</span>
+                              <span className="font-medium">
+                                {memberCount} {maxCapacity > 0 ? `/ ${maxCapacity}` : "membros"}
+                                {openSpots !== null && <span className="text-muted-foreground ml-1">({openSpots} vagas)</span>}
+                              </span>
+                            </div>
+                            {maxCapacity > 0 && (
+                              <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                                <div
+                                  className={`h-full transition-all ${
+                                    occupancyPercent >= 90 ? "bg-amber-500" : "bg-primary"
+                                  }`}
+                                  style={{ width: `${occupancyPercent}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                        <CardFooter className="pt-2 border-t bg-muted/20 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs"
+                            onClick={() => goToCellParticipants(group.id)}
+                          >
+                            <UsersRound className="mr-1.5 h-3.5 w-3.5" />
+                            Participantes
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => openEdit(group)}
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </CardFooter>
+                      </Card>
+                    )
+                  })}
+                </div>
+              ) : (
+                /* TABLE / LIST VIEW */
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Célula</TableHead>
+                        <TableHead>Liderança</TableHead>
+                        <TableHead>Encontro</TableHead>
+                        <TableHead>Participantes</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-12" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupsResult.groups.map((group) => (
+                        <TableRow key={group.id}>
+                          <TableCell>
+                            <div className="max-w-md">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium">{group.name}</p>
+                                <Badge className={typeColors[group.type]}>{typeLabels[group.type]}</Badge>
+                              </div>
+                              <p className="line-clamp-1 text-sm text-muted-foreground">{group.categoryName ?? "Sem categoria"} · {group.description || "Sem descrição"}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <p>{group.leaderName ?? "Sem líder"}</p>
+                            {group.coLeaderName && <p className="text-xs text-muted-foreground">Vice: {group.coLeaderName}</p>}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1 text-sm">
+                              <p>{group.meetingDay || "Sem dia"} {group.meetingTime ? `às ${group.meetingTime.slice(0, 5)}` : ""}</p>
+                              <p className="flex items-center gap-1 text-muted-foreground">
+                                <MapPin className="h-3.5 w-3.5" />
+                                {group.meetingLocation || group.city || "-"}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{group.memberCount}/{group.maxCapacity || "-"}</TableCell>
+                          <TableCell>
+                            {group.isActive ? <Badge className="border-success/20 bg-success/10 text-success">Ativo</Badge> : <Badge variant="secondary">Inativo</Badge>}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                disabled={isPending}
+                                aria-label={`Ações de ${group.name}`}
+                                className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => goToCellParticipants(group.id)}>
+                                  <UsersRound className="mr-2 h-4 w-4" />
+                                  Ver participantes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openEdit(group)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive" onClick={() => openDelete(group)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {groupsResult.pageCount > 1 && (
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <Button variant="outline" disabled={groupsResult.page <= 1} onClick={() => goToPage(groupsResult.page - 1)}>
+                    Anterior
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Página {groupsResult.page} de {groupsResult.pageCount}
+                  </span>
+                  <Button variant="outline" disabled={groupsResult.page >= groupsResult.pageCount} onClick={() => goToPage(groupsResult.page + 1)}>
+                    Próxima
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ABA 2: PARTICIPANTES */}
+        <TabsContent value="participantes" className="space-y-6 mt-0">
+          <GroupOperationsPanel
+            formOptions={formOptions}
+            groups={groupsResult.groups}
+            members={members}
+            meetings={meetings}
+            viewMode="members"
+            selectedGroupId={selectedCellForOps}
+            onSelectedGroupChange={setSelectedCellForOps}
+          />
+        </TabsContent>
+
+        {/* ABA 3: REUNIÕES */}
+        <TabsContent value="reunioes" className="space-y-6 mt-0">
+          <GroupOperationsPanel
+            formOptions={formOptions}
+            groups={groupsResult.groups}
+            members={members}
+            meetings={meetings}
+            viewMode="meetings"
+            selectedGroupId={selectedCellForOps}
+            onSelectedGroupChange={setSelectedCellForOps}
+          />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Reuniões recentes e futuras da igreja</CardTitle>
+              <CardDescription>Agenda consolidada de todas as células.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {meetings.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma reunião futura registrada.</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  {meetings.map((meeting) => (
+                    <div key={meeting.id} className="rounded-lg border p-4 bg-card/60 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-semibold text-base">{meeting.title || meeting.groupName}</p>
+                        <Badge variant="outline">{meeting.groupName}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                        {formatDate(meeting.startsAt)}
+                      </p>
+                      {meeting.location && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5" />
+                          {meeting.location}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ABA 4: GESTÃO DE CÉLULAS */}
+        <TabsContent value="gestao" className="space-y-6 mt-0">
+          {cellFeatures ? (
+            <CellFeaturesClient data={cellFeatures} />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
+                Recursos de gestão não disponíveis neste momento.
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
