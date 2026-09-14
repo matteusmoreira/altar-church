@@ -329,7 +329,7 @@ export function CellFormFields({
       </div>
       <div className="grid gap-2">
         <Label>Horário</Label>
-        <Input data-testid="group-time-input" type="time" value={form.meetingTime} onChange={(event) => onChange({ meetingTime: event.target.value })} />
+        <Input data-testid="group-time-input" type="time" value={form.meetingTime ? form.meetingTime.slice(0, 5) : ""} onChange={(event) => onChange({ meetingTime: event.target.value })} />
       </div>
       <div className="grid gap-4 rounded-lg border p-4 md:col-span-2">
         <div>

@@ -32,6 +32,7 @@ export interface ChurchProfileData {
 export interface ChurchInfoMinistry {
   id: string
   name: string
+  slug: string
   leaderName: string
   memberCount: number
   isActive: boolean

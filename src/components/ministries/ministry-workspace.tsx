@@ -151,6 +151,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
   const [selectedPersonId, setSelectedPersonId] = useState("")
   const [profileForm, setProfileForm] = useState({
     name: profile.name,
+    slug: profile.slug || "",
     ministryType: profile.ministryType,
     mission: profile.mission,
     description: profile.description,
@@ -346,6 +347,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
               Workspace
             </Badge>
             <Badge>{profile.isActive ? "Ativo" : "Inativo"}</Badge>
+            {profile.slug && (
+              <Badge variant="secondary" className="font-mono text-xs text-muted-foreground">
+                /ministerios/{profile.slug}
+              </Badge>
+            )}
           </div>
           <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{profile.name}</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{profile.mission || profile.description || "Centro operacional do ministério."}</p>
@@ -2548,11 +2554,12 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                 className="space-y-6"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  run(
-                    () =>
-                      saveMinistryProfile({
+                  startTransition(async () => {
+                    try {
+                      const result = await saveMinistryProfile({
                         ministryId: profile.id,
                         name: profileForm.name,
+                        slug: profileForm.slug || undefined,
                         ministryType: profileForm.ministryType,
                         mission: profileForm.mission,
                         description: profileForm.description,
@@ -2564,9 +2571,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         meetingLocation: profileForm.meetingLocation,
                         publicJoinEnabled: profileForm.publicJoinEnabled,
                         isActive: profileForm.isActive,
-                      }),
-                    "Configurações salvas",
-                  )
+                      })
+                      if (!result.ok) {
+                        toast.error(result.error ?? "Não foi possível salvar as configurações")
+                      } else {
+                        toast.success("Configurações salvas")
+                        const newSlug = (result.data as { slug?: string } | undefined)?.slug
+                        if (newSlug && newSlug !== profile.slug) {
+                          router.replace(`/ministerios/${newSlug}`)
+                        } else {
+                          router.refresh()
+                        }
+                      }
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível salvar as configurações")
+                    }
+                  })
                 }}
               >
                 <section className="space-y-3">
@@ -2574,7 +2594,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     <h3 className="font-semibold">Identidade</h3>
                     <p className="text-sm text-muted-foreground">Como o ministério aparece para a igreja.</p>
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <Field label="Nome do ministério" help="Ex.: Ministério de Homens.">
                       <Input
                         required
@@ -2586,6 +2606,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           })
                         }
                       />
+                    </Field>
+                    <Field label="Link amigável (slug)" help="Ex.: /ministerios/homens">
+                      <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring focus-within:border-input">
+                        <span>/ministerios/</span>
+                        <Input
+                          value={profileForm.slug}
+                          onChange={(event) =>
+                            setProfileForm({
+                              ...profileForm,
+                              slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                            })
+                          }
+                          placeholder="ex: homens"
+                          className="border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+                        />
+                      </div>
                     </Field>
                     <Field label="Tipo" help="Ajuda a organizar relatórios e filtros.">
                       <Select

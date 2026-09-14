@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale"
 import { Edit, Grid2X2, Heart, List, MoreVertical, Plus, Search, Trash2, User, Users } from "lucide-react"
 import { toast } from "sonner"
 import { deleteMinistry, saveMinistry } from "@/lib/pastoral/actions"
+import { slugifyMinistry } from "@/lib/ministries/slug"
 import type { MinistriesListResult, MinistryListItem, PastoralListFilters } from "@/lib/pastoral/types"
 import {
   AlertDialog,
@@ -57,6 +58,7 @@ interface MinistryFormState {
   id: string | null
   companyId: string | null
   name: string
+  slug: string
   description: string
   contact: string
   leaderPersonId: string
@@ -72,6 +74,7 @@ const emptyForm: MinistryFormState = {
   id: null,
   companyId: null,
   name: "",
+  slug: "",
   description: "",
   contact: "",
   leaderPersonId: "",
@@ -116,6 +119,7 @@ function ministryToForm(ministry: MinistryListItem): MinistryFormState {
     id: ministry.id,
     companyId: ministry.companyId,
     name: ministry.name,
+    slug: ministry.slug || "",
     description: ministry.description,
     contact: ministry.contact,
     leaderPersonId: ministry.leaderPersonId ?? "",
@@ -183,6 +187,7 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
       id: formData.id,
       companyId: formData.companyId,
       name: formData.name,
+      slug: formData.slug || undefined,
       description: formData.description,
       contact: formData.contact,
       leaderPersonId: formData.leaderPersonId || null,
@@ -396,7 +401,7 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
                 </div>
                 <p className="text-xs">Atualizado em {formatDate(ministry.updatedAt)}</p>
               </div>
-              <Link href={`/ministerios/${ministry.id}`} className={viewMode === "grid" ? "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground" : "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto sm:min-w-36"}>Abrir gestão</Link>
+              <Link href={`/ministerios/${ministry.slug || ministry.id}`} className={viewMode === "grid" ? "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground" : "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto sm:min-w-36"}>Abrir gestão</Link>
             </CardContent>
           </Card>
         ))}
@@ -446,9 +451,38 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
               <Label>Nome *</Label>
               <Input
                 value={formData.name}
-                onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                onChange={(event) => {
+                  const nextName = event.target.value
+                  const currentAutoSlug = slugifyMinistry(formData.name)
+                  const shouldAutoSlug = !formData.slug || formData.slug === currentAutoSlug
+                  setFormData({
+                    ...formData,
+                    name: nextName,
+                    slug: shouldAutoSlug ? slugifyMinistry(nextName) : formData.slug,
+                  })
+                }}
                 placeholder="Nome do ministério"
               />
+            </div>
+            <div className="grid gap-2">
+              <Label>Link de acesso amigável (slug)</Label>
+              <div className="flex items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground focus-within:ring-2 focus-within:ring-ring focus-within:border-input">
+                <span>/ministerios/</span>
+                <Input
+                  value={formData.slug}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    })
+                  }
+                  placeholder="ex: homens"
+                  className="border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ex.: /ministerios/homens. Se deixar em branco, geramos automaticamente.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label>Descrição</Label>

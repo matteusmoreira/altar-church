@@ -372,7 +372,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       name: row.name,
       description: row.description,
       meetingDay: row.meeting_day,
-      meetingTime: row.meeting_time,
+      meetingTime: row.meeting_time ? row.meeting_time.slice(0, 5) : null,
       meetingLocation: row.meeting_location,
       postalCode: row.postal_code,
       addressNumber: row.address_number,

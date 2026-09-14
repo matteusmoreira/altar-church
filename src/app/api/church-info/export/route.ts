@@ -8,9 +8,9 @@ function todayStamp() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function safeFileSlug(name: string) {
+function safeFileSlug(name?: string | null) {
   return (
-    name
+    String(name ?? "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
@@ -24,6 +24,11 @@ export async function GET(request: NextRequest) {
     const { companyId } = await requireExportContext(request.nextUrl.searchParams, "settings.edit")
     const format = (request.nextUrl.searchParams.get("format") ?? "xlsx").toLowerCase()
     const data = await getChurchInfoData(companyId)
+
+    const socialLinks = data.socialLinks ?? []
+    const congregations = data.congregations ?? []
+    const ministries = data.ministries ?? []
+    const programmings = data.programmings ?? []
 
     const rows: (string | number | boolean | null | undefined)[][] = [
       ["DADOS INSTITUCIONAIS DA IGREJA"],
@@ -42,7 +47,7 @@ export async function GET(request: NextRequest) {
       [],
       ["REDES SOCIAIS"],
       ["Plataforma", "URL", "Ativo"],
-      ...data.socialLinks.map((social) => [
+      ...socialLinks.map((social) => [
         social.platform,
         social.url || "-",
         social.isActive ? "Sim" : "Não",
@@ -50,7 +55,7 @@ export async function GET(request: NextRequest) {
       [],
       ["CONGREGAÇÕES VINCULADAS"],
       ["Nome", "Endereço", "Responsável", "Status"],
-      ...data.congregations.map((congregation) => [
+      ...congregations.map((congregation) => [
         congregation.name,
         congregation.address || "-",
         congregation.responsible || "-",
@@ -59,7 +64,7 @@ export async function GET(request: NextRequest) {
       [],
       ["MINISTÉRIOS CADASTRADOS"],
       ["Nome", "Líder", "Membros", "Status"],
-      ...data.ministries.map((ministry) => [
+      ...ministries.map((ministry) => [
         ministry.name,
         ministry.leaderName || "-",
         ministry.memberCount,
@@ -68,7 +73,7 @@ export async function GET(request: NextRequest) {
       [],
       ["PROGRAMAÇÃO"],
       ["Título", "Data", "Ao Vivo", "Status"],
-      ...data.programmings.map((prog) => [
+      ...programmings.map((prog) => [
         prog.title,
         prog.startsAt || "-",
         prog.isLive ? "Sim" : "Não",
@@ -78,7 +83,7 @@ export async function GET(request: NextRequest) {
 
     await auditExport("church-info.export", "church_profiles", companyId, format)
 
-    const filename = `igreja-${safeFileSlug(data.profile.publicName)}-${todayStamp()}`
+    const filename = `igreja-${safeFileSlug(data.profile.publicName || data.profile.companyName)}-${todayStamp()}`
 
     if (format === "csv") {
       return csvResponse(`${filename}.csv`, rows as CsvCell[][])

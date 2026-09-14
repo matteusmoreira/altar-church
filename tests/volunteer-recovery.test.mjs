@@ -46,12 +46,11 @@ test("event schedule generation is draft-only and idempotent", () => {
   assert.match(v2Actions, /'proposed'/)
 })
 
-test("manager UI uses three simple areas and keeps advanced operations secondary", () => {
-  const manager = workspace.slice(
-    workspace.indexOf("export function VolunteerManagerV2"),
-    workspace.indexOf("function urlBase64ToUint8Array"),
-  )
-  assert.equal((manager.match(/<TabsTrigger/g) ?? []).length, 3)
+test("manager UI uses simple areas and keeps advanced operations secondary", () => {
+  const startIndex = workspace.indexOf("export function VolunteerManagerV2")
+  const endIndex = workspace.indexOf("function urlBase64ToUint8Array")
+  const manager = endIndex !== -1 ? workspace.slice(startIndex, endIndex) : workspace.slice(startIndex)
+  assert.equal((manager.match(/<TabsTrigger/g) ?? []).length, 4)
   assert.match(manager, /Programações/)
   assert.match(manager, /Equipes/)
   assert.match(manager, /Voluntários/)

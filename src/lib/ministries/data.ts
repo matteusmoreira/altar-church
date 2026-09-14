@@ -30,6 +30,7 @@ function number(value: unknown) {
 function toProfile(row: Record<string, unknown>): MinistryProfile {
   return {
     id: String(row.id), companyId: String(row.company_id), name: String(row.name ?? ""),
+    slug: String(row.slug ?? ""),
     ministryType: row.ministry_type as MinistryProfile["ministryType"], mission: String(row.mission ?? ""),
     description: String(row.description ?? ""), targetAudience: String(row.target_audience ?? ""),
     contact: String(row.contact ?? ""), leaderPersonId: row.leader_person_id ? String(row.leader_person_id) : null,
@@ -120,7 +121,7 @@ function mapScaleRows(rows: Record<string, unknown>[]): MinistryScale[] {
 async function getProfileRow(companyId: string, ministryId: string) {
   const sql = getSql()
   const rows = await sql<Record<string, unknown>[]>`
-    select ministry.id, ministry.company_id, ministry.name, ministry.ministry_type, ministry.mission,
+    select ministry.id, ministry.company_id, ministry.name, ministry.slug, ministry.ministry_type, ministry.mission,
       ministry.description, ministry.target_audience, ministry.contact, ministry.leader_person_id,
       leader.full_name as leader_name, ministry.meeting_day, ministry.meeting_time::text as meeting_time,
       ministry.meeting_location, ministry.image_file_id, ministry.public_join_enabled, ministry.is_active,
@@ -134,11 +135,12 @@ async function getProfileRow(companyId: string, ministryId: string) {
   return toProfile(rows[0])
 }
 
-export async function getMinistryWorkspaceData(ministryId: string, companyIdInput?: string | null): Promise<MinistryWorkspaceData> {
-  const access = await requireMinistryPermission(ministryId, "ministries.dashboard.view", companyIdInput)
+export async function getMinistryWorkspaceData(ministryIdOrSlug: string, companyIdInput?: string | null): Promise<MinistryWorkspaceData> {
+  const access = await requireMinistryPermission(ministryIdOrSlug, "ministries.dashboard.view", companyIdInput)
+  const ministryId = access.ministryId
   const sql = getSql()
   const [profile, indicators, activityRows, attendanceRows, attendanceRecordRows, members, teams, teamMemberRows, scaleRows, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, responsibleCandidates, communications, lastCommunication] = await Promise.all([
-    getProfileRow(access.companyId, ministryId),
+    getProfileRow(access.companyId, access.ministryId),
     sql<{ active_members: number; pending_members: number; inactive_members: number; active_teams: number; open_team_slots: number; upcoming_activities: number; attendance_present: number; attendance_absent: number; incomplete_scales: number; open_followups: number; overdue_followups: number }[]>`
       select
         (select count(*) from public.ministry_memberships m where m.company_id = ${access.companyId} and m.ministry_id = ${ministryId} and m.status = 'active' and m.left_at is null) as active_members,

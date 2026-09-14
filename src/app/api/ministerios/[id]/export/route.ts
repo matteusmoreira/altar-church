@@ -13,11 +13,10 @@ function stamp() {
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
-    const ministryId = z.string().uuid().parse(id)
     const format = request.nextUrl.searchParams.get("format") === "xls" ? "xls" : "csv"
     const { companyId } = await requireExportContext(request.nextUrl.searchParams, "ministries.reports.view")
-    await resolveMinistryAccess(ministryId, companyId)
-    const data = await getMinistryWorkspaceData(ministryId, companyId)
+    const access = await resolveMinistryAccess(id, companyId)
+    const data = await getMinistryWorkspaceData(access.ministryId, companyId)
     const rows: CsvCell[][] = [
       ["Ministério", "Campo", "Valor"],
       [data.workspace.profile.name, "Membros ativos", data.report.retention.currentActive],

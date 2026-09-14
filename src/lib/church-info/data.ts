@@ -52,6 +52,7 @@ interface SocialLinkRow {
 interface MinistryRow {
   id: string
   name: string
+  slug: string | null
   leader_name: string | null
   member_count: string | number
   is_active: boolean
@@ -158,6 +159,7 @@ function toMinistry(row: MinistryRow): ChurchInfoMinistry {
   return {
     id: row.id,
     name: row.name,
+    slug: row.slug ?? "",
     leaderName: row.leader_name ?? "",
     memberCount: toNumber(row.member_count),
     isActive: row.is_active,
@@ -247,6 +249,7 @@ export async function getChurchInfoData(companyIdInput?: string | null): Promise
       select
         m.id,
         m.name,
+        m.slug,
         p.full_name as leader_name,
         0 as member_count,
         m.is_active

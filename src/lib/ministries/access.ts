@@ -4,30 +4,42 @@ import { getSql } from "@/lib/db/client"
 import type { Permission, User } from "@/lib/types"
 
 const ADMIN_ROLES = new Set(["superadmin", "admin", "pastor"])
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export interface MinistryAccess {
   user: User
   companyId: string
   ministryId: string
+  ministrySlug: string | null
   personId: string | null
   membershipRole: "member" | "leader" | "coordinator" | null
   canManage: boolean
 }
 
-export async function resolveMinistryAccess(ministryId: string, companyIdInput?: string | null): Promise<MinistryAccess> {
+export async function resolveMinistryAccess(ministryIdOrSlug: string, companyIdInput?: string | null): Promise<MinistryAccess> {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")
   const companyId = requireUserCompanyId(user, companyIdInput)
   const sql = getSql()
+  const cleanedIdentifier = ministryIdOrSlug.trim()
+  const isUuid = UUID_REGEX.test(cleanedIdentifier)
   const [ministryRows, profileRows] = await Promise.all([
-    sql<{ id: string }[]>`
-      select id from public.ministries
-      where id = ${ministryId} and company_id = ${companyId} and deleted_at is null
-      limit 1
-    `,
+    isUuid
+      ? sql<{ id: string; slug: string | null }[]>`
+          select id, slug from public.ministries
+          where id = ${cleanedIdentifier} and company_id = ${companyId} and deleted_at is null
+          limit 1
+        `
+      : sql<{ id: string; slug: string | null }[]>`
+          select id, slug from public.ministries
+          where lower(slug) = lower(${cleanedIdentifier}) and company_id = ${companyId} and deleted_at is null
+          limit 1
+        `,
     sql<{ person_id: string | null }[]>`select person_id from public.profiles where id = ${user.id} limit 1`,
   ])
   if (!ministryRows[0]) throw new Error("Ministério não encontrado")
+  const ministryId = ministryRows[0].id
+  const ministrySlug = ministryRows[0].slug
   const personId = profileRows[0]?.person_id ?? null
   const isAdmin = ADMIN_ROLES.has(user.role)
   const memberships = personId
@@ -45,6 +57,7 @@ export async function resolveMinistryAccess(ministryId: string, companyIdInput?:
     user,
     companyId,
     ministryId,
+    ministrySlug,
     personId,
     membershipRole,
     canManage: isAdmin || membershipRole === "leader" || membershipRole === "coordinator",

@@ -11,5 +11,12 @@ export default async function MinistryWorkspacePage({ params }: { params: Promis
     if (error instanceof Error && /acesso|pertence|não encontrado|nao encontrado/i.test(error.message)) redirect("/dashboard?access=denied")
     throw error
   }
+  // Se acessado por ID (UUID) ou slug diferente e o ministério tiver slug amigável,
+  // redireciona para a rota com slug canônico
+  const friendlySlug = data.workspace.profile.slug
+  if (friendlySlug && id !== friendlySlug) {
+    redirect(`/ministerios/${friendlySlug}`)
+  }
+
   return <MinistryWorkspace data={data} />
 }

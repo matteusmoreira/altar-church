@@ -10,6 +10,7 @@ export interface MinistryProfile {
   id: string
   companyId: string
   name: string
+  slug: string
   ministryType: MinistryType
   mission: string
   description: string

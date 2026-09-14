@@ -46,6 +46,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -345,12 +346,20 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
     toast.success("Arquivo enviado com sucesso")
   }
 
-  const handleCopyShareLink = () => {
+  const handleCopyShareLink = async () => {
     const shareText = `${formData.publicName || formData.companyName}\n${formData.address ? `${formData.address}, ${formData.city}/${formData.state}` : ""}\n${formData.phone ? `Contato: ${formData.phone}` : ""}\n${formData.website ? `Site: ${formData.website}` : ""}`
-    navigator.clipboard.writeText(shareText)
-    setCopiedLink(true)
-    toast.success("Informações da igreja copiadas para a área de transferência!")
-    setTimeout(() => setCopiedLink(false), 2000)
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareText)
+        setCopiedLink(true)
+        toast.success("Informações da igreja copiadas para a área de transferência!")
+        setTimeout(() => setCopiedLink(false), 2000)
+      } else {
+        toast.error("Área de transferência não disponível neste dispositivo")
+      }
+    } catch {
+      toast.error("Não foi possível copiar as informações")
+    }
   }
 
   const handlePrint = () => {
@@ -544,28 +553,30 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                   }
                 />
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Opções de Exportação</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setIsPrintDialogOpen(true)}>
-                    <Printer className="mr-2 h-4 w-4 text-primary" />
-                    <span>Ficha Cadastral (PDF/Imprimir)</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    render={
-                      <a href="/api/church-info/export?format=xlsx" download>
-                        <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
-                        <span>Planilha Excel (.xls)</span>
-                      </a>
-                    }
-                  />
-                  <DropdownMenuItem
-                    render={
-                      <a href="/api/church-info/export?format=csv" download>
-                        <Download className="mr-2 h-4 w-4 text-muted-foreground" />
-                        <span>Planilha CSV (.csv)</span>
-                      </a>
-                    }
-                  />
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Opções de Exportação</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setIsPrintDialogOpen(true)}>
+                      <Printer className="mr-2 h-4 w-4 text-primary" />
+                      <span>Ficha Cadastral (PDF/Imprimir)</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.location.href = `/api/church-info/export?format=xlsx&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`
+                      }}
+                    >
+                      <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
+                      <span>Planilha Excel (.xls)</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.location.href = `/api/church-info/export?format=csv&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`
+                      }}
+                    >
+                      <Download className="mr-2 h-4 w-4 text-muted-foreground" />
+                      <span>Planilha CSV (.csv)</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -1182,7 +1193,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                               size="sm"
                               variant="ghost"
                               className="text-xs text-primary hover:bg-primary/10 gap-1"
-                              render={<Link href={`/ministerios/${ministry.id}`} />}
+                              render={<Link href={`/ministerios/${ministry.slug || ministry.id}`} />}
                             >
                               Ver detalhes
                               <ArrowUpRight className="h-3.5 w-3.5" />

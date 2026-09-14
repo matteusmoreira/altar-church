@@ -10,6 +10,7 @@ import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import { afterResponse } from "@/lib/performance/after-response"
 import { rankVolunteersForShift, withManualSelectionRules, type SchedulerCandidateInput } from "@/lib/volunteers/scheduler"
 import { requireMinistryPermission } from "./access"
+import { slugifyMinistry, normalizeMinistrySlug } from "./slug"
 
 export type ActionResult = { ok: boolean; id?: string; error?: string; data?: unknown }
 
@@ -21,8 +22,9 @@ function result(error: unknown): ActionResult {
   return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
 }
 
-function refresh(ministryId: string) {
+function refresh(ministryId: string, slug?: string | null) {
   revalidatePath(`/ministerios/${ministryId}`)
+  if (slug) revalidatePath(`/ministerios/${slug}`)
   revalidatePath("/ministerios")
   revalidatePath("/membro/ministerios")
   revalidatePath("/membro/agenda")
@@ -30,7 +32,9 @@ function refresh(ministryId: string) {
 }
 
 const profileSchema = z.object({
-  ministryId: uuid, companyId: optionalUuid, name: z.string().trim().min(2).max(120), ministryType: z.enum(["worship", "kids", "youth", "care", "discipleship", "outreach", "administration", "other"]), mission: z.string().trim().max(4000).default(""), description: z.string().trim().max(4000).default(""), targetAudience: z.string().trim().max(1000).default(""), contact: z.string().trim().max(300).default(""), leaderPersonId: optionalUuid, meetingDay: z.number().int().min(0).max(6).nullable().optional(), meetingTime: z.string().trim().max(20).nullable().optional(), meetingLocation: z.string().trim().max(300).default(""), imageFileId: optionalUuid, publicJoinEnabled: z.boolean().default(true), isActive: z.boolean().default(true),
+  ministryId: uuid, companyId: optionalUuid, name: z.string().trim().min(2).max(120),
+  slug: z.string().trim().max(80).optional(),
+  ministryType: z.enum(["worship", "kids", "youth", "care", "discipleship", "outreach", "administration", "other"]), mission: z.string().trim().max(4000).default(""), description: z.string().trim().max(4000).default(""), targetAudience: z.string().trim().max(1000).default(""), contact: z.string().trim().max(300).default(""), leaderPersonId: optionalUuid, meetingDay: z.number().int().min(0).max(6).nullable().optional(), meetingTime: z.string().trim().max(20).nullable().optional(), meetingLocation: z.string().trim().max(300).default(""), imageFileId: optionalUuid, publicJoinEnabled: z.boolean().default(true), isActive: z.boolean().default(true),
 })
 
 export async function saveMinistryProfile(input: z.input<typeof profileSchema>): Promise<ActionResult> {
@@ -47,10 +51,32 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
       `
       if (!leaderRows[0]) throw new Error("O responsável precisa ser uma pessoa ativa da igreja")
     }
+
+    let finalSlug: string | null = null
+    if (parsed.slug !== undefined) {
+      const candidate = parsed.slug ? normalizeMinistrySlug(parsed.slug) : slugifyMinistry(parsed.name)
+      if (candidate) {
+        const duplicate = await sql<{ id: string }[]>`
+          select id from public.ministries
+          where company_id = ${access.companyId}
+            and slug = ${candidate}
+            and id <> ${parsed.ministryId}
+            and deleted_at is null
+          limit 1
+        `
+        if (duplicate[0]) {
+          throw new Error("Este link amigável (slug) já está em uso por outro ministério nesta igreja")
+        }
+        finalSlug = candidate
+      }
+    }
+
     const rows = isAdmin
       ? await sql<{ id: string }[]>`
           update public.ministries set
-            name = ${parsed.name}, ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
+            name = ${parsed.name},
+            slug = coalesce(${finalSlug}, slug),
+            ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
             target_audience = ${parsed.targetAudience}, contact = ${parsed.contact}, meeting_day = ${parsed.meetingDay ?? null},
             meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, image_file_id = ${parsed.imageFileId},
             public_join_enabled = ${parsed.publicJoinEnabled}, is_active = ${parsed.isActive}, updated_by = ${access.user.id}, updated_at = now()
@@ -59,7 +85,9 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
         `
       : await sql<{ id: string }[]>`
           update public.ministries set
-            name = ${parsed.name}, ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
+            name = ${parsed.name},
+            slug = coalesce(${finalSlug}, slug),
+            ministry_type = ${parsed.ministryType}, mission = ${parsed.mission}, description = ${parsed.description},
             target_audience = ${parsed.targetAudience}, contact = ${parsed.contact}, meeting_day = ${parsed.meetingDay ?? null},
             meeting_time = ${parsed.meetingTime ?? null}::time, meeting_location = ${parsed.meetingLocation}, image_file_id = ${parsed.imageFileId},
             public_join_enabled = ${parsed.publicJoinEnabled}, updated_by = ${access.user.id}, updated_at = now()
@@ -73,9 +101,9 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
         where id = ${parsed.ministryId} and company_id = ${access.companyId}
       `
     }
-    await writeAuditLog({ action: "ministry.profile.update", entityTable: "ministries", entityId: parsed.ministryId, companyId: access.companyId, metadata: { isAdmin } })
-    refresh(parsed.ministryId)
-    return { ok: true, id: parsed.ministryId }
+    await writeAuditLog({ action: "ministry.profile.update", entityTable: "ministries", entityId: parsed.ministryId, companyId: access.companyId, metadata: { isAdmin, slug: finalSlug } })
+    refresh(parsed.ministryId, finalSlug)
+    return { ok: true, id: parsed.ministryId, data: { slug: finalSlug } }
   } catch (error) { return result(error) }
 }
 

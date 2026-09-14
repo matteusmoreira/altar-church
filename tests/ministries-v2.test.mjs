@@ -85,7 +85,7 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
 test("ministry workspace route exists and administrative list links to it", () => {
   assert.ok(fs.existsSync(path.join(root, "src/app/(dashboard)/ministerios/[id]/page.tsx")))
   assert.ok(fs.existsSync(path.join(root, "src/app/api/ministerios/[id]/export/route.ts")))
-  assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /ministerios\/\$\{ministry\.id\}/)
+  assert.match(read("src/app/(dashboard)/ministerios/ministries-client.tsx"), /ministerios\/\$\{ministry\.(?:slug\s*\|\|\s*ministry\.)?id\}/)
 })
 
 test("every ministry workspace form has an explicit submit button", () => {

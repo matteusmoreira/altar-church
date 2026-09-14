@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Compass, Moon, Sun, Sunset } from "lucide-react"
+import { Building2, Compass, Moon, Sun, Sunset } from "lucide-react"
 import type { PublicCellItem } from "@/lib/cells/public-cells"
 import "mapbox-gl/dist/mapbox-gl.css"
 
@@ -99,6 +99,24 @@ export function Cells3dMap({
   const [pitch3d, setPitch3d] = useState(true)
   const [bearing, setBearing] = useState(-18)
   const [lightPreset, setLightPreset] = useState<LightPreset>(() => (themeMode === "light" ? "day" : "dusk"))
+  const [showPois, setShowPois] = useState<boolean>(true)
+  const showPoisRef = useRef(showPois)
+  showPoisRef.current = showPois
+
+  // Carrega preferência do usuário salva no navegador após hidratação (evita hydration mismatch)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("altar_cells_map_show_pois")
+      if (saved !== null) {
+        const val = saved === "true"
+        setShowPois(val)
+        showPoisRef.current = val
+      }
+    } catch {
+      // Ignora falhas em ambientes com localStorage bloqueado
+    }
+  }, [])
+
   const [mapError, setMapError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
 
@@ -127,6 +145,19 @@ export function Cells3dMap({
       console.warn("Could not update basemap lightPreset:", err)
     }
   }, [lightPreset, isMapLoaded])
+
+  // Atualiza exibição de pontos de interesse (comércios e transporte) dinamicamente
+  useEffect(() => {
+    if (!mapRef.current || !isMapLoaded) return
+    try {
+      if (typeof mapRef.current.setConfigProperty === "function") {
+        mapRef.current.setConfigProperty("basemap", "showPointOfInterestLabels", showPois)
+        mapRef.current.setConfigProperty("basemap", "showTransitLabels", showPois)
+      }
+    } catch (err) {
+      console.warn("Could not update basemap POI config:", err)
+    }
+  }, [showPois, isMapLoaded])
 
   // Inicialização do Mapbox Standard
   useEffect(() => {
@@ -169,7 +200,8 @@ export function Cells3dMap({
           basemap: {
             lightPreset: lightPreset,
             theme: lightPreset === "dusk" ? "warm" : "default",
-            showPointOfInterestLabels: false,
+            showPointOfInterestLabels: showPoisRef.current,
+            showTransitLabels: showPoisRef.current,
             showPlaceLabels: true,
             showRoadLabels: true,
           },
@@ -199,7 +231,8 @@ export function Cells3dMap({
           if (typeof map.setConfigProperty === "function") {
             map.setConfigProperty("basemap", "lightPreset", lightPreset)
             map.setConfigProperty("basemap", "theme", lightPreset === "dusk" ? "warm" : "default")
-            map.setConfigProperty("basemap", "showPointOfInterestLabels", false)
+            map.setConfigProperty("basemap", "showPointOfInterestLabels", showPoisRef.current)
+            map.setConfigProperty("basemap", "showTransitLabels", showPoisRef.current)
             map.setConfigProperty("basemap", "showPlaceLabels", true)
             map.setConfigProperty("basemap", "showRoadLabels", true)
           }
@@ -302,6 +335,19 @@ export function Cells3dMap({
       bearing: 0,
       pitch: pitch3d ? 58 : 0,
       duration: 600,
+    })
+  }
+
+  // Alterna visibilidade de pontos comerciais e referências
+  const togglePois = () => {
+    setShowPois((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem("altar_cells_map_show_pois", String(next))
+      } catch {
+        // Ignora erro se localStorage estiver bloqueado
+      }
+      return next
     })
   }
 
@@ -635,6 +681,24 @@ export function Cells3dMap({
             title="Alternar visão 3D / 2D"
           >
             {pitch3d ? "3D" : "2D"}
+          </button>
+
+          <div className="h-px w-5 bg-border/60" />
+
+          {/* Pontos Comerciais & Referências Toggle */}
+          <button
+            type="button"
+            onClick={togglePois}
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition-all active:scale-90 ${
+              showPois
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-foreground hover:bg-accent"
+            }`}
+            title={showPois ? "Ocultar pontos de referência e comércios" : "Exibir pontos de referência e comércios"}
+            aria-label={showPois ? "Ocultar pontos de referência e comércios" : "Exibir pontos de referência e comércios"}
+            aria-pressed={showPois}
+          >
+            <Building2 className="h-4 w-4" />
           </button>
 
           <div className="h-px w-5 bg-border/60" />

@@ -19,6 +19,7 @@ interface MinistryRow {
   id: string
   company_id: string
   name: string
+  slug: string | null
   description: string
   contact: string
   leader_name: string | null
@@ -95,6 +96,7 @@ function toMinistry(row: MinistryRow): MinistryListItem {
     id: row.id,
     companyId: row.company_id,
     name: row.name,
+    slug: row.slug ?? "",
     description: row.description,
     contact: row.contact,
     leaderName: row.leader_name ?? row.contact,
@@ -161,6 +163,7 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
         m.id,
         m.company_id,
         m.name,
+        m.slug,
         m.description,
         m.contact,
         m.leader_person_id,
@@ -174,7 +177,7 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
       left join public.people p on p.id = m.leader_person_id
       where m.company_id = ${companyId}
         and m.deleted_at is null
-        and (${search} = '' or m.name ilike ${searchPattern} or m.description ilike ${searchPattern} or m.contact ilike ${searchPattern} or coalesce(p.full_name, '') ilike ${searchPattern})
+        and (${search} = '' or m.name ilike ${searchPattern} or coalesce(m.slug, '') ilike ${searchPattern} or m.description ilike ${searchPattern} or m.contact ilike ${searchPattern} or coalesce(p.full_name, '') ilike ${searchPattern})
         and (${isActive}::boolean is null or m.is_active = ${isActive})
       order by m.created_at desc
       limit ${pageSize}
@@ -186,7 +189,7 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
       left join public.people p on p.id = m.leader_person_id
       where m.company_id = ${companyId}
         and m.deleted_at is null
-        and (${search} = '' or m.name ilike ${searchPattern} or m.description ilike ${searchPattern} or m.contact ilike ${searchPattern} or coalesce(p.full_name, '') ilike ${searchPattern})
+        and (${search} = '' or m.name ilike ${searchPattern} or coalesce(m.slug, '') ilike ${searchPattern} or m.description ilike ${searchPattern} or m.contact ilike ${searchPattern} or coalesce(p.full_name, '') ilike ${searchPattern})
         and (${isActive}::boolean is null or m.is_active = ${isActive})
     `,
   ])

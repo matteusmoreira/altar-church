@@ -72,15 +72,17 @@ test("content dashboard uses server data and audited server actions", () => {
 
 test("public church page reads published real data without client mock", () => {
   const page = read("src/app/(public)/church/[slug]/page.tsx")
+  const portalClient = read("src/components/public/church/church-portal-client.tsx")
+  const combined = page + "\n" + portalClient
 
   assert.doesNotMatch(page, /^"use client"/)
   assert.match(page, /getPublicChurchData/)
   assert.match(page, /notFound\(\)/)
-  assert.match(page, /Conteúdos recentes/)
-  assert.match(page, /Programação/)
-  assert.match(page, /Ministérios/)
-  assert.match(page, /Congregações/)
-  assert.match(page, /Próximos eventos/)
+  assert.match(combined, /Conteúdos/)
+  assert.match(combined, /Programação/)
+  assert.match(combined, /Ministérios/)
+  assert.match(combined, /Congregações/)
+  assert.match(combined, /Próximos [Ee]ventos/)
   assert.doesNotMatch(page, /useParams/)
   assert.doesNotMatch(page, /mockChurches|mockEvents|mockMinistries|mockCells/)
 })

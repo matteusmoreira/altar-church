@@ -12,6 +12,7 @@ import type {
   SaveProgrammingInput,
   SaveSongInput,
 } from "./types"
+import { slugifyMinistry, normalizeMinistrySlug } from "@/lib/ministries/slug"
 
 const nullableUuidSchema = z
   .union([z.string().uuid(), z.literal(""), z.null()])
@@ -22,6 +23,7 @@ const ministrySchema = z.object({
   id: nullableUuidSchema,
   companyId: nullableUuidSchema,
   name: z.string().trim().min(2, "Nome obrigatorio"),
+  slug: z.string().trim().max(80).optional(),
   description: z.string().trim().optional().default(""),
   contact: z.string().trim().optional().default(""),
   leaderPersonId: nullableUuidSchema,
@@ -86,8 +88,10 @@ function startsAtFromDate(date: string) {
   return date ? `${date}T00:00:00-03:00` : null
 }
 
-function refreshMinistryPaths() {
+function refreshMinistryPaths(slug?: string | null, id?: string | null) {
   revalidatePath("/ministerios")
+  if (slug) revalidatePath(`/ministerios/${slug}`)
+  if (id) revalidatePath(`/ministerios/${id}`)
 }
 
 function refreshProgrammingPaths() {
@@ -120,12 +124,34 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
       `
       if (!leaderRows[0]) throw new Error("Lider nao encontrado nesta igreja")
     }
+
+    let baseSlug = parsed.slug ? normalizeMinistrySlug(parsed.slug) : slugifyMinistry(parsed.name)
+    if (!baseSlug) baseSlug = "ministerio"
+
+    let candidateSlug = baseSlug
+    let attempt = 1
+    while (true) {
+      const existingRows = await sql<{ id: string }[]>`
+        select id from public.ministries
+        where company_id = ${companyId}
+          and slug = ${candidateSlug}
+          and (${parsed.id}::uuid is null or id <> ${parsed.id})
+          and deleted_at is null
+        limit 1
+      `
+      if (!existingRows[0]) break
+      attempt++
+      candidateSlug = `${baseSlug}-${attempt}`
+    }
+    const finalSlug = candidateSlug
+
     let ministryId = parsed.id
 
     if (parsed.id) {
       const rows = await sql<{ id: string }[]>`
         update public.ministries
         set name = ${parsed.name},
+            slug = ${finalSlug},
             description = ${parsed.description},
             contact = ${parsed.contact},
             leader_person_id = ${parsed.leaderPersonId},
@@ -143,6 +169,7 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
         insert into public.ministries (
           company_id,
           name,
+          slug,
           description,
           contact,
           leader_person_id,
@@ -153,6 +180,7 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
         values (
           ${companyId},
           ${parsed.name},
+          ${finalSlug},
           ${parsed.description},
           ${parsed.contact},
           ${parsed.leaderPersonId},
@@ -174,9 +202,9 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
       entityTable: "ministries",
       entityId: ministryId,
       companyId,
-      metadata: { isActive: parsed.isActive },
+      metadata: { isActive: parsed.isActive, slug: finalSlug },
     })
-    refreshMinistryPaths()
+    refreshMinistryPaths(finalSlug, ministryId)
 
     return { ok: true, id: ministryId }
     } catch (error) {

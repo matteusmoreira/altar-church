@@ -15,7 +15,31 @@ import type {
 
 const uuid = z.string().uuid()
 const nullableUuid = z.union([uuid, z.literal(""), z.null()]).optional().transform((value) => value || null)
-const nullableTime = z.union([z.string().regex(/^\d{2}:\d{2}$/), z.literal(""), z.null()]).optional().transform((value) => value || null)
+const nullableTime = z
+  .union([
+    z.string().trim().refine((value) => {
+      if (!value) return true
+      const match = value.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+      if (!match) return false
+      const hours = parseInt(match[1], 10)
+      const minutes = parseInt(match[2], 10)
+      const seconds = match[3] !== undefined ? parseInt(match[3], 10) : 0
+      return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59
+    }, "Horário inválido"),
+    z.literal(""),
+    z.null(),
+  ])
+  .optional()
+  .transform((value) => {
+    if (!value) return null
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})/)
+    if (!match) return null
+    const hours = match[1].padStart(2, "0")
+    const minutes = match[2]
+    return `${hours}:${minutes}`
+  })
 const nullableInt = z.union([z.number().int().min(0), z.null()]).optional().transform((value) => value ?? null)
 
 const cellSchema = z.object({

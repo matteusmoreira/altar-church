@@ -18,6 +18,7 @@ export interface MinistryListItem {
   id: string
   companyId: string
   name: string
+  slug: string
   description: string
   contact: string
   leaderName: string
@@ -69,6 +70,7 @@ export interface SaveMinistryInput {
   id?: string | null
   companyId?: string | null
   name: string
+  slug?: string | null
   description?: string
   contact?: string
   leaderPersonId?: string | null
