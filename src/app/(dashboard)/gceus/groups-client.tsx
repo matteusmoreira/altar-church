@@ -12,6 +12,7 @@ import {
   Edit,
   ExternalLink,
   Filter,
+  Inbox,
   LayoutGrid,
   List,
   MapPin,
@@ -28,6 +29,8 @@ import { toast } from "sonner"
 import { createGroupCategory, deleteGroup, saveGroup } from "./actions"
 import { GroupOperationsPanel } from "./group-operations-panel"
 import { CellFormFields } from "@/components/cells/cell-form-fields"
+import { CellRequestsTab } from "@/components/cells/cell-requests-tab"
+import type { CellRequestsTabInitialData } from "@/lib/cells/requests-types"
 import { EmptyState } from "@/components/shared/empty-state"
 import { PageHeader } from "@/components/shared/page-header"
 import {
@@ -115,6 +118,7 @@ export interface GroupsClientProps {
   cellFeatures?: CellFeaturesData
   initialTab?: string
   churchSlug?: string | null
+  requestsInitialData?: CellRequestsTabInitialData
 }
 
 const typeLabels: Record<GroupType, string> = {
@@ -158,7 +162,7 @@ const emptyForm: GroupFormState = {
   isActive: true,
   latitude: null,
   longitude: null,
-  isAddressPublic: true,
+  isAddressPublic: false,
   isLeaderWhatsappPublic: true,
   cellPhotoUrl: null,
 }
@@ -190,7 +194,7 @@ function groupToForm(group: GroupListItem): GroupFormState {
     coLeaderPersonId: group.coLeaderPersonId ?? "none",
     coordinatorPersonId: group.coordinatorPersonId ?? "none",
     meetingDay: group.meetingDay,
-    meetingTime: group.meetingTime?.slice(0, 5) ?? "",
+    meetingTime: group.meetingTime ?? "",
     meetingLocation: group.meetingLocation,
     postalCode: group.postalCode,
     addressNumber: group.addressNumber,
@@ -205,7 +209,7 @@ function groupToForm(group: GroupListItem): GroupFormState {
     isActive: group.isActive,
     latitude: group.latitude ?? null,
     longitude: group.longitude ?? null,
-    isAddressPublic: group.isAddressPublic ?? true,
+    isAddressPublic: group.isAddressPublic ?? false,
     isLeaderWhatsappPublic: group.isLeaderWhatsappPublic ?? true,
     cellPhotoUrl: group.cellPhotoUrl ?? null,
   }
@@ -271,6 +275,7 @@ export function GroupsClient({
   cellFeatures,
   initialTab,
   churchSlug,
+  requestsInitialData,
 }: GroupsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -467,7 +472,7 @@ export function GroupsClient({
       </PageHeader>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 h-auto p-1 bg-muted/60">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 h-auto p-1 bg-muted/60">
           <TabsTrigger value="celulas" className="flex items-center gap-2 py-2.5">
             <Network className="h-4 w-4" />
             <span>Células</span>
@@ -479,6 +484,15 @@ export function GroupsClient({
           <TabsTrigger value="reunioes" className="flex items-center gap-2 py-2.5">
             <CalendarDays className="h-4 w-4" />
             <span>Reuniões</span>
+          </TabsTrigger>
+          <TabsTrigger value="solicitacoes" className="flex items-center gap-2 py-2.5">
+            <Inbox className="h-4 w-4" />
+            <span>Solicitações</span>
+            {(requestsInitialData?.metrics.pending ?? 0) > 0 && (
+              <Badge className="ml-1 px-1.5 py-0.2 text-[10px] bg-primary/20 text-primary border-primary/30">
+                {requestsInitialData?.metrics.pending}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="gestao" className="flex items-center gap-2 py-2.5">
             <Sparkles className="h-4 w-4" />
@@ -869,6 +883,25 @@ export function GroupsClient({
             <Card>
               <CardContent className="py-10 text-center text-muted-foreground">
                 Recursos de gestão não disponíveis neste momento.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ABA 5: SOLICITAÇÕES */}
+        <TabsContent value="solicitacoes" className="space-y-6 mt-0">
+          {requestsInitialData ? (
+            <CellRequestsTab
+              initialRequests={requestsInitialData.requests}
+              initialMetrics={requestsInitialData.metrics}
+              initialSettings={requestsInitialData.settings}
+              instances={requestsInitialData.instances}
+              cellsList={requestsInitialData.cellsList}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
+                Solicitações não disponíveis no momento.
               </CardContent>
             </Card>
           )}

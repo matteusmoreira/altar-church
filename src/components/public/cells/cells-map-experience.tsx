@@ -4,19 +4,38 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
+  Building2,
+  Clock,
   Compass,
   List,
   Loader2,
   Map as MapIcon,
+  MapPin,
   Moon,
   Navigation,
+  RotateCcw,
   Search,
   Sun,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+} from "@/components/ui/select"
 import type { PublicCellsPageData, PublicCellItem } from "@/lib/cells/public-cells"
+import {
+  getAvailableCities,
+  getAvailableNeighborhoods,
+  getAvailableTimes,
+  matchesTimeFilter,
+  shortTimeFilterLabel,
+} from "@/lib/cells/filter-helpers"
 import { Cells3dMap } from "./cells-3d-map"
 import { CellDetailSheet } from "./cell-detail-sheet"
 import { CellVisitModal } from "./cell-visit-modal"
@@ -50,6 +69,9 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
   const [selectedCell, setSelectedCell] = useState<PublicCellItem | null>(null)
   const [activeCategoryId, setActiveCategoryId] = useState<string>("all")
   const [activeWeekday, setActiveWeekday] = useState<string>("Todos")
+  const [activeCity, setActiveCity] = useState<string>("all")
+  const [activeNeighborhood, setActiveNeighborhood] = useState<string>("all")
+  const [activeTime, setActiveTime] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"map" | "list">("map")
   const [themeMode, setThemeMode] = useState<"dark" | "light">("dark")
@@ -59,6 +81,31 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number; cell: PublicCellItem } | null>(null)
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false)
   const [visitingCell, setVisitingCell] = useState<PublicCellItem | null>(null)
+
+  // Derived filter options
+  const availableCities = useMemo(() => getAvailableCities(cells), [cells])
+  const availableNeighborhoods = useMemo(
+    () => getAvailableNeighborhoods(cells, activeCity),
+    [cells, activeCity]
+  )
+  const availableTimes = useMemo(() => getAvailableTimes(cells), [cells])
+
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    activeCategoryId !== "all" ||
+    activeWeekday !== "Todos" ||
+    activeCity !== "all" ||
+    activeNeighborhood !== "all" ||
+    activeTime !== "all"
+
+  const handleResetAllFilters = () => {
+    setSearchQuery("")
+    setActiveCategoryId("all")
+    setActiveWeekday("Todos")
+    setActiveCity("all")
+    setActiveNeighborhood("all")
+    setActiveTime("all")
+  }
 
   // Handle GPS location
   const handleRequestLocation = () => {
@@ -120,14 +167,39 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
           if (!normCellDay.includes(normFilterDay)) return false
         }
 
+        // City filter
+        if (activeCity !== "all") {
+          if (!cell.city || cell.city.trim().toLowerCase() !== activeCity.trim().toLowerCase()) {
+            return false
+          }
+        }
+
+        // Neighborhood filter
+        if (activeNeighborhood !== "all") {
+          if (
+            !cell.neighborhood ||
+            cell.neighborhood.trim().toLowerCase() !== activeNeighborhood.trim().toLowerCase()
+          ) {
+            return false
+          }
+        }
+
+        // Time filter
+        if (activeTime !== "all") {
+          if (!matchesTimeFilter(cell.meetingTime, activeTime)) {
+            return false
+          }
+        }
+
         // Search query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
           const inName = cell.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
           const inNeigh = cell.neighborhood.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
+          const inCity = cell.city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
           const inLeader = (cell.leaderName || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
           const inDesc = cell.description.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
-          if (!inName && !inNeigh && !inLeader && !inDesc) return false
+          if (!inName && !inNeigh && !inCity && !inLeader && !inDesc) return false
         }
 
         return true
@@ -139,7 +211,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
         }
         return 0
       })
-  }, [cells, userLocation, activeCategoryId, activeWeekday, searchQuery])
+  }, [cells, userLocation, activeCategoryId, activeWeekday, activeCity, activeNeighborhood, activeTime, searchQuery])
 
   // Handle Trace Route
   const handleTraceRoute = async (cell: PublicCellItem) => {
@@ -405,6 +477,139 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
                 )
               })}
             </div>
+
+            {/* City, Neighborhood and Time Filter Selects */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-[11px]">
+              {/* Cidade Select */}
+              <Select
+                value={activeCity}
+                onValueChange={(val) => {
+                  const nextCity = val ?? "all"
+                  setActiveCity(nextCity)
+                  if (nextCity !== "all" && activeNeighborhood !== "all") {
+                    const exists = cells.some(
+                      (c) =>
+                        c.city?.toLowerCase() === nextCity.toLowerCase() &&
+                        c.neighborhood?.toLowerCase() === activeNeighborhood.toLowerCase()
+                    )
+                    if (!exists) setActiveNeighborhood("all")
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className={`h-7 w-auto shrink-0 rounded-full px-2.5 text-[11px] font-semibold shadow-md backdrop-blur-md transition active:scale-95 flex items-center gap-1.5 [&_svg:last-child]:text-current ${
+                    activeCity !== "all"
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : themeMode === "dark"
+                        ? "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+                        : "border border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                  }`}
+                >
+                  <Building2 className="h-3 w-3 shrink-0" />
+                  <span className="truncate max-w-[85px] sm:max-w-[120px]">
+                    {activeCity === "all" ? "Cidade" : activeCity}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as cidades ({cells.length})</SelectItem>
+                  {availableCities.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label} ({c.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Bairro Select */}
+              <Select
+                value={activeNeighborhood}
+                onValueChange={(val) => setActiveNeighborhood(val ?? "all")}
+              >
+                <SelectTrigger
+                  className={`h-7 w-auto shrink-0 rounded-full px-2.5 text-[11px] font-semibold shadow-md backdrop-blur-md transition active:scale-95 flex items-center gap-1.5 [&_svg:last-child]:text-current ${
+                    activeNeighborhood !== "all"
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : themeMode === "dark"
+                        ? "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+                        : "border border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                  }`}
+                >
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  <span className="truncate max-w-[85px] sm:max-w-[120px]">
+                    {activeNeighborhood === "all" ? "Bairro" : activeNeighborhood}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os bairros</SelectItem>
+                  {availableNeighborhoods.map((n) => (
+                    <SelectItem key={n.value} value={n.value}>
+                      {n.label} ({n.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Horário Select */}
+              <Select
+                value={activeTime}
+                onValueChange={(val) => setActiveTime(val ?? "all")}
+              >
+                <SelectTrigger
+                  className={`h-7 w-auto shrink-0 rounded-full px-2.5 text-[11px] font-semibold shadow-md backdrop-blur-md transition active:scale-95 flex items-center gap-1.5 [&_svg:last-child]:text-current ${
+                    activeTime !== "all"
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : themeMode === "dark"
+                        ? "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+                        : "border border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                  }`}
+                >
+                  <Clock className="h-3 w-3 shrink-0" />
+                  <span className="truncate max-w-[85px] sm:max-w-[120px]">
+                    {shortTimeFilterLabel(activeTime)}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os horários</SelectItem>
+                  {availableTimes.periods.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-2 py-1">
+                        Período
+                      </SelectLabel>
+                      {availableTimes.periods.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>
+                          {p.label} ({p.count})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {availableTimes.exactTimes.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-2 py-1 border-t border-border/40 mt-1 pt-1">
+                        Horário de Início
+                      </SelectLabel>
+                      {availableTimes.exactTimes.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label} ({t.count})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
+
+              {/* Reset Quick Action */}
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetAllFilters}
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-500/20 border border-rose-500/30 text-rose-300 hover:bg-rose-500/30 transition active:scale-95 flex items-center gap-1 shadow-xs backdrop-blur-md"
+                  title="Limpar todos os filtros"
+                >
+                  <RotateCcw className="h-2.5 w-2.5" />
+                  <span>Limpar</span>
+                </button>
+              )}
+            </div>
           </div>
         </header>
       ) : (
@@ -510,16 +715,34 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
       {/* Main Content: Map 3D or List View */}
       <main className="relative min-h-0 flex-1 w-full overflow-hidden flex flex-col">
         {viewMode === "map" ? (
-          <Cells3dMap
-            cells={filteredCells}
-            centerCoordinates={centerCoordinates}
-            selectedCell={selectedCell}
-            onSelectCell={(cell) => setSelectedCell(cell)}
-            themeMode={themeMode}
-            userLocation={userLocation}
-            routeLine={routeLine}
-            mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
-          />
+          <>
+            <Cells3dMap
+              cells={filteredCells}
+              centerCoordinates={centerCoordinates}
+              selectedCell={selectedCell}
+              onSelectCell={(cell) => setSelectedCell(cell)}
+              themeMode={themeMode}
+              userLocation={userLocation}
+              routeLine={routeLine}
+              mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
+            />
+
+            {/* Empty state overlay on 3D map */}
+            {filteredCells.length === 0 && (
+              <div className="absolute top-44 left-4 right-4 z-20 mx-auto max-w-sm rounded-2xl border border-border/80 bg-background/95 p-4 text-center shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+                <p className="text-xs font-semibold text-foreground">Nenhuma célula encontrada com estes filtros</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Tente selecionar outra cidade, bairro ou horário.</p>
+                <button
+                  type="button"
+                  onClick={handleResetAllFilters}
+                  className="mt-2.5 inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/30 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition active:scale-95"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Limpar filtros</span>
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <CellsListDrawer
             cells={filteredCells}
@@ -531,11 +754,26 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
             categories={categories}
             activeWeekday={activeWeekday}
             onSelectWeekday={setActiveWeekday}
-            onResetFilters={() => {
-              setSearchQuery("")
-              setActiveCategoryId("all")
-              setActiveWeekday("Todos")
+            activeCity={activeCity}
+            onSelectCity={(city) => {
+              setActiveCity(city)
+              if (city !== "all" && activeNeighborhood !== "all") {
+                const exists = cells.some(
+                  (c) =>
+                    c.city?.toLowerCase() === city.toLowerCase() &&
+                    c.neighborhood?.toLowerCase() === activeNeighborhood.toLowerCase()
+                )
+                if (!exists) setActiveNeighborhood("all")
+              }
             }}
+            availableCities={availableCities}
+            activeNeighborhood={activeNeighborhood}
+            onSelectNeighborhood={setActiveNeighborhood}
+            availableNeighborhoods={availableNeighborhoods}
+            activeTime={activeTime}
+            onSelectTime={setActiveTime}
+            availableTimes={availableTimes}
+            onResetFilters={handleResetAllFilters}
             onSelectCell={handleSelectFromList}
             onOpenVisitModal={handleOpenVisitModal}
             onClose={() => setViewMode("map")}

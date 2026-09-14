@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
-import { getCellContext, isCellAdministrator, requireCellParticipant, requireCellPermission, requireManagedCell } from "./access"
+import { getCellContext, isCellAdministrator, requireCellParticipant, requireCellPermission, requireManagedCell, requireOwnedLeaderCell } from "./access"
 import { getSql } from "@/lib/db/client"
 import { attachFileToEntity, deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
@@ -488,3 +488,125 @@ export async function saveCellNotice(formData: FormData): Promise<CellActionResu
     return failure(error)
   }
 }
+
+export async function uploadCellPhoto(formData: FormData): Promise<CellActionResult> {
+  try {
+    const file = getOptionalFile(formData, "file")
+    if (!file) throw new Error("Selecione um arquivo de foto")
+
+    const ext = fileExtension(file)
+    if (!photoMimeTypes.has(file.type) && !photoExtensions.has(ext)) {
+      throw new Error("Formato de foto inválido. Use JPEG, PNG ou WebP.")
+    }
+    if (file.size > CELL_PHOTO_MAX_BYTES) {
+      throw new Error(`A foto deve ter até ${Math.floor(CELL_PHOTO_MAX_BYTES / (1024 * 1024))} MB`)
+    }
+
+    const cellIdInput = text(formData, "cellId")
+    const cellId = cellIdInput && uuid.safeParse(cellIdInput).success ? cellIdInput : null
+    const companyIdInput = text(formData, "companyId") || null
+
+    const context = await getCellContext(companyIdInput)
+    const isAdmin = isCellAdministrator(context.user)
+    const isLeader = context.user.role === "cell_leader"
+
+    if (!isAdmin && !isLeader) {
+      await requirePermission("cells.edit", context.companyId)
+    }
+
+    if (cellId && isLeader && !isAdmin) {
+      await requireOwnedLeaderCell(context, cellId)
+    }
+
+    const uploaded = await uploadManagedFile({
+      file,
+      companyId: context.companyId,
+      ownerProfileId: context.user.id,
+      entityTable: "groups",
+      entityId: cellId,
+      purpose: "cover",
+      visibility: "public",
+      metadata: { kind: "cell-photo", cellId },
+      allowedMimeTypes: photoMimeTypes,
+      allowedExtensions: photoExtensions,
+      maxSizeBytes: CELL_PHOTO_MAX_BYTES,
+    })
+
+    const fileUrl = `/api/v1/files/${uploaded.id}`
+
+    if (cellId) {
+      const sql = getSql()
+      const existing = await sql<{ cell_photo_url: string | null }[]>`
+        select cell_photo_url from public.groups
+        where id = ${cellId} and company_id = ${context.companyId} and deleted_at is null
+        limit 1
+      `
+
+      await sql`
+        update public.groups
+        set cell_photo_url = ${fileUrl},
+            updated_by = ${context.user.id},
+            updated_at = now()
+        where id = ${cellId} and company_id = ${context.companyId}
+      `
+
+      const oldUrl = existing[0]?.cell_photo_url
+      const oldMatch = oldUrl ? oldUrl.match(/\/api\/v1\/files\/([0-9a-f-]{36})/i) : null
+      if (oldMatch && oldMatch[1] && oldMatch[1] !== uploaded.id) {
+        await deleteManagedFile(oldMatch[1], context.companyId).catch(() => undefined)
+      }
+
+      await audit("cell.photo.upload", "groups", cellId, context.companyId, { fileId: uploaded.id })
+    }
+
+    refresh()
+    return { ok: true, id: uploaded.id, url: fileUrl }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function removeCellPhoto(cellIdInput: string): Promise<CellActionResult> {
+  try {
+    const cellId = uuid.parse(cellIdInput)
+    const context = await getCellContext()
+    const isAdmin = isCellAdministrator(context.user)
+    const isLeader = context.user.role === "cell_leader"
+
+    if (!isAdmin && !isLeader) {
+      await requirePermission("cells.edit", context.companyId)
+    }
+    if (isLeader && !isAdmin) {
+      await requireOwnedLeaderCell(context, cellId)
+    }
+
+    const sql = getSql()
+    const existing = await sql<{ cell_photo_url: string | null }[]>`
+      select cell_photo_url from public.groups
+      where id = ${cellId} and company_id = ${context.companyId} and deleted_at is null
+      limit 1
+    `
+    if (!existing[0]) throw new Error("Célula não encontrada")
+
+    await sql`
+      update public.groups
+      set cell_photo_url = null,
+          updated_by = ${context.user.id},
+          updated_at = now()
+      where id = ${cellId} and company_id = ${context.companyId}
+    `
+
+    const oldUrl = existing[0].cell_photo_url
+    const oldMatch = oldUrl ? oldUrl.match(/\/api\/v1\/files\/([0-9a-f-]{36})/i) : null
+    if (oldMatch && oldMatch[1]) {
+      await deleteManagedFile(oldMatch[1], context.companyId).catch(() => undefined)
+    }
+
+    await audit("cell.photo.remove", "groups", cellId, context.companyId)
+    refresh()
+    return { ok: true, id: cellId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+

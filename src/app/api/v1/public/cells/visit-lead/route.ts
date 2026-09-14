@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { getSql } from "@/lib/db/client"
+import { dispatchCellVisitWhatsAppAutomation } from "@/lib/cells/whatsapp-dispatch"
 
 const visitLeadSchema = z.object({
   churchSlug: z.string().trim().min(1, "Slug da igreja obrigatório"),
@@ -15,8 +16,10 @@ export async function POST(request: Request) {
   try {
     const json = await request.json()
     const parsed = visitLeadSchema.parse(json)
-    return await getSql().begin(async (sql) => {
+    let createdRequestId: string | null = null
+    let resolvedChurchId: string | null = null
 
+    const response = await getSql().begin(async (sql) => {
       // 1. Resolve church
       const churchRows = await sql<{ id: string; name: string }[]>`
         select id, name
@@ -30,6 +33,7 @@ export async function POST(request: Request) {
       if (!church) {
         return NextResponse.json({ error: "Igreja não encontrada" }, { status: 404 })
       }
+      resolvedChurchId = church.id
 
       // 2. Resolve cell
       const cellRows = await sql<{ id: string; name: string; leader_name: string | null; leader_phone: string | null }[]>`
@@ -141,7 +145,7 @@ export async function POST(request: Request) {
       }
 
       // 5. Create follow-up task
-      await sql`
+      const followUpRows = await sql<{ id: string }[]>`
         insert into public.person_follow_up_tasks (
           company_id,
           person_id,
@@ -160,9 +164,41 @@ export async function POST(request: Request) {
           'open',
           'without_cell'
         )
+        returning id
       `
+      const followUpTaskId = followUpRows[0]?.id ?? null
 
-      // 6. Record public acquisition event
+      // 6. Record in cell_visit_requests
+      const requestRows = await sql<{ id: string }[]>`
+        insert into public.cell_visit_requests (
+          company_id,
+          group_id,
+          person_id,
+          full_name,
+          phone,
+          neighborhood,
+          notes,
+          status,
+          crm_card_id,
+          follow_up_task_id
+        )
+        values (
+          ${church.id},
+          ${cell.id},
+          ${personId},
+          ${parsed.fullName},
+          ${parsed.phone},
+          ${parsed.neighborhood},
+          ${parsed.notes},
+          'pending',
+          ${crmCardId},
+          ${followUpTaskId}
+        )
+        returning id
+      `
+      createdRequestId = requestRows[0]?.id ?? null
+
+      // 7. Record public acquisition event
       await sql`
         insert into public.public_acquisition_events (
           company_id,
@@ -186,12 +222,28 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         ok: true,
+        requestId: createdRequestId,
         cellName: cell.name,
         leaderName: cell.leader_name,
         leaderPhone: cell.leader_phone ? cell.leader_phone.replace(/\D/g, "") : null,
         message: "Seu pedido de visita foi registrado para acompanhamento pela igreja.",
       })
     })
+
+    // Dispara automação WhatsApp de forma não-bloqueante
+    if (createdRequestId && resolvedChurchId) {
+      void dispatchCellVisitWhatsAppAutomation({
+        companyId: resolvedChurchId,
+        cellId: parsed.cellId,
+        requestId: createdRequestId,
+        visitorName: parsed.fullName,
+        visitorPhone: parsed.phone,
+        visitorNeighborhood: parsed.neighborhood,
+        visitorNotes: parsed.notes,
+      })
+    }
+
+    return response
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message ?? "Dados inválidos" }, { status: 400 })

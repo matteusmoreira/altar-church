@@ -15,11 +15,26 @@ import {
   Map as MapIcon,
   RotateCcw,
   User,
+  Building2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import type { PublicCellItem, PublicCellCategory } from "@/lib/cells/public-cells"
+import {
+  type FilterOption,
+  type AvailableTimesResult,
+  formatTimeFilterLabel,
+} from "@/lib/cells/filter-helpers"
 import { toast } from "sonner"
 
 export interface CellsListDrawerProps {
@@ -32,6 +47,15 @@ export interface CellsListDrawerProps {
   categories?: PublicCellCategory[]
   activeWeekday?: string
   onSelectWeekday?: (day: string) => void
+  activeCity?: string
+  onSelectCity?: (city: string) => void
+  availableCities?: FilterOption[]
+  activeNeighborhood?: string
+  onSelectNeighborhood?: (neighborhood: string) => void
+  availableNeighborhoods?: FilterOption[]
+  activeTime?: string
+  onSelectTime?: (time: string) => void
+  availableTimes?: AvailableTimesResult
   onResetFilters?: () => void
   onSelectCell: (cell: PublicCellItem) => void
   onOpenVisitModal: (cell: PublicCellItem) => void
@@ -57,6 +81,15 @@ export function CellsListDrawer({
   categories = [],
   activeWeekday = "Todos",
   onSelectWeekday,
+  activeCity = "all",
+  onSelectCity,
+  availableCities = [],
+  activeNeighborhood = "all",
+  onSelectNeighborhood,
+  availableNeighborhoods = [],
+  activeTime = "all",
+  onSelectTime,
+  availableTimes = { periods: [], exactTimes: [] },
   onResetFilters,
   onSelectCell,
   onOpenVisitModal,
@@ -66,11 +99,14 @@ export function CellsListDrawer({
   churchState,
   churchSlug,
   userLocation,
-  onRequestLocation,
-  isLocating = false,
 }: CellsListDrawerProps) {
   const hasActiveFilters =
-    searchQuery.trim().length > 0 || activeCategoryId !== "all" || activeWeekday !== "Todos"
+    searchQuery.trim().length > 0 ||
+    activeCategoryId !== "all" ||
+    activeWeekday !== "Todos" ||
+    activeCity !== "all" ||
+    activeNeighborhood !== "all" ||
+    activeTime !== "all"
 
   const handleShareCell = async (cell: PublicCellItem) => {
     const slug = churchSlug || ""
@@ -241,6 +277,194 @@ export function CellsListDrawer({
                   </button>
                 )
               })}
+            </div>
+          )}
+
+          {/* City, Neighborhood and Time Selects */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-border/40">
+            {/* Cidade */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                <Building2 className="h-3 w-3 text-primary" />
+                <span>Cidade</span>
+              </span>
+              <Select
+                value={activeCity}
+                onValueChange={(val) => {
+                  onSelectCity?.(val ?? "all")
+                }}
+              >
+                <SelectTrigger className="h-10 rounded-xl border-border/80 bg-background/80 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary">
+                  <SelectValue placeholder="Todas as cidades" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as cidades ({totalCellsCount})</SelectItem>
+                  {availableCities.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label} ({c.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Bairro */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                <MapPin className="h-3 w-3 text-primary" />
+                <span>Bairro</span>
+              </span>
+              <Select
+                value={activeNeighborhood}
+                onValueChange={(val) => {
+                  onSelectNeighborhood?.(val ?? "all")
+                }}
+              >
+                <SelectTrigger className="h-10 rounded-xl border-border/80 bg-background/80 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary">
+                  <SelectValue placeholder="Todos os bairros" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os bairros</SelectItem>
+                  {availableNeighborhoods.map((n) => (
+                    <SelectItem key={n.value} value={n.value}>
+                      {n.label} ({n.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Horários */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3 text-primary" />
+                <span>Horário</span>
+              </span>
+              <Select
+                value={activeTime}
+                onValueChange={(val) => {
+                  onSelectTime?.(val ?? "all")
+                }}
+              >
+                <SelectTrigger className="h-10 rounded-xl border-border/80 bg-background/80 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary">
+                  <SelectValue placeholder="Todos os horários" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os horários</SelectItem>
+                  {availableTimes.periods.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-2 py-1">
+                        Período
+                      </SelectLabel>
+                      {availableTimes.periods.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>
+                          {p.label} ({p.count})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {availableTimes.exactTimes.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-2 py-1 border-t border-border/40 mt-1 pt-1">
+                        Horário de Início
+                      </SelectLabel>
+                      {availableTimes.exactTimes.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label} ({t.count})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Active Filter Chips */}
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+              <span className="text-muted-foreground text-[11px] font-medium mr-0.5">Filtros ativos:</span>
+              {activeCity !== "all" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 text-xs font-medium">
+                  <Building2 className="h-3 w-3" />
+                  <span>Cidade: {activeCity}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectCity?.("all")}
+                    className="hover:text-primary/70 ml-0.5"
+                    aria-label="Remover filtro de cidade"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {activeNeighborhood !== "all" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 text-xs font-medium">
+                  <MapPin className="h-3 w-3" />
+                  <span>Bairro: {activeNeighborhood}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectNeighborhood?.("all")}
+                    className="hover:text-primary/70 ml-0.5"
+                    aria-label="Remover filtro de bairro"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {activeTime !== "all" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 text-xs font-medium">
+                  <Clock className="h-3 w-3" />
+                  <span>Horário: {formatTimeFilterLabel(activeTime)}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectTime?.("all")}
+                    className="hover:text-primary/70 ml-0.5"
+                    aria-label="Remover filtro de horário"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {activeCategoryId !== "all" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 text-xs font-medium">
+                  <span>Categoria: {categories.find((c) => c.id === activeCategoryId)?.name || activeCategoryId}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectCategory?.("all")}
+                    className="hover:text-primary/70 ml-0.5"
+                    aria-label="Remover filtro de categoria"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {activeWeekday !== "Todos" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 text-primary px-2.5 py-0.5 text-xs font-medium">
+                  <span>Dia: {activeWeekday}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectWeekday?.("Todos")}
+                    className="hover:text-primary/70 ml-0.5"
+                    aria-label="Remover filtro de dia"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {searchQuery.trim() && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted border border-border/70 text-foreground px-2.5 py-0.5 text-xs font-medium">
+                  <span>Busca: &ldquo;{searchQuery}&rdquo;</span>
+                  <button
+                    type="button"
+                    onClick={() => onSearchQueryChange?.("")}
+                    className="hover:text-muted-foreground ml-0.5"
+                    aria-label="Limpar busca"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
             </div>
           )}
 

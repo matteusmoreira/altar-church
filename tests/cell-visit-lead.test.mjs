@@ -37,6 +37,10 @@ function harness({ failTask = false, visible = false, unavailable = false } = {}
       assert.ok(values.includes("card"))
       assert.ok(values.some((value) => typeof value === "string" && value.includes(input.notes)))
       if (failTask) throw new Error("private database constraint detail")
+      return [{ id: "task" }]
+    }
+    if (query.includes("insert into public.cell_visit_requests")) {
+      return [{ id: "request" }]
     }
     return []
   }
@@ -46,7 +50,11 @@ function harness({ failTask = false, visible = false, unavailable = false } = {}
   } }
   const loaded = { exports: {} }
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-  new Function("require", "module", "exports", js)((name) => name === "@/lib/db/client" ? { getSql: () => db } : require(name), loaded, loaded.exports)
+  new Function("require", "module", "exports", js)((name) => {
+    if (name === "@/lib/db/client") return { getSql: () => db }
+    if (name === "@/lib/cells/whatsapp-dispatch") return { dispatchCellVisitWhatsAppAutomation: async () => {} }
+    return require(name)
+  }, loaded, loaded.exports)
   return {
     submit: (body = input) => loaded.exports.POST(new Request("http://localhost/api/v1/public/cells/visit-lead", { method: "POST", body: JSON.stringify(body) })),
     writes,
@@ -54,11 +62,11 @@ function harness({ failTask = false, visible = false, unavailable = false } = {}
   }
 }
 
-test("visit creates person, CRM, valid follow-up and acquisition in one transaction", async () => {
+test("visit creates person, CRM, valid follow-up, cell request and acquisition in one transaction", async () => {
   const h = harness()
   const response = await h.submit()
   assert.equal(response.status, 200)
-  assert.equal(h.writes.length, 4)
+  assert.equal(h.writes.length, 5)
   assert.deepEqual(h.state(), { committed: true, rolledBack: false })
   assert.equal((await response.json()).leaderPhone, null)
 })

@@ -188,6 +188,7 @@ export interface CellActionResult {
   ok: boolean
   id?: string
   token?: string
+  url?: string
   error?: string
 }
 

@@ -1,11 +1,18 @@
 import { GroupsClient } from "../gceus/groups-client"
 import { CellFeaturesClient } from "./cell-features-client"
 import { getCellFeaturesData } from "@/lib/cells/data"
-import { getGroupFormOptions, getGroupsDashboardData, listGroupMeetingReports, listGroupMembers, listGroups } from "@/lib/groups/data"
+import { getCellRequestsTabInitialData } from "@/lib/cells/requests-data"
+import {
+  getGroupFormOptions,
+  getGroupsDashboardData,
+  listGroupMeetingReports,
+  listGroupMembers,
+  listGroups,
+} from "@/lib/groups/data"
 import type { GroupListFilters } from "@/lib/groups/types"
 
 type SearchParams = Record<string, string | string[] | undefined>
-const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)
 
 export default async function CellsPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const features = await getCellFeaturesData()
@@ -23,9 +30,16 @@ export default async function CellsPage({ searchParams }: { searchParams?: Promi
     page: Number.isFinite(page) && page > 0 ? Math.trunc(page) : 1,
     pageSize: 20,
   }
-  const [groupsResult, dashboard, formOptions, meetings, members] = await Promise.all([
-    listGroups(filters), getGroupsDashboardData(), getGroupFormOptions(), listGroupMeetingReports(), listGroupMembers(),
+
+  const [groupsResult, dashboard, formOptions, meetings, members, requestsInitialData] = await Promise.all([
+    listGroups(filters),
+    getGroupsDashboardData(),
+    getGroupFormOptions(),
+    listGroupMeetingReports(),
+    listGroupMembers(),
+    getCellRequestsTabInitialData().catch(() => null),
   ])
+
   return (
     <GroupsClient
       dashboard={dashboard}
@@ -37,6 +51,7 @@ export default async function CellsPage({ searchParams }: { searchParams?: Promi
       cellFeatures={features}
       initialTab={aba}
       churchSlug={features.churchSlug}
+      requestsInitialData={requestsInitialData ?? undefined}
     />
   )
 }
