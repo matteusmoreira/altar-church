@@ -24,21 +24,35 @@ const supabaseConnectSources = Array.from(
 
 /**
  * CSP pragmática: sem nonce por enquanto, o Next injeta scripts inline de
- * hidratação. Ainda assim bloqueia exfiltração (connect-src / img-src),
- * sequestro de <base>, formulários para domínios externos e plugins.
- *
- * QZ Tray (impressão de etiquetas do Kids) conecta por websocket local —
- * os endpoints abaixo são necessários para não quebrar a impressão.
+ * hidratação. Bloqueia exfiltração (connect-src / img-src), sequestro de <base>,
+ * formulários para domínios externos e plugins, enquanto autoriza os serviços essenciais:
+ * - Mapbox (tiles, styles, fonts/glyphs, geocoding e rotas no mapa de células)
+ * - Cloudflare Web Analytics / Insights (monitoramento RUM em produção)
+ * - Supabase (dados, storage e realtime)
+ * - QZ Tray (impressão de etiquetas do Kids via websocket local)
+ * - Google Fonts (quando tipografia externa for referenciada)
  */
+const mapboxConnectSources = [
+  "https://api.mapbox.com",
+  "https://*.tiles.mapbox.com",
+  "https://events.mapbox.com",
+]
+
+const mapboxImageSources = [
+  "https://api.mapbox.com",
+  "https://*.tiles.mapbox.com",
+]
+
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${supabaseConnectSources.filter((s) => s.startsWith("https://")).join(" ")}`,
-  "font-src 'self' data:",
-  `connect-src 'self' ${supabaseConnectSources.join(" ")} wss://localhost:8181 ws://localhost:8182`,
+  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com blob:${isProduction ? "" : " 'unsafe-eval'"}`,
+  "style-src 'self' 'unsafe-inline' https://api.mapbox.com https://fonts.googleapis.com",
+  `img-src 'self' data: blob: ${mapboxImageSources.join(" ")} ${supabaseConnectSources.filter((s) => s.startsWith("https://")).join(" ")}`,
+  "font-src 'self' data: https://fonts.gstatic.com",
+  `connect-src 'self' ${mapboxConnectSources.join(" ")} https://cloudflareinsights.com ${supabaseConnectSources.join(" ")} wss://localhost:8181 ws://localhost:8182`,
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
+  "child-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -50,7 +64,7 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
   // HSTS apenas em produção: em desenvolvimento (http://localhost) só causa ruído.
   ...(isProduction
     ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
@@ -65,27 +79,33 @@ const nextConfig: NextConfig = {
         headers: securityHeaders,
       },
       {
+        source: "/church/:path*",
+        headers: [
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
         source: "/voluntariado/:path*",
         headers: [
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },
         ],
       },
       {
         source: "/celulas/:path*",
         headers: [
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },
         ],
       },
       {
         source: "/kids/:path*",
         headers: [
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },
         ],
       },
       {
         source: "/familia/:path*",
         headers: [
-          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self)" },
         ],
       },
     ]

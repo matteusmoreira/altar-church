@@ -78,11 +78,15 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
         setIsLocating(false)
         toast.success("Localização identificada! Células ordenadas por proximidade.")
       },
-      () => {
+      (err) => {
         setIsLocating(false)
-        toast.error("Não foi possível obter sua localização. Verifique as permissões do navegador.")
+        if (err.code === 1) {
+          toast.error("Acesso à localização negado. Permita a localização nas configurações do seu navegador.")
+        } else {
+          toast.error("Não foi possível obter sua localização. Tente novamente.")
+        }
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 10000 }
     )
   }
 
@@ -222,7 +226,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
   return (
     <div className={`relative h-dvh w-full overflow-hidden flex flex-col ${themeMode === "dark" ? "dark bg-slate-950 text-white" : "bg-background text-foreground"}`}>
       {/* Top Header Bar */}
-      <header className="absolute top-0 inset-x-0 z-30 flex flex-col p-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
+      <header className={`${viewMode === "map" ? "absolute top-0 inset-x-0" : "relative shrink-0"} z-30 flex flex-col p-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none`}>
         <div className="flex items-center justify-between gap-2 pointer-events-auto">
           {/* Back & Church Branding */}
           <Link
@@ -407,7 +411,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
       )}
 
       {/* Main Content: Map 3D or List View */}
-      <main className="relative flex-1 w-full h-full">
+      <main className="relative min-h-0 flex-1 w-full">
         {viewMode === "map" ? (
           <Cells3dMap
             cells={filteredCells}
@@ -417,6 +421,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
             themeMode={themeMode}
             userLocation={userLocation}
             routeLine={routeLine}
+            mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN}
           />
         ) : (
           <CellsListDrawer

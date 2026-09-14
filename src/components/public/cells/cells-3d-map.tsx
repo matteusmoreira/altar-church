@@ -37,18 +37,32 @@ export function Cells3dMap({
   const userMarkerRef = useRef<any>(null)
   const [isMapLoaded, setIsMapLoaded] = useState(false)
   const [pitch3d, setPitch3d] = useState(true)
+  const [mapError, setMapError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   const token = mapboxToken || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ""
   const missingToken = !token
 
   // Initialize Mapbox
   useEffect(() => {
-    if (!mapContainer.current) return
+    if (!mapContainer.current || !token) return
 
     let isMounted = true
+    let resizeObserver: ResizeObserver | undefined
+    let loadTimeout: ReturnType<typeof setTimeout> | undefined
+
+    const showLoadError = () => {
+      if (isMounted) setMapError("Não foi possível carregar o mapa. Tente novamente ou consulte a lista de células.")
+    }
 
     import("mapbox-gl").then(({ default: mapboxgl }) => {
       if (!isMounted || !mapContainer.current) return
+      setIsMapLoaded(false)
+      setMapError(null)
+      if (!mapboxgl.supported()) {
+        setMapError("Seu navegador não oferece suporte ao mapa 3D. Consulte a lista de células.")
+        return
+      }
 
       mapboxgl.accessToken = token
 
@@ -57,10 +71,16 @@ export function Cells3dMap({
           ? "mapbox://styles/mapbox/dark-v11"
           : "mapbox://styles/mapbox/streets-v12"
 
-      const initialCenter: [number, number] = [
-        centerCoordinates.longitude,
-        centerCoordinates.latitude,
-      ]
+      const safeLng =
+        typeof centerCoordinates?.longitude === "number" && !isNaN(centerCoordinates.longitude)
+          ? centerCoordinates.longitude
+          : -46.633308
+      const safeLat =
+        typeof centerCoordinates?.latitude === "number" && !isNaN(centerCoordinates.latitude)
+          ? centerCoordinates.latitude
+          : -23.55052
+
+      const initialCenter: [number, number] = [safeLng, safeLat]
 
       const map = new mapboxgl.Map({
         container: mapContainer.current,
@@ -72,10 +92,49 @@ export function Cells3dMap({
         antialias: true,
         attributionControl: false,
       })
+      mapRef.current = map
+      loadTimeout = setTimeout(showLoadError, 20000)
+
+      map.on("error", () => {
+        if (!map.isStyleLoaded()) showLoadError()
+      })
 
       map.on("load", () => {
         if (!isMounted) return
+        clearTimeout(loadTimeout)
+        setMapError(null)
         setIsMapLoaded(true)
+
+        // Ensure canvas dimensions match container
+        map.resize()
+
+        // Focus camera on cell(s) if coordinates exist
+        const validCells = cells.filter(
+          (c) =>
+            c.latitude !== null &&
+            c.longitude !== null &&
+            !isNaN(Number(c.latitude)) &&
+            !isNaN(Number(c.longitude))
+        )
+
+        if (validCells.length > 1) {
+          const bounds = new mapboxgl.LngLatBounds()
+          validCells.forEach((c) =>
+            bounds.extend([Number(c.longitude), Number(c.latitude)])
+          )
+          map.fitBounds(bounds, {
+            padding: { top: 90, bottom: 90, left: 60, right: 60 },
+            maxZoom: 15.5,
+            duration: 1200,
+          })
+        } else if (validCells.length === 1) {
+          map.flyTo({
+            center: [Number(validCells[0].longitude), Number(validCells[0].latitude)],
+            zoom: 14.8,
+            pitch: pitch3d ? 55 : 0,
+            duration: 1000,
+          })
+        }
 
         // Add 3D building layer
         try {
@@ -120,7 +179,7 @@ export function Cells3dMap({
             )
           }
 
-          // Add sky atmosphere
+          // Add sky atmosphere or fog
           if (!map.getLayer("sky")) {
             map.addLayer({
               id: "sky",
@@ -133,22 +192,29 @@ export function Cells3dMap({
             })
           }
         } catch {
-          // Ignore building layer error if vector source is mocked
+          // Ignore building layer error if vector source is not present
         }
       })
 
-      mapRef.current = map
-    })
+      resizeObserver = new ResizeObserver(() => map.resize())
+      resizeObserver.observe(mapContainer.current)
+    }).catch(showLoadError)
 
     return () => {
       isMounted = false
+      clearTimeout(loadTimeout)
+      resizeObserver?.disconnect()
+      markersRef.current.forEach((marker) => marker.remove())
+      markersRef.current = []
+      userMarkerRef.current?.remove()
+      userMarkerRef.current = null
       if (mapRef.current) {
         mapRef.current.remove()
         mapRef.current = null
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeMode])
+  }, [themeMode, token, retryCount])
 
   // Toggle 3D pitch
   const togglePitch = () => {
@@ -164,10 +230,19 @@ export function Cells3dMap({
 
   // Handle selected cell flyTo
   useEffect(() => {
-    if (!mapRef.current || !selectedCell || selectedCell.latitude === null || selectedCell.longitude === null) return
+    if (
+      !mapRef.current ||
+      !isMapLoaded ||
+      !selectedCell ||
+      selectedCell.latitude === null ||
+      selectedCell.longitude === null ||
+      isNaN(Number(selectedCell.latitude)) ||
+      isNaN(Number(selectedCell.longitude))
+    )
+      return
 
     mapRef.current.flyTo({
-      center: [selectedCell.longitude, selectedCell.latitude],
+      center: [Number(selectedCell.longitude), Number(selectedCell.latitude)],
       zoom: 16.8,
       pitch: 58,
       bearing: -20,
@@ -175,19 +250,27 @@ export function Cells3dMap({
       curve: 1.4,
       essential: true,
     })
-  }, [selectedCell])
+  }, [selectedCell, isMapLoaded])
 
   // Update cell 3D markers
   useEffect(() => {
     if (!mapRef.current || !isMapLoaded) return
+    let cancelled = false
 
     import("mapbox-gl").then(({ default: mapboxgl }) => {
+      if (cancelled || !mapRef.current) return
       // Clear old markers
       markersRef.current.forEach((m) => m.remove())
       markersRef.current = []
 
       cells.forEach((cell) => {
-        if (cell.latitude === null || cell.longitude === null) return
+        if (
+          cell.latitude === null ||
+          cell.longitude === null ||
+          isNaN(Number(cell.latitude)) ||
+          isNaN(Number(cell.longitude))
+        )
+          return
 
         const isSelected = selectedCell?.id === cell.id
         const color = cell.categoryColor || "#f97316"
@@ -260,19 +343,22 @@ export function Cells3dMap({
         })
 
         const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" })
-          .setLngLat([cell.longitude, cell.latitude])
+          .setLngLat([Number(cell.longitude), Number(cell.latitude)])
           .addTo(mapRef.current)
 
         markersRef.current.push(marker)
       })
     })
+    return () => { cancelled = true }
   }, [cells, isMapLoaded, selectedCell, onSelectCell, themeMode])
 
   // User GPS marker
   useEffect(() => {
     if (!mapRef.current || !isMapLoaded) return
+    let cancelled = false
 
     import("mapbox-gl").then(({ default: mapboxgl }) => {
+      if (cancelled || !mapRef.current) return
       if (userMarkerRef.current) {
         userMarkerRef.current.remove()
         userMarkerRef.current = null
@@ -292,7 +378,16 @@ export function Cells3dMap({
       userMarkerRef.current = new mapboxgl.Marker({ element: el })
         .setLngLat([userLocation.longitude, userLocation.latitude])
         .addTo(mapRef.current)
+
+      // Fly camera to user's location
+      mapRef.current.flyTo({
+        center: [userLocation.longitude, userLocation.latitude],
+        zoom: 14.8,
+        essential: true,
+        duration: 1200,
+      })
     })
+    return () => { cancelled = true }
   }, [userLocation, isMapLoaded])
 
   // Route drawing
@@ -343,7 +438,9 @@ export function Cells3dMap({
     }
 
     // Fit camera to enclose route
+    let cancelled = false
     import("mapbox-gl").then(({ default: mapboxgl }) => {
+      if (cancelled || mapRef.current !== map) return
       const bounds = routeLine.reduce(
         (b, coord) => b.extend(coord as [number, number]),
         new mapboxgl.LngLatBounds(routeLine[0], routeLine[0])
@@ -354,6 +451,7 @@ export function Cells3dMap({
         duration: 1200,
       })
     })
+    return () => { cancelled = true }
   }, [routeLine, isMapLoaded])
 
   return (
@@ -361,13 +459,14 @@ export function Cells3dMap({
       {/* Mapbox Canvas Container */}
       <div ref={mapContainer} className="h-full w-full select-none" />
 
-      {/* Missing Token Banner Notification */}
-      {missingToken && (
-        <div className="absolute top-4 left-4 right-4 z-20 mx-auto max-w-md rounded-lg border border-warning/30 bg-background/95 p-3.5 shadow-lg backdrop-blur text-xs text-foreground">
-          <p className="font-semibold text-warning">Dica de Configuração:</p>
-          <p className="mt-0.5 text-muted-foreground">
-            Adicione <code className="rounded bg-muted px-1 py-0.5">NEXT_PUBLIC_MAPBOX_TOKEN</code> no arquivo <code className="rounded bg-muted px-1 py-0.5">.env.local</code> para carregar os prédios 3D oficiais e o mapa com máxima resolução.
-          </p>
+      {(missingToken || mapError || !isMapLoaded) && (
+        <div role={missingToken || mapError ? "alert" : "status"} className="absolute top-1/2 left-4 right-4 z-20 mx-auto max-w-md -translate-y-1/2 rounded-lg border border-border bg-background/95 p-4 text-sm text-foreground shadow-lg backdrop-blur">
+          <p>{missingToken ? "Mapa indisponível no momento. Consulte a lista de células." : mapError || "Carregando mapa de células…"}</p>
+          {mapError && !missingToken && (
+            <button type="button" onClick={() => setRetryCount((count) => count + 1)} className="mt-3 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground">
+              Tentar novamente
+            </button>
+          )}
         </div>
       )}
 
