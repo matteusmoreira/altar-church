@@ -137,11 +137,21 @@ export async function getPublicCellsData(slug: string): Promise<PublicCellsPageD
   const sql = getSql()
 
   const churchRows = await sql<ChurchSlugRow[]>`
-    select id, name, public_name, slug, phone, email, city, state, address
-    from public.companies
-    where slug = ${slug}
-      and active = true
-      and status = 'active'
+    select
+      c.id,
+      c.name,
+      cp.public_name,
+      c.slug,
+      coalesce(cp.phone, c.phone, '') as phone,
+      coalesce(cp.email, c.email, '') as email,
+      coalesce(cp.city, c.city, '') as city,
+      coalesce(cp.state, c.state, '') as state,
+      coalesce(cp.address, c.address, '') as address
+    from public.companies c
+    left join public.church_profiles cp on cp.company_id = c.id
+    where c.slug = ${slug}
+      and c.active = true
+      and c.status = 'active'
     limit 1
   `
 

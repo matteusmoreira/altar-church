@@ -8,27 +8,31 @@ interface PublicCellsPageProps {
 }
 
 export async function generateMetadata({ params }: PublicCellsPageProps): Promise<Metadata> {
-  const { slug } = await params
-  const data = await getPublicCellsData(slug)
-  if (!data) return { title: "Células não encontradas" }
+  try {
+    const { slug } = await params
+    const data = await getPublicCellsData(slug)
+    if (!data) return { title: "Células não encontradas" }
 
-  const title = `Mapa 3D de Células | ${data.church.publicName}`
-  const description = `Encontre a célula mais próxima de você em ${data.church.city || "sua cidade"}! Navegue pelo mapa 3D com encontros durante a semana da ${data.church.publicName}.`
+    const title = `Mapa 3D de Células | ${data.church.publicName}`
+    const description = `Encontre a célula mais próxima de você em ${data.church.city || "sua cidade"}! Navegue pelo mapa 3D com encontros durante a semana da ${data.church.publicName}.`
 
-  return {
-    title,
-    description,
-    openGraph: {
+    return {
       title,
       description,
-      type: "website",
-      siteName: data.church.publicName,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-    },
+      openGraph: {
+        title,
+        description,
+        type: "website",
+        siteName: data.church.publicName,
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+      },
+    }
+  } catch {
+    return { title: "Mapa 3D de Células | Altar Church" }
   }
 }
 
