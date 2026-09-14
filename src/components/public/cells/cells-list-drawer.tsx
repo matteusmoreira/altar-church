@@ -36,6 +36,7 @@ import {
   formatTimeFilterLabel,
 } from "@/lib/cells/filter-helpers"
 import { toast } from "sonner"
+import { ScrollableFilterRow } from "./scrollable-filter-row"
 
 export interface CellsListDrawerProps {
   cells: (PublicCellItem & { distanceKm?: number | null })[]
@@ -206,7 +207,7 @@ export function CellsListDrawer({
 
           {/* Categories Filter Pills */}
           {onSelectCategory && categories.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none no-scrollbar pt-1">
+            <ScrollableFilterRow className="pb-1 pt-1 gap-2">
               <button
                 type="button"
                 onClick={() => onSelectCategory("all")}
@@ -245,12 +246,12 @@ export function CellsListDrawer({
                   </button>
                 )
               })}
-            </div>
+            </ScrollableFilterRow>
           )}
 
           {/* Weekdays Filter Pills */}
           {onSelectWeekday && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-xs">
+            <ScrollableFilterRow className="pb-0.5 text-xs">
               <span className="text-muted-foreground font-medium text-[11px] shrink-0 mr-1 hidden sm:inline">
                 Dia:
               </span>
@@ -277,7 +278,7 @@ export function CellsListDrawer({
                   </button>
                 )
               })}
-            </div>
+            </ScrollableFilterRow>
           )}
 
           {/* City, Neighborhood and Time Selects */}

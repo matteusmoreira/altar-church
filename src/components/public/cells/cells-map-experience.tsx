@@ -40,6 +40,7 @@ import { Cells3dMap } from "./cells-3d-map"
 import { CellDetailSheet } from "./cell-detail-sheet"
 import { CellVisitModal } from "./cell-visit-modal"
 import { CellsListDrawer } from "./cells-list-drawer"
+import { ScrollableFilterRow } from "./scrollable-filter-row"
 import { toast } from "sonner"
 
 export interface CellsMapExperienceProps {
@@ -380,9 +381,9 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
           </div>
 
           {/* Search Bar & Filters */}
-          <div className="mt-2.5 flex flex-col gap-2 pointer-events-auto max-w-lg mx-auto w-full">
+          <div className="mt-2.5 flex flex-col gap-2 pointer-events-auto max-w-xl sm:max-w-2xl md:max-w-3xl lg:max-w-4xl mx-auto w-full px-2">
             {/* Search Input */}
-            <div className="relative">
+            <div className="relative max-w-lg mx-auto w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 type="text"
@@ -407,7 +408,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
             </div>
 
             {/* Category Pills Scrolling Row */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+            <ScrollableFilterRow themeMode={themeMode} className="pb-1">
               <button
                 type="button"
                 onClick={() => setActiveCategoryId("all")}
@@ -453,10 +454,10 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
                   </button>
                 )
               })}
-            </div>
+            </ScrollableFilterRow>
 
             {/* Weekday Quick Filter Row */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-[11px]">
+            <ScrollableFilterRow themeMode={themeMode} className="pb-0.5 text-[11px]">
               {WEEKDAYS.map((day) => {
                 const isSelected = activeWeekday === day
                 return (
@@ -476,10 +477,10 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
                   </button>
                 )
               })}
-            </div>
+            </ScrollableFilterRow>
 
             {/* City, Neighborhood and Time Filter Selects */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-[11px]">
+            <ScrollableFilterRow themeMode={themeMode} className="pb-0.5 text-[11px]">
               {/* Cidade Select */}
               <Select
                 value={activeCity}
@@ -609,7 +610,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
                   <span>Limpar</span>
                 </button>
               )}
-            </div>
+            </ScrollableFilterRow>
           </div>
         </header>
       ) : (

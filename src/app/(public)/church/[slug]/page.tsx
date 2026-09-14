@@ -1,299 +1,86 @@
-import Link from "next/link"
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { format, parseISO } from "date-fns"
-import { ptBR } from "date-fns/locale"
-import {
-  BookOpen,
-  CalendarDays,
-  Church,
-  Clock,
-  Compass,
-  Heart,
-  Mail,
-  MapPin,
-  MapPinned,
-  Phone,
-  Sparkles,
-  Users,
-} from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getPublicChurchData } from "@/lib/content/data"
 import { AcquisitionBeacon } from "@/components/public/acquisition-beacon"
-import type { ContentPost } from "@/lib/content/types"
+import { ChurchPublicHeader } from "@/components/public/church/church-public-header"
+import { ChurchPortalClient } from "@/components/public/church/church-portal-client"
+import Link from "next/link"
 
 type PublicChurchPageProps = {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ tab?: string }>
 }
 
 export async function generateMetadata({ params }: PublicChurchPageProps): Promise<Metadata> {
   const { slug } = await params
   const data = await getPublicChurchData(slug)
-  if (!data) return { title: "Igreja não encontrada" }
+  if (!data) return { title: "Igreja não encontrada | Altar Church" }
+
+  const title = `${data.church.publicName} | Portal Oficial`
+  const description =
+    data.church.history || `Portal oficial da ${data.church.publicName}. Cultos, eventos, células e avisos.`
+
   return {
-    title: data.church.publicName,
-    description: data.church.history || `Informações públicas de ${data.church.publicName}`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "website",
+      siteName: data.church.publicName,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
   }
 }
 
-function formatDate(value: string | null) {
-  if (!value) return ""
-  return format(parseISO(value), "dd 'de' MMMM", { locale: ptBR })
-}
-
-function formatDateTime(value: string) {
-  return format(parseISO(value), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
-}
-
-function postTypeLabel(post: ContentPost) {
-  const labels: Record<ContentPost["type"], string> = {
-    news: "Notícia",
-    devotional: "Devocional",
-    ebd: "EBD",
-    publication: "Publicação",
-  }
-  return labels[post.type]
-}
-
-export default async function PublicChurchPage({ params }: PublicChurchPageProps) {
+export default async function PublicChurchPage({ params, searchParams }: PublicChurchPageProps) {
   const { slug } = await params
+  const resolvedSearchParams = await searchParams
+  const initialTab =
+    typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams.tab : "tudo"
+
   const data = await getPublicChurchData(slug)
 
   if (!data) {
     notFound()
   }
 
-  const heroBanner = data.banners[0]
-
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 selection:text-primary transition-colors duration-300">
+      {/* Marketing / UTM Tracker */}
       <AcquisitionBeacon companySlug={data.church.slug} />
-      <section className="border-b border-border/50 bg-foreground text-background">
-        <div className="mx-auto grid min-h-[82vh] max-w-6xl content-center gap-10 px-4 py-12 md:grid-cols-[1.25fr_0.75fr] md:py-16">
-          <div className="space-y-7">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-background text-foreground">
-              <Church className="h-8 w-8" />
-            </div>
-            <div className="max-w-3xl space-y-4">
-              <h1 className="text-4xl font-bold tracking-tight md:text-6xl">{data.church.publicName}</h1>
-              <p className="text-lg text-background/75 md:text-xl">
-                {data.church.history || "Uma comunidade para servir, discipular e caminhar em comunhão."}
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 text-sm text-background/70 sm:flex-row sm:flex-wrap">
-              <span className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                {data.church.address}, {data.church.city} - {data.church.state}
-              </span>
-              <span className="flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                {data.church.phone}
-              </span>
-              <span className="flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                {data.church.email}
-              </span>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Link
-                href={`/church/${slug}/celulas`}
-                className={buttonVariants({
-                  size: "lg",
-                  className: "bg-cyan-500 hover:bg-cyan-600 text-white font-bold shadow-lg shadow-cyan-500/20 border-0",
-                })}
-              >
-                <Compass className="mr-2 h-5 w-5" />
-                Mapa 3D de Células
-              </Link>
-              <Link href="/login" className={buttonVariants({ size: "lg", className: "bg-background text-foreground hover:bg-background/90" })}>
-                Acessar sistema
-              </Link>
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${data.church.address}, ${data.church.city} - ${data.church.state}`)}`}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: "outline", size: "lg", className: "border-background/30 text-background hover:bg-background/10" })}
-              >
-                <MapPinned className="mr-2 h-4 w-4" />
-                Como chegar
-              </a>
-            </div>
-          </div>
 
-          <Card className="self-end border-background/20 bg-background/10 text-background shadow-none backdrop-blur">
-            <CardHeader>
-              <Badge className="w-fit bg-background text-foreground">{heroBanner ? "Destaque" : "Bem-vindo"}</Badge>
-              <CardTitle className="text-2xl">{heroBanner?.title ?? "Portal da igreja"}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-background/75">
-                Conteúdo, programação, ministérios e informações públicas conectadas ao cadastro real da igreja.
-              </p>
-              {heroBanner?.linkUrl && (
-                <Link href={heroBanner.linkUrl} className={buttonVariants({ variant: "secondary", className: "w-full" })}>
-                  Ver chamada
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+      {/* Modern Sticky Glassmorphism Header */}
+      <ChurchPublicHeader churchName={data.church.publicName} slug={data.church.slug} />
 
-      <main className="mx-auto max-w-6xl space-y-14 px-4 py-12">
-        {/* Banner Especial Mapa 3D de Células */}
-        <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/10 via-cyan-500/10 to-background p-6 sm:p-10 shadow-xl">
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                <Sparkles className="h-3.5 w-3.5" />
-                Experiência 3D Interativa
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-                Encontre uma Célula perto de você
-              </h2>
-              <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
-                Explore as células da {data.church.publicName} espalhadas pela cidade em um mapa 3D imersivo. Encontre o grupo ideal por faixa etária, dia da semana e trace sua rota!
-              </p>
-            </div>
+      {/* Main Interactive SuperApp Portal Experience */}
+      <ChurchPortalClient data={data} initialTab={initialTab} />
 
-            <Link
-              href={`/church/${slug}/celulas`}
-              className={buttonVariants({
-                size: "lg",
-                className: "bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/25 h-12 px-6 rounded-xl shrink-0",
-              })}
-            >
-              <Compass className="mr-2 h-5 w-5" />
-              Abrir Mapa 3D
+      {/* Refined Footer */}
+      <footer className="border-t border-border/40 bg-card/40 py-8 text-center text-xs text-muted-foreground transition-colors mb-20 md:mb-0">
+        <div className="mx-auto max-w-6xl px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="font-medium">
+            {data.church.publicName} © {new Date().getFullYear()} • Todos os direitos reservados.
+          </p>
+          <div className="flex items-center gap-4 text-[11px]">
+            <Link href="/login" className="hover:text-foreground transition-colors">
+              Acesso Administrativo
             </Link>
+            <span>•</span>
+            <a
+              href="https://altarchurch.com.br"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-foreground font-semibold text-primary transition-colors"
+            >
+              Tecnologia Altar Church
+            </a>
           </div>
-        </section>
-
-        <section className="space-y-5">
-          <div className="flex items-center gap-3">
-            <BookOpen className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-bold">Conteúdos recentes</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {data.posts.map((post) => (
-              <Card key={post.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <Badge variant="secondary">{postTypeLabel(post)}</Badge>
-                    <span className="text-xs text-muted-foreground">{formatDate(post.publishedAt)}</span>
-                  </div>
-                  <CardTitle className="text-lg">{post.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="line-clamp-3 text-sm text-muted-foreground">{post.summary || post.content}</p>
-                  {post.authorName && <p className="text-xs text-muted-foreground">Por {post.authorName}</p>}
-                </CardContent>
-              </Card>
-            ))}
-            {data.posts.length === 0 && (
-              <Card className="md:col-span-3">
-                <CardContent className="p-8 text-center text-muted-foreground">Nenhum conteúdo publicado ainda.</CardContent>
-              </Card>
-            )}
-          </div>
-        </section>
-
-        <section className="grid gap-8 lg:grid-cols-2">
-          <div className="space-y-5">
-            <div className="flex items-center gap-3">
-              <CalendarDays className="h-6 w-6 text-primary" />
-              <h2 className="text-2xl font-bold">Programação</h2>
-            </div>
-            <div className="grid gap-4">
-              {data.programmings.map((programming) => (
-                <Card key={programming.id}>
-                  <CardContent className="flex items-start gap-4 p-5">
-                    <Clock className="mt-1 h-5 w-5 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{programming.title}</h3>
-                      <p className="text-sm text-muted-foreground">{programming.description}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">{formatDate(programming.startsAt)} {programming.isLive ? "• Ao vivo" : ""}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {data.programmings.length === 0 && <p className="text-sm text-muted-foreground">Programação ainda não publicada.</p>}
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <div className="flex items-center gap-3">
-              <Heart className="h-6 w-6 text-primary" />
-              <h2 className="text-2xl font-bold">Ministérios</h2>
-            </div>
-            <div className="grid gap-4">
-              {data.ministries.map((ministry) => (
-                <Card key={ministry.id}>
-                  <CardContent className="p-5">
-                    <h3 className="font-semibold">{ministry.name}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">{ministry.description}</p>
-                    {ministry.leaderName && <p className="mt-3 text-xs text-muted-foreground">Liderança: {ministry.leaderName}</p>}
-                  </CardContent>
-                </Card>
-              ))}
-              {data.ministries.length === 0 && <p className="text-sm text-muted-foreground">Ministérios ainda não publicados.</p>}
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-5">
-          <div className="flex items-center gap-3">
-            <CalendarDays className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-bold">Próximos eventos</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {data.events.map((event) => (
-              <Card key={event.id}>
-                <CardHeader>
-                  <Badge variant="secondary" className="w-fit">{event.type}</Badge>
-                  <CardTitle className="text-lg">{event.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <p className="font-medium">{formatDateTime(event.startsAt)}</p>
-                  {event.description && <p className="text-muted-foreground">{event.description}</p>}
-                  {(event.location || event.isOnline) && (
-                    <p className="text-muted-foreground">{event.isOnline ? "Online" : event.location}</p>
-                  )}
-                  {event.registrationEnabled && <p className="text-xs font-medium text-primary">Inscrições abertas</p>}
-                  {event.isOnline && event.onlineLink && (
-                    <a href={event.onlineLink} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">Acessar link online</a>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-            {data.events.length === 0 && <p className="text-sm text-muted-foreground">Nenhum evento público próximo.</p>}
-          </div>
-        </section>
-
-        <section className="space-y-5">
-          <div className="flex items-center gap-3">
-            <Users className="h-6 w-6 text-primary" />
-            <h2 className="text-2xl font-bold">Congregações</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {data.congregations.map((congregation) => (
-              <Card key={congregation.id}>
-                <CardContent className="p-5">
-                  <h3 className="font-semibold">{congregation.name}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{congregation.address}</p>
-                  <p className="mt-3 text-xs text-muted-foreground">Responsável: {congregation.responsible}</p>
-                </CardContent>
-              </Card>
-            ))}
-            {data.congregations.length === 0 && <p className="text-sm text-muted-foreground">Congregações ainda não publicadas.</p>}
-          </div>
-        </section>
-      </main>
-
-      <footer className="border-t border-border/50 py-6 text-center text-sm text-muted-foreground">
-        <p>{data.church.publicName} © {new Date().getFullYear()} • Altar Church</p>
+        </div>
       </footer>
     </div>
   )
