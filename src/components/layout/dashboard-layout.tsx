@@ -244,31 +244,37 @@ function SidebarContent({
 
       <Separator className="opacity-50" />
 
-      <div className={cn("p-4", collapsed ? "flex flex-col items-center gap-1" : "space-y-2")}>
-        <PwaInstallButton
-          iconOnly={collapsed}
-          variant="ghost"
-          className={cn(!collapsed && "w-full")}
-        />
+      <div className={cn("p-3", collapsed ? "flex flex-col items-center" : "flex items-center justify-center")}>
         <div
           className={cn(
-            "flex items-center gap-1",
-            collapsed ? "flex-col" : "justify-between"
+            "flex items-center justify-center gap-2",
+            collapsed && "flex-col gap-2"
           )}
         >
-          <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
-            <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={logout} className="h-9 w-9">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <PwaInstallButton
+            iconOnly
+            variant="ghost"
+            className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          />
+          <ThemeToggle className="text-muted-foreground hover:text-foreground hover:bg-muted/50" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            title="Sair da conta"
+            aria-label="Sair da conta"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
           {onToggle && (
             <Button
               variant="ghost"
               size="icon"
               onClick={onToggle}
-              className={cn("h-9 w-9 shrink-0", collapsed && "mt-2")}
+              className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted/50"
               title={collapsed ? "Expandir menu" : "Recolher menu"}
+              aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
             >
               {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </Button>
@@ -279,7 +285,7 @@ function SidebarContent({
   )
 }
 
-function Topbar({ churchName, churchSlug }: { churchName: string; churchSlug?: string }) {
+function Topbar({ churchName }: { churchName: string; churchSlug?: string }) {
   const { user } = useAuth()
 
   return (
@@ -289,19 +295,6 @@ function Topbar({ churchName, churchSlug }: { churchName: string; churchSlug?: s
           <Church className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium text-muted-foreground">{churchName}</span>
         </div>
-        {churchSlug && (
-          <Button
-            variant="outline"
-            size="sm"
-            render={<a href={`/church/${churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />}
-            nativeButton={false}
-            className="h-8 gap-1.5 border-primary/30 bg-primary/5 text-xs font-medium text-primary shadow-sm hover:bg-primary/10 hover:border-primary/50 transition-all"
-          >
-            <Compass className="h-3.5 w-3.5 text-primary animate-pulse" />
-            <span>Mapa 3D Células</span>
-            <ExternalLink className="h-3 w-3 opacity-60" />
-          </Button>
-        )}
       </div>
       <div className="flex items-center gap-3">
         <div className="text-right">
@@ -405,18 +398,6 @@ export function DashboardLayout({
             <span className="truncate font-bold">{churchName}</span>
           </div>
           <div className="ml-auto shrink-0 flex items-center gap-1.5">
-            {churchSlug && (
-              <Button
-                variant="ghost"
-                size="icon"
-                render={<a href={`/church/${churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />}
-                nativeButton={false}
-                className="h-9 w-9 text-primary hover:bg-primary/10"
-                title="Mapa 3D das Células"
-              >
-                <Compass className="h-4 w-4 animate-pulse" />
-              </Button>
-            )}
             <ThemeToggle />
           </div>
         </header>

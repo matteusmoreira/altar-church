@@ -222,7 +222,7 @@ export function PwaInstallButton({
       title={iconOnly ? "Instalar Aplicativo" : undefined}
       aria-label={iconOnly ? "Instalar Aplicativo" : undefined}
     >
-      <Download className={cn(busy && "animate-bounce")} />
+      <Download className={cn("h-4 w-4 shrink-0", busy && "animate-bounce")} />
       {!iconOnly && <span>Instalar Aplicativo</span>}
     </Button>
   )

@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import {
   Bar,
   BarChart,
@@ -15,9 +14,7 @@ import {
   Bell,
   BookOpen,
   CalendarDays,
-  CheckCircle2,
   Church,
-  Circle,
   ClipboardList,
   Compass,
   DollarSign,
@@ -27,7 +24,6 @@ import {
   Users,
   UsersRound,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MetricCard, ShortcutCard } from "@/components/shared"
 import type { GroupDashboardData } from "@/lib/groups/types"
@@ -52,15 +48,6 @@ export interface DashboardClientData {
     groups: ChartPoint[]
   }
 }
-
-const checklistItems = [
-  { id: "church", label: "Cadastrar igreja" },
-  { id: "people", label: "Cadastrar pessoas" },
-  { id: "content", label: "Criar conteúdo" },
-  { id: "groups", label: "Criar células" },
-  { id: "users", label: "Convidar usuários" },
-  { id: "production", label: "Validar gate de produção" },
-]
 
 interface ShortcutItem {
   href: string
@@ -92,8 +79,6 @@ export function DashboardClient({
   data: DashboardClientData
   churchSlug?: string | null
 }) {
-  const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({})
-  const completedCount = Object.values(checkedItems).filter(Boolean).length
   const activeRate = data.people.total > 0 ? Math.round((data.people.active / data.people.total) * 100) : 0
 
   const allShortcuts = [
@@ -111,10 +96,6 @@ export function DashboardClient({
       : []),
     ...shortcuts,
   ]
-
-  const toggleCheck = (id: string) => {
-    setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }))
-  }
 
   return (
     <div className="space-y-6">
@@ -165,40 +146,6 @@ export function DashboardClient({
           color="bg-destructive"
         />
       </div>
-
-      <Card className="glass">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between text-base">
-            <span className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-primary" />
-              Checklist Inicial
-            </span>
-            <Badge variant="secondary">
-              {completedCount}/{checklistItems.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {checklistItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => toggleCheck(item.id)}
-                className="flex items-center gap-3 rounded-lg border border-border/30 p-3 text-left transition-colors hover:bg-muted/30"
-              >
-                {checkedItems[item.id] ? (
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
-                ) : (
-                  <Circle className="h-5 w-5 shrink-0 text-muted-foreground" />
-                )}
-                <span className={`text-sm ${checkedItems[item.id] ? "text-muted-foreground line-through" : "font-medium"}`}>
-                  {item.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="glass">
