@@ -1,11 +1,12 @@
 "use client"
 
 import { FormEvent, useMemo, useState, useTransition } from "react"
-import { CheckCircle2, Church, Loader2, ShieldCheck } from "lucide-react"
+import { CheckCircle2, Church, Loader2, MessageSquare, RotateCcw, ShieldCheck } from "lucide-react"
 import { submitPublicForm } from "@/lib/forms/actions"
 import type { FormField, PublicFormData } from "@/lib/forms/types"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { AcquisitionBeacon } from "@/components/public/acquisition-beacon"
+import { BalloonPopCelebration } from "@/components/ui/balloon-pop-celebration"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -46,17 +47,20 @@ function ChurchLogo({
   publicName: string
   size?: "md" | "lg"
 }) {
-  const box = size === "lg" ? "h-24 w-24 sm:h-28 sm:w-28" : "h-20 w-20 sm:h-24 sm:w-24"
+  const containerClass =
+    size === "lg"
+      ? "h-24 max-w-[240px] sm:h-28 sm:max-w-[280px]"
+      : "h-20 max-w-[200px] sm:h-24 sm:max-w-[240px]"
   const icon = size === "lg" ? "h-10 w-10" : "h-9 w-9"
 
   if (logoUrl) {
     return (
-      <div className={`mx-auto flex ${box} items-center justify-center overflow-hidden rounded-2xl bg-background p-2 shadow-lg ring-1 ring-border/60`}>
+      <div className={`mx-auto flex ${containerClass} items-center justify-center p-1`}>
         {/* eslint-disable-next-line @next/next/no-img-element -- signed Supabase URL */}
         <img
           src={logoUrl}
           alt={`Logo de ${publicName}`}
-          className="h-full w-full object-contain"
+          className="h-full w-auto max-w-full object-contain rounded-2xl drop-shadow-sm transition-transform duration-300 hover:scale-105"
         />
       </div>
     )
@@ -64,7 +68,7 @@ function ChurchLogo({
 
   return (
     <div
-      className={`mx-auto flex ${box} items-center justify-center rounded-2xl bg-foreground text-background shadow-lg`}
+      className={`mx-auto flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-foreground text-background shadow-lg`}
     >
       <Church className={icon} />
     </div>
@@ -123,25 +127,83 @@ export function PublicFormClient({ data }: PublicFormClientProps) {
 
   if (success) {
     return (
-      <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background">
+      <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background flex flex-col justify-center overflow-hidden">
+        <BalloonPopCelebration />
         <AcquisitionBeacon companySlug={data.companySlug} />
         <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
           <ThemeToggle />
         </div>
-        <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-12">
-          <Card className="border-border/60 shadow-xl">
-            <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
-              <ChurchLogo logoUrl={data.logoUrl} publicName={data.publicName} size="md" />
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
-                <CheckCircle2 className="h-7 w-7" />
+
+        <div className="relative z-10 mx-auto w-full max-w-lg px-4 py-12 sm:py-16">
+          <Card className="border-border/60 shadow-2xl shadow-primary/10 backdrop-blur-md bg-card/95 rounded-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-500">
+            {/* Top decorative accent bar */}
+            <div className="h-1.5 w-full bg-gradient-to-r from-primary via-emerald-500 to-primary" />
+
+            <CardContent className="flex flex-col items-center gap-6 p-6 sm:p-10 text-center">
+              {/* Church Logo & Public Name Badge */}
+              <div className="flex flex-col items-center gap-2.5">
+                <ChurchLogo logoUrl={data.logoUrl} publicName={data.publicName} size="md" />
+                <span className="inline-flex items-center rounded-full bg-primary/10 px-3.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                  {data.publicName}
+                </span>
               </div>
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold tracking-tight">Enviado com sucesso</h1>
-                <p className="text-muted-foreground">
-                  {data.form.successMessage || "Obrigado! Recebemos suas informações."}
+
+              {/* Animated Celebratory Checkmark Hero */}
+              <div className="relative flex items-center justify-center pt-1">
+                <div className="absolute h-20 w-20 rounded-full bg-emerald-500/20 animate-ping opacity-60" />
+                <div className="absolute h-18 w-18 rounded-full bg-emerald-500/15 animate-pulse" />
+                <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-xl shadow-emerald-500/25">
+                  <CheckCircle2 className="h-9 w-9 stroke-[2.5]" />
+                </div>
+              </div>
+
+              {/* Title & Success Message */}
+              <div className="space-y-2.5">
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+                  Enviado com sucesso!
+                </h1>
+                <p className="text-sm sm:text-base leading-relaxed text-muted-foreground max-w-md mx-auto">
+                  {data.form.successMessage || "Obrigado! Recebemos suas informações com carinho."}
                 </p>
               </div>
-              <p className="text-sm text-muted-foreground">{data.publicName}</p>
+
+              {/* WhatsApp Notification Card */}
+              <div className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-emerald-800 dark:text-emerald-300 flex items-center gap-3.5 text-left">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Aviso por WhatsApp</p>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Nossa equipe entrará em contato em breve através do número informado!
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons & Security Footer */}
+              <div className="pt-2 w-full flex flex-col gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const initial: Record<string, string | boolean> = {}
+                    for (const field of data.fields) {
+                      initial[field.fieldKey] = field.fieldType === "checkbox" ? false : ""
+                    }
+                    setValues(initial)
+                    setError(null)
+                    setSuccess(false)
+                  }}
+                  className="w-full rounded-xl py-5 text-sm font-medium border-border/80 hover:bg-accent/80 transition-colors"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Enviar outra resposta
+                </Button>
+
+                <div className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Seus dados foram enviados com segurança</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

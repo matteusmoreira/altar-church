@@ -88,6 +88,10 @@ type GroupFormState = {
   maxAge: number | null
   acceptsRequests: boolean
   isActive: boolean
+  latitude: number | null
+  longitude: number | null
+  isAddressPublic: boolean
+  cellPhotoUrl: string | null
 }
 
 type FilterState = {
@@ -148,6 +152,10 @@ const emptyForm: GroupFormState = {
   maxAge: null,
   acceptsRequests: true,
   isActive: true,
+  latitude: null,
+  longitude: null,
+  isAddressPublic: true,
+  cellPhotoUrl: null,
 }
 
 function formatDate(value: string) {
@@ -190,6 +198,10 @@ function groupToForm(group: GroupListItem): GroupFormState {
     maxAge: group.maxAge,
     acceptsRequests: group.acceptsRequests,
     isActive: group.isActive,
+    latitude: group.latitude ?? null,
+    longitude: group.longitude ?? null,
+    isAddressPublic: group.isAddressPublic ?? true,
+    cellPhotoUrl: group.cellPhotoUrl ?? null,
   }
 }
 
@@ -219,6 +231,10 @@ function buildActionInput(form: GroupFormState): SaveGroupInput {
     maxAge: form.maxAge,
     acceptsRequests: form.acceptsRequests,
     isActive: form.isActive,
+    latitude: form.latitude,
+    longitude: form.longitude,
+    isAddressPublic: form.isAddressPublic,
+    cellPhotoUrl: form.cellPhotoUrl,
   }
 }
 

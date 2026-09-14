@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
   ChurchInfoCongregation,
   ChurchInfoData,
@@ -34,8 +35,10 @@ interface ProfileRow {
   history: string | null
   logo_file_id: string | null
   logo_original_name: string | null
+  logo_storage_path: string | null
   cover_file_id: string | null
   cover_original_name: string | null
+  cover_storage_path: string | null
 }
 
 interface SocialLinkRow {
@@ -100,7 +103,7 @@ function toNumber(value: string | number | null | undefined) {
   return Number(value ?? 0)
 }
 
-function toProfile(row: ProfileRow): ChurchProfileData {
+function toProfile(row: ProfileRow, signedUrls?: Map<string, string>): ChurchProfileData {
   return {
     id: row.id,
     companyId: row.company_id,
@@ -118,8 +121,10 @@ function toProfile(row: ProfileRow): ChurchProfileData {
     history: row.history ?? "",
     logoFileId: row.logo_file_id,
     logoFileName: row.logo_original_name ?? "",
+    logoUrl: row.logo_storage_path ? (signedUrls?.get(row.logo_storage_path) ?? null) : null,
     coverFileId: row.cover_file_id,
     coverFileName: row.cover_original_name ?? "",
+    coverUrl: row.cover_storage_path ? (signedUrls?.get(row.cover_storage_path) ?? null) : null,
   }
 }
 
@@ -220,8 +225,10 @@ export async function getChurchInfoData(companyIdInput?: string | null): Promise
         cp.history,
         cp.logo_file_id,
         logo.original_name as logo_original_name,
+        logo.storage_path as logo_storage_path,
         cp.cover_file_id,
-        cover.original_name as cover_original_name
+        cover.original_name as cover_original_name,
+        cover.storage_path as cover_storage_path
       from public.church_profiles cp
       right join public.companies c on cp.company_id = c.id
       left join public.app_files logo on logo.id = cp.logo_file_id
@@ -281,8 +288,20 @@ export async function getChurchInfoData(companyIdInput?: string | null): Promise
     throw new Error("Igreja não encontrada")
   }
 
+  const pathsToSign: string[] = []
+  if (profileRow.logo_storage_path) pathsToSign.push(profileRow.logo_storage_path)
+  if (profileRow.cover_storage_path) pathsToSign.push(profileRow.cover_storage_path)
+  let signedUrls = new Map<string, string>()
+  if (pathsToSign.length > 0) {
+    try {
+      signedUrls = await createSignedUrlsByStoragePath(pathsToSign)
+    } catch {
+      // Ignora falha de storage se credenciais ou bucket não estiverem configurados
+    }
+  }
+
   return {
-    profile: toProfile(profileRow),
+    profile: toProfile(profileRow, signedUrls),
     socialLinks: defaultSocialLinks(socialLinkRows.map(toSocialLink)),
     ministries: ministryRows.map(toMinistry),
     programmings: programmingRows.map(toProgramming),

@@ -186,6 +186,37 @@ export interface PeopleListResult {
   pageCount: number
 }
 
+export interface PersonTypeCount {
+  type: PersonType
+  label: string
+  count: number
+}
+
+export interface PersonGenderCount {
+  gender: string
+  label: string
+  count: number
+}
+
+export interface PersonAgeGroupCount {
+  group: string
+  count: number
+}
+
+export interface MonthlyRegistrationCount {
+  month: string
+  label: string
+  count: number
+}
+
+export interface PeopleDataQuality {
+  missingPhone: number
+  missingEmail: number
+  missingBirthDate: number
+  missingAddress: number
+  completeProfiles: number
+}
+
 export interface PeopleDashboardData {
   total: number
   active: number
@@ -193,6 +224,38 @@ export interface PeopleDashboardData {
   baptized: number
   emailValidated: number
   possibleDuplicates: number
+  members?: number
+  leaders?: number
+  volunteers?: number
+  attendees?: number
+  typeDistribution?: PersonTypeCount[]
+  genderDistribution?: PersonGenderCount[]
+  ageDistribution?: PersonAgeGroupCount[]
+  monthlyRegistrations?: MonthlyRegistrationCount[]
+  dataQuality?: PeopleDataQuality
+}
+
+export interface BirthdayPerson {
+  id: string
+  fullName: string
+  birthDate: string
+  day: number
+  month: number
+  phone: string
+  congregationName: string | null
+  personType: PersonType
+}
+
+export interface CreatePersonActivityInput {
+  description: string
+  category: "pastoral" | "worship" | "ministry" | "small_group" | "volunteer"
+  companyId?: string | null
+}
+
+export interface CreateMemberJourneyInput {
+  name: string
+  description?: string
+  companyId?: string | null
 }
 
 export interface PersonFormOptions {

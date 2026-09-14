@@ -41,6 +41,10 @@ const emptyCellForm: CellForm = {
   maxAge: null,
   acceptsRequests: true,
   isActive: true,
+  latitude: null,
+  longitude: null,
+  isAddressPublic: true,
+  cellPhotoUrl: null,
 }
 
 function toCellForm(cell: CellLeaderCell): CellForm {
@@ -66,6 +70,10 @@ function toCellForm(cell: CellLeaderCell): CellForm {
     maxAge: cell.maxAge,
     acceptsRequests: cell.acceptsRequests,
     isActive: true,
+    latitude: cell.latitude,
+    longitude: cell.longitude,
+    isAddressPublic: cell.isAddressPublic ?? true,
+    cellPhotoUrl: cell.cellPhotoUrl ?? null,
   }
 }
 
@@ -90,6 +98,10 @@ function cellInput(form: CellForm): SaveLeaderCellInput {
     maxAge: form.maxAge,
     acceptsRequests: form.acceptsRequests,
     coordinatorPersonId: form.coordinatorPersonId === "none" ? null : form.coordinatorPersonId,
+    latitude: form.latitude,
+    longitude: form.longitude,
+    isAddressPublic: form.isAddressPublic,
+    cellPhotoUrl: form.cellPhotoUrl,
   }
 }
 

@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { listPersonFollowUpTasks, listPersonTimeline } from "./follow-up"
 import type {
+  BirthdayPerson,
   DuplicateCandidateItem,
   DuplicateCandidateStatus,
   PeopleDashboardData,
@@ -103,6 +104,39 @@ interface DashboardRow {
   visitors: string | number
   baptized: string | number
   email_validated: string | number
+  members: string | number
+  leaders: string | number
+  volunteers: string | number
+  attendees: string | number
+  male: string | number
+  female: string | number
+  other_gender: string | number
+  age_child: string | number
+  age_teen: string | number
+  age_young: string | number
+  age_adult: string | number
+  age_senior: string | number
+  age_uninformed: string | number
+  missing_phone: string | number
+  missing_email: string | number
+  missing_birth_date: string | number
+  missing_address: string | number
+}
+
+interface MonthlyRegistrationRow {
+  month_key: string
+  count: string | number
+}
+
+interface BirthdayRow {
+  id: string
+  full_name: string
+  birth_date: Date | string
+  phone: string
+  person_type: PersonType
+  congregation_name: string | null
+  day: number
+  month: number
 }
 
 interface DuplicatePersonRow {
@@ -592,19 +626,51 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
   }
 }
 
+const MONTH_LABELS: Record<string, string> = {
+  "01": "Jan",
+  "02": "Fev",
+  "03": "Mar",
+  "04": "Abr",
+  "05": "Mai",
+  "06": "Jun",
+  "07": "Jul",
+  "08": "Ago",
+  "09": "Set",
+  "10": "Out",
+  "11": "Nov",
+  "12": "Dez",
+}
+
 export async function getPeopleDashboardData(companyIdInput?: string | null): Promise<PeopleDashboardData> {
   const companyId = await resolveCompanyId(companyIdInput)
   await requirePermission("members.view", companyId)
 
   const sql = getSql()
-  const [dashboardRows, duplicateRows] = await Promise.all([
+  const [dashboardRows, duplicateRows, monthlyRows] = await Promise.all([
     sql<DashboardRow[]>`
       select
         count(*) as total,
         count(*) filter (where is_active = true and status = 'active') as active,
         count(*) filter (where status = 'visitor') as visitors,
         count(*) filter (where baptized = true) as baptized,
-        count(*) filter (where email_validated = true) as email_validated
+        count(*) filter (where email_validated = true) as email_validated,
+        count(*) filter (where person_type = 'member') as members,
+        count(*) filter (where person_type = 'leader') as leaders,
+        count(*) filter (where person_type = 'volunteer') as volunteers,
+        count(*) filter (where person_type = 'attendee') as attendees,
+        count(*) filter (where gender = 'male') as male,
+        count(*) filter (where gender = 'female') as female,
+        count(*) filter (where gender not in ('male', 'female') or gender is null) as other_gender,
+        count(*) filter (where birth_date is not null and extract(year from age(birth_date)) < 12) as age_child,
+        count(*) filter (where birth_date is not null and extract(year from age(birth_date)) >= 12 and extract(year from age(birth_date)) <= 17) as age_teen,
+        count(*) filter (where birth_date is not null and extract(year from age(birth_date)) >= 18 and extract(year from age(birth_date)) <= 29) as age_young,
+        count(*) filter (where birth_date is not null and extract(year from age(birth_date)) >= 30 and extract(year from age(birth_date)) <= 59) as age_adult,
+        count(*) filter (where birth_date is not null and extract(year from age(birth_date)) >= 60) as age_senior,
+        count(*) filter (where birth_date is null) as age_uninformed,
+        count(*) filter (where phone is null or trim(phone) = '') as missing_phone,
+        count(*) filter (where email is null or trim(email) = '') as missing_email,
+        count(*) filter (where birth_date is null) as missing_birth_date,
+        count(*) filter (where address is null or trim(address) = '') as missing_address
       from public.people
       where company_id = ${companyId}
         and deleted_at is null
@@ -615,17 +681,145 @@ export async function getPeopleDashboardData(companyIdInput?: string | null): Pr
       where company_id = ${companyId}
         and status = 'open'
     `,
+    sql<MonthlyRegistrationRow[]>`
+      select
+        to_char(date_trunc('month', created_at), 'YYYY-MM') as month_key,
+        count(*) as count
+      from public.people
+      where company_id = ${companyId}
+        and deleted_at is null
+        and created_at >= (date_trunc('month', now()) - interval '5 months')
+      group by 1
+      order by 1 asc
+    `,
   ])
 
   const dashboard = dashboardRows[0]
-  return {
-    total: toNumber(dashboard?.total),
-    active: toNumber(dashboard?.active),
-    visitors: toNumber(dashboard?.visitors),
-    baptized: toNumber(dashboard?.baptized),
-    emailValidated: toNumber(dashboard?.email_validated),
-    possibleDuplicates: toNumber(duplicateRows[0]?.total),
+  const total = toNumber(dashboard?.total)
+  const active = toNumber(dashboard?.active)
+  const visitors = toNumber(dashboard?.visitors)
+  const baptized = toNumber(dashboard?.baptized)
+  const emailValidated = toNumber(dashboard?.email_validated)
+  const possibleDuplicates = toNumber(duplicateRows[0]?.total)
+  const members = toNumber(dashboard?.members)
+  const leaders = toNumber(dashboard?.leaders)
+  const volunteers = toNumber(dashboard?.volunteers)
+  const attendees = toNumber(dashboard?.attendees)
+
+  // Last 6 months with fallback
+  const now = new Date()
+  const monthlyMap = new Map<string, number>()
+  for (const row of monthlyRows) {
+    monthlyMap.set(row.month_key, toNumber(row.count))
   }
+  const monthlyRegistrations = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const key = `${y}-${m}`
+    const label = `${MONTH_LABELS[m] ?? m}/${String(y).slice(2)}`
+    monthlyRegistrations.push({
+      month: key,
+      label,
+      count: monthlyMap.get(key) ?? 0,
+    })
+  }
+
+  const typeDistribution = [
+    { type: "member" as const, label: "Membros", count: members },
+    { type: "visitor" as const, label: "Visitantes", count: visitors },
+    { type: "attendee" as const, label: "Frequentadores", count: attendees },
+    { type: "leader" as const, label: "Líderes", count: leaders },
+    { type: "volunteer" as const, label: "Voluntários", count: volunteers },
+  ]
+
+  const genderDistribution = [
+    { gender: "female", label: "Feminino", count: toNumber(dashboard?.female) },
+    { gender: "male", label: "Masculino", count: toNumber(dashboard?.male) },
+    { gender: "other", label: "Não informado", count: toNumber(dashboard?.other_gender) },
+  ]
+
+  const ageDistribution = [
+    { group: "Crianças (0-11)", count: toNumber(dashboard?.age_child) },
+    { group: "Adolescentes (12-17)", count: toNumber(dashboard?.age_teen) },
+    { group: "Jovens (18-29)", count: toNumber(dashboard?.age_young) },
+    { group: "Adultos (30-59)", count: toNumber(dashboard?.age_adult) },
+    { group: "Idosos (60+)", count: toNumber(dashboard?.age_senior) },
+    { group: "Não informada", count: toNumber(dashboard?.age_uninformed) },
+  ]
+
+  const missingPhone = toNumber(dashboard?.missing_phone)
+  const missingEmail = toNumber(dashboard?.missing_email)
+  const missingBirthDate = toNumber(dashboard?.missing_birth_date)
+  const missingAddress = toNumber(dashboard?.missing_address)
+  const completeProfiles = Math.max(0, total - Math.max(missingPhone, missingEmail, missingBirthDate))
+
+  return {
+    total,
+    active,
+    visitors,
+    baptized,
+    emailValidated,
+    possibleDuplicates,
+    members,
+    leaders,
+    volunteers,
+    attendees,
+    typeDistribution,
+    genderDistribution,
+    ageDistribution,
+    monthlyRegistrations,
+    dataQuality: {
+      missingPhone,
+      missingEmail,
+      missingBirthDate,
+      missingAddress,
+      completeProfiles,
+    },
+  }
+}
+
+export async function listBirthdayPeople(
+  monthInput?: number | null,
+  companyIdInput?: string | null,
+): Promise<BirthdayPerson[]> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("members.view", companyId)
+
+  const currentMonth = new Date().getMonth() + 1
+  const targetMonth = monthInput && monthInput >= 1 && monthInput <= 12 ? Math.trunc(monthInput) : currentMonth
+
+  const sql = getSql()
+  const rows = await sql<BirthdayRow[]>`
+    select
+      p.id,
+      p.full_name,
+      p.birth_date,
+      p.phone,
+      p.person_type,
+      c.name as congregation_name,
+      extract(day from p.birth_date)::int as day,
+      extract(month from p.birth_date)::int as month
+    from public.people p
+    left join public.congregations c on c.id = p.congregation_id
+    where p.company_id = ${companyId}
+      and p.deleted_at is null
+      and p.birth_date is not null
+      and extract(month from p.birth_date) = ${targetMonth}
+    order by extract(day from p.birth_date) asc, p.full_name asc
+  `
+
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.full_name,
+    birthDate: toIsoDate(r.birth_date) ?? "",
+    day: r.day,
+    month: r.month,
+    phone: r.phone || "",
+    congregationName: r.congregation_name,
+    personType: r.person_type,
+  }))
 }
 
 export async function getPersonFormOptions(companyIdInput?: string | null): Promise<PersonFormOptions> {

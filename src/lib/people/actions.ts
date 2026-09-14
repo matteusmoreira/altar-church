@@ -10,6 +10,9 @@ import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import type { User } from "@/lib/types"
 import type {
+  BirthdayPerson,
+  CreateMemberJourneyInput,
+  CreatePersonActivityInput,
   DuplicateCandidateActionInput,
   InvitePersonAccessInput,
   PeopleActionResult,
@@ -751,4 +754,79 @@ export async function resolveDuplicateCandidate(input: DuplicateCandidateActionI
   } catch (error) {
     return toErrorResult(error)
   }
+}
+
+export async function createPersonActivity(input: CreatePersonActivityInput): Promise<PeopleActionResult> {
+  try {
+    const description = input.description.trim()
+    if (!description) {
+      return { ok: false, error: "Descrição da atividade é obrigatória" }
+    }
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      insert into public.person_activities (
+        company_id,
+        description,
+        category,
+        is_active,
+        created_by,
+        updated_by
+      ) values (
+        ${companyId},
+        ${description},
+        ${input.category},
+        true,
+        ${user.id},
+        ${user.id}
+      )
+      returning id
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: rows[0]?.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function createMemberJourney(input: CreateMemberJourneyInput): Promise<PeopleActionResult> {
+  try {
+    const name = input.name.trim()
+    if (!name) {
+      return { ok: false, error: "Nome da jornada é obrigatório" }
+    }
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      insert into public.member_journeys (
+        company_id,
+        name,
+        description,
+        is_active,
+        created_by,
+        updated_by
+      ) values (
+        ${companyId},
+        ${name},
+        ${input.description?.trim() || ""},
+        true,
+        ${user.id},
+        ${user.id}
+      )
+      returning id
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: rows[0]?.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function loadBirthdayPeople(month?: number): Promise<BirthdayPerson[]> {
+  const { listBirthdayPeople } = await import("./data")
+  return listBirthdayPeople(month)
 }

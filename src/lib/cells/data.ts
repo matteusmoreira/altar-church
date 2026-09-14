@@ -228,6 +228,10 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       accepts_requests: boolean
       coordinator_person_id: string | null
       coordinator_name: string | null
+      latitude: number | null
+      longitude: number | null
+      is_address_public: boolean | null
+      cell_photo_url: string | null
       member_count: string | number
     }[]>`
       select cell.id, cell.category_id, cell.congregation_id, cell.name, cell.description, cell.meeting_day,
@@ -236,6 +240,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
         cell.neighborhood, cell.city, cell.state, cell.max_capacity,
         cell.min_age, cell.max_age, cell.accepts_requests,
         cell.coordinator_person_id, coordinator.full_name as coordinator_name,
+        cell.latitude, cell.longitude, cell.is_address_public, cell.cell_photo_url,
         count(member.id) filter (where member.status = 'active') as member_count
       from public.groups cell
       left join public.group_members member on member.group_id = cell.id
@@ -245,7 +250,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
         and cell.is_active = true
         and cell.leader_person_id = ${personId}
         and cell.deleted_at is null
-      group by cell.id, coordinator.full_name
+      group by cell.id, coordinator.full_name, cell.latitude, cell.longitude, cell.is_address_public, cell.cell_photo_url
       order by cell.name
     `,
     sql<{
@@ -373,6 +378,10 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       acceptsRequests: row.accepts_requests,
       coordinatorPersonId: row.coordinator_person_id,
       coordinatorName: row.coordinator_name,
+      latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
+      longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
+      isAddressPublic: row.is_address_public ?? true,
+      cellPhotoUrl: row.cell_photo_url ?? null,
       memberCount: Number(row.member_count ?? 0),
     })),
     participants: participantRows.map((row) => ({

@@ -55,6 +55,10 @@ const groupSchema = z.object({
   maxAge: nullableIntSchema,
   acceptsRequests: z.boolean().optional().default(true),
   isActive: z.boolean().optional().default(true),
+  latitude: z.number().nullable().optional().default(null),
+  longitude: z.number().nullable().optional().default(null),
+  isAddressPublic: z.boolean().optional().default(true),
+  cellPhotoUrl: z.string().trim().nullable().optional().default(null),
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
   path: ["minAge"],
@@ -268,6 +272,10 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
             max_age = ${parsed.maxAge},
             accepts_requests = ${parsed.acceptsRequests},
             is_active = ${parsed.isActive},
+            latitude = ${parsed.latitude},
+            longitude = ${parsed.longitude},
+            is_address_public = ${parsed.isAddressPublic},
+            cell_photo_url = ${parsed.cellPhotoUrl},
             updated_by = ${user.id}
         where id = ${parsed.id}
           and company_id = ${companyId}
@@ -301,6 +309,10 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           max_age,
           accepts_requests,
           is_active,
+          latitude,
+          longitude,
+          is_address_public,
+          cell_photo_url,
           created_by,
           updated_by
         )
@@ -328,6 +340,10 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           ${parsed.maxAge},
           ${parsed.acceptsRequests},
           ${parsed.isActive},
+          ${parsed.latitude},
+          ${parsed.longitude},
+          ${parsed.isAddressPublic},
+          ${parsed.cellPhotoUrl},
           ${user.id},
           ${user.id}
         )

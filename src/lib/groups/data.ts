@@ -47,6 +47,10 @@ interface GroupRow {
   max_age: number | null
   accepts_requests: boolean
   is_active: boolean
+  latitude: number | null
+  longitude: number | null
+  is_address_public: boolean
+  cell_photo_url: string | null
   member_count: string | number
   created_at: Date | string
   updated_at: Date | string
@@ -162,6 +166,10 @@ function toGroup(row: GroupRow): GroupListItem {
     maxAge: row.max_age,
     acceptsRequests: row.accepts_requests,
     isActive: row.is_active,
+    latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
+    longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
+    isAddressPublic: row.is_address_public ?? true,
+    cellPhotoUrl: row.cell_photo_url ?? null,
     memberCount: toNumber(row.member_count),
     createdAt: toIso(row.created_at) ?? "",
     updatedAt: toIso(row.updated_at) ?? "",
@@ -273,6 +281,10 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
         g.max_age,
         g.accepts_requests,
         g.is_active,
+        g.latitude,
+        g.longitude,
+        g.is_address_public,
+        g.cell_photo_url,
         count(gm.id) filter (where gm.status = 'active') as member_count,
         g.created_at,
         g.updated_at
@@ -294,7 +306,7 @@ export async function listGroups(filters: GroupListFilters = {}): Promise<GroupL
         and (${type} = 'all' or g.type = ${type})
         and (${activeFilter} = 'all' or (${activeFilter} = 'active' and g.is_active = true) or (${activeFilter} = 'inactive' and g.is_active = false))
         and (${meetingDay} = 'all' or g.meeting_day = ${meetingDay})
-      group by g.id, gc.name, cg.name, leader.full_name, co_leader.full_name, coordinator.full_name
+      group by g.id, gc.name, cg.name, leader.full_name, co_leader.full_name, coordinator.full_name, g.latitude, g.longitude, g.is_address_public, g.cell_photo_url
       order by g.is_active desc, g.created_at desc
       limit ${pageSize}
       offset ${offset}

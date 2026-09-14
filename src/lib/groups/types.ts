@@ -53,6 +53,10 @@ export interface GroupListItem {
   maxAge: number | null
   acceptsRequests: boolean
   isActive: boolean
+  latitude?: number | null
+  longitude?: number | null
+  isAddressPublic?: boolean
+  cellPhotoUrl?: string | null
   memberCount: number
   createdAt: string
   updatedAt: string
@@ -149,6 +153,10 @@ export interface SaveGroupInput {
   maxAge?: number | null
   acceptsRequests?: boolean
   isActive?: boolean
+  latitude?: number | null
+  longitude?: number | null
+  isAddressPublic?: boolean
+  cellPhotoUrl?: string | null
 }
 
 export interface SaveGroupMemberInput {

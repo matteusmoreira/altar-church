@@ -23,8 +23,10 @@ export interface ChurchProfileData {
   history: string
   logoFileId: string | null
   logoFileName: string
+  logoUrl?: string | null
   coverFileId: string | null
   coverFileName: string
+  coverUrl?: string | null
 }
 
 export interface ChurchInfoMinistry {

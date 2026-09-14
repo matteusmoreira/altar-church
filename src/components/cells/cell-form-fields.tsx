@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Plus, Search, X } from "lucide-react"
+import { Loader2, MapPin, Plus, Search, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,6 +30,10 @@ export interface CellFormValues {
   maxAge: number | null
   acceptsRequests: boolean
   isActive?: boolean
+  latitude?: number | null
+  longitude?: number | null
+  isAddressPublic?: boolean
+  cellPhotoUrl?: string | null
 }
 
 export interface CellFormOptions {
@@ -75,6 +79,7 @@ export function CellFormFields({
   supervisorSearch,
 }: CellFormFieldsProps) {
   const [cepLookup, setCepLookup] = useState<"idle" | "loading" | "error">("idle")
+  const [geoLoading, setGeoLoading] = useState(false)
   const lastCepLookup = useRef("")
   const cepDigits = form.postalCode.replace(/\D/g, "")
 
@@ -88,13 +93,36 @@ export function CellFormFields({
         const response = await fetch(`/api/cep/${cepDigits}`, { signal: controller.signal })
         const data = await response.json() as { postalCode?: string; street?: string; neighborhood?: string; city?: string; state?: string; error?: string }
         if (!response.ok) throw new Error(data.error)
-        onChange({
+
+        const patch: Partial<CellFormValues> = {
           postalCode: data.postalCode ?? form.postalCode,
           meetingLocation: data.street ?? form.meetingLocation,
           neighborhood: data.neighborhood ?? form.neighborhood,
           city: data.city ?? form.city,
           state: data.state ?? form.state,
-        })
+        }
+
+        try {
+          const geoQuery = new URLSearchParams({
+            street: data.street ?? form.meetingLocation,
+            neighborhood: data.neighborhood ?? form.neighborhood,
+            city: data.city ?? form.city,
+            state: data.state ?? form.state,
+            postalCode: data.postalCode ?? form.postalCode,
+          })
+          const geoRes = await fetch(`/api/geocode?${geoQuery.toString()}`)
+          if (geoRes.ok) {
+            const geo = await geoRes.json()
+            if (geo?.latitude && geo?.longitude) {
+              patch.latitude = geo.latitude
+              patch.longitude = geo.longitude
+            }
+          }
+        } catch {
+          // ignore geocode error
+        }
+
+        onChange(patch)
         setCepLookup("idle")
       } catch (error) {
         if ((error as Error).name !== "AbortError") setCepLookup("error")
@@ -119,6 +147,34 @@ export function CellFormFields({
   const supervisorLabel = coordinatorPersonId === "none"
     ? "Sem supervisor"
     : formOptions.people.find((person) => person.id === coordinatorPersonId)?.fullName ?? "Sem supervisor"
+
+  const handleGeocodeManual = async () => {
+    setGeoLoading(true)
+    try {
+      const geoQuery = new URLSearchParams({
+        street: form.meetingLocation || "",
+        number: form.addressNumber || "",
+        neighborhood: form.neighborhood || "",
+        city: form.city || "",
+        state: form.state || "",
+        postalCode: form.postalCode || "",
+      })
+      const res = await fetch(`/api/geocode?${geoQuery.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.latitude && data?.longitude) {
+          onChange({
+            latitude: data.latitude,
+            longitude: data.longitude,
+          })
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setGeoLoading(false)
+    }
+  }
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -238,6 +294,86 @@ export function CellFormFields({
           <div className="grid gap-2 md:col-span-2"><Label>Bairro</Label><Input data-testid="group-neighborhood-input" value={form.neighborhood} onChange={(event) => onChange({ neighborhood: event.target.value })} /></div>
           <div className="grid gap-2 md:col-span-3"><Label>Cidade</Label><Input data-testid="group-city-input" value={form.city} onChange={(event) => onChange({ city: event.target.value })} /></div>
           <div className="grid gap-2 md:col-span-1"><Label>UF</Label><Input data-testid="group-state-input" maxLength={2} value={form.state} onChange={(event) => onChange({ state: event.target.value.toUpperCase() })} /></div>
+        </div>
+      </div>
+      <div className="grid gap-4 rounded-lg border border-primary/20 bg-primary/5 p-4 md:col-span-2">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="flex items-center gap-1.5 font-medium text-foreground">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Localização no Mapa 3D
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Coordenadas geográficas para renderizar a casinha 3D e traçar rotas públicas.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending || geoLoading}
+            onClick={handleGeocodeManual}
+            className="mt-2 sm:mt-0"
+          >
+            {geoLoading ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Localizando…
+              </>
+            ) : (
+              <>
+                <MapPin className="mr-2 h-3.5 w-3.5 text-primary" />
+                Detectar Coordenadas
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Latitude</Label>
+            <Input
+              type="number"
+              step="any"
+              placeholder="-23.5505"
+              value={form.latitude ?? ""}
+              onChange={(e) => onChange({ latitude: e.target.value ? parseFloat(e.target.value) : null })}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Longitude</Label>
+            <Input
+              type="number"
+              step="any"
+              placeholder="-46.6333"
+              value={form.longitude ?? ""}
+              onChange={(e) => onChange({ longitude: e.target.value ? parseFloat(e.target.value) : null })}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 pt-2 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium">Exibir endereço público</span>
+              <p className="text-xs text-muted-foreground">
+                Se desativado, o número residencial fica oculto no modal público.
+              </p>
+            </div>
+            <Switch
+              checked={form.isAddressPublic ?? true}
+              onCheckedChange={(checked) => onChange({ isAddressPublic: checked })}
+            />
+          </label>
+
+          <div className="grid gap-1.5 rounded-md border bg-background p-3">
+            <Label className="text-xs font-medium">URL da Foto da Célula / Grupo</Label>
+            <Input
+              placeholder="https://exemplo.com/foto-celula.jpg"
+              value={form.cellPhotoUrl ?? ""}
+              onChange={(e) => onChange({ cellPhotoUrl: e.target.value || null })}
+            />
+          </div>
         </div>
       </div>
       <div className="grid gap-2"><Label>Capacidade</Label><Input data-testid="group-capacity-input" type="number" min={0} value={form.maxCapacity} onChange={(event) => onChange({ maxCapacity: Number(event.target.value) })} /></div>

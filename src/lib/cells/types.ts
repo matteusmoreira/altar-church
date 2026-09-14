@@ -22,6 +22,10 @@ export interface CellLeaderCell {
   acceptsRequests: boolean
   coordinatorPersonId: string | null
   coordinatorName: string | null
+  latitude: number | null
+  longitude: number | null
+  isAddressPublic: boolean
+  cellPhotoUrl: string | null
   memberCount: number
 }
 
@@ -64,6 +68,10 @@ export interface SaveLeaderCellInput {
   maxAge?: number | null
   acceptsRequests?: boolean
   coordinatorPersonId?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  isAddressPublic?: boolean
+  cellPhotoUrl?: string | null
 }
 
 export interface CreateCellLeaderPersonInput {

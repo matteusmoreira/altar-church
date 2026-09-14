@@ -38,6 +38,10 @@ const cellSchema = z.object({
   maxAge: nullableInt,
   acceptsRequests: z.boolean().optional().default(true),
   coordinatorPersonId: nullableUuid,
+  latitude: z.number().nullable().optional().default(null),
+  longitude: z.number().nullable().optional().default(null),
+  isAddressPublic: z.boolean().optional().default(true),
+  cellPhotoUrl: z.string().trim().nullable().optional().default(null),
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
   path: ["minAge"],
@@ -123,6 +127,10 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
             min_age = ${parsed.minAge},
             max_age = ${parsed.maxAge},
             accepts_requests = ${parsed.acceptsRequests},
+            latitude = ${parsed.latitude},
+            longitude = ${parsed.longitude},
+            is_address_public = ${parsed.isAddressPublic},
+            cell_photo_url = ${parsed.cellPhotoUrl},
             updated_by = ${context.user.id}
         where id = ${parsed.id}
           and company_id = ${context.companyId}
@@ -139,12 +147,14 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
           meeting_day, meeting_time, meeting_location, postal_code,
           address_number, address_complement, neighborhood, city, state,
           max_capacity, min_age, max_age, accepts_requests, is_active,
+          latitude, longitude, is_address_public, cell_photo_url,
           created_by, updated_by
         ) values (
           ${context.companyId}, ${parsed.categoryId}, ${parsed.congregationId}, ${parsed.name}, ${parsed.description}, 'cell', ${context.personId}, ${parsed.coordinatorPersonId},
           ${parsed.meetingDay}, ${parsed.meetingTime}, ${parsed.meetingLocation}, ${parsed.postalCode},
           ${parsed.addressNumber}, ${parsed.addressComplement}, ${parsed.neighborhood}, ${parsed.city}, ${parsed.state},
           ${parsed.maxCapacity}, ${parsed.minAge}, ${parsed.maxAge}, ${parsed.acceptsRequests}, true,
+          ${parsed.latitude}, ${parsed.longitude}, ${parsed.isAddressPublic}, ${parsed.cellPhotoUrl},
           ${context.user.id}, ${context.user.id}
         ) returning id
       `

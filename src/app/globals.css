@@ -299,3 +299,49 @@
     animation: none;
   }
 }
+
+/* 3D Cell House Markers & Map Controls */
+.cell-3d-marker {
+  cursor: pointer;
+  perspective: 600px;
+  transform-style: preserve-3d;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.25s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cell-3d-marker:hover,
+.cell-3d-marker.is-selected {
+  transform: translateY(-8px) scale(1.18);
+  filter: drop-shadow(0 20px 22px rgba(0, 0, 0, 0.5));
+  z-index: 50 !important;
+}
+
+.cell-3d-marker:active {
+  transform: translateY(-2px) scale(1.05);
+}
+
+@keyframes cell-ring-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+.cell-pulse-ring {
+  animation: cell-ring-pulse 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-bottom-right {
+  display: none !important;
+}
+

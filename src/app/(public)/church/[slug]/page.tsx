@@ -8,11 +8,13 @@ import {
   CalendarDays,
   Church,
   Clock,
+  Compass,
   Heart,
   Mail,
   MapPin,
   MapPinned,
   Phone,
+  Sparkles,
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -94,7 +96,17 @@ export default async function PublicChurchPage({ params }: PublicChurchPageProps
                 {data.church.email}
               </span>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link
+                href={`/church/${slug}/celulas`}
+                className={buttonVariants({
+                  size: "lg",
+                  className: "bg-cyan-500 hover:bg-cyan-600 text-white font-bold shadow-lg shadow-cyan-500/20 border-0",
+                })}
+              >
+                <Compass className="mr-2 h-5 w-5" />
+                Mapa 3D de Células
+              </Link>
               <Link href="/login" className={buttonVariants({ size: "lg", className: "bg-background text-foreground hover:bg-background/90" })}>
                 Acessar sistema
               </Link>
@@ -130,6 +142,35 @@ export default async function PublicChurchPage({ params }: PublicChurchPageProps
       </section>
 
       <main className="mx-auto max-w-6xl space-y-14 px-4 py-12">
+        {/* Banner Especial Mapa 3D de Células */}
+        <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/10 via-cyan-500/10 to-background p-6 sm:p-10 shadow-xl">
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                <Sparkles className="h-3.5 w-3.5" />
+                Experiência 3D Interativa
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                Encontre uma Célula perto de você
+              </h2>
+              <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+                Explore as células da {data.church.publicName} espalhadas pela cidade em um mapa 3D imersivo. Encontre o grupo ideal por faixa etária, dia da semana e trace sua rota!
+              </p>
+            </div>
+
+            <Link
+              href={`/church/${slug}/celulas`}
+              className={buttonVariants({
+                size: "lg",
+                className: "bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/25 h-12 px-6 rounded-xl shrink-0",
+              })}
+            >
+              <Compass className="mr-2 h-5 w-5" />
+              Abrir Mapa 3D
+            </Link>
+          </div>
+        </section>
+
         <section className="space-y-5">
           <div className="flex items-center gap-3">
             <BookOpen className="h-6 w-6 text-primary" />

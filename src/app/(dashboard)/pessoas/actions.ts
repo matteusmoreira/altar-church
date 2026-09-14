@@ -1,6 +1,8 @@
 "use server"
 
 import type {
+  CreateMemberJourneyInput,
+  CreatePersonActivityInput,
   DuplicateCandidateActionInput,
   InvitePersonAccessInput,
   SavePersonInput,
@@ -40,3 +42,19 @@ export async function movePersonToKanban(input: { personId: string; stageId?: st
   const { movePersonToKanbanStage } = await import("@/lib/operational/actions")
   return movePersonToKanbanStage(input)
 }
+
+export async function createPersonActivity(input: CreatePersonActivityInput) {
+  const { createPersonActivity: createActivityAction } = await import("@/lib/people/actions")
+  return createActivityAction(input)
+}
+
+export async function createMemberJourney(input: CreateMemberJourneyInput) {
+  const { createMemberJourney: createJourneyAction } = await import("@/lib/people/actions")
+  return createJourneyAction(input)
+}
+
+export async function loadBirthdayPeople(month?: number) {
+  const { loadBirthdayPeople: loadBirthdaysAction } = await import("@/lib/people/actions")
+  return loadBirthdaysAction(month)
+}
+
