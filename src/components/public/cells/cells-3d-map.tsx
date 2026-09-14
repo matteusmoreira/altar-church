@@ -1,8 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { Compass, Moon, Sun, Sunset } from "lucide-react"
 import type { PublicCellItem } from "@/lib/cells/public-cells"
 import "mapbox-gl/dist/mapbox-gl.css"
+
+export type LightPreset = "dusk" | "night" | "day"
 
 export interface Cells3dMapProps {
   cells: PublicCellItem[]
@@ -16,6 +19,63 @@ export interface Cells3dMapProps {
   userLocation: { latitude: number; longitude: number } | null
   routeLine: [number, number][] | null
   mapboxToken?: string
+}
+
+// Configurações de atmosfera e neblina no horizonte de acordo com o preset de luz
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyAtmosphereFog(map: any, preset: LightPreset) {
+  if (!map) return
+  try {
+    if (preset === "dusk") {
+      map.setFog({
+        range: [-0.5, 3.5],
+        color: "rgb(255, 225, 205)", // Brilho quente de pôr do sol no horizonte
+        "high-color": "rgb(235, 125, 75)", // Laranja dourado no céu
+        "horizon-blend": 0.12,
+        "space-color": "rgb(35, 25, 55)", // Espaço crepuscular roxo/azulado
+        "star-intensity": 0.25,
+      })
+    } else if (preset === "night") {
+      map.setFog({
+        range: [-0.5, 3.5],
+        color: "rgb(15, 22, 38)", // Noite profunda
+        "high-color": "rgb(22, 32, 58)",
+        "horizon-blend": 0.08,
+        "space-color": "rgb(8, 12, 22)",
+        "star-intensity": 0.75,
+      })
+    } else {
+      map.setFog({
+        range: [-0.5, 3.5],
+        color: "rgb(235, 243, 255)", // Dia limpo e atmosférico
+        "high-color": "rgb(140, 195, 255)",
+        "horizon-blend": 0.08,
+        "space-color": "rgb(180, 215, 255)",
+        "star-intensity": 0.0,
+      })
+    }
+  } catch (err) {
+    console.warn("setFog warning:", err)
+  }
+}
+
+// Configura relevo 3D (DEM) para montanhas e topografia real
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyTerrainElevation(map: any) {
+  if (!map) return
+  try {
+    if (!map.getSource("mapbox-dem")) {
+      map.addSource("mapbox-dem", {
+        type: "raster-dem",
+        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+        tileSize: 512,
+        maxzoom: 14,
+      })
+    }
+    map.setTerrain({ source: "mapbox-dem", exaggeration: 1.15 })
+  } catch (err) {
+    console.warn("setTerrain warning:", err)
+  }
 }
 
 export function Cells3dMap({
@@ -37,13 +97,38 @@ export function Cells3dMap({
   const userMarkerRef = useRef<any>(null)
   const [isMapLoaded, setIsMapLoaded] = useState(false)
   const [pitch3d, setPitch3d] = useState(true)
+  const [bearing, setBearing] = useState(-18)
+  const [lightPreset, setLightPreset] = useState<LightPreset>(() => (themeMode === "light" ? "day" : "dusk"))
   const [mapError, setMapError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
 
   const token = mapboxToken || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ""
   const missingToken = !token
 
-  // Initialize Mapbox
+  // Sincroniza lightPreset quando o tema global mudar pelo header
+  const prevThemeMode = useRef(themeMode)
+  useEffect(() => {
+    if (prevThemeMode.current !== themeMode) {
+      prevThemeMode.current = themeMode
+      setLightPreset(themeMode === "light" ? "day" : "dusk")
+    }
+  }, [themeMode])
+
+  // Atualiza iluminação dinâmica e atmosfera no Mapbox Standard sem recriar o mapa
+  useEffect(() => {
+    if (!mapRef.current || !isMapLoaded) return
+    try {
+      if (typeof mapRef.current.setConfigProperty === "function") {
+        mapRef.current.setConfigProperty("basemap", "lightPreset", lightPreset)
+        mapRef.current.setConfigProperty("basemap", "theme", lightPreset === "dusk" ? "warm" : "default")
+      }
+      applyAtmosphereFog(mapRef.current, lightPreset)
+    } catch (err) {
+      console.warn("Could not update basemap lightPreset:", err)
+    }
+  }, [lightPreset, isMapLoaded])
+
+  // Inicialização do Mapbox Standard
   useEffect(() => {
     if (!mapContainer.current || !token) return
 
@@ -66,11 +151,6 @@ export function Cells3dMap({
 
       mapboxgl.accessToken = token
 
-      const mapStyle =
-        themeMode === "dark"
-          ? "mapbox://styles/mapbox/dark-v11"
-          : "mapbox://styles/mapbox/streets-v12"
-
       const safeLng =
         typeof centerCoordinates?.longitude === "number" && !isNaN(centerCoordinates.longitude)
           ? centerCoordinates.longitude
@@ -84,19 +164,53 @@ export function Cells3dMap({
 
       const map = new mapboxgl.Map({
         container: mapContainer.current,
-        style: mapStyle,
+        style: "mapbox://styles/mapbox/standard",
+        config: {
+          basemap: {
+            lightPreset: lightPreset,
+            theme: lightPreset === "dusk" ? "warm" : "default",
+            showPointOfInterestLabels: false,
+            showPlaceLabels: true,
+            showRoadLabels: true,
+          },
+        },
         center: initialCenter,
-        zoom: 13.8,
-        pitch: pitch3d ? 55 : 0,
-        bearing: -15,
+        zoom: 14.2,
+        pitch: pitch3d ? 58 : 0,
+        bearing: -18,
         antialias: true,
         attributionControl: false,
       })
       mapRef.current = map
       loadTimeout = setTimeout(showLoadError, 20000)
 
-      map.on("error", () => {
-        if (!map.isStyleLoaded()) showLoadError()
+      map.on("error", (e: any) => {
+        if (e?.error?.status === 401 || e?.error?.status === 403) {
+          showLoadError()
+        }
+      })
+
+      map.on("rotate", () => {
+        setBearing(Math.round(map.getBearing()))
+      })
+
+      map.on("style.load", () => {
+        try {
+          if (typeof map.setConfigProperty === "function") {
+            map.setConfigProperty("basemap", "lightPreset", lightPreset)
+            map.setConfigProperty("basemap", "theme", lightPreset === "dusk" ? "warm" : "default")
+            map.setConfigProperty("basemap", "showPointOfInterestLabels", false)
+            map.setConfigProperty("basemap", "showPlaceLabels", true)
+            map.setConfigProperty("basemap", "showRoadLabels", true)
+          }
+        } catch (err) {
+          console.warn("Config property error:", err)
+        }
+
+        if (pitch3d) {
+          applyTerrainElevation(map)
+        }
+        applyAtmosphereFog(map, lightPreset)
       })
 
       map.on("load", () => {
@@ -105,10 +219,10 @@ export function Cells3dMap({
         setMapError(null)
         setIsMapLoaded(true)
 
-        // Ensure canvas dimensions match container
+        // Assegura dimensões corretas do canvas
         map.resize()
 
-        // Focus camera on cell(s) if coordinates exist
+        // Enquadra células válidas
         const validCells = cells.filter(
           (c) =>
             c.latitude !== null &&
@@ -130,69 +244,11 @@ export function Cells3dMap({
         } else if (validCells.length === 1) {
           map.flyTo({
             center: [Number(validCells[0].longitude), Number(validCells[0].latitude)],
-            zoom: 14.8,
-            pitch: pitch3d ? 55 : 0,
+            zoom: 15.5,
+            pitch: pitch3d ? 58 : 0,
+            bearing: -18,
             duration: 1000,
           })
-        }
-
-        // Add 3D building layer
-        try {
-          const layers = map.getStyle().layers
-          const labelLayerId = layers?.find(
-            (layer) => layer.type === "symbol" && layer.layout?.["text-field"]
-          )?.id
-
-          if (!map.getLayer("3d-buildings") && map.getSource("composite")) {
-            map.addLayer(
-              {
-                id: "3d-buildings",
-                source: "composite",
-                "source-layer": "building",
-                filter: ["==", "extrude", "true"],
-                type: "fill-extrusion",
-                minzoom: 14,
-                paint: {
-                  "fill-extrusion-color": themeMode === "dark" ? "#1e293b" : "#e2e8f0",
-                  "fill-extrusion-height": [
-                    "interpolate",
-                    ["linear"],
-                    ["zoom"],
-                    14,
-                    0,
-                    15.05,
-                    ["get", "height"],
-                  ],
-                  "fill-extrusion-base": [
-                    "interpolate",
-                    ["linear"],
-                    ["zoom"],
-                    14,
-                    0,
-                    15.05,
-                    ["get", "min_height"],
-                  ],
-                  "fill-extrusion-opacity": 0.85,
-                },
-              },
-              labelLayerId
-            )
-          }
-
-          // Add sky atmosphere or fog
-          if (!map.getLayer("sky")) {
-            map.addLayer({
-              id: "sky",
-              type: "sky",
-              paint: {
-                "sky-type": "atmosphere",
-                "sky-atmosphere-sun": [0.0, 0.0],
-                "sky-atmosphere-sun-intensity": 12,
-              },
-            })
-          }
-        } catch {
-          // Ignore building layer error if vector source is not present
         }
       })
 
@@ -214,21 +270,42 @@ export function Cells3dMap({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themeMode, token, retryCount])
+  }, [token, retryCount])
 
-  // Toggle 3D pitch
+  // Alterna perspectiva 3D / 2D
   const togglePitch = () => {
     if (!mapRef.current) return
     const nextPitch = !pitch3d
     setPitch3d(nextPitch)
+
+    try {
+      if (nextPitch) {
+        applyTerrainElevation(mapRef.current)
+      } else {
+        mapRef.current.setTerrain(null)
+      }
+    } catch {
+      // Ignora se terreno não estiver disponível
+    }
+
     mapRef.current.easeTo({
       pitch: nextPitch ? 58 : 0,
-      bearing: nextPitch ? -18 : 0,
+      bearing: nextPitch ? (bearing !== 0 ? bearing : -18) : 0,
       duration: 800,
     })
   }
 
-  // Handle selected cell flyTo
+  // Reseta orientação para o Norte
+  const handleResetOrientation = () => {
+    if (!mapRef.current) return
+    mapRef.current.easeTo({
+      bearing: 0,
+      pitch: pitch3d ? 58 : 0,
+      duration: 600,
+    })
+  }
+
+  // Foco cinematográfico ao selecionar uma célula
   useEffect(() => {
     if (
       !mapRef.current ||
@@ -243,14 +320,14 @@ export function Cells3dMap({
 
     mapRef.current.flyTo({
       center: [Number(selectedCell.longitude), Number(selectedCell.latitude)],
-      zoom: 16.8,
-      pitch: 58,
+      zoom: 16.6,
+      pitch: pitch3d ? 58 : 0,
       bearing: -20,
-      speed: 1.2,
-      curve: 1.4,
+      speed: 1.1,
+      curve: 1.3,
       essential: true,
     })
-  }, [selectedCell, isMapLoaded])
+  }, [selectedCell, isMapLoaded, pitch3d])
 
   // Update cell 3D markers
   useEffect(() => {
@@ -323,7 +400,7 @@ export function Cells3dMap({
                 <path d="M23 8L6 19L23 17L40 19L23 8Z" fill="#ffffff" opacity="0.35" />
 
                 <!-- Glowing Window Left -->
-                <polygon points="12,25 18,28 18,33 12,30" fill="${themeMode === "dark" ? "#fef08a" : "#67e8f9"}" opacity="0.9" />
+                <polygon points="12,25 18,28 18,33 12,30" fill="${lightPreset === "day" ? "#67e8f9" : "#fef08a"}" opacity="0.95" />
 
                 <!-- Glowing Front Door Right -->
                 <polygon points="27,29 33,26 33,36 27,39" fill="${color}" opacity="0.95" stroke="#fff" stroke-width="0.5" />
@@ -350,7 +427,7 @@ export function Cells3dMap({
       })
     })
     return () => { cancelled = true }
-  }, [cells, isMapLoaded, selectedCell, onSelectCell, themeMode])
+  }, [cells, isMapLoaded, selectedCell, onSelectCell, themeMode, lightPreset])
 
   // User GPS marker
   useEffect(() => {
@@ -424,6 +501,7 @@ export function Cells3dMap({
         id: "cell-route-line",
         type: "line",
         source: "cell-route",
+        slot: "top",
         layout: {
           "line-join": "round",
           "line-cap": "round",
@@ -460,44 +538,127 @@ export function Cells3dMap({
       <div ref={mapContainer} className="h-full w-full select-none" />
 
       {(missingToken || mapError || !isMapLoaded) && (
-        <div role={missingToken || mapError ? "alert" : "status"} className="absolute top-1/2 left-4 right-4 z-20 mx-auto max-w-md -translate-y-1/2 rounded-lg border border-border bg-background/95 p-4 text-sm text-foreground shadow-lg backdrop-blur">
-          <p>{missingToken ? "Mapa indisponível no momento. Consulte a lista de células." : mapError || "Carregando mapa de células…"}</p>
+        <div
+          role={missingToken || mapError ? "alert" : "status"}
+          className="absolute top-1/2 left-4 right-4 z-20 mx-auto max-w-md -translate-y-1/2 rounded-lg border border-border bg-background/95 p-4 text-sm text-foreground shadow-lg backdrop-blur"
+        >
+          <p>
+            {missingToken
+              ? "Mapa indisponível no momento. Consulte a lista de células."
+              : mapError || "Carregando mapa 3D de células…"}
+          </p>
           {mapError && !missingToken && (
-            <button type="button" onClick={() => setRetryCount((count) => count + 1)} className="mt-3 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground">
+            <button
+              type="button"
+              onClick={() => setRetryCount((count) => count + 1)}
+              className="mt-3 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground"
+            >
               Tentar novamente
             </button>
           )}
         </div>
       )}
 
-      {/* Floating 3D/2D Perspective Toggle Button */}
-      <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={togglePitch}
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-background/90 text-xs font-bold text-foreground shadow-xl backdrop-blur-md transition-all active:scale-95 hover:bg-background"
-          title="Alternar visão 3D / 2D"
-        >
-          {pitch3d ? "3D" : "2D"}
-        </button>
+      {/* Floating Controls Toolbar */}
+      <div className="absolute bottom-24 right-3 sm:right-4 z-10 flex flex-col items-end gap-2.5 pointer-events-auto select-none">
+        {/* Lighting Selector Pill */}
+        <div className="flex items-center gap-0.5 rounded-full border border-border/70 bg-background/90 p-1 shadow-xl backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setLightPreset("dusk")}
+            className={`flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-all active:scale-95 ${
+              lightPreset === "dusk"
+                ? "bg-amber-500/25 border border-amber-500/40 text-amber-500 dark:text-amber-400 shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+            title="Iluminação: Crepúsculo (Pôr do Sol)"
+          >
+            <Sunset className="h-3.5 w-3.5" />
+            <span className="hidden md:inline text-[11px]">Crepúsculo</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => mapRef.current?.zoomIn()}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/90 text-lg font-bold text-foreground shadow-lg backdrop-blur-md active:scale-95 hover:bg-background"
-          title="Aumentar zoom"
-        >
-          +
-        </button>
+          <button
+            type="button"
+            onClick={() => setLightPreset("night")}
+            className={`flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-all active:scale-95 ${
+              lightPreset === "night"
+                ? "bg-indigo-500/25 border border-indigo-500/40 text-indigo-500 dark:text-indigo-400 shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+            title="Iluminação: Noite"
+          >
+            <Moon className="h-3.5 w-3.5" />
+            <span className="hidden md:inline text-[11px]">Noite</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => mapRef.current?.zoomOut()}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background/90 text-lg font-bold text-foreground shadow-lg backdrop-blur-md active:scale-95 hover:bg-background"
-          title="Diminuir zoom"
-        >
-          −
-        </button>
+          <button
+            type="button"
+            onClick={() => setLightPreset("day")}
+            className={`flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition-all active:scale-95 ${
+              lightPreset === "day"
+                ? "bg-sky-500/25 border border-sky-500/40 text-sky-600 dark:text-sky-300 shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+            title="Iluminação: Dia"
+          >
+            <Sun className="h-3.5 w-3.5" />
+            <span className="hidden md:inline text-[11px]">Dia</span>
+          </button>
+        </div>
+
+        {/* Camera & Navigation Stack */}
+        <div className="flex flex-col items-center gap-1 rounded-full border border-border/70 bg-background/90 p-1 shadow-xl backdrop-blur-md">
+          {/* Compass / Reset North */}
+          <button
+            type="button"
+            onClick={handleResetOrientation}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-foreground transition-all active:scale-90 hover:bg-accent"
+            title="Alinhar ao Norte"
+          >
+            <Compass
+              className="h-4 w-4 transition-transform duration-200"
+              style={{ transform: `rotate(${-bearing}deg)` }}
+            />
+          </button>
+
+          <div className="h-px w-5 bg-border/60" />
+
+          {/* 3D / 2D Toggle */}
+          <button
+            type="button"
+            onClick={togglePitch}
+            className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black transition-all active:scale-90 ${
+              pitch3d
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-foreground hover:bg-accent"
+            }`}
+            title="Alternar visão 3D / 2D"
+          >
+            {pitch3d ? "3D" : "2D"}
+          </button>
+
+          <div className="h-px w-5 bg-border/60" />
+
+          {/* Zoom In */}
+          <button
+            type="button"
+            onClick={() => mapRef.current?.zoomIn({ duration: 250 })}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-base font-bold text-foreground transition-all active:scale-90 hover:bg-accent"
+            title="Aumentar zoom"
+          >
+            +
+          </button>
+
+          {/* Zoom Out */}
+          <button
+            type="button"
+            onClick={() => mapRef.current?.zoomOut({ duration: 250 })}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-base font-bold text-foreground transition-all active:scale-90 hover:bg-accent"
+            title="Diminuir zoom"
+          >
+            −
+          </button>
+        </div>
       </div>
     </div>
   )

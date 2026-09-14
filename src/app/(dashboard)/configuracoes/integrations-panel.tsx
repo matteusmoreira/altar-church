@@ -623,7 +623,7 @@ export function IntegrationsPanel({
       </Card>
 
       <Dialog open={webhookOpen} onOpenChange={setWebhookOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Novo webhook global</DialogTitle>
             <DialogDescription>
@@ -681,7 +681,7 @@ export function IntegrationsPanel({
       </Dialog>
 
       <Dialog open={keyOpen} onOpenChange={setKeyOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Nova API key</DialogTitle>
             <DialogDescription>O valor completo aparece só uma vez após criar.</DialogDescription>

@@ -664,7 +664,7 @@ export function CellRequestsTab({
       {/* Modal de Detalhes da Solicitação */}
       <Dialog open={!!selectedRequest} onOpenChange={(open) => !open && setSelectedRequest(null)}>
         {selectedRequest && (
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="text-lg">Detalhes da Solicitação</DialogTitle>
               <DialogDescription>

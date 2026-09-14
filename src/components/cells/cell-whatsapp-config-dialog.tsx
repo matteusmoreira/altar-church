@@ -322,8 +322,8 @@ export function CellWhatsAppConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-0 gap-0">
-        <DialogHeader className="p-6 pb-4 border-b bg-muted/20">
+      <DialogContent className="w-[95vw] sm:max-w-4xl lg:max-w-5xl xl:max-w-6xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogHeader className="p-6 pb-4 border-b bg-muted/20 shrink-0 pr-12">
           <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
             <MessageSquare className="h-5 w-5" />
             <DialogTitle className="text-xl">Automação de WhatsApp das Células</DialogTitle>
@@ -333,7 +333,7 @@ export function CellWhatsAppConfigDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0">
           {/* Status Geral e Instância */}
           <div className="grid gap-4 sm:grid-cols-2 rounded-2xl border p-4 bg-muted/10">
             <div className="flex items-center justify-between gap-4 p-3 rounded-xl border bg-background/70">
@@ -341,7 +341,7 @@ export function CellWhatsAppConfigDialog({
                 <Label className="text-sm font-semibold">Ativar Automação</Label>
                 <p className="text-xs text-muted-foreground">Dispara mensagens assim que o formulário for enviado.</p>
               </div>
-              <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+              <Switch checked={isEnabled} onCheckedChange={setIsEnabled} className="shrink-0" />
             </div>
 
             <div className="space-y-1.5 p-3 rounded-xl border bg-background/70">
@@ -370,7 +370,7 @@ export function CellWhatsAppConfigDialog({
             <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Destinatários da Notificação</Label>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex items-start gap-3 p-3 rounded-xl border bg-background/50 hover:bg-muted/30 transition-colors">
-                <Switch id="toggle-leader" checked={sendToLeader} onCheckedChange={setSendToLeader} className="mt-0.5" />
+                <Switch id="toggle-leader" checked={sendToLeader} onCheckedChange={setSendToLeader} className="mt-0.5 shrink-0" />
                 <div className="space-y-1">
                   <Label htmlFor="toggle-leader" className="text-sm font-medium cursor-pointer">
                     Avisar o Líder da Célula
@@ -382,7 +382,7 @@ export function CellWhatsAppConfigDialog({
               </div>
 
               <div className="flex items-start gap-3 p-3 rounded-xl border bg-background/50 hover:bg-muted/30 transition-colors">
-                <Switch id="toggle-visitor" checked={sendToVisitor} onCheckedChange={setSendToVisitor} className="mt-0.5" />
+                <Switch id="toggle-visitor" checked={sendToVisitor} onCheckedChange={setSendToVisitor} className="mt-0.5 shrink-0" />
                 <div className="space-y-1">
                   <Label htmlFor="toggle-visitor" className="text-sm font-medium cursor-pointer">
                     Confirmar para o Visitante
@@ -398,10 +398,10 @@ export function CellWhatsAppConfigDialog({
           {/* Editor de Mensagem e Pré-visualização lado a lado */}
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
             {/* Lado Esquerdo: Abas de edição */}
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <div className="flex items-center justify-between border-b pb-2">
                 <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as "leader" | "visitor")} className="w-full">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <TabsList>
                       <TabsTrigger value="leader" className="text-xs gap-1.5">
                         <Phone className="h-3.5 w-3.5" />
@@ -414,7 +414,7 @@ export function CellWhatsAppConfigDialog({
                     </TabsList>
 
                     <div className="flex items-center gap-2">
-                      <Label className="text-xs text-muted-foreground">Formato:</Label>
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">Formato:</Label>
                       <Select value={currentMsg.type} onValueChange={(val) => changeType((val ?? "text") as FormDirectMessage["type"])}>
                         <SelectTrigger className="h-8 text-xs w-32">
                           <SelectValue />
@@ -700,7 +700,7 @@ export function CellWhatsAppConfigDialog({
             </div>
 
             {/* Lado Direito: Celular com Mockup WhatsApp em Tempo Real */}
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center shrink-0 w-full lg:w-[22rem]">
               <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-muted-foreground">
                 <Smartphone className="h-4 w-4" />
                 <span>Prévia em Tempo Real</span>
@@ -794,7 +794,7 @@ export function CellWhatsAppConfigDialog({
           </div>
         </div>
 
-        <DialogFooter className="p-4 border-t bg-muted/20 sm:justify-between">
+        <DialogFooter className="p-4 border-t bg-muted/20 shrink-0 sm:justify-between m-0">
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>

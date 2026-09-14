@@ -28,7 +28,7 @@ test("public cells page and components are correctly wired", () => {
   assert.match(experience, /<Cells3dMap/)
   assert.match(experience, /<CellDetailSheet/)
   assert.match(experience, /<CellVisitModal/)
-  assert.match(map3d, /3d-buildings/)
+  assert.match(map3d, /mapbox:\/\/styles\/mapbox\/standard/)
   assert.match(map3d, /cell-3d-marker/)
   assert.match(sheet, /onTraceRoute/)
   assert.match(visitModal, /api\/v1\/public\/cells\/visit-lead/)
