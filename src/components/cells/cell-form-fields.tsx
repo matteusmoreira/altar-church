@@ -33,6 +33,7 @@ export interface CellFormValues {
   latitude?: number | null
   longitude?: number | null
   isAddressPublic?: boolean
+  isLeaderWhatsappPublic?: boolean
   cellPhotoUrl?: string | null
 }
 
@@ -364,6 +365,14 @@ export function CellFormFields({
               checked={form.isAddressPublic ?? true}
               onCheckedChange={(checked) => onChange({ isAddressPublic: checked })}
             />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 rounded-md border bg-background p-3">
+            <div className="space-y-0.5">
+              <span className="text-sm font-medium">Mostrar WhatsApp do líder</span>
+              <p className="text-xs text-muted-foreground">Permite contato direto na página pública. Ao ocultar, visitantes ainda podem solicitar uma visita.</p>
+            </div>
+            <Switch aria-label="Mostrar WhatsApp do líder" checked={form.isLeaderWhatsappPublic ?? true} onCheckedChange={(checked) => onChange({ isLeaderWhatsappPublic: checked })} />
           </label>
 
           <div className="grid gap-1.5 rounded-md border bg-background p-3">

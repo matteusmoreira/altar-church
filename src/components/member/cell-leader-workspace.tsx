@@ -44,6 +44,7 @@ const emptyCellForm: CellForm = {
   latitude: null,
   longitude: null,
   isAddressPublic: true,
+  isLeaderWhatsappPublic: true,
   cellPhotoUrl: null,
 }
 
@@ -73,6 +74,7 @@ function toCellForm(cell: CellLeaderCell): CellForm {
     latitude: cell.latitude,
     longitude: cell.longitude,
     isAddressPublic: cell.isAddressPublic ?? true,
+    isLeaderWhatsappPublic: cell.isLeaderWhatsappPublic ?? true,
     cellPhotoUrl: cell.cellPhotoUrl ?? null,
   }
 }
@@ -101,6 +103,7 @@ function cellInput(form: CellForm): SaveLeaderCellInput {
     latitude: form.latitude,
     longitude: form.longitude,
     isAddressPublic: form.isAddressPublic,
+    isLeaderWhatsappPublic: form.isLeaderWhatsappPublic,
     cellPhotoUrl: form.cellPhotoUrl,
   }
 }

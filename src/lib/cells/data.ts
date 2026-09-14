@@ -238,6 +238,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       latitude: number | null
       longitude: number | null
       is_address_public: boolean | null
+      is_leader_whatsapp_public: boolean | null
       cell_photo_url: string | null
       member_count: string | number
     }[]>`
@@ -247,7 +248,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
         cell.neighborhood, cell.city, cell.state, cell.max_capacity,
         cell.min_age, cell.max_age, cell.accepts_requests,
         cell.coordinator_person_id, coordinator.full_name as coordinator_name,
-        cell.latitude, cell.longitude, cell.is_address_public, cell.cell_photo_url,
+        cell.latitude, cell.longitude, cell.is_address_public, cell.is_leader_whatsapp_public, cell.cell_photo_url,
         count(member.id) filter (where member.status = 'active') as member_count
       from public.groups cell
       left join public.group_members member on member.group_id = cell.id
@@ -257,7 +258,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
         and cell.is_active = true
         and cell.leader_person_id = ${personId}
         and cell.deleted_at is null
-      group by cell.id, coordinator.full_name, cell.latitude, cell.longitude, cell.is_address_public, cell.cell_photo_url
+      group by cell.id, coordinator.full_name, cell.latitude, cell.longitude, cell.is_address_public, cell.is_leader_whatsapp_public, cell.cell_photo_url
       order by cell.name
     `,
     sql<{
@@ -388,6 +389,7 @@ async function getCellLeaderWorkspaceData(companyId: string, personId: string | 
       latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
       longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
       isAddressPublic: row.is_address_public ?? true,
+      isLeaderWhatsappPublic: row.is_leader_whatsapp_public ?? true,
       cellPhotoUrl: row.cell_photo_url ?? null,
       memberCount: Number(row.member_count ?? 0),
     })),

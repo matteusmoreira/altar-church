@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Clock,
   Download,
   HeartHandshake,
   Grid2X2,
@@ -23,6 +24,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -45,6 +47,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -110,13 +113,13 @@ import type {
 import { VolunteerQrScanner } from "./volunteer-qr-scanner";
 import { VolunteerProgrammingWorkspace } from "./volunteer-programming-workspace";
 
-const fmt = (value: string) =>
+export const fmt = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
-const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const assignmentStatusLabels: Record<string, string> = {
+export const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+export const assignmentStatusLabels: Record<string, string> = {
   proposed: "Rascunho — ainda não avisado",
   notified: "Aguardando resposta",
   confirmed: "Confirmado",
@@ -127,7 +130,7 @@ const assignmentStatusLabels: Record<string, string> = {
   no_show: "Não compareceu",
 };
 
-function ok(result: VolunteerActionResult, success: string) {
+export function ok(result: VolunteerActionResult, success: string) {
   if (!result.ok) {
     toast.error(result.error ?? "Operação falhou");
     return false;
@@ -205,7 +208,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function CandidatePanel({
+export function CandidatePanel({
   shift,
   onAssigned,
 }: {
@@ -316,7 +319,7 @@ function CandidatePanel({
   );
 }
 
-function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCount: number }) {
+export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCount: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
@@ -976,12 +979,14 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
 function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [deptDialogOpen, setDeptDialogOpen] = useState(false);
   const [department, setDepartment] = useState<{
     id: string | null;
     name: string;
     description: string;
     active: boolean;
   }>({ id: null, name: "", description: "", active: true });
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [role, setRole] = useState({
     id: null as string | null,
     departmentId: data.departments[0]?.id ?? "",
@@ -990,6 +995,13 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     instructions: "",
     active: true,
   });
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [targetDeptForLink, setTargetDeptForLink] = useState<string>("");
+  const [selectedVolunteerId, setSelectedVolunteerId] = useState<string>("");
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+
   async function addDepartment() {
     if (pendingKey) return;
     setPendingKey("department");
@@ -998,6 +1010,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       if (ok(result, department.id ? "Equipe atualizada" : "Equipe criada")) {
         if (result.id) setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
         setDepartment({ id: null, name: "", description: "", active: true });
+        setDeptDialogOpen(false);
+        router.refresh();
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível salvar a equipe");
@@ -1005,6 +1019,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       setPendingKey(null);
     }
   }
+
   async function addRole() {
     if (pendingKey) return;
     if (!role.departmentId) return toast.error("Selecione uma equipe");
@@ -1013,6 +1028,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       const result = await saveVolunteerDepartmentRole({ ...role });
       if (ok(result, role.id ? "Função atualizada" : "Função criada")) {
         setRole({ ...role, id: null, name: "", description: "", instructions: "", active: true });
+        setRoleDialogOpen(false);
+        router.refresh();
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível salvar a função");
@@ -1020,6 +1037,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       setPendingKey(null);
     }
   }
+
   async function toggleDepartment(item: VolunteerDashboardData["departments"][number]) {
     if (
       ok(
@@ -1035,6 +1053,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     )
       router.refresh();
   }
+
   async function toggleRole(
     item: NonNullable<VolunteerDashboardData["departments"][number]["roles"]>[number],
   ) {
@@ -1053,6 +1072,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     )
       router.refresh();
   }
+
   async function removeDepartment(item: VolunteerDashboardData["departments"][number]) {
     if (!window.confirm(`Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`)) return;
     if (ok(await softDeleteVolunteerDepartment(item.id), "Equipe excluída")) {
@@ -1060,87 +1080,209 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       router.refresh();
     }
   }
+
+  async function handleLinkVolunteer() {
+    if (!selectedVolunteerId || !targetDeptForLink || !selectedRoleId) {
+      return toast.error("Selecione o voluntário e a função");
+    }
+    const volunteer = data.volunteers.find((v) => v.id === selectedVolunteerId);
+    if (!volunteer) return toast.error("Voluntário não encontrado");
+    setLinkSaving(true);
+    try {
+      const existingMemberships = (volunteer.memberships ?? []).map((m) => ({
+        departmentId: m.departmentId,
+        roleId: m.roleId ?? "",
+        preferred: Boolean(m.preferred),
+      }));
+      if (existingMemberships.some((m) => m.roleId === selectedRoleId)) {
+        toast.info("Este voluntário já possui esta função nesta equipe");
+        setLinkDialogOpen(false);
+        return;
+      }
+      const result = await saveVolunteer({
+        id: volunteer.id,
+        personId: volunteer.personId,
+        memberships: [
+          ...existingMemberships,
+          {
+            departmentId: targetDeptForLink,
+            roleId: selectedRoleId,
+            preferred: existingMemberships.length === 0,
+          },
+        ],
+        registrationStatus: "active",
+        whatsappEnabled: true,
+        emailEnabled: true,
+      });
+      if (ok(result, "Voluntário vinculado à equipe com sucesso!")) {
+        setLinkDialogOpen(false);
+        setSelectedVolunteerId("");
+        setSelectedRoleId("");
+        router.refresh();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao vincular voluntário");
+    } finally {
+      setLinkSaving(false);
+    }
+  }
+
+  const filteredDepartments = data.departments.filter((item) =>
+    item.name.toLocaleLowerCase("pt-BR").includes(teamSearch.toLocaleLowerCase("pt-BR")),
+  );
+
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Equipes e ministérios</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Input
-            placeholder="Nome da equipe"
-            value={department.name}
-            onChange={(e) =>
-              setDepartment({ ...department, name: e.target.value })
-            }
-          />
-          <Textarea
-            placeholder="Descrição"
-            value={department.description}
-            onChange={(e) =>
-              setDepartment({ ...department, description: e.target.value })
-            }
-          />
-          <div className="flex gap-2">
-            <Button onClick={addDepartment} disabled={pendingKey !== null} aria-busy={pendingKey === "department"}>
-              {pendingKey === "department" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {pendingKey === "department" ? "Salvando..." : department.id ? "Salvar equipe" : "Criar equipe"}
-            </Button>
-            {department.id && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setDepartment({ id: null, name: "", description: "", active: true })
-                }
-              >
-                Cancelar
-              </Button>
-            )}
-          </div>
-          <div className="space-y-2 pt-3">
-            {data.departments.map((item) => (
-              <div key={item.id} className="rounded-lg border p-3">
-                <div className="flex justify-between">
-                  <strong>{item.name}</strong>
-                  <StatusBadge status={item.active ? "active" : "inactive"} />
+    <div className="space-y-6">
+      {/* Top Header with Actions */}
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="text-xl font-semibold">Equipes e Ministérios</h2>
+          <p className="text-sm text-muted-foreground">
+            Gerencie ministérios, funções e voluntários que servem em cada equipe.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              setDepartment({ id: null, name: "", description: "", active: true });
+              setDeptDialogOpen(true);
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Equipe
+          </Button>
+        </div>
+      </div>
+
+      {/* Search filter */}
+      <div className="max-w-md">
+        <Input
+          placeholder="Buscar equipe por nome..."
+          value={teamSearch}
+          onChange={(e) => setTeamSearch(e.target.value)}
+        />
+      </div>
+
+      {/* Grid of Team Cards */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {filteredDepartments.map((item) => {
+          const teamVolunteers = data.volunteers.filter((v) =>
+            v.departmentNames.includes(item.name),
+          );
+          const activeRoles = (item.roles ?? []).filter((r) => r.active);
+
+          return (
+            <Card key={item.id} className="flex flex-col border shadow-xs">
+              <CardHeader className="border-b pb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-lg">{item.name}</CardTitle>
+                      <StatusBadge status={item.active ? "active" : "inactive"} />
+                    </div>
+                    <CardDescription>
+                      {item.description || "Sem descrição cadastrada"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDepartment({
+                          id: item.id,
+                          name: item.name,
+                          description: item.description,
+                          active: item.active,
+                        });
+                        setDeptDialogOpen(true);
+                      }}
+                    >
+                      Editar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => toggleDepartment(item)}
+                    >
+                      {item.active ? "Inativar" : "Reativar"}
+                    </Button>
+                    {data.canAdminDelete && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:bg-destructive/10"
+                        onClick={() => removeDepartment(item)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {item.description || "Sem descrição"}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setDepartment({
-                        id: item.id,
-                        name: item.name,
-                        description: item.description,
-                        active: item.active,
-                      })
-                    }
-                  >
-                    Editar
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => toggleDepartment(item)}>
-                    {item.active ? "Inativar" : "Reativar"}
-                  </Button>
-                  {data.canAdminDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeDepartment(item)}><Trash2 className="mr-1 h-4 w-4" />Excluir</Button>}
-                </div>
-                {(item.roles ?? []).length > 0 && (
-                  <div className="mt-3 space-y-2 border-t pt-3">
-                    {(item.roles ?? []).map((itemRole) => (
-                      <div key={itemRole.id} className="rounded-md bg-muted/50 p-2 text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span>
-                            <strong>{itemRole.name}</strong>
-                            {!itemRole.active && " · inativa"}
-                          </span>
-                          <div className="flex gap-1">
+              </CardHeader>
+
+              <CardContent className="flex-1 space-y-5 p-5">
+                {/* Funções da Equipe */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      Funções ({activeRoles.length})
+                    </h4>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setRole({
+                          id: null,
+                          departmentId: item.id,
+                          name: "",
+                          description: "",
+                          instructions: "",
+                          active: true,
+                        });
+                        setRoleDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Nova Função
+                    </Button>
+                  </div>
+
+                  {(item.roles ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      Nenhuma função cadastrada ainda. Clique em Nova Função para adicionar.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(item.roles ?? []).map((itemRole) => (
+                        <div
+                          key={itemRole.id}
+                          className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">
+                                {itemRole.name}
+                              </span>
+                              {!itemRole.active && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground">
+                                  Inativa
+                                </Badge>
+                              )}
+                            </div>
+                            {itemRole.instructions && (
+                              <p className="truncate text-xs text-muted-foreground mt-0.5">
+                                {itemRole.instructions}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 ml-2">
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() =>
+                              className="h-7 px-2 text-xs"
+                              onClick={() => {
                                 setRole({
                                   id: itemRole.id,
                                   departmentId: itemRole.departmentId,
@@ -1148,89 +1290,295 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                                   description: itemRole.description,
                                   instructions: itemRole.instructions,
                                   active: itemRole.active,
-                                })
-                              }
+                                });
+                                setRoleDialogOpen(true);
+                              }}
                             >
                               Editar
                             </Button>
-                            <Button size="sm" variant="ghost" onClick={() => toggleRole(itemRole)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-muted-foreground"
+                              onClick={() => toggleRole(itemRole)}
+                            >
                               {itemRole.active ? "Inativar" : "Reativar"}
                             </Button>
                           </div>
                         </div>
-                        {itemRole.instructions && (
-                          <p className="text-xs text-muted-foreground">{itemRole.instructions}</p>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Voluntários Vinculados */}
+                <div className="space-y-2.5 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      Voluntários Membros ({teamVolunteers.length})
+                    </h4>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setTargetDeptForLink(item.id);
+                        setSelectedVolunteerId("");
+                        setSelectedRoleId(activeRoles[0]?.id ?? "");
+                        setLinkDialogOpen(true);
+                      }}
+                      disabled={activeRoles.length === 0}
+                      title={activeRoles.length === 0 ? "Cadastre ao menos uma função primeiro" : ""}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Vincular Voluntário
+                    </Button>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {teamVolunteers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      Nenhum voluntário vinculado a esta equipe ainda.
+                    </p>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {teamVolunteers.map((vol) => (
+                        <div
+                          key={vol.id}
+                          className="flex items-center gap-2.5 rounded-lg border bg-background/60 p-2 text-xs"
+                        >
+                          <Avatar className="h-7 w-7 shrink-0">
+                            <AvatarFallback className="text-[10px]">
+                              {vol.name.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-foreground">
+                              {vol.name}
+                            </p>
+                            <p className="truncate text-[11px] text-muted-foreground">
+                              {vol.phone || vol.email || "Sem contato"}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {filteredDepartments.length === 0 && (
+        <div className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
+          Nenhuma equipe encontrada.
+        </div>
+      )}
+
+      {/* Dialog: Nova / Editar Equipe */}
+      <Dialog open={deptDialogOpen} onOpenChange={setDeptDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {department.id ? "Editar Equipe" : "Nova Equipe"}
+            </DialogTitle>
+            <DialogDescription>
+              Cadastre o nome e a descrição do ministério ou departamento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Nome da Equipe *</Label>
+              <Input
+                placeholder="Ex.: Louvor, Mídia, Recepção, Infantil"
+                value={department.name}
+                onChange={(e) =>
+                  setDepartment({ ...department, name: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Textarea
+                placeholder="Propósito e atribuições deste ministério..."
+                rows={3}
+                value={department.description}
+                onChange={(e) =>
+                  setDepartment({ ...department, description: e.target.value })
+                }
+              />
+            </div>
           </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Funções e instruções</CardTitle>
-          <CardDescription>
-            {role.id
-              ? `Editando a função "${role.name}". Ajuste e clique em Salvar, ou clique em Cancelar para criar uma nova função.`
-              : "Selecione a equipe, preencha e clique em Criar função."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3"
-            value={role.departmentId}
-            onChange={(e) => setRole({ ...role, departmentId: e.target.value })}
-          >
-            {data.departments.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="Função: Vocal, Recepção, Câmera…"
-            value={role.name}
-            onChange={(e) => setRole({ ...role, name: e.target.value })}
-          />
-          <Input
-            placeholder="Descrição"
-            value={role.description}
-            onChange={(e) => setRole({ ...role, description: e.target.value })}
-          />
-          <Textarea
-            placeholder="Instruções para quem servir"
-            value={role.instructions}
-            onChange={(e) => setRole({ ...role, instructions: e.target.value })}
-          />
-          <div className="flex gap-2">
-            <Button onClick={addRole} disabled={!role.departmentId || pendingKey !== null} aria-busy={pendingKey === "role"}>
-              {pendingKey === "role" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {pendingKey === "role" ? "Salvando..." : role.id ? "Salvar função" : "Criar função"}
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeptDialogOpen(false)}
+            >
+              Cancelar
             </Button>
-            {role.id && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setRole({
-                    id: null,
-                    departmentId: role.departmentId,
-                    name: "",
-                    description: "",
-                    instructions: "",
-                    active: true,
-                  })
+            <Button
+              type="button"
+              disabled={!department.name.trim() || pendingKey !== null}
+              onClick={addDepartment}
+            >
+              {pendingKey === "department" && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {department.id ? "Salvar alterações" : "Criar equipe"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Nova / Editar Função */}
+      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {role.id ? "Editar Função" : "Nova Função"}
+            </DialogTitle>
+            <DialogDescription>
+              Defina a função operacional e as orientações para quem for servir.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Equipe</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={role.departmentId}
+                onChange={(e) =>
+                  setRole({ ...role, departmentId: e.target.value })
                 }
               >
-                Cancelar
-              </Button>
-            )}
+                {data.departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Nome da Função *</Label>
+              <Input
+                placeholder="Ex.: Vocal, Bateria, Câmera, Recepção Porta 1"
+                value={role.name}
+                onChange={(e) => setRole({ ...role, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição</Label>
+              <Input
+                placeholder="Breve descrição da função..."
+                value={role.description}
+                onChange={(e) =>
+                  setRole({ ...role, description: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Instruções para quem servir</Label>
+              <Textarea
+                placeholder="Ex.: Chegar com 30min de antecedência, levar partituras, etc."
+                rows={3}
+                value={role.instructions}
+                onChange={(e) =>
+                  setRole({ ...role, instructions: e.target.value })
+                }
+              />
+            </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRoleDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!role.name.trim() || !role.departmentId || pendingKey !== null}
+              onClick={addRole}
+            >
+              {pendingKey === "role" && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {role.id ? "Salvar função" : "Criar função"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Vincular Voluntário */}
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Vincular Voluntário à Equipe</DialogTitle>
+            <DialogDescription>
+              Adicione um voluntário cadastrado a uma função desta equipe.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Selecione o Voluntário *</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={selectedVolunteerId}
+                onChange={(e) => setSelectedVolunteerId(e.target.value)}
+              >
+                <option value="">Escolha um voluntário...</option>
+                {data.volunteers
+                  .filter((v) => v.active)
+                  .map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Função nesta Equipe *</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={selectedRoleId}
+                onChange={(e) => setSelectedRoleId(e.target.value)}
+              >
+                <option value="">Escolha a função...</option>
+                {(
+                  data.departments.find((d) => d.id === targetDeptForLink)?.roles ??
+                  []
+                )
+                  .filter((r) => r.active)
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLinkDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!selectedVolunteerId || !selectedRoleId || linkSaving}
+              onClick={handleLinkVolunteer}
+            >
+              {linkSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar Vínculo
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1305,102 +1653,147 @@ function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {schedule.shifts.map((shift, shiftIndex) => {
-              const active = shift.assignments.filter(
-                (item) => !["declined", "cancelled"].includes(item.status),
-              );
-              const eventPlan = data.eventPlans.find(
-                (plan) => plan.eventId === shift.eventId,
-              );
-              const firstForEvent =
-                schedule.shifts.findIndex((item) => item.eventId === shift.eventId) ===
-                shiftIndex;
-              const eventComplete = schedule.shifts
-                .filter((item) => item.eventId === shift.eventId)
-                .every((item) => item.assignments.filter(
-                  (assignment) => !["declined", "cancelled"].includes(assignment.status),
-                ).length >= item.requiredVolunteers);
-              return (
-                <div id={firstForEvent ? `escala-${shift.eventId}` : undefined} key={shift.id} className="scroll-mt-4 rounded-lg border p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium">
-                        {shift.eventTitle} · {shift.departmentName} ·{" "}
-                        {shift.roleName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {fmt(shift.startsAt)} · {shift.instructions}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        active.length >= shift.requiredVolunteers
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {active.length}/{shift.requiredVolunteers} preenchida(s)
-                    </Badge>
-                    {shift.unreadChatCount > 0 && <Badge variant="destructive">{shift.unreadChatCount} nova(s)</Badge>}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {shift.assignments
-                      .filter(
-                        (assignment) =>
-                          !["declined", "cancelled"].includes(assignment.status),
-                      )
-                      .map((assignment) => (
-                      <div
-                        key={assignment.id}
-                        className="rounded-md bg-muted px-2 py-1 text-xs"
-                      >
-                        <strong>{assignment.volunteerName}</strong> ·{" "}
-                        {assignmentStatusLabels[assignment.status] ?? assignment.status}
-                        {` · ${assignment.locked ? "Escolhido manualmente" : "Sugerido pelo sistema"}`}
-                        {!["declined", "cancelled"].includes(assignment.status) && (
-                          <button
+          <CardContent className="space-y-4">
+            {(() => {
+              const eventIds = [...new Set(schedule.shifts.map((s) => s.eventId))];
+              return eventIds.map((eventId) => {
+                const eventShifts = schedule.shifts.filter((s) => s.eventId === eventId);
+                const firstShift = eventShifts[0];
+                if (!firstShift) return null;
+                const eventPlan = data.eventPlans.find((plan) => plan.eventId === eventId);
+                const eventComplete = eventShifts.every(
+                  (item) =>
+                    item.assignments.filter(
+                      (assignment) => !["declined", "cancelled"].includes(assignment.status),
+                    ).length >= item.requiredVolunteers,
+                );
+
+                return (
+                  <div
+                    id={eventId ? `escala-${eventId}` : undefined}
+                    key={eventId ?? firstShift.id}
+                    className="scroll-mt-4 rounded-xl border bg-card/60 p-4 space-y-3"
+                  >
+                    {/* Event Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                      <div>
+                        <h4 className="font-semibold text-base">{firstShift.eventTitle}</h4>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock className="h-3 w-3 text-primary" />
+                          {fmt(firstShift.startsAt)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {eventId && (
+                          eventPlan?.schedulePublishedAt ? (
+                            <Badge variant="default" className="bg-emerald-600">
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                              Escala do culto publicada
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={!eventComplete}
+                              title={eventComplete ? "Publicar e avisar voluntários" : "Preencha todas as vagas antes de publicar"}
+                              onClick={() => publish(eventId)}
+                            >
+                              <Send className="mr-1.5 h-3.5 w-3.5" />
+                              Publicar escala deste culto
+                            </Button>
+                          )
+                        )}
+                        {eventId && data.canAdminDelete && (
+                          <Button
                             type="button"
-                            className="ml-2 text-destructive"
-                            aria-label={`Remover ${assignment.volunteerName}`}
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:bg-destructive/10"
                             onClick={() =>
-                              removeAssignment(shift.id, assignment.volunteerId)
+                              setDeleteTarget({
+                                eventId,
+                                title: firstShift.eventTitle,
+                                startsAt: firstShift.startsAt,
+                              })
                             }
                           >
-                            <X className="inline h-3 w-3" />
-                          </button>
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Excluir
+                          </Button>
                         )}
                       </div>
-                      ))}
+                    </div>
+
+                    {/* Shifts inside this event */}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {eventShifts.map((shift) => {
+                        const active = shift.assignments.filter(
+                          (item) => !["declined", "cancelled"].includes(item.status),
+                        );
+                        return (
+                          <div key={shift.id} className="rounded-lg border bg-background/60 p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-medium text-sm">
+                                  {shift.departmentName} · {shift.roleName}
+                                </p>
+                                {shift.instructions && (
+                                  <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                                    {shift.instructions}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge
+                                variant={active.length >= shift.requiredVolunteers ? "default" : "secondary"}
+                                className="text-[11px] shrink-0"
+                              >
+                                {active.length}/{shift.requiredVolunteers} preenchida(s)
+                              </Badge>
+                            </div>
+
+                            {/* Assignments badges */}
+                            <div className="flex flex-wrap gap-1.5">
+                              {active.map((assignment) => (
+                                <div
+                                  key={assignment.id}
+                                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
+                                >
+                                  <strong>{assignment.volunteerName}</strong>
+                                  <span className="text-muted-foreground">·</span>
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {assignmentStatusLabels[assignment.status] ?? assignment.status}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {` · ${assignment.locked ? "Escolhido manualmente" : "Sugerido pelo sistema"}`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="ml-1 text-destructive hover:opacity-75"
+                                    aria-label={`Remover ${assignment.volunteerName}`}
+                                    onClick={() => removeAssignment(shift.id, assignment.volunteerId)}
+                                  >
+                                    <X className="inline h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                              {active.length < shift.requiredVolunteers && (
+                                <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 px-2 py-1 text-xs text-amber-600 dark:text-amber-400 italic">
+                                  Vaga aberta
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1 border-t">
+                              <CandidatePanel shift={shift} onAssigned={() => router.refresh()} />
+                              <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {firstForEvent && shift.eventId && (
-                      eventPlan?.schedulePublishedAt ? (
-                        <Badge>Escala do culto publicada</Badge>
-                      ) : (
-                        <Button
-                          disabled={!eventComplete}
-                          title={eventComplete ? "Publicar e avisar voluntários" : "Preencha todas as vagas antes de publicar"}
-                          onClick={() => publish(shift.eventId ?? "")}
-                        >
-                          Publicar escala deste culto
-                        </Button>
-                      )
-                    )}
-                    <CandidatePanel
-                      shift={shift}
-                      onAssigned={() => router.refresh()}
-                    />
-                    <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
-                    {firstForEvent && shift.eventId && data.canAdminDelete && (
-                      <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteTarget({ eventId: shift.eventId ?? "", title: shift.eventTitle, startsAt: shift.startsAt })}>
-                        <Trash2 className="mr-2 h-4 w-4" />Excluir escala
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </CardContent>
         </Card>
       ))}
@@ -2321,11 +2714,25 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
           </Badge>
         </div>
       </div>
-      <Tabs defaultValue="programmings">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="programmings">Programações{totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}</TabsTrigger>
-          <TabsTrigger value="teams">Equipes</TabsTrigger>
-          <TabsTrigger value="volunteers">Voluntários</TabsTrigger>
+      <Tabs defaultValue="programmings" className="space-y-6">
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1 p-1 bg-muted/60 rounded-xl border">
+          <TabsTrigger value="programmings" className="px-4 py-2 text-sm font-medium">
+            <CalendarDays className="mr-2 h-4 w-4" />
+            Programações
+            {totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="teams" className="px-4 py-2 text-sm font-medium">
+            <UsersRound className="mr-2 h-4 w-4" />
+            Equipes
+          </TabsTrigger>
+          <TabsTrigger value="volunteers" className="px-4 py-2 text-sm font-medium">
+            <UserRoundCheck className="mr-2 h-4 w-4" />
+            Voluntários
+          </TabsTrigger>
+          <TabsTrigger value="communication" className="px-4 py-2 text-sm font-medium">
+            <Settings className="mr-2 h-4 w-4" />
+            Comunicação & Ajustes
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="programmings" className="space-y-4">
           <VolunteerProgrammingWorkspace data={data} />
@@ -2351,6 +2758,18 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
               <ManagerSettings data={data} />
             </div>
           </details>
+        </TabsContent>
+        <TabsContent value="communication" className="space-y-6">
+          <div className="flex flex-col gap-1 border-b pb-3">
+            <h2 className="text-xl font-semibold">Comunicação e Ajustes</h2>
+            <p className="text-sm text-muted-foreground">
+              Métricas do voluntariado, recados e feed, relatórios e configurações do módulo.
+            </p>
+          </div>
+          <ManagerOverview data={data} />
+          <ManagerCommunication data={data} />
+          <ManagerReports data={data} />
+          <ManagerSettings data={data} />
         </TabsContent>
       </Tabs>
     </div>

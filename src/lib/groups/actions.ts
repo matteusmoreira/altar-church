@@ -58,6 +58,7 @@ const groupSchema = z.object({
   latitude: z.number().nullable().optional().default(null),
   longitude: z.number().nullable().optional().default(null),
   isAddressPublic: z.boolean().optional().default(true),
+  isLeaderWhatsappPublic: z.boolean().optional(),
   cellPhotoUrl: z.string().trim().nullable().optional().default(null),
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
@@ -275,6 +276,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
             latitude = ${parsed.latitude},
             longitude = ${parsed.longitude},
             is_address_public = ${parsed.isAddressPublic},
+            is_leader_whatsapp_public = coalesce(${parsed.isLeaderWhatsappPublic ?? null}, is_leader_whatsapp_public),
             cell_photo_url = ${parsed.cellPhotoUrl},
             updated_by = ${user.id}
         where id = ${parsed.id}
@@ -312,6 +314,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           latitude,
           longitude,
           is_address_public,
+          is_leader_whatsapp_public,
           cell_photo_url,
           created_by,
           updated_by
@@ -343,6 +346,7 @@ export async function saveGroup(input: SaveGroupInput): Promise<GroupsActionResu
           ${parsed.latitude},
           ${parsed.longitude},
           ${parsed.isAddressPublic},
+          ${parsed.isLeaderWhatsappPublic ?? true},
           ${parsed.cellPhotoUrl},
           ${user.id},
           ${user.id}

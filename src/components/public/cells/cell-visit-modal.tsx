@@ -75,9 +75,7 @@ export function CellVisitModal({
       if (!res.ok) throw new Error(data.error || "Erro ao registrar solicitação")
 
       setIsSuccess(true)
-      if (data.leaderPhone) {
-        setLeaderPhone(data.leaderPhone)
-      }
+      setLeaderPhone(data.leaderPhone ?? null)
       toast.success("Solicitação enviada com sucesso!")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível enviar solicitação")
@@ -88,6 +86,7 @@ export function CellVisitModal({
 
   const handleClose = () => {
     setIsSuccess(false)
+    setLeaderPhone(null)
     setFullName("")
     setPhone("")
     setNeighborhood("")
@@ -121,9 +120,9 @@ export function CellVisitModal({
             </div>
 
             <div>
-              <h3 className="text-lg font-bold text-foreground">Visita Confirmada!</h3>
+              <h3 className="text-lg font-bold text-foreground">Solicitação registrada!</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                O líder da célula <strong className="text-foreground">{cell.name}</strong> recebeu seu contato e entrará em contato com você.
+                Seu interesse em visitar a célula <strong className="text-foreground">{cell.name}</strong> foi registrado para acompanhamento pela igreja.
               </p>
             </div>
 

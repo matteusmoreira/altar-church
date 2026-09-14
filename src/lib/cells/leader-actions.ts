@@ -41,6 +41,7 @@ const cellSchema = z.object({
   latitude: z.number().nullable().optional().default(null),
   longitude: z.number().nullable().optional().default(null),
   isAddressPublic: z.boolean().optional().default(true),
+  isLeaderWhatsappPublic: z.boolean().optional(),
   cellPhotoUrl: z.string().trim().nullable().optional().default(null),
 }).refine((value) => value.minAge === null || value.maxAge === null || value.minAge <= value.maxAge, {
   message: "Idade mínima não pode ser maior que a máxima",
@@ -130,6 +131,7 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
             latitude = ${parsed.latitude},
             longitude = ${parsed.longitude},
             is_address_public = ${parsed.isAddressPublic},
+            is_leader_whatsapp_public = coalesce(${parsed.isLeaderWhatsappPublic ?? null}, is_leader_whatsapp_public),
             cell_photo_url = ${parsed.cellPhotoUrl},
             updated_by = ${context.user.id}
         where id = ${parsed.id}
@@ -147,14 +149,14 @@ export async function saveLeaderCell(input: SaveLeaderCellInput): Promise<CellAc
           meeting_day, meeting_time, meeting_location, postal_code,
           address_number, address_complement, neighborhood, city, state,
           max_capacity, min_age, max_age, accepts_requests, is_active,
-          latitude, longitude, is_address_public, cell_photo_url,
+          latitude, longitude, is_address_public, is_leader_whatsapp_public, cell_photo_url,
           created_by, updated_by
         ) values (
           ${context.companyId}, ${parsed.categoryId}, ${parsed.congregationId}, ${parsed.name}, ${parsed.description}, 'cell', ${context.personId}, ${parsed.coordinatorPersonId},
           ${parsed.meetingDay}, ${parsed.meetingTime}, ${parsed.meetingLocation}, ${parsed.postalCode},
           ${parsed.addressNumber}, ${parsed.addressComplement}, ${parsed.neighborhood}, ${parsed.city}, ${parsed.state},
           ${parsed.maxCapacity}, ${parsed.minAge}, ${parsed.maxAge}, ${parsed.acceptsRequests}, true,
-          ${parsed.latitude}, ${parsed.longitude}, ${parsed.isAddressPublic}, ${parsed.cellPhotoUrl},
+          ${parsed.latitude}, ${parsed.longitude}, ${parsed.isAddressPublic}, ${parsed.isLeaderWhatsappPublic ?? true}, ${parsed.cellPhotoUrl},
           ${context.user.id}, ${context.user.id}
         ) returning id
       `

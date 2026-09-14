@@ -93,6 +93,7 @@ type GroupFormState = {
   latitude: number | null
   longitude: number | null
   isAddressPublic: boolean
+  isLeaderWhatsappPublic: boolean
   cellPhotoUrl: string | null
 }
 
@@ -158,6 +159,7 @@ const emptyForm: GroupFormState = {
   latitude: null,
   longitude: null,
   isAddressPublic: true,
+  isLeaderWhatsappPublic: true,
   cellPhotoUrl: null,
 }
 
@@ -204,6 +206,7 @@ function groupToForm(group: GroupListItem): GroupFormState {
     latitude: group.latitude ?? null,
     longitude: group.longitude ?? null,
     isAddressPublic: group.isAddressPublic ?? true,
+    isLeaderWhatsappPublic: group.isLeaderWhatsappPublic ?? true,
     cellPhotoUrl: group.cellPhotoUrl ?? null,
   }
 }
@@ -237,6 +240,7 @@ function buildActionInput(form: GroupFormState): SaveGroupInput {
     latitude: form.latitude,
     longitude: form.longitude,
     isAddressPublic: form.isAddressPublic,
+    isLeaderWhatsappPublic: form.isLeaderWhatsappPublic,
     cellPhotoUrl: form.cellPhotoUrl,
   }
 }

@@ -226,158 +226,255 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
   return (
     <div className={`relative h-dvh w-full overflow-hidden flex flex-col ${themeMode === "dark" ? "dark bg-slate-950 text-white" : "bg-background text-foreground"}`}>
       {/* Top Header Bar */}
-      <header className={`${viewMode === "map" ? "absolute top-0 inset-x-0" : "relative shrink-0"} z-30 flex flex-col p-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none`}>
-        <div className="flex items-center justify-between gap-2 pointer-events-auto">
-          {/* Back & Church Branding */}
-          <Link
-            href={`/church/${church.slug}`}
-            className="flex items-center gap-2 rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition hover:bg-black/60 active:scale-95"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="truncate max-w-[140px] sm:max-w-xs">{church.publicName}</span>
-          </Link>
-
-          {/* Quick Actions (GPS, Theme, View Mode) */}
-          <div className="flex items-center gap-1.5">
-            {/* GPS Perto de Mim Button */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRequestLocation}
-              disabled={isLocating}
-              className="h-8 rounded-full border-cyan-500/40 bg-cyan-950/60 px-2.5 text-xs font-semibold text-cyan-300 shadow-lg backdrop-blur-md hover:bg-cyan-900/80 active:scale-95"
-              title="Células perto de você"
-            >
-              {isLocating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
-              ) : (
-                <Compass className="h-3.5 w-3.5 text-cyan-400" />
-              )}
-              <span className="hidden sm:inline ml-1">Perto de Mim</span>
-            </Button>
-
-            {/* View Mode Switcher */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setViewMode(viewMode === "map" ? "list" : "map")}
-              className="h-8 rounded-full border-white/20 bg-black/40 px-2.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md hover:bg-black/60 active:scale-95"
-            >
-              {viewMode === "map" ? (
-                <>
-                  <List className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline ml-1">Lista</span>
-                </>
-              ) : (
-                <>
-                  <MapIcon className="h-3.5 w-3.5 text-cyan-400" />
-                  <span className="hidden sm:inline ml-1">Mapa 3D</span>
-                </>
-              )}
-            </Button>
-
-            {/* Theme Toggle */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
-              className="h-8 w-8 rounded-full border-white/20 bg-black/40 p-0 text-white shadow-lg backdrop-blur-md hover:bg-black/60 active:scale-95"
-              title="Alternar Tema Claro / Escuro"
-            >
-              {themeMode === "dark" ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5 text-slate-200" />}
-            </Button>
-          </div>
-        </div>
-
-        {/* Search Bar & Filters */}
-        <div className="mt-2.5 flex flex-col gap-2 pointer-events-auto max-w-lg mx-auto w-full">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Buscar célula por nome, líder ou bairro…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 w-full rounded-full border-white/20 bg-black/50 pl-8 pr-8 text-xs text-white placeholder:text-muted-foreground shadow-lg backdrop-blur-md focus-visible:ring-1 focus-visible:ring-primary"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Category Pills Scrolling Row */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setActiveCategoryId("all")}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold shadow-md backdrop-blur-md transition active:scale-95 ${
-                activeCategoryId === "all"
-                  ? "bg-foreground text-background"
-                  : "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+      {viewMode === "map" ? (
+        <header
+          className={`absolute top-0 inset-x-0 z-30 flex flex-col p-3 pointer-events-none transition-all duration-300 ${
+            themeMode === "dark"
+              ? "bg-gradient-to-b from-slate-950/90 via-slate-950/50 to-transparent"
+              : "bg-gradient-to-b from-white/95 via-white/70 to-transparent"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 pointer-events-auto">
+            {/* Back & Church Branding */}
+            <Link
+              href={`/church/${church.slug}`}
+              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold shadow-md backdrop-blur-md transition active:scale-95 ${
+                themeMode === "dark"
+                  ? "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+                  : "border border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
               }`}
             >
-              Todas ({cells.length})
-            </button>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span className="truncate max-w-[140px] sm:max-w-xs">{church.publicName}</span>
+            </Link>
 
-            {categories.map((cat) => {
-              const count = cells.filter((c) => c.categoryId === cat.id).length
-              const isActive = activeCategoryId === cat.id
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setActiveCategoryId(cat.id)}
-                  style={
-                    isActive
-                      ? { backgroundColor: cat.color, color: "#fff", borderColor: cat.color }
-                      : { borderColor: `${cat.color}66` }
-                  }
-                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold shadow-md backdrop-blur-md border transition active:scale-95 ${
-                    isActive ? "shadow-lg scale-105" : "bg-black/40 text-white hover:bg-black/60"
-                  }`}
-                >
-                  <span
-                    className="mr-1.5 inline-block h-2 w-2 rounded-full"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  {cat.name} ({count})
-                </button>
-              )
-            })}
+            {/* Quick Actions (GPS, Theme, View Mode) */}
+            <div className="flex items-center gap-1.5">
+              {/* GPS Perto de Mim Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRequestLocation}
+                disabled={isLocating}
+                className={`h-8 rounded-full px-2.5 text-xs font-semibold shadow-md backdrop-blur-md active:scale-95 ${
+                  themeMode === "dark"
+                    ? "border-cyan-500/40 bg-cyan-950/60 text-cyan-300 hover:bg-cyan-900/80"
+                    : "border-cyan-400/50 bg-cyan-50/90 text-cyan-800 hover:bg-cyan-100 shadow-2xs"
+                }`}
+                title="Células perto de você"
+              >
+                {isLocating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                ) : (
+                  <Compass className="h-3.5 w-3.5 text-cyan-500" />
+                )}
+                <span className="hidden sm:inline ml-1">Perto de Mim</span>
+              </Button>
+
+              {/* View Mode Switcher */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewMode("list")}
+                className={`h-8 rounded-full px-3 text-xs font-semibold shadow-md backdrop-blur-md active:scale-95 flex items-center gap-1.5 ${
+                  themeMode === "dark"
+                    ? "border-white/20 bg-black/40 text-white hover:bg-black/60"
+                    : "border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                }`}
+              >
+                <List className="h-3.5 w-3.5 text-primary" />
+                <span className="hidden sm:inline ml-1">Ver Lista</span>
+              </Button>
+
+              {/* Theme Toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
+                className={`h-8 w-8 rounded-full p-0 shadow-md backdrop-blur-md active:scale-95 ${
+                  themeMode === "dark"
+                    ? "border-white/20 bg-black/40 text-white hover:bg-black/60"
+                    : "border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                }`}
+                title="Alternar Tema Claro / Escuro"
+              >
+                {themeMode === "dark" ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-400" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-slate-600" />
+                )}
+              </Button>
+            </div>
           </div>
 
-          {/* Weekday Quick Filter Row */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-[11px]">
-            {WEEKDAYS.map((day) => {
-              const isSelected = activeWeekday === day
-              return (
+          {/* Search Bar & Filters */}
+          <div className="mt-2.5 flex flex-col gap-2 pointer-events-auto max-w-lg mx-auto w-full">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Buscar célula por nome, líder ou bairro…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`h-9 w-full rounded-full pl-8 pr-8 text-xs shadow-md backdrop-blur-md focus-visible:ring-1 focus-visible:ring-primary ${
+                  themeMode === "dark"
+                    ? "border-white/20 bg-black/50 text-white placeholder:text-muted-foreground"
+                    : "border-slate-200 bg-white/95 text-slate-900 placeholder:text-slate-500 shadow-2xs"
+                }`}
+              />
+              {searchQuery && (
                 <button
-                  key={day}
                   type="button"
-                  onClick={() => setActiveWeekday(day)}
-                  className={`shrink-0 rounded-full px-2.5 py-0.5 font-medium transition active:scale-95 ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-black/30 text-white/80 border border-white/10 hover:bg-black/50"
-                  }`}
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {day}
+                  <X className="h-3.5 w-3.5" />
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      </header>
+              )}
+            </div>
 
-      {/* Active Route Top Banner */}
-      {routeInfo && (
+            {/* Category Pills Scrolling Row */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setActiveCategoryId("all")}
+                className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold shadow-md backdrop-blur-md transition active:scale-95 ${
+                  activeCategoryId === "all"
+                    ? themeMode === "dark"
+                      ? "bg-white text-slate-950 font-bold"
+                      : "bg-slate-900 text-white font-bold"
+                    : themeMode === "dark"
+                      ? "border border-white/20 bg-black/40 text-white hover:bg-black/60"
+                      : "border border-slate-200/80 bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                }`}
+              >
+                Todas ({cells.length})
+              </button>
+
+              {categories.map((cat) => {
+                const count = cells.filter((c) => c.categoryId === cat.id).length
+                const isActive = activeCategoryId === cat.id
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setActiveCategoryId(cat.id)}
+                    style={
+                      isActive
+                        ? { backgroundColor: cat.color, color: "#fff", borderColor: cat.color }
+                        : { borderColor: `${cat.color}66` }
+                    }
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold shadow-md backdrop-blur-md border transition active:scale-95 ${
+                      isActive
+                        ? "shadow-lg scale-105"
+                        : themeMode === "dark"
+                          ? "bg-black/40 text-white hover:bg-black/60"
+                          : "bg-white/90 text-slate-800 hover:bg-white shadow-2xs"
+                    }`}
+                  >
+                    <span
+                      className="mr-1.5 inline-block h-2 w-2 rounded-full"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    {cat.name} ({count})
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Weekday Quick Filter Row */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none no-scrollbar text-[11px]">
+              {WEEKDAYS.map((day) => {
+                const isSelected = activeWeekday === day
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setActiveWeekday(day)}
+                    className={`shrink-0 rounded-full px-2.5 py-0.5 font-medium transition active:scale-95 ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                        : themeMode === "dark"
+                          ? "bg-black/30 text-white/80 border border-white/10 hover:bg-black/50"
+                          : "bg-white/90 text-slate-700 border border-slate-200/80 hover:bg-white shadow-2xs"
+                    }`}
+                  >
+                    {day}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </header>
+      ) : (
+        /* Top Navigation Bar in List Mode */
+        <header className="sticky top-0 z-30 w-full border-b border-border/60 bg-background/85 backdrop-blur-xl shrink-0 transition-colors shadow-2xs">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 py-3">
+            {/* Back & Church Branding */}
+            <Link
+              href={`/church/${church.slug}`}
+              className="flex items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3.5 py-1.5 text-xs font-semibold text-foreground shadow-2xs transition hover:bg-accent active:scale-95"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span className="truncate max-w-[140px] sm:max-w-xs">{church.publicName}</span>
+              {church.city && (
+                <span className="hidden md:inline text-[11px] text-muted-foreground font-normal">
+                  • {church.city}
+                </span>
+              )}
+            </Link>
+
+            {/* Quick Actions */}
+            <div className="flex items-center gap-2">
+              {/* GPS Perto de Mim Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRequestLocation}
+                disabled={isLocating}
+                className="h-8 rounded-full border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/20 active:scale-95 text-xs font-medium"
+                title="Células perto de você"
+              >
+                {isLocating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-500" />
+                ) : (
+                  <Compass className="h-3.5 w-3.5 text-cyan-500" />
+                )}
+                <span className="hidden sm:inline ml-1">Perto de Mim</span>
+              </Button>
+
+              {/* Switch to Map 3D */}
+              <Button
+                size="sm"
+                onClick={() => setViewMode("map")}
+                className="h-8 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-3 text-xs shadow-xs flex items-center gap-1.5 active:scale-95 transition"
+              >
+                <MapIcon className="h-3.5 w-3.5" />
+                <span>Ver no Mapa 3D</span>
+              </Button>
+
+              {/* Theme Toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
+                className="h-8 w-8 rounded-full border-border/80 bg-card/80 p-0 text-foreground shadow-2xs hover:bg-accent active:scale-95"
+                title="Alternar Tema Claro / Escuro"
+              >
+                {themeMode === "dark" ? (
+                  <Sun className="h-3.5 w-3.5 text-amber-400" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5 text-slate-600" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </header>
+      )}
+
+      {/* Active Route Top Banner (apenas no modo Mapa 3D) */}
+      {routeInfo && viewMode === "map" && (
         <div className="absolute top-36 left-4 right-4 z-30 mx-auto max-w-sm rounded-xl border border-cyan-500/50 bg-cyan-950/90 p-3 text-white shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4 duration-300">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -411,7 +508,7 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
       )}
 
       {/* Main Content: Map 3D or List View */}
-      <main className="relative min-h-0 flex-1 w-full">
+      <main className="relative min-h-0 flex-1 w-full overflow-hidden flex flex-col">
         {viewMode === "map" ? (
           <Cells3dMap
             cells={filteredCells}
@@ -426,36 +523,58 @@ export function CellsMapExperience({ initialData }: CellsMapExperienceProps) {
         ) : (
           <CellsListDrawer
             cells={filteredCells}
+            totalCellsCount={cells.length}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            activeCategoryId={activeCategoryId}
+            onSelectCategory={setActiveCategoryId}
+            categories={categories}
+            activeWeekday={activeWeekday}
+            onSelectWeekday={setActiveWeekday}
+            onResetFilters={() => {
+              setSearchQuery("")
+              setActiveCategoryId("all")
+              setActiveWeekday("Todos")
+            }}
             onSelectCell={handleSelectFromList}
             onOpenVisitModal={handleOpenVisitModal}
             onClose={() => setViewMode("map")}
             churchName={church.publicName}
+            churchCity={church.city}
+            churchState={church.state}
+            churchSlug={church.slug}
+            userLocation={userLocation}
+            onRequestLocation={handleRequestLocation}
+            isLocating={isLocating}
           />
         )}
       </main>
 
-      {/* Selected Cell Detail Bottom Sheet */}
-      <CellDetailSheet
-        cell={selectedCell}
-        onClose={() => setSelectedCell(null)}
-        onTraceRoute={handleTraceRoute}
-        onOpenVisitModal={handleOpenVisitModal}
-        churchName={church.publicName}
-        churchSlug={church.slug}
-        userDistanceKm={
-          userLocation && selectedCell?.latitude && selectedCell?.longitude
-            ? calculateDistanceKm(
-                userLocation.latitude,
-                userLocation.longitude,
-                selectedCell.latitude,
-                selectedCell.longitude
-              )
-            : null
-        }
-      />
+      {/* Selected Cell Detail Bottom Sheet (apenas no modo Mapa 3D) */}
+      {viewMode === "map" && (
+        <CellDetailSheet
+          cell={selectedCell}
+          onClose={() => setSelectedCell(null)}
+          onTraceRoute={handleTraceRoute}
+          onOpenVisitModal={handleOpenVisitModal}
+          churchName={church.publicName}
+          churchSlug={church.slug}
+          userDistanceKm={
+            userLocation && selectedCell?.latitude && selectedCell?.longitude
+              ? calculateDistanceKm(
+                  userLocation.latitude,
+                  userLocation.longitude,
+                  selectedCell.latitude,
+                  selectedCell.longitude
+                )
+              : null
+          }
+        />
+      )}
 
       {/* Visit Contact Modal */}
       <CellVisitModal
+        key={visitingCell?.id ?? "closed"}
         cell={visitingCell}
         isOpen={isVisitModalOpen}
         onClose={() => {

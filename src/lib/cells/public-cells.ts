@@ -182,11 +182,11 @@ export async function getPublicCellsData(slug: string): Promise<PublicCellsPageD
       g.max_age,
       g.accepts_requests,
       leader.full_name as leader_name,
-      leader.phone as leader_phone,
+      case when g.is_leader_whatsapp_public then leader.phone else null end as leader_phone,
       g.cell_photo_url
     from public.groups g
     left join public.group_categories gc on gc.id = g.category_id
-    left join public.people leader on leader.id = g.leader_person_id
+    left join public.people leader on leader.id = g.leader_person_id and leader.company_id = g.company_id and leader.deleted_at is null
     where g.company_id = ${church.id}
       and g.type = 'cell'
       and g.is_active = true

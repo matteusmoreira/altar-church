@@ -56,6 +56,7 @@ export interface GroupListItem {
   latitude?: number | null
   longitude?: number | null
   isAddressPublic?: boolean
+  isLeaderWhatsappPublic?: boolean
   cellPhotoUrl?: string | null
   memberCount: number
   createdAt: string
@@ -156,6 +157,7 @@ export interface SaveGroupInput {
   latitude?: number | null
   longitude?: number | null
   isAddressPublic?: boolean
+  isLeaderWhatsappPublic?: boolean
   cellPhotoUrl?: string | null
 }
 

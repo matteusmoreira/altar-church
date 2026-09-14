@@ -25,6 +25,7 @@ export interface CellLeaderCell {
   latitude: number | null
   longitude: number | null
   isAddressPublic: boolean
+  isLeaderWhatsappPublic: boolean
   cellPhotoUrl: string | null
   memberCount: number
 }
@@ -71,6 +72,7 @@ export interface SaveLeaderCellInput {
   latitude?: number | null
   longitude?: number | null
   isAddressPublic?: boolean
+  isLeaderWhatsappPublic?: boolean
   cellPhotoUrl?: string | null
 }
 
