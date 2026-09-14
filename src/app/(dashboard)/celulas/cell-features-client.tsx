@@ -4,7 +4,7 @@ import Image from "next/image"
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { QRCodeSVG } from "qrcode.react"
-import { BarChart3, BookOpen, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Download, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
+import { BarChart3, BookOpen, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Compass, Download, ExternalLink, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import {
   closeCellCheckin,
@@ -176,7 +176,19 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
   if (data.mode === "portal") {
     return (
       <div className="space-y-6">
-        <div><h1 className="text-2xl font-bold md:text-3xl">Minhas Células</h1><p className="text-muted-foreground">Estudos, avisos, encontros, fotos e pedidos de oração.</p></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold md:text-3xl">Minhas Células</h1>
+            <p className="text-muted-foreground">Estudos, avisos, encontros, fotos e pedidos de oração.</p>
+          </div>
+          {data.churchSlug && (
+            <Button render={<a href={`/church/${data.churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />} nativeButton={false} variant="outline" className="border-primary/40 bg-primary/5 text-primary hover:bg-primary/10">
+              <Compass className="mr-2 h-4 w-4 text-primary animate-pulse" />
+              Ver Mapa 3D Público
+              <ExternalLink className="ml-1.5 h-3.5 w-3.5 opacity-60" />
+            </Button>
+          )}
+        </div>
         {data.cells.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Seu cadastro ainda não está vinculado a uma célula.</CardContent></Card> : (
           <Tabs defaultValue="encontros">
             <TabsList className="flex h-auto flex-wrap"><TabsTrigger value="encontros"><BookOpen />Encontros</TabsTrigger><TabsTrigger value="avisos"><Megaphone />Avisos</TabsTrigger><TabsTrigger value="mural"><ImageIcon />Mural</TabsTrigger><TabsTrigger value="oracao"><Heart />Oração</TabsTrigger></TabsList>

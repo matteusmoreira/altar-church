@@ -7,27 +7,43 @@ import { AuthProvider } from "@/lib/auth/context"
 import { isPortalRole } from "@/lib/member/access"
 import { getOwnWhatsappStatus } from "@/lib/auth/whatsapp-data"
 
-async function getChurchDisplayName(companyId?: string | null) {
-  if (!companyId) return "Altar Church"
-  const rows = await getSql()<{ name: string }[]>`
-    select name
+async function getChurchMetadata(companyId?: string | null) {
+  const sql = getSql()
+  if (!companyId) {
+    const rows = await sql<{ name: string; slug: string }[]>`
+      select name, slug
+      from public.companies
+      where active = true
+      order by created_at asc
+      limit 1
+    `
+    return {
+      name: rows[0]?.name ?? "Altar Church",
+      slug: rows[0]?.slug ?? "",
+    }
+  }
+  const rows = await sql<{ name: string; slug: string }[]>`
+    select name, slug
     from public.companies
     where id = ${companyId}
     limit 1
   `
-  return rows[0]?.name ?? "Altar Church"
+  return {
+    name: rows[0]?.name ?? "Altar Church",
+    slug: rows[0]?.slug ?? "",
+  }
 }
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
   if (isPortalRole(user.role)) redirect("/membro")
-  const [initialEnabledModuleIds, churchName, whatsappStatus] = await Promise.all([
+  const [initialEnabledModuleIds, churchMeta, whatsappStatus] = await Promise.all([
     user.role === "superadmin"
       ? Promise.resolve(null)
       : user.churchId
         ? getCompanyEnabledModuleIds(user.churchId)
         : Promise.resolve([] as string[]),
-    getChurchDisplayName(user.churchId),
+    getChurchMetadata(user.churchId),
     getOwnWhatsappStatus(user),
   ])
 
@@ -35,7 +51,8 @@ export default async function DashboardRootLayout({ children }: { children: Reac
     <AuthProvider initialUser={user}>
       <DashboardLayout
         initialEnabledModuleIds={initialEnabledModuleIds}
-        churchName={churchName}
+        churchName={churchMeta.name}
+        churchSlug={churchMeta.slug}
         whatsappPending={whatsappStatus.pending}
       >
         {children}

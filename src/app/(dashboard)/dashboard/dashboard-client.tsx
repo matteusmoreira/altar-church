@@ -19,6 +19,7 @@ import {
   Church,
   Circle,
   ClipboardList,
+  Compass,
   DollarSign,
   HandHeart,
   Heart,
@@ -61,7 +62,16 @@ const checklistItems = [
   { id: "production", label: "Validar gate de produção" },
 ]
 
-const shortcuts = [
+interface ShortcutItem {
+  href: string
+  icon: React.ElementType
+  title: string
+  description: string
+  target?: string
+  badge?: string
+}
+
+const shortcuts: ShortcutItem[] = [
   { href: "/pessoas", icon: Users, title: "Pessoas", description: "Gerencie membros, visitantes e cadastros" },
   { href: "/celulas", icon: UsersRound, title: "Células", description: "Participantes, encontros, estudos e check-in" },
   { href: "/conteudo", icon: BookOpen, title: "Conteúdo", description: "Devocionais, notícias e publicações" },
@@ -75,10 +85,32 @@ const shortcuts = [
   { href: "/relatorios", icon: BarChart3, title: "Relatórios", description: "Relatórios reais por módulo" },
 ]
 
-export function DashboardClient({ data }: { data: DashboardClientData }) {
+export function DashboardClient({
+  data,
+  churchSlug,
+}: {
+  data: DashboardClientData
+  churchSlug?: string | null
+}) {
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({})
   const completedCount = Object.values(checkedItems).filter(Boolean).length
   const activeRate = data.people.total > 0 ? Math.round((data.people.active / data.people.total) * 100) : 0
+
+  const allShortcuts = [
+    ...(churchSlug
+      ? [
+          {
+            href: `/church/${churchSlug}/celulas`,
+            icon: Compass,
+            title: "Mapa 3D Células",
+            description: "Visualização pública inovadora das células no mapa 3D da cidade",
+            target: "_blank",
+            badge: "Novo 3D",
+          },
+        ]
+      : []),
+    ...shortcuts,
+  ]
 
   const toggleCheck = (id: string) => {
     setCheckedItems((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -227,13 +259,15 @@ export function DashboardClient({ data }: { data: DashboardClientData }) {
       <div>
         <h2 className="mb-4 text-lg font-semibold tracking-tight">Atalhos</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shortcuts.map((shortcut) => (
+          {allShortcuts.map((shortcut) => (
             <ShortcutCard
               key={shortcut.href}
               href={shortcut.href}
               icon={shortcut.icon}
               title={shortcut.title}
               description={shortcut.description}
+              target={shortcut.target}
+              badge={shortcut.badge}
             />
           ))}
         </div>

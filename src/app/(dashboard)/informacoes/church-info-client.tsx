@@ -458,11 +458,12 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
 
         {/* Informações da Igreja no Banner */}
         <div className="px-6 pb-6 pt-0">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 sm:-mt-14">
-            {/* Avatar / Logo */}
-            <div className="flex items-end gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            {/* Avatar / Logo + Informações de Texto */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              {/* Avatar com sobreposição controlada apenas no ícone/logo */}
               <div
-                className="group relative h-24 w-24 rounded-2xl border-4 border-background bg-muted shadow-md overflow-hidden flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02]"
+                className="group relative -mt-12 sm:-mt-14 h-24 w-24 rounded-2xl border-4 border-card bg-muted shadow-md overflow-hidden flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] shrink-0 z-10"
                 onClick={() => logoInputRef.current?.click()}
                 title="Clique para alterar o logotipo"
               >
@@ -483,7 +484,8 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                 </div>
               </div>
 
-              <div className="space-y-1">
+              {/* Textos posicionados com segurança abaixo da imagem de capa */}
+              <div className="space-y-1 pt-1 sm:pt-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
                     Informações da Igreja
@@ -516,7 +518,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
             </div>
 
             {/* Ações do Topo */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0">
+            <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-4">
               <Button
                 variant="outline"
                 size="sm"

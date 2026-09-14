@@ -36,6 +36,7 @@ export default async function CellsPage({ searchParams }: { searchParams?: Promi
       meetings={meetings}
       cellFeatures={features}
       initialTab={aba}
+      churchSlug={features.churchSlug}
     />
   )
 }

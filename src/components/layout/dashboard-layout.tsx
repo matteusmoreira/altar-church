@@ -13,7 +13,9 @@ import {
   Church,
   ClipboardCheck,
   ClipboardList,
+  Compass,
   DollarSign,
+  ExternalLink,
   Gift,
   HandHeart,
   Handshake,
@@ -115,12 +117,14 @@ function SidebarContent({
   onToggle,
   enabledModuleIds,
   churchName,
+  churchSlug,
 }: {
   onNavClick?: () => void
   collapsed?: boolean
   onToggle?: () => void
   enabledModuleIds: string[] | null
   churchName: string
+  churchSlug?: string
 }) {
   const pathname = usePathname()
   const { logout, hasRole, user } = useAuth()
@@ -210,6 +214,31 @@ function SidebarContent({
               </Link>
             </div>
           )}
+
+          {churchSlug && (
+            <div className="pt-2">
+              <Separator className="mb-3 opacity-50" />
+              <a
+                href={`/church/${churchSlug}/celulas`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onNavClick}
+                title={collapsed ? "Mapa 3D Células (Página Pública)" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-2.5 text-sm font-medium transition-all duration-200 hover:border-primary/50 hover:bg-primary/15 hover:shadow-glow-sm group",
+                  collapsed && "justify-center px-2"
+                )}
+              >
+                <Compass className="h-4 w-4 shrink-0 text-primary animate-pulse" />
+                {!collapsed && (
+                  <div className="flex min-w-0 flex-1 items-center justify-between">
+                    <span className="truncate text-foreground group-hover:text-primary transition-colors">Mapa 3D Células</span>
+                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                  </div>
+                )}
+              </a>
+            </div>
+          )}
         </nav>
       </div>
 
@@ -250,14 +279,29 @@ function SidebarContent({
   )
 }
 
-function Topbar({ churchName }: { churchName: string }) {
+function Topbar({ churchName, churchSlug }: { churchName: string; churchSlug?: string }) {
   const { user } = useAuth()
 
   return (
     <div className="hidden h-14 items-center justify-between border-b border-border/50 px-6 glass lg:flex">
-      <div className="flex items-center gap-2">
-        <Church className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium text-muted-foreground">{churchName}</span>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Church className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium text-muted-foreground">{churchName}</span>
+        </div>
+        {churchSlug && (
+          <Button
+            variant="outline"
+            size="sm"
+            render={<a href={`/church/${churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />}
+            nativeButton={false}
+            className="h-8 gap-1.5 border-primary/30 bg-primary/5 text-xs font-medium text-primary shadow-sm hover:bg-primary/10 hover:border-primary/50 transition-all"
+          >
+            <Compass className="h-3.5 w-3.5 text-primary animate-pulse" />
+            <span>Mapa 3D Células</span>
+            <ExternalLink className="h-3 w-3 opacity-60" />
+          </Button>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <div className="text-right">
@@ -276,11 +320,13 @@ export function DashboardLayout({
   children,
   initialEnabledModuleIds,
   churchName = "Altar Church",
+  churchSlug = "",
   whatsappPending = false,
 }: {
   children: React.ReactNode
   initialEnabledModuleIds: string[] | null
   churchName?: string
+  churchSlug?: string
   whatsappPending?: boolean
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -330,6 +376,7 @@ export function DashboardLayout({
           collapsed={collapsed}
           enabledModuleIds={enabledModuleIds}
           churchName={churchName}
+          churchSlug={churchSlug}
           onToggle={() => setCollapsed(!collapsed)}
         />
       </aside>
@@ -346,6 +393,7 @@ export function DashboardLayout({
               <SidebarContent
                 enabledModuleIds={enabledModuleIds}
                 churchName={churchName}
+                churchSlug={churchSlug}
                 onNavClick={() => setSheetOpen(false)}
               />
             </SheetContent>
@@ -356,12 +404,24 @@ export function DashboardLayout({
             </div>
             <span className="truncate font-bold">{churchName}</span>
           </div>
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto shrink-0 flex items-center gap-1.5">
+            {churchSlug && (
+              <Button
+                variant="ghost"
+                size="icon"
+                render={<a href={`/church/${churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />}
+                nativeButton={false}
+                className="h-9 w-9 text-primary hover:bg-primary/10"
+                title="Mapa 3D das Células"
+              >
+                <Compass className="h-4 w-4 animate-pulse" />
+              </Button>
+            )}
             <ThemeToggle />
           </div>
         </header>
 
-        <Topbar churchName={churchName} />
+        <Topbar churchName={churchName} churchSlug={churchSlug} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">

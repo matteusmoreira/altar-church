@@ -62,6 +62,11 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
       : []
   const cellIds = cellRows.map((cell) => cell.id)
 
+  const companyRows = await sql<{ slug: string }[]>`
+    select slug from public.companies where id = ${context.companyId} limit 1
+  `
+  const churchSlug = companyRows[0]?.slug ?? null
+
   const people = manager
     ? await sql<{ id: string; full_name: string; phone: string; status: string }[]>`
         select id, full_name, phone, status from public.people
@@ -84,6 +89,7 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
       canPublishToAll,
       canDeleteStudies: leader || isCellAdministrator(context.user),
       personId: context.personId,
+      churchSlug,
       cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [],
       leaderWorkspace: leader ? await getCellLeaderWorkspaceData(context.companyId, context.personId) : null,
     }
@@ -196,7 +202,8 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
 
   return {
     mode: leader ? "leader" : manager ? "manager" : "portal", canPublishToAll,
-    canDeleteStudies: leader || isCellAdministrator(context.user), personId: context.personId, cells: cellRows,
+    canDeleteStudies: leader || isCellAdministrator(context.user), personId: context.personId,
+    churchSlug, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
     leaderWorkspace,

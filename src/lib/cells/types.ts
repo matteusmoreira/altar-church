@@ -170,6 +170,7 @@ export interface CellFeaturesData {
   canPublishToAll: boolean
   canDeleteStudies: boolean
   personId: string | null
+  churchSlug?: string | null
   cells: { id: string; name: string }[]
   people: { id: string; name: string; phone: string; visitor: boolean }[]
   meetings: CellPortalMeeting[]

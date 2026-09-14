@@ -1,6 +1,7 @@
 import { DashboardClient, type DashboardClientData } from "./dashboard-client"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth/server"
+import { getSql } from "@/lib/db/client"
 import { getContentDashboardData } from "@/lib/content/data"
 import { getGroupsDashboardData } from "@/lib/groups/data"
 import { getPeopleDashboardData } from "@/lib/people/data"
@@ -44,11 +45,17 @@ export default async function DashboardPage() {
   const user = await getCurrentUser()
   if (user?.role === "member") redirect("/membro")
   if (user?.role === "volunteer") redirect("/voluntariado")
-  const [people, groups, content] = await Promise.all([
+  const sql = getSql()
+  const companyId = user?.churchId
+  const [people, groups, content, companyRows] = await Promise.all([
     safeRead(getPeopleDashboardData, emptyPeople),
     safeRead(getGroupsDashboardData, emptyGroups),
     safeRead(getContentDashboardData, emptyContent),
+    companyId
+      ? sql<{ slug: string }[]>`select slug from public.companies where id = ${companyId} limit 1`
+      : sql<{ slug: string }[]>`select slug from public.companies where active = true order by created_at asc limit 1`,
   ])
+  const churchSlug = companyRows[0]?.slug ?? null
 
   const publishedPosts = content.posts.filter((post) => post.status === "published").length
   const activeBanners = content.banners.filter((banner) => banner.isActive).length
@@ -77,5 +84,5 @@ export default async function DashboardPage() {
     },
   }
 
-  return <DashboardClient data={dashboardData} />
+  return <DashboardClient data={dashboardData} churchSlug={churchSlug} />
 }

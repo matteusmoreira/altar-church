@@ -8,7 +8,9 @@ import { ptBR } from "date-fns/locale"
 import {
   Activity,
   CalendarDays,
+  Compass,
   Edit,
+  ExternalLink,
   Filter,
   LayoutGrid,
   List,
@@ -111,6 +113,7 @@ export interface GroupsClientProps {
   meetings: GroupMeeting[]
   cellFeatures?: CellFeaturesData
   initialTab?: string
+  churchSlug?: string | null
 }
 
 const typeLabels: Record<GroupType, string> = {
@@ -263,6 +266,7 @@ export function GroupsClient({
   meetings,
   cellFeatures,
   initialTab,
+  churchSlug,
 }: GroupsClientProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -434,7 +438,19 @@ export function GroupsClient({
   return (
     <div className="space-y-6">
       <PageHeader title="Células" description="Gestão de células, supervisão, liderança, participantes e encontros.">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {churchSlug && (
+            <Button
+              render={<Link href={`/church/${churchSlug}/celulas`} target="_blank" rel="noopener noreferrer" />}
+              nativeButton={false}
+              variant="outline"
+              className="border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 transition-colors shadow-sm"
+            >
+              <Compass className="mr-2 h-4 w-4 text-primary animate-pulse" />
+              Ver Mapa 3D Público
+              <ExternalLink className="ml-1.5 h-3.5 w-3.5 opacity-60" />
+            </Button>
+          )}
           <Button render={<Link href="/celulas/saude" />} nativeButton={false} variant="outline">
             <Activity className="mr-2 h-4 w-4 text-emerald-500" />
             Saúde das células
