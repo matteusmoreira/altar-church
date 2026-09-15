@@ -42,7 +42,7 @@ export interface SchedulerShiftInput {
 }
 
 const MANUAL_WARNING_BLOCKERS = new Set([
-  "Não pertence ao departamento",
+  "Não pertence à equipe",
   "Função incompatível",
 ]);
 
@@ -177,7 +177,7 @@ export function scoreVolunteerForShift(
 
   if (!candidate.active) blockers.push("Cadastro inativo");
   if (!candidate.departmentIds.includes(shift.departmentId))
-    blockers.push("Não pertence ao departamento");
+    blockers.push("Não pertence à equipe");
   if (
     !candidate.roleNames.some(
       (role) =>
@@ -307,4 +307,17 @@ export function selectVolunteersForShift(
         candidate.eligible && !excludedIds.has(candidate.volunteerId),
     )
     .slice(0, shift.requiredVolunteers);
+}
+
+/** Fill only vacant places; retain manual removals and never repeat a refused invitation. */
+export function suggestVacantPlaces(
+  candidates: SchedulerCandidateInput[],
+  shift: SchedulerShiftInput,
+  assignments: { volunteerId: string; status: string; locked: boolean }[],
+) {
+  const occupied = assignments.filter((item) => !["declined", "cancelled"].includes(item.status)).length;
+  const vacant = Math.max(0, shift.requiredVolunteers - occupied);
+  const excluded = new Set(assignments.filter((item) => item.status !== "cancelled" || item.locked).map((item) => item.volunteerId));
+  const selected = vacant === 0 ? [] : selectVolunteersForShift(candidates, { ...shift, requiredVolunteers: vacant }, excluded);
+  return { selected, shortages: vacant - selected.length };
 }

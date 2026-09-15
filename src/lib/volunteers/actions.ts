@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import { getVolunteerShiftCandidates } from "./v2-actions";
 import { requireVolunteerSelfContext } from "./access";
+import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
 
 const uuid = z.string().uuid();
 const nullableUuid = z
@@ -92,9 +93,10 @@ const checkinSchema = z.object({
 function failure(error: unknown): VolunteerActionResult {
   if (error instanceof z.ZodError)
     return { ok: false, error: error.issues[0]?.message ?? "Dados inválidos" };
+  console.error("[volunteers/actions error]:", error);
   return {
     ok: false,
-    error: error instanceof Error ? error.message : "Erro inesperado",
+    error: toUserFriendlyError(error, "Erro inesperado"),
   };
 }
 
@@ -823,7 +825,7 @@ export async function publishVolunteerSchedule(
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
       }
@@ -832,7 +834,7 @@ export async function publishVolunteerSchedule(
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala foi publicada', ${content})
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
       }
@@ -842,7 +844,7 @@ export async function publishVolunteerSchedule(
           values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule',
             ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
       }
@@ -920,13 +922,17 @@ export async function saveVolunteerFeedPost(
           await sql`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, feed_post_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.id}, ${postId}, 'whatsapp', ${recipient.phone}, ${parsed.title}, ${parsed.content})
-          on conflict (feed_post_id, volunteer_id, channel) do nothing
+          on conflict (feed_post_id, volunteer_id, channel)
+            where feed_post_id is not null
+          do nothing
         `;
         if (recipient.email_enabled && recipient.email)
           await sql`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, feed_post_id, channel, recipient, subject, content)
           values (${companyId}, ${recipient.id}, ${postId}, 'email', ${recipient.email}, ${parsed.title}, ${parsed.content})
-          on conflict (feed_post_id, volunteer_id, channel) do nothing
+          on conflict (feed_post_id, volunteer_id, channel)
+            where feed_post_id is not null
+          do nothing
         `;
       }
     }

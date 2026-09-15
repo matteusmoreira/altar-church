@@ -10,7 +10,7 @@ import { createSignedUrlsByStoragePath, uploadManagedFile } from "@/lib/files/se
 import type { Permission } from "@/lib/types";
 import {
   rankVolunteersForShift,
-  selectVolunteersForShift,
+  suggestVacantPlaces,
   type SchedulerCandidateInput,
   withManualSelectionRules,
 } from "./scheduler";
@@ -18,6 +18,7 @@ import type { VolunteerActionResult } from "./types";
 import { requireVolunteerSelfContext } from "./access";
 import { afterResponse } from "@/lib/performance/after-response";
 import { processVolunteerChatPushOutbox } from "./chat-delivery";
+import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
 
 const uuid = z.string().uuid();
 const optionalUuid = z
@@ -28,9 +29,10 @@ const optionalUuid = z
 function resultError(error: unknown): VolunteerActionResult {
   if (error instanceof z.ZodError)
     return { ok: false, error: error.issues[0]?.message ?? "Dados inválidos" };
+  console.error("[volunteers/v2-actions error]:", error);
   return {
     ok: false,
-    error: error instanceof Error ? error.message : "Erro inesperado",
+    error: toUserFriendlyError(error, "Erro inesperado"),
   };
 }
 
@@ -351,9 +353,11 @@ export async function saveVolunteerAvailabilityForManager(
 
 export async function generateSmartVolunteerSchedule(
   scheduleIdInput: string,
+  eventIdInput?: string,
 ): Promise<VolunteerActionResult> {
   try {
     const scheduleId = uuid.parse(scheduleIdInput);
+    const eventId = eventIdInput ? uuid.parse(eventIdInput) : null;
     const sql = getSql();
     const scheduleRows = await sql<
       { company_id: string }[]
@@ -377,7 +381,10 @@ export async function generateSmartVolunteerSchedule(
       sql<
         Record<string, unknown>[]
       >`select id, department_id, role_name, required_volunteers, starts_at, coalesce(ends_at, starts_at + interval '2 hours') as ends_at
-        from public.volunteer_shifts where schedule_id = ${scheduleId} and company_id = ${companyId} order by starts_at, id`,
+        from public.volunteer_shifts where schedule_id = ${scheduleId} and company_id = ${companyId}
+          and (${eventId}::uuid is null or event_id = ${eventId}::uuid)
+          and not exists(select 1 from public.events event where event.id = event_id and event.volunteer_schedule_published_at is not null)
+          order by starts_at, id`,
       sql<
         Record<string, unknown>[]
       >`select volunteer.id, person.full_name as name, volunteer.registration_status,
@@ -472,18 +479,9 @@ export async function generateSmartVolunteerSchedule(
         endsAt: iso(shiftRow.ends_at),
         timezone,
       };
-      const existing = assignmentRows.filter(
-        (item) =>
-          item.shift_id === shiftRow.id &&
-          !["declined", "cancelled"].includes(String(item.status)),
-      );
-      const lockedIds = new Set(
-        existing
-          .filter((item) => item.is_locked)
-          .map((item) => String(item.volunteer_id)),
-      );
-      const needed = Math.max(0, shift.requiredVolunteers - existing.length);
-      if (needed === 0) continue;
+      const existing = assignmentRows.filter((item) => item.shift_id === shiftRow.id).map((item) => ({
+        volunteerId: String(item.volunteer_id), status: String(item.status), locked: Boolean(item.is_locked),
+      }));
       const prepared = candidates.map((candidate) => ({
         ...candidate,
         preference: Number(
@@ -496,18 +494,15 @@ export async function generateSmartVolunteerSchedule(
           )?.preference ?? 0,
         ),
       }));
-      const selected = selectVolunteersForShift(
-        prepared,
-        { ...shift, requiredVolunteers: needed },
-        lockedIds,
-      );
-      shortages += needed - selected.length;
+      const { selected, shortages: missing } = suggestVacantPlaces(prepared, shift, existing);
+      shortages += missing;
       for (const candidate of selected) {
         const rows = await sql<{ id: string }[]>`
           insert into public.volunteer_assignments(company_id, shift_id, volunteer_id, status, score, score_reasons, created_by, updated_by)
           values (${companyId}, ${shift.id}, ${candidate.volunteerId}, 'proposed', ${candidate.score}, ${JSON.stringify(candidate.reasons)}::jsonb, ${user.id}, ${user.id})
-          on conflict (shift_id, volunteer_id) do update set score = excluded.score, score_reasons = excluded.score_reasons,
-            updated_by = excluded.updated_by, updated_at = now() where not public.volunteer_assignments.is_locked returning id
+          on conflict (shift_id, volunteer_id) do update set status = 'proposed', score = excluded.score, score_reasons = excluded.score_reasons,
+            updated_by = excluded.updated_by, updated_at = now()
+            where public.volunteer_assignments.status = 'cancelled' and not public.volunteer_assignments.is_locked returning id
         `;
         if (rows[0]?.id) {
           created += 1;
@@ -528,7 +523,7 @@ export async function generateSmartVolunteerSchedule(
       "volunteer_schedules",
       scheduleId,
       companyId,
-      { created, shortages },
+      { created, shortages, eventId },
     );
     refreshVolunteerPaths();
     return { ok: true, id: scheduleId, data: { created, shortages } };
@@ -669,7 +664,7 @@ export async function respondVolunteerAssignment(
       update public.volunteer_assignments set status = ${parsed.response}, responded_at = now(),
         decline_reason = ${parsed.response === "declined" ? parsed.reason : null}, updated_at = now()
       where id = ${parsed.assignmentId} and company_id = ${companyId} and volunteer_id = ${volunteerId}
-        and status in ('proposed', 'notified') returning id
+        and status = 'notified' returning id
     `;
     if (!rows[0]?.id) throw new Error("Escala não encontrada ou já respondida");
     await audit(
@@ -777,9 +772,11 @@ export async function acceptVolunteerSwap(
 export async function reviewVolunteerSwap(
   swapIdInput: string,
   approve: boolean,
+  replacementVolunteerIdInput?: string,
 ): Promise<VolunteerActionResult> {
   try {
     const swapId = uuid.parse(swapIdInput);
+    const replacementId = replacementVolunteerIdInput ? uuid.parse(replacementVolunteerIdInput) : null;
     const sql = getSql();
     const swapRows = await sql<
       {
@@ -787,9 +784,11 @@ export async function reviewVolunteerSwap(
         assignment_id: string;
         replacement_volunteer_id: string | null;
         department_id: string;
+        shift_id: string;
+        status: string;
       }[]
     >`
-      select swap.company_id, swap.assignment_id, swap.replacement_volunteer_id, shift.department_id
+      select swap.company_id, swap.assignment_id, swap.replacement_volunteer_id, shift.department_id, shift.id as shift_id, swap.status
       from public.volunteer_swap_requests swap
       join public.volunteer_assignments assignment on assignment.id = swap.assignment_id and assignment.company_id = swap.company_id
       join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = assignment.company_id
@@ -809,12 +808,21 @@ export async function reviewVolunteerSwap(
       swap.department_id,
       swap.company_id,
     );
+    const replacementAccepted = swap.status === "accepted" && (!replacementId || replacementId === swap.replacement_volunteer_id);
+    if (replacementId) swap.replacement_volunteer_id = replacementId;
+    if (approve && swap.replacement_volunteer_id) {
+      const ranked = await getVolunteerShiftCandidates(swap.shift_id);
+      const candidate = ranked.ok && Array.isArray(ranked.data)
+        ? (ranked.data as { volunteerId: string; selectableManually: boolean; blockers: string[] }[]).find((item) => item.volunteerId === swap.replacement_volunteer_id)
+        : null;
+      if (!candidate?.selectableManually) throw new Error(candidate?.blockers.join("; ") || "Substituto indisponível. Escolha outra pessoa.");
+    }
     if (approve && !swap.replacement_volunteer_id)
       throw new Error("Substituto obrigatório");
     await sql.begin(async (tx) => {
-      await tx`update public.volunteer_swap_requests set status = ${approve ? "approved" : "rejected"}, reviewed_by = ${user.id}, reviewed_at = now(), updated_at = now() where id = ${swapId} and company_id = ${companyId}`;
+      await tx`update public.volunteer_swap_requests set replacement_volunteer_id = ${swap.replacement_volunteer_id}, status = ${approve ? "approved" : "rejected"}, reviewed_by = ${user.id}, reviewed_at = now(), updated_at = now() where id = ${swapId} and company_id = ${companyId}`;
       if (approve)
-        await tx`update public.volunteer_assignments set volunteer_id = ${swap.replacement_volunteer_id}, status = 'confirmed', responded_at = now(), updated_by = ${user.id}, updated_at = now() where id = ${swap.assignment_id} and company_id = ${companyId}`;
+        await tx`update public.volunteer_assignments set volunteer_id = ${swap.replacement_volunteer_id}, status = ${replacementAccepted ? 'confirmed' : 'proposed'}, responded_at = ${replacementAccepted ? new Date() : null}, updated_by = ${user.id}, updated_at = now() where id = ${swap.assignment_id} and company_id = ${companyId}`;
     });
     await audit(
       approve ? "volunteer_swap.approve" : "volunteer_swap.reject",
@@ -823,7 +831,7 @@ export async function reviewVolunteerSwap(
       companyId,
     );
     refreshVolunteerPaths();
-    return { ok: true, id: swapId };
+    return { ok: true, id: swapId, data: { needsPublication: approve && !replacementAccepted } };
   } catch (error) {
     return resultError(error);
   }
@@ -1732,7 +1740,7 @@ export async function publishVolunteerEventSchedule(
             'whatsapp', ${recipient.phone}, 'Sua escala', ${content}
           )
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
       if (recipient.email_enabled && recipient.email)
@@ -1745,7 +1753,7 @@ export async function publishVolunteerEventSchedule(
             'email', ${recipient.email}, 'Sua escala foi publicada', ${content}
           )
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
       if (recipient.push_enabled)
@@ -1760,7 +1768,7 @@ export async function publishVolunteerEventSchedule(
             ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb
           )
           on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null
+            where assignment_id is not null and notification_key is null
           do nothing
         `;
     }

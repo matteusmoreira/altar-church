@@ -27,16 +27,17 @@ test("Voluntariado V2 adiciona dados, RLS departamental e lembretes", () => {
   assert.match(sql, /revoke insert, update, delete on public\.%I from authenticated/);
 });
 
-test("workspace consolida três áreas e mantém fluxos inteligentes", () => {
+test("workspace consolida quatro áreas e mantém fluxos inteligentes", () => {
   const ui = read(
     "src/app/(dashboard)/voluntariado/volunteer-v2-workspace.tsx",
   );
-  for (const tab of ["programmings", "volunteers", "teams"])
+  for (const tab of ["scales", "volunteers", "teams", "communication"])
     assert.match(ui, new RegExp(`value=["']${tab}["']`));
-  assert.match(ui, /<summary className="cursor-pointer font-medium">Mais opções<\/summary>/);
+  assert.match(ui, /aria-label="Relatórios"/);
+  assert.doesNotMatch(ui, /Planejamento avançado legado/);
   assert.match(ui, /VolunteerProgrammingWorkspace/);
+  assert.match(read("src/app/(dashboard)/voluntariado/components/escala-culto-drawer.tsx"), /generateSmartVolunteerSchedule\(\s*scheduleId,\s*eventId/);
   for (const flow of [
-    "generateSmartVolunteerSchedule",
     "respondVolunteerAssignment",
     "requestVolunteerSwap",
     "sendVolunteerShiftMessage",

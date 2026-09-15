@@ -297,7 +297,11 @@ export async function saveVolunteerProgramming(
       metadata: { frequency: parsed.recurrenceFrequency, positions: parsed.positions.length, skippedPublished },
     });
     refresh();
-    return { ok: true, id: programmingId, data: { generated, shortages, skippedPublished } };
+    const firstOccurrence = await sql<{ id: string }[]>`
+      select id from public.events where programming_id = ${programmingId} and company_id = ${companyId}
+        and deleted_at is null order by starts_at limit 1
+    `;
+    return { ok: true, id: programmingId, data: { generated, shortages, skippedPublished, eventId: firstOccurrence[0]?.id ?? null } };
   } catch (error) {
     return failure(error);
   }

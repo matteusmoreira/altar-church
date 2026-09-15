@@ -11,11 +11,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ClipboardCheck,
-  Clock,
-  Copy,
   Download,
   ExternalLink,
   HeartHandshake,
@@ -29,9 +25,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
-  Send,
   Settings,
-  ShieldCheck,
   Sparkles,
   Trash2,
   UserRoundCheck,
@@ -39,8 +33,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
 import { createClient } from "@/lib/supabase/client";
-import { saveEvent } from "@/lib/operational/actions";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -60,16 +54,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+
 import {
   Dialog,
   DialogContent,
@@ -86,17 +71,14 @@ import {
   saveVolunteerDepartment,
   saveVolunteerFeedPost,
   searchVolunteerPeople,
-} from "@/lib/volunteers/actions";
+} from "@/lib/volunteers/client-actions";
 import {
   acceptVolunteerSwap,
   checkOutVolunteerAssignment,
   generateVolunteerScheduleForEvent,
-  generateSmartVolunteerSchedule,
   getVolunteerShiftCandidates,
   grantVolunteerRecognition,
-  deleteVolunteerEventSchedule,
   markVolunteerShiftConversationRead,
-  publishVolunteerEventSchedule,
   requestVolunteerSwap,
   respondVolunteerAssignment,
   reviewVolunteerSwap,
@@ -111,7 +93,7 @@ import {
   softDeleteVolunteerDepartment,
   softDeleteVolunteer,
   uploadVolunteerShiftFile,
-} from "@/lib/volunteers/v2-actions";
+} from "@/lib/volunteers/client-actions";
 import type {
   SchedulingCandidate,
   VolunteerActionResult,
@@ -122,6 +104,8 @@ import type {
   VolunteerPersonSuggestion,
   VolunteerShift,
 } from "@/lib/volunteers/types";
+import { isVolunteerPreview } from "@/lib/volunteers/client-actions";
+import { useVolunteerNavigation } from "./use-volunteer-navigation";
 import { VolunteerQrScanner } from "./volunteer-qr-scanner";
 import { VolunteerProgrammingWorkspace } from "./volunteer-programming-workspace";
 
@@ -144,7 +128,7 @@ export const assignmentStatusLabels: Record<string, string> = {
 
 export function ok(result: VolunteerActionResult, success: string) {
   if (!result.ok) {
-    toast.error(result.error ?? "Operação falhou");
+    toast.error(toUserFriendlyError(result.error ?? "Operação falhou"));
     return false;
   }
   toast.success(success);
@@ -215,7 +199,7 @@ function StatusBadge({ status }: { status: string }) {
     <Badge
       variant={negative ? "destructive" : positive ? "default" : "secondary"}
     >
-      {status.replaceAll("_", " ")}
+      {({ ...assignmentStatusLabels, pending: "Pendente", active: "Ativo", inactive: "Inativo", suspended: "Suspenso", draft: "Rascunho", published: "Publicado", archived: "Arquivado", open: "Aberta", offered: "Aguardando substituto", accepted: "Aceita pelo substituto", approved: "Aprovada", rejected: "Recusada", cancelled: "Cancelada", failed: "Falha no envio" } as Record<string, string>)[status] ?? "Em andamento"}
     </Badge>
   );
 }
@@ -255,9 +239,17 @@ export function CandidatePanel({
       onAssigned();
     }
   }
-  const filteredItems = useMemo(() => items
-    ?.filter((candidate) => candidate.volunteerName.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")))
-    .slice(0, 50) ?? [], [items, search]);
+  const filteredItems = useMemo(
+    () =>
+      items
+        ?.filter((candidate) =>
+          candidate.volunteerName
+            .toLocaleLowerCase("pt-BR")
+            .includes(search.trim().toLocaleLowerCase("pt-BR")),
+        )
+        .slice(0, 50) ?? [],
+    [items, search],
+  );
   return (
     <>
       <Button
@@ -277,53 +269,108 @@ export function CandidatePanel({
         )}
         Escolher pessoas
       </Button>
-      <Dialog open={open} onOpenChange={(next) => {
-        if (!assigningId) setOpen(next);
-      }}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!assigningId) setOpen(next);
+        }}
+      >
         <DialogContent className="flex max-h-[min(90dvh,760px)] w-[min(960px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden p-0">
           <DialogHeader className="border-b px-5 py-4 pr-12">
             <DialogTitle>Escolher pessoa para {shift.roleName}</DialogTitle>
-            <DialogDescription>{shift.eventTitle} · {fmt(shift.startsAt)}</DialogDescription>
+            <DialogDescription>
+              {shift.eventTitle} · {fmt(shift.startsAt)}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 overflow-hidden px-5 pb-5">
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar voluntário pelo nome"
-            aria-label="Buscar voluntário"
-          />
-          <p className="text-xs text-muted-foreground">
-            Escolha manualmente. Equipe ou função diferente gera alerta; conflito e indisponibilidade bloqueiam.
-          </p>
-          <div className="max-h-[55dvh] space-y-2 overflow-y-auto pr-1">
-          {loading && <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Carregando pessoas...</div>}
-          {!loading && filteredItems.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">Nenhuma pessoa encontrada.</p>}
-          {filteredItems.map((candidate) => (
-            <div
-              key={candidate.volunteerId}
-              className="flex items-center gap-3 rounded-lg border p-3"
-            >
-              <Avatar className="h-11 w-11 shrink-0">
-                {candidate.photoUrl && <AvatarImage src={candidate.photoUrl} alt={candidate.volunteerName} />}
-                <AvatarFallback>{candidate.volunteerName.slice(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium">{candidate.volunteerName}</p>
-                  <Badge variant={candidate.selectableManually ? "default" : "secondary"}>
-                    {candidate.selectableManually ? "Disponível" : "Indisponível"}
-                  </Badge>
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar voluntário pelo nome"
+              aria-label="Buscar voluntário"
+            />
+            <p className="text-xs text-muted-foreground">
+              Escolha manualmente. Equipe ou função diferente gera alerta;
+              conflito e indisponibilidade bloqueiam.
+            </p>
+            <div className="max-h-[55dvh] space-y-2 overflow-y-auto pr-1">
+              {loading && (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Carregando pessoas...
                 </div>
-                {candidate.warnings.length > 0 && <p className="text-xs text-amber-700">Atenção: {candidate.warnings.join(" · ")}</p>}
-                {candidate.blockers.length > 0 && <p className="text-xs text-destructive">{candidate.blockers.join(" · ")}</p>}
-              </div>
-              <Button className="shrink-0" size="sm" disabled={!candidate.selectableManually || assigningId !== null} onClick={() => void assign(candidate.volunteerId)}>
-                {assigningId === candidate.volunteerId && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {assigningId === candidate.volunteerId ? "Escolhendo..." : "Escolher"}
-              </Button>
+              )}
+              {!loading && filteredItems.length === 0 && (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  Nenhuma pessoa encontrada.
+                </p>
+              )}
+              {filteredItems.map((candidate) => (
+                <div
+                  key={candidate.volunteerId}
+                  className="flex items-center gap-3 rounded-lg border p-3"
+                >
+                  <Avatar className="h-11 w-11 shrink-0">
+                    {candidate.photoUrl && (
+                      <AvatarImage
+                        src={candidate.photoUrl}
+                        alt={candidate.volunteerName}
+                      />
+                    )}
+                    <AvatarFallback>
+                      {candidate.volunteerName.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">
+                        {candidate.volunteerName}
+                      </p>
+                      <Badge
+                        variant={
+                          candidate.selectableManually ? "default" : "secondary"
+                        }
+                      >
+                        {candidate.selectableManually
+                          ? "Disponível"
+                          : "Indisponível"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {candidate.reasons
+                        .slice(0, 2)
+                        .map((reason) => reason.label)
+                        .join(" · ")}
+                    </p>
+                    {candidate.warnings.length > 0 && (
+                      <p className="text-xs text-amber-700">
+                        Atenção: {candidate.warnings.join(" · ")}
+                      </p>
+                    )}
+                    {candidate.blockers.length > 0 && (
+                      <p className="text-xs text-destructive">
+                        {candidate.blockers.join(" · ")}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    className="shrink-0"
+                    size="sm"
+                    disabled={
+                      !candidate.selectableManually || assigningId !== null
+                    }
+                    onClick={() => void assign(candidate.volunteerId)}
+                  >
+                    {assigningId === candidate.volunteerId && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {assigningId === candidate.volunteerId
+                      ? "Escolhendo..."
+                      : "Escolher"}
+                  </Button>
+                </div>
+              ))}
             </div>
-          ))}
-          </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -331,7 +378,13 @@ export function CandidatePanel({
   );
 }
 
-export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCount: number }) {
+export function ShiftChat({
+  shiftId,
+  unreadCount,
+}: {
+  shiftId: string;
+  unreadCount: number;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
@@ -348,6 +401,7 @@ export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCou
   >([]);
   useEffect(() => {
     if (!open) return;
+    if (isVolunteerPreview()) return;
     const client = createClient();
     const channel = client
       .channel(`volunteer-shift-${shiftId}`)
@@ -376,6 +430,7 @@ export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCou
     };
   }, [open, router, shiftId]);
   async function load() {
+    if (isVolunteerPreview()) return;
     const response = await fetch(
       `/api/v1/volunteers/shifts/${shiftId}/chat/messages`,
       { cache: "no-store" },
@@ -423,7 +478,14 @@ export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCou
       <Button type="button" size="sm" variant="ghost" onClick={toggle}>
         <MessageSquare className="mr-2 h-4 w-4" />
         Chat
-        {unreadCount > 0 && <Badge className="ml-2" aria-label={`${unreadCount} mensagens não lidas`}>{unreadCount}</Badge>}
+        {unreadCount > 0 && (
+          <Badge
+            className="ml-2"
+            aria-label={`${unreadCount} mensagens não lidas`}
+          >
+            {unreadCount}
+          </Badge>
+        )}
       </Button>
       {open && (
         <div className="mt-2 space-y-2 rounded-lg border p-3">
@@ -489,14 +551,19 @@ export function ShiftChat({ shiftId, unreadCount }: { shiftId: string; unreadCou
 function useVolunteerChatRealtime() {
   const router = useRouter();
   useEffect(() => {
+    if (isVolunteerPreview()) return;
     const client = createClient();
     const channel = client
       .channel("volunteer-chat-unread")
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "volunteer_shift_messages",
-      }, () => router.refresh())
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "volunteer_shift_messages",
+        },
+        () => router.refresh(),
+      )
       .subscribe();
     return () => {
       void client.removeChannel(channel);
@@ -597,7 +664,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("grid");
   const [personQuery, setPersonQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<VolunteerPersonSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<VolunteerPersonSuggestion[]>(
+    [],
+  );
   const [selectedPerson, setSelectedPerson] =
     useState<VolunteerPersonSuggestion | null>(null);
   const [form, setForm] = useState<{
@@ -663,11 +732,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
     const role = department?.roles?.find((item) => item.active);
     if (!department || !role)
       return toast.error("Crie uma equipe e uma função primeiro");
-    if (
-      form.memberships.some(
-        (membership) => membership.roleId === role.id,
-      )
-    )
+    if (form.memberships.some((membership) => membership.roleId === role.id))
       return toast.error("Esta função já foi adicionada");
     setForm({
       ...form,
@@ -698,13 +763,21 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
         resetForm();
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o voluntário");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar o voluntário",
+      );
     } finally {
       setSaving(false);
     }
   }
   async function remove(id: string) {
-    if (!window.confirm("Excluir este voluntário? Cadastro em Pessoas e histórico serão preservados."))
+    if (
+      !window.confirm(
+        "Excluir este voluntário? Cadastro em Pessoas e histórico serão preservados.",
+      )
+    )
       return;
     if (ok(await softDeleteVolunteer(id), "Voluntário excluído"))
       router.refresh();
@@ -745,7 +818,12 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                 if (e.target.value.trim().length < 3) setSuggestions([]);
                 if (selectedPerson) {
                   setSelectedPerson(null);
-                  setForm({ id: null, personId: "", memberships: [], invite: false });
+                  setForm({
+                    id: null,
+                    personId: "",
+                    memberships: [],
+                    invite: false,
+                  });
                 }
               }}
             />
@@ -764,7 +842,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                         {(person.email ?? person.phone) || "Sem contato"}
                       </span>
                     </span>
-                    <Badge variant={person.volunteerId ? "default" : "secondary"}>
+                    <Badge
+                      variant={person.volunteerId ? "default" : "secondary"}
+                    >
                       {person.volunteerId ? "Já voluntário" : person.personType}
                     </Badge>
                   </button>
@@ -778,8 +858,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                 <div>
                   <p className="font-medium">{selectedPerson.fullName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {(selectedPerson.email ?? selectedPerson.phone) || "Sem contato"} ·{" "}
-                    {selectedPerson.personType}
+                    {(selectedPerson.email ?? selectedPerson.phone) ||
+                      "Sem contato"}{" "}
+                    · {selectedPerson.personType}
                   </p>
                 </div>
                 {form.id && <Badge>Vínculo existente</Badge>}
@@ -803,7 +884,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                       const nextDepartment = data.departments.find(
                         (item) => item.id === e.target.value,
                       );
-                      const nextRole = nextDepartment?.roles?.find((role) => role.active);
+                      const nextRole = nextDepartment?.roles?.find(
+                        (role) => role.active,
+                      );
                       setForm({
                         ...form,
                         memberships: form.memberships.map((item, current) =>
@@ -833,7 +916,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                       setForm({
                         ...form,
                         memberships: form.memberships.map((item, current) =>
-                          current === index ? { ...item, roleId: e.target.value } : item,
+                          current === index
+                            ? { ...item, roleId: e.target.value }
+                            : item,
                         ),
                       })
                     }
@@ -854,10 +939,12 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                       onChange={() =>
                         setForm({
                           ...form,
-                          memberships: form.memberships.map((item, current) => ({
-                            ...item,
-                            preferred: current === index,
-                          })),
+                          memberships: form.memberships.map(
+                            (item, current) => ({
+                              ...item,
+                              preferred: current === index,
+                            }),
+                          ),
                         })
                       }
                     />
@@ -870,7 +957,9 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                     onClick={() =>
                       setForm({
                         ...form,
-                        memberships: form.memberships.filter((_, current) => current !== index),
+                        memberships: form.memberships.filter(
+                          (_, current) => current !== index,
+                        ),
                       })
                     }
                   >
@@ -902,8 +991,18 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
           </div>
           <div className="flex gap-2">
             <Button onClick={create} disabled={saving} aria-busy={saving}>
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              {saving ? (form.invite ? "Criando acesso..." : "Salvando...") : form.id ? "Atualizar vínculo" : "Salvar voluntário"}
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              {saving
+                ? form.invite
+                  ? "Criando acesso..."
+                  : "Salvando..."
+                : form.id
+                  ? "Atualizar vínculo"
+                  : "Salvar voluntário"}
             </Button>
             {selectedPerson && (
               <Button variant="ghost" onClick={resetForm}>
@@ -923,20 +1022,55 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex w-fit rounded-md border p-1" aria-label="Modo de visualização">
-          <Button type="button" variant={viewMode === "list" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setViewMode("list")} aria-label="Ver voluntários em lista" title="Lista">
+        <div
+          className="flex w-fit rounded-md border p-1"
+          aria-label="Modo de visualização"
+        >
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "secondary" : "ghost"}
+            size="icon-sm"
+            onClick={() => setViewMode("list")}
+            aria-label="Ver voluntários em lista"
+            title="Lista"
+          >
             <List className="h-4 w-4" />
           </Button>
-          <Button type="button" variant={viewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setViewMode("grid")} aria-label="Ver voluntários em grade" title="Grade">
+          <Button
+            type="button"
+            variant={viewMode === "grid" ? "secondary" : "ghost"}
+            size="icon-sm"
+            onClick={() => setViewMode("grid")}
+            aria-label="Ver voluntários em grade"
+            title="Grade"
+          >
             <Grid2X2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      <div className={viewMode === "grid" ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
+      <div
+        className={
+          viewMode === "grid"
+            ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+            : "space-y-2"
+        }
+      >
         {visible.map((volunteer) => (
           <Card key={volunteer.id}>
-            <CardContent className={viewMode === "grid" ? "p-4" : "flex flex-col gap-3 p-4 lg:flex-row lg:items-center"}>
-              <div className={viewMode === "grid" ? "flex justify-between gap-2" : "flex min-w-0 flex-1 justify-between gap-2"}>
+            <CardContent
+              className={
+                viewMode === "grid"
+                  ? "p-4"
+                  : "flex flex-col gap-3 p-4 lg:flex-row lg:items-center"
+              }
+            >
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "flex justify-between gap-2"
+                    : "flex min-w-0 flex-1 justify-between gap-2"
+                }
+              >
                 <div className="min-w-0">
                   <p className="font-medium">{volunteer.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
@@ -945,15 +1079,27 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                 </div>
                 <StatusBadge status={volunteer.status} />
               </div>
-              <div className={viewMode === "grid" ? "mt-3" : "min-w-0 flex-1 lg:max-w-sm"}>
-                <p className="truncate text-sm">{volunteer.departmentNames.join(", ") || "Sem equipe"}</p>
+              <div
+                className={
+                  viewMode === "grid" ? "mt-3" : "min-w-0 flex-1 lg:max-w-sm"
+                }
+              >
+                <p className="truncate text-sm">
+                  {volunteer.departmentNames.join(", ") || "Sem equipe"}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {volunteer.checkins}/{volunteer.assignments} presenças · meta{" "}
                   {volunteer.desiredServicesPerMonth}, limite{" "}
                   {volunteer.maxServicesPerMonth}/mês
                 </p>
               </div>
-              <div className={viewMode === "grid" ? "mt-3 flex flex-wrap gap-2" : "flex shrink-0 flex-wrap gap-2"}>
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "mt-3 flex flex-wrap gap-2"
+                    : "flex shrink-0 flex-wrap gap-2"
+                }
+              >
                 <Button
                   size="sm"
                   variant="outline"
@@ -978,7 +1124,17 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                   <Award className="mr-1 h-4 w-4" />
                   Agradecer
                 </Button>
-                {data.canAdminDelete && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => remove(volunteer.id)}><Trash2 className="mr-1 h-4 w-4" />Excluir</Button>}
+                {data.canAdminDelete && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={() => remove(volunteer.id)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Excluir
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1018,15 +1174,23 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     if (pendingKey) return;
     setPendingKey("department");
     try {
-      const result = await saveVolunteerDepartment({ managerProfileId: null, ...department });
+      const result = await saveVolunteerDepartment({
+        managerProfileId: null,
+        ...department,
+      });
       if (ok(result, department.id ? "Equipe atualizada" : "Equipe criada")) {
-        if (result.id) setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
+        if (result.id)
+          setRole((current) => ({ ...current, departmentId: result.id ?? "" }));
         setDepartment({ id: null, name: "", description: "", active: true });
         setDeptDialogOpen(false);
         router.refresh();
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a equipe");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar a equipe",
+      );
     } finally {
       setPendingKey(null);
     }
@@ -1039,18 +1203,31 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
     try {
       const result = await saveVolunteerDepartmentRole({ ...role });
       if (ok(result, role.id ? "Função atualizada" : "Função criada")) {
-        setRole({ ...role, id: null, name: "", description: "", instructions: "", active: true });
+        setRole({
+          ...role,
+          id: null,
+          name: "",
+          description: "",
+          instructions: "",
+          active: true,
+        });
         setRoleDialogOpen(false);
         router.refresh();
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não foi possível salvar a função");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar a função",
+      );
     } finally {
       setPendingKey(null);
     }
   }
 
-  async function toggleDepartment(item: VolunteerDashboardData["departments"][number]) {
+  async function toggleDepartment(
+    item: VolunteerDashboardData["departments"][number],
+  ) {
     if (
       ok(
         await saveVolunteerDepartment({
@@ -1067,7 +1244,9 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   }
 
   async function toggleRole(
-    item: NonNullable<VolunteerDashboardData["departments"][number]["roles"]>[number],
+    item: NonNullable<
+      VolunteerDashboardData["departments"][number]["roles"]
+    >[number],
   ) {
     if (
       ok(
@@ -1085,10 +1264,18 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       router.refresh();
   }
 
-  async function removeDepartment(item: VolunteerDashboardData["departments"][number]) {
-    if (!window.confirm(`Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`)) return;
+  async function removeDepartment(
+    item: VolunteerDashboardData["departments"][number],
+  ) {
+    if (
+      !window.confirm(
+        `Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`,
+      )
+    )
+      return;
     if (ok(await softDeleteVolunteerDepartment(item.id), "Equipe excluída")) {
-      if (department.id === item.id) setDepartment({ id: null, name: "", description: "", active: true });
+      if (department.id === item.id)
+        setDepartment({ id: null, name: "", description: "", active: true });
       router.refresh();
     }
   }
@@ -1133,14 +1320,18 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
         router.refresh();
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao vincular voluntário");
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao vincular voluntário",
+      );
     } finally {
       setLinkSaving(false);
     }
   }
 
   const filteredDepartments = data.departments.filter((item) =>
-    item.name.toLocaleLowerCase("pt-BR").includes(teamSearch.toLocaleLowerCase("pt-BR")),
+    item.name
+      .toLocaleLowerCase("pt-BR")
+      .includes(teamSearch.toLocaleLowerCase("pt-BR")),
   );
 
   return (
@@ -1148,15 +1339,20 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
       {/* Top Header with Actions */}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-xl font-semibold">Equipes e Ministérios</h2>
+          <h2 className="text-xl font-semibold">Equipes</h2>
           <p className="text-sm text-muted-foreground">
-            Gerencie ministérios, funções e voluntários que servem em cada equipe.
+            Organize as equipes de serviço, suas funções e integrantes.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
             onClick={() => {
-              setDepartment({ id: null, name: "", description: "", active: true });
+              setDepartment({
+                id: null,
+                name: "",
+                description: "",
+                active: true,
+              });
               setDeptDialogOpen(true);
             }}
           >
@@ -1190,11 +1386,14 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-lg">{item.name}</CardTitle>
-                      <StatusBadge status={item.active ? "active" : "inactive"} />
+                      <StatusBadge
+                        status={item.active ? "active" : "inactive"}
+                      />
                     </div>
                     <CardDescription>
                       {item.description || "Sem descrição cadastrada"}
                     </CardDescription>
+                      {item.ministryName && <p className="text-xs text-muted-foreground">Ministério: {item.ministryName}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Button
@@ -1263,7 +1462,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
 
                   {(item.roles ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">
-                      Nenhuma função cadastrada ainda. Clique em Nova Função para adicionar.
+                      Nenhuma função cadastrada ainda. Clique em Nova Função
+                      para adicionar.
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -1278,7 +1478,10 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                                 {itemRole.name}
                               </span>
                               {!itemRole.active && (
-                                <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-1 py-0 text-muted-foreground"
+                                >
                                   Inativa
                                 </Badge>
                               )}
@@ -1340,7 +1543,11 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                         setLinkDialogOpen(true);
                       }}
                       disabled={activeRoles.length === 0}
-                      title={activeRoles.length === 0 ? "Cadastre ao menos uma função primeiro" : ""}
+                      title={
+                        activeRoles.length === 0
+                          ? "Cadastre ao menos uma função primeiro"
+                          : ""
+                      }
                     >
                       <Plus className="mr-1 h-3 w-3" />
                       Vincular Voluntário
@@ -1396,7 +1603,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
               {department.id ? "Editar Equipe" : "Nova Equipe"}
             </DialogTitle>
             <DialogDescription>
-              Cadastre o nome e a descrição do ministério ou departamento.
+              Cadastre a equipe de serviço. O vínculo com um ministério é
+              administrado em Ministérios.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1413,7 +1621,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
             <div className="space-y-2">
               <Label>Descrição</Label>
               <Textarea
-                placeholder="Propósito e atribuições deste ministério..."
+                placeholder="O que esta equipe faz..."
                 rows={3}
                 value={department.description}
                 onChange={(e) =>
@@ -1512,7 +1720,9 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
             </Button>
             <Button
               type="button"
-              disabled={!role.name.trim() || !role.departmentId || pendingKey !== null}
+              disabled={
+                !role.name.trim() || !role.departmentId || pendingKey !== null
+              }
               onClick={addRole}
             >
               {pendingKey === "role" && (
@@ -1560,8 +1770,8 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
               >
                 <option value="">Escolha a função...</option>
                 {(
-                  data.departments.find((d) => d.id === targetDeptForLink)?.roles ??
-                  []
+                  data.departments.find((d) => d.id === targetDeptForLink)
+                    ?.roles ?? []
                 )
                   .filter((r) => r.active)
                   .map((r) => (
@@ -1595,266 +1805,18 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   );
 }
 
-function ManagerSchedules({ data }: { data: VolunteerDashboardData }) {
+export function ManagerWorship({
+  data,
+  selectedEventId,
+}: {
+  data: VolunteerDashboardData;
+  selectedEventId: string;
+}) {
   const router = useRouter();
-  const [deleteTarget, setDeleteTarget] = useState<{ eventId: string; title: string; startsAt: string } | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  async function smart(id: string) {
-    const result = await generateSmartVolunteerSchedule(id);
-    if (
-      ok(
-        result,
-        `Sugestões adicionadas em ${(result.data as { created?: number })?.created ?? 0} vaga(s) vazia(s)`,
-      )
-    )
-      router.refresh();
-  }
-  async function publish(eventId: string) {
-    if (
-      ok(
-        await publishVolunteerEventSchedule(eventId),
-        "Escala do culto publicada e avisos enfileirados",
-      )
-    )
-      router.refresh();
-  }
-  async function removeAssignment(shiftId: string, volunteerId: string) {
-    if (
-      ok(
-        await saveVolunteerAssignment({
-          shiftId,
-          volunteerId,
-          status: "cancelled",
-        }),
-        "Pessoa removida da vaga",
-      )
-    )
-      router.refresh();
-  }
-  async function removeEventSchedule() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const result = await deleteVolunteerEventSchedule(deleteTarget.eventId);
-    setDeleting(false);
-    if (ok(result, "Escala excluída")) {
-      setDeleteTarget(null);
-      router.refresh();
-    }
-  }
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">Montar escala</h3>
-        <p className="text-sm text-muted-foreground">
-          Escolha as pessoas de cada função. Sugestões são opcionais e nunca substituem escolhas manuais.
-        </p>
-      </div>
-      {data.schedules.map((schedule) => (
-        <Card key={schedule.id}>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle>{schedule.month.slice(0, 7)}</CardTitle>
-                <CardDescription>
-                  {schedule.shifts.length} posições
-                </CardDescription>
-              </div>
-              <Button variant="outline" onClick={() => smart(schedule.id)}>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Sugerir para vagas vazias
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(() => {
-              const eventIds = [...new Set(schedule.shifts.map((s) => s.eventId))];
-              return eventIds.map((eventId) => {
-                const eventShifts = schedule.shifts.filter((s) => s.eventId === eventId);
-                const firstShift = eventShifts[0];
-                if (!firstShift) return null;
-                const eventPlan = data.eventPlans.find((plan) => plan.eventId === eventId);
-                const eventComplete = eventShifts.every(
-                  (item) =>
-                    item.assignments.filter(
-                      (assignment) => !["declined", "cancelled"].includes(assignment.status),
-                    ).length >= item.requiredVolunteers,
-                );
-
-                return (
-                  <div
-                    id={eventId ? `escala-${eventId}` : undefined}
-                    key={eventId ?? firstShift.id}
-                    className="scroll-mt-4 rounded-xl border bg-card/60 p-4 space-y-3"
-                  >
-                    {/* Event Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-                      <div>
-                        <h4 className="font-semibold text-base">{firstShift.eventTitle}</h4>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <Clock className="h-3 w-3 text-primary" />
-                          {fmt(firstShift.startsAt)}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {eventId && (
-                          eventPlan?.schedulePublishedAt ? (
-                            <Badge variant="default" className="bg-emerald-600">
-                              <CheckCircle2 className="mr-1 h-3 w-3" />
-                              Escala do culto publicada
-                            </Badge>
-                          ) : (
-                            <Button
-                              size="sm"
-                              disabled={!eventComplete}
-                              title={eventComplete ? "Publicar e avisar voluntários" : "Preencha todas as vagas antes de publicar"}
-                              onClick={() => publish(eventId)}
-                            >
-                              <Send className="mr-1.5 h-3.5 w-3.5" />
-                              Publicar escala deste culto
-                            </Button>
-                          )
-                        )}
-                        {eventId && data.canAdminDelete && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:bg-destructive/10"
-                            onClick={() =>
-                              setDeleteTarget({
-                                eventId,
-                                title: firstShift.eventTitle,
-                                startsAt: firstShift.startsAt,
-                              })
-                            }
-                          >
-                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                            Excluir
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Shifts inside this event */}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {eventShifts.map((shift) => {
-                        const active = shift.assignments.filter(
-                          (item) => !["declined", "cancelled"].includes(item.status),
-                        );
-                        return (
-                          <div key={shift.id} className="rounded-lg border bg-background/60 p-3 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {shift.departmentName} · {shift.roleName}
-                                </p>
-                                {shift.instructions && (
-                                  <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                                    {shift.instructions}
-                                  </p>
-                                )}
-                              </div>
-                              <Badge
-                                variant={active.length >= shift.requiredVolunteers ? "default" : "secondary"}
-                                className="text-[11px] shrink-0"
-                              >
-                                {active.length}/{shift.requiredVolunteers} preenchida(s)
-                              </Badge>
-                            </div>
-
-                            {/* Assignments badges */}
-                            <div className="flex flex-wrap gap-1.5">
-                              {active.map((assignment) => (
-                                <div
-                                  key={assignment.id}
-                                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
-                                >
-                                  <strong>{assignment.volunteerName}</strong>
-                                  <span className="text-muted-foreground">·</span>
-                                  <span className="text-[11px] text-muted-foreground">
-                                    {assignmentStatusLabels[assignment.status] ?? assignment.status}
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {` · ${assignment.locked ? "Escolhido manualmente" : "Sugerido pelo sistema"}`}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="ml-1 text-destructive hover:opacity-75"
-                                    aria-label={`Remover ${assignment.volunteerName}`}
-                                    onClick={() => removeAssignment(shift.id, assignment.volunteerId)}
-                                  >
-                                    <X className="inline h-3 w-3" />
-                                  </button>
-                                </div>
-                              ))}
-                              {active.length < shift.requiredVolunteers && (
-                                <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 px-2 py-1 text-xs text-amber-600 dark:text-amber-400 italic">
-                                  Vaga aberta
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2 pt-1 border-t">
-                              <CandidatePanel shift={shift} onAssigned={() => router.refresh()} />
-                              <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </CardContent>
-        </Card>
-      ))}
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir esta escala?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget ? `${deleteTarget.title} · ${fmt(deleteTarget.startsAt)}. ` : ""}
-              Pessoas escaladas, mensagens e registros vinculados serão apagados. Avisos já entregues não podem ser desfeitos. Evento e programação serão mantidos.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void removeEventSchedule()}>
-              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {deleting ? "Excluindo..." : "Excluir permanentemente"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function buildCalendarCells(month: Date) {
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  const firstWeekday = new Date(year, monthIndex, 1).getDay();
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  const cells: (number | null)[] = [];
-  for (let index = 0; index < firstWeekday; index += 1) cells.push(null);
-  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
-  return cells;
-}
-
-function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
-  const router = useRouter();
-  const [eventId, setEventId] = useState(data.eventPlans[0]?.eventId ?? "");
+  const eventId = selectedEventId;
   const selected = data.eventPlans.find((item) => item.eventId === eventId);
   const [modelId, setModelId] = useState("");
   const [modelName, setModelName] = useState("");
-  const [newServiceTitle, setNewServiceTitle] = useState("");
-  const [newServiceStartsAt, setNewServiceStartsAt] = useState("");
-  const [creatingService, setCreatingService] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
   const [positions, setPositions] = useState<
     {
       departmentId: string;
@@ -1925,30 +1887,6 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
     );
     toast.success("Modelo aplicado. Revise antes de salvar.");
   }
-  async function createService() {
-    if (!newServiceTitle.trim()) return toast.error("Informe o nome do culto");
-    if (!newServiceStartsAt) return toast.error("Informe a data e o horário");
-    setCreatingService(true);
-    const formData = new FormData();
-    formData.set("title", newServiceTitle.trim());
-    formData.set("startDate", newServiceStartsAt);
-    formData.set("type", "service");
-    formData.set("status", "published");
-    formData.set("isPublic", "true");
-    const result = await saveEvent(formData);
-    setCreatingService(false);
-    if (!result.ok) return toast.error(result.error ?? "Não foi possível criar o culto");
-    toast.success("Culto criado. Defina as equipes abaixo.");
-    setNewServiceTitle("");
-    setNewServiceStartsAt("");
-    if (result.id) {
-      setEventId(result.id);
-      const startsAt = new Date(newServiceStartsAt);
-      if (!Number.isNaN(startsAt.getTime()))
-        setCalendarMonth(new Date(startsAt.getFullYear(), startsAt.getMonth(), 1));
-    }
-    router.refresh();
-  }
   async function save(showSuccess = true) {
     if (!eventId) return toast.error("Selecione culto");
     if (positions.length === 0)
@@ -1974,7 +1912,7 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
     if (
       ok(
         result,
-        `Rascunho gerado: ${(result.data as { created?: number })?.created ?? 0} voluntários sugeridos`,
+        "Vagas preparadas. Agora use Sugerir pessoas e revise antes de publicar.",
       )
     )
       router.refresh();
@@ -1983,137 +1921,13 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Cultos e escalas</CardTitle>
+          <CardTitle>Equipes e roteiro</CardTitle>
           <CardDescription>
-            Escolha um culto, defina quem precisa servir e gere um rascunho para revisão.
+            Defina as vagas desta atividade e salve o rascunho para escolher as
+            pessoas.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="space-y-2 rounded-lg border border-dashed p-3">
-            <p className="text-sm font-medium">Novo culto</p>
-            <div className="grid gap-2 md:grid-cols-[1fr_220px_auto]">
-              <Input
-                placeholder="Nome do culto (ex.: Culto Domingo Manhã)"
-                value={newServiceTitle}
-                onChange={(e) => setNewServiceTitle(e.target.value)}
-              />
-              <Input
-                type="datetime-local"
-                aria-label="Data e horário do culto"
-                value={newServiceStartsAt}
-                onChange={(e) => setNewServiceStartsAt(e.target.value)}
-              />
-              <Button onClick={createService} disabled={creatingService}>
-                {creatingService ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Criar culto
-              </Button>
-            </div>
-          </div>
-          {(() => {
-            const eventsByDay = new Map<number, VolunteerEventPlan[]>();
-            for (const plan of data.eventPlans) {
-              const date = new Date(plan.startsAt);
-              if (
-                date.getFullYear() === calendarMonth.getFullYear() &&
-                date.getMonth() === calendarMonth.getMonth()
-              ) {
-                const list = eventsByDay.get(date.getDate()) ?? [];
-                list.push(plan);
-                eventsByDay.set(date.getDate(), list);
-              }
-            }
-            const monthLabel = new Intl.DateTimeFormat("pt-BR", {
-              month: "long",
-              year: "numeric",
-            }).format(calendarMonth);
-            return (
-              <div className="space-y-2 rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Mês anterior"
-                    onClick={() =>
-                      setCalendarMonth(
-                        new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1),
-                      )
-                    }
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <p className="text-sm font-medium capitalize">{monthLabel}</p>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Próximo mês"
-                    onClick={() =>
-                      setCalendarMonth(
-                        new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1),
-                      )
-                    }
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                  {weekdayNames.map((day) => (
-                    <span key={day}>{day}</span>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {buildCalendarCells(calendarMonth).map((day, index) => {
-                    if (day === null) return <div key={`empty-${index}`} />;
-                    const dayEvents = eventsByDay.get(day) ?? [];
-                    const isSelected = dayEvents.some((plan) => plan.eventId === eventId);
-                    return (
-                      <button
-                        type="button"
-                        key={day}
-                        disabled={dayEvents.length === 0}
-                        onClick={() => setEventId(dayEvents[0]?.eventId ?? "")}
-                        title={dayEvents.map((plan) => plan.eventTitle).join(", ")}
-                        className={`flex h-9 flex-col items-center justify-center rounded-md text-sm transition-colors ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground"
-                            : dayEvents.length > 0
-                              ? "bg-primary/10 font-medium hover:bg-primary/20"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {day}
-                        {dayEvents.length > 0 && (
-                          <span
-                            className={`h-1 w-1 rounded-full ${isSelected ? "bg-primary-foreground" : "bg-primary"}`}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                {data.eventPlans.length === 0 && (
-                  <p className="text-center text-xs text-muted-foreground">
-                    Nenhum culto cadastrado. Crie o primeiro acima.
-                  </p>
-                )}
-              </div>
-            );
-          })()}
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3"
-            value={eventId}
-            onChange={(e) => setEventId(e.target.value)}
-          >
-            <option value="">Selecione o culto para planejar</option>
-            {data.eventPlans.map((event) => (
-              <option key={event.eventId} value={event.eventId}>
-                {event.eventTitle} · {fmt(event.startsAt)}
-              </option>
-            ))}
-          </select>
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
             <select
               className="h-10 rounded-md border bg-background px-3"
@@ -2160,7 +1974,9 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                       const nextDepartment = data.departments.find(
                         (item) => item.id === e.target.value,
                       );
-                      const nextRole = nextDepartment?.roles?.find((role) => role.active);
+                      const nextRole = nextDepartment?.roles?.find(
+                        (role) => role.active,
+                      );
                       setPositions(
                         positions.map((item, current) =>
                           current === index
@@ -2196,7 +2012,8 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                             ? {
                                 ...item,
                                 roleId: e.target.value,
-                                instructions: nextRole?.instructions ?? item.instructions,
+                                instructions:
+                                  nextRole?.instructions ?? item.instructions,
                               }
                             : item,
                         ),
@@ -2221,7 +2038,10 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                       setPositions(
                         positions.map((item, current) =>
                           current === index
-                            ? { ...item, requiredVolunteers: Number(e.target.value) }
+                            ? {
+                                ...item,
+                                requiredVolunteers: Number(e.target.value),
+                              }
                             : item,
                         ),
                       )
@@ -2231,7 +2051,9 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                     size="icon"
                     variant="ghost"
                     onClick={() =>
-                      setPositions(positions.filter((_, current) => current !== index))
+                      setPositions(
+                        positions.filter((_, current) => current !== index),
+                      )
                     }
                   >
                     <X className="h-4 w-4" />
@@ -2292,7 +2114,9 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                   onChange={(e) =>
                     setTimeline(
                       timeline.map((current, i) =>
-                        i === index ? { ...current, title: e.target.value } : current,
+                        i === index
+                          ? { ...current, title: e.target.value }
+                          : current,
                       ),
                     )
                   }
@@ -2304,7 +2128,10 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                     setTimeline(
                       timeline.map((current, i) =>
                         i === index
-                          ? { ...current, plannedAt: new Date(e.target.value).toISOString() }
+                          ? {
+                              ...current,
+                              plannedAt: new Date(e.target.value).toISOString(),
+                            }
                           : current,
                       ),
                     )
@@ -2318,7 +2145,10 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                     setTimeline(
                       timeline.map((current, i) =>
                         i === index
-                          ? { ...current, durationMinutes: Number(e.target.value) }
+                          ? {
+                              ...current,
+                              durationMinutes: Number(e.target.value),
+                            }
                           : current,
                       ),
                     )
@@ -2331,7 +2161,10 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                     setTimeline(
                       timeline.map((current, i) =>
                         i === index
-                          ? { ...current, responsibleProfileId: e.target.value || null }
+                          ? {
+                              ...current,
+                              responsibleProfileId: e.target.value || null,
+                            }
                           : current,
                       ),
                     )
@@ -2341,7 +2174,10 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                   {data.volunteers
                     .filter((volunteer) => volunteer.profileId)
                     .map((volunteer) => (
-                      <option key={volunteer.id} value={volunteer.profileId ?? ""}>
+                      <option
+                        key={volunteer.id}
+                        value={volunteer.profileId ?? ""}
+                      >
                         {volunteer.name}
                       </option>
                     ))}
@@ -2350,7 +2186,9 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
                   size="icon"
                   variant="ghost"
                   onClick={() =>
-                    setTimeline(timeline.filter((_, current) => current !== index))
+                    setTimeline(
+                      timeline.filter((_, current) => current !== index),
+                    )
                   }
                 >
                   <X className="h-4 w-4" />
@@ -2388,7 +2226,6 @@ function ManagerWorship({ data }: { data: VolunteerDashboardData }) {
           </div>
         </CardContent>
       </Card>
-      <ManagerSchedules data={data} />
     </div>
   );
 }
@@ -2481,67 +2318,145 @@ function ManagerCommunication({ data }: { data: VolunteerDashboardData }) {
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Trocas</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {data.swaps.length === 0 && (
-            <p className="text-sm text-muted-foreground">Sem solicitações.</p>
-          )}
-          {data.swaps.map((swap) => (
-            <div key={swap.id} className="rounded-lg border p-3">
-              <div className="flex justify-between">
-                <StatusBadge status={swap.status} />
-                <span className="text-xs text-muted-foreground">
-                  {fmt(swap.createdAt)}
-                </span>
-              </div>
-              <p className="mt-2 text-sm">{swap.reason}</p>
-              <p className="text-xs text-muted-foreground">
-                Substituto: {swap.replacementName ?? "aguardando"}
-              </p>
-              {["open", "accepted"].includes(swap.status) && (
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      if (
-                        ok(
-                          await reviewVolunteerSwap(swap.id, true),
-                          "Troca aprovada",
-                        )
-                      )
-                        router.refresh();
-                    }}
-                    disabled={!swap.replacementVolunteerId}
-                  >
-                    <Check className="mr-1 h-4 w-4" />
-                    Aprovar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={async () => {
-                      if (
-                        ok(
-                          await reviewVolunteerSwap(swap.id, false),
-                          "Troca recusada",
-                        )
-                      )
-                        router.refresh();
-                    }}
-                  >
-                    <X className="mr-1 h-4 w-4" />
-                    Recusar
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
     </div>
+  );
+}
+
+export function ManagerSwaps({ data }: { data: VolunteerDashboardData }) {
+  const router = useRouter();
+  const [choices, setChoices] = useState<Record<string, SchedulingCandidate[]>>(
+    {},
+  );
+  const [replacements, setReplacements] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  async function loadCandidates(swapId: string, assignmentId: string) {
+    const shift = data.schedules
+      .flatMap((item) => item.shifts)
+      .find((item) =>
+        item.assignments.some((assignment) => assignment.id === assignmentId),
+      );
+    if (!shift) return;
+    setBusy(swapId);
+    try {
+      const result = await getVolunteerShiftCandidates(shift.id);
+      if (!result.ok)
+        return toast.error(
+          result.error ?? "Não foi possível consultar substitutos.",
+        );
+      setChoices((previous) => ({
+        ...previous,
+        [swapId]: result.data as SchedulingCandidate[],
+      }));
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Trocas</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {data.swaps.length === 0 && (
+          <p className="text-sm text-muted-foreground">Sem solicitações.</p>
+        )}
+        {data.swaps.map((swap) => (
+          <div key={swap.id} className="rounded-lg border p-3">
+            <div className="flex justify-between">
+              <StatusBadge status={swap.status} />
+              <span className="text-xs text-muted-foreground">
+                {fmt(swap.createdAt)}
+              </span>
+            </div>
+            <p className="mt-2 text-sm">{swap.reason}</p>
+            <p className="text-xs text-muted-foreground">
+              Substituto: {swap.replacementName ?? "aguardando"}
+            </p>
+            {swap.status === "open" && (
+              <div className="my-3 space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => loadCandidates(swap.id, swap.assignmentId)}
+                >
+                  Escolher substituto
+                </Button>
+                {choices[swap.id] && (
+                  <select
+                    aria-label="Substituto para a troca"
+                    className="h-10 w-full rounded-md border bg-background px-3"
+                    value={replacements[swap.id] ?? ""}
+                    onChange={(event) =>
+                      setReplacements({
+                        ...replacements,
+                        [swap.id]: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="">Selecione uma pessoa disponível</option>
+                    {choices[swap.id].map((item) => (
+                      <option
+                        key={item.volunteerId}
+                        value={item.volunteerId}
+                        disabled={!item.selectableManually}
+                      >
+                        {item.volunteerName}
+                        {item.blockers.length
+                          ? ` — ${item.blockers.join(", ")}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+            {["open", "accepted"].includes(swap.status) && (
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    if (
+                      ok(
+                        await reviewVolunteerSwap(
+                          swap.id,
+                          true,
+                          replacements[swap.id],
+                        ),
+                        "Troca aprovada",
+                      )
+                    )
+                      router.refresh();
+                  }}
+                  disabled={
+                    !swap.replacementVolunteerId && !replacements[swap.id]
+                  }
+                >
+                  <Check className="mr-1 h-4 w-4" />
+                  Aprovar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    if (
+                      ok(
+                        await reviewVolunteerSwap(swap.id, false),
+                        "Troca recusada",
+                      )
+                    )
+                      router.refresh();
+                  }}
+                >
+                  <X className="mr-1 h-4 w-4" />
+                  Recusar troca
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2643,16 +2558,6 @@ function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="max-w-2xl space-y-4">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={settings.v2Enabled}
-            onChange={(e) =>
-              setSettings({ ...settings, v2Enabled: e.target.checked })
-            }
-          />
-          Ativar workspace V2 para igreja
-        </label>
         <label className="space-y-1 text-sm">
           Fuso horário
           <Input
@@ -2696,15 +2601,29 @@ function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
 
 export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
   useVolunteerChatRealtime();
+  const { params, navigate } = useVolunteerNavigation();
+  const area = params.get("area") ?? "scales";
+  const active = [
+    "scales",
+    "teams",
+    "volunteers",
+    "communication",
+    "reports",
+    "settings",
+  ].includes(area)
+    ? area
+    : "scales";
   const ready = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false,
   );
-  const totalUnread = data.schedules
-    .flatMap((schedule) => schedule.shifts)
-    .reduce((total, shift) => total + shift.unreadChatCount, 0);
-
+  const needsTeam = !data.departments.some(
+    (item) => item.active && item.roles?.some((role) => role.active),
+  );
+  const needsVolunteers = !data.volunteers.some(
+    (item) => item.status === "active",
+  );
   return (
     <div
       className="space-y-6"
@@ -2715,75 +2634,98 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
         <div>
           <h1 className="text-2xl font-bold md:text-3xl">Voluntariado</h1>
           <p className="text-muted-foreground">
-            Programações, equipes e pessoas. Simples e objetivo.
+            Organize quem vai servir e acompanhe cada resposta.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <PushControls mode="manager" />
-          <Badge variant={data.v2Enabled ? "default" : "secondary"}>
-            <ShieldCheck className="mr-1 h-3 w-3" />
-            {data.v2Enabled ? "V2 ativo" : "V2 em validação"}
-          </Badge>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={active === "reports" ? "secondary" : "outline"}
+            onClick={() => navigate({ area: "reports" })}
+          >
+            Relatórios
+          </Button>
+          <Button
+            variant={active === "settings" ? "secondary" : "outline"}
+            onClick={() => navigate({ area: "settings" })}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Configurações
+          </Button>
         </div>
       </div>
-      <Tabs defaultValue="programmings" className="space-y-6">
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1 p-1 bg-muted/60 rounded-xl border">
-          <TabsTrigger value="programmings" className="px-4 py-2 text-sm font-medium">
+      {(needsTeam || needsVolunteers) && (
+        <div className="rounded-xl border bg-primary/5 p-4 space-y-3">
+          <p className="font-medium">Vamos preparar sua primeira escala</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={needsTeam ? "default" : "outline"}
+              onClick={() => navigate({ area: "teams" })}
+            >
+              1. Cadastrar equipe e funções
+            </Button>
+            <Button
+              variant={!needsTeam && needsVolunteers ? "default" : "outline"}
+              onClick={() => navigate({ area: "volunteers" })}
+            >
+              2. Adicionar voluntários
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate({ area: "scales" })}
+            >
+              3. Criar primeira escala
+            </Button>
+          </div>
+        </div>
+      )}
+      <Tabs
+        value={active}
+        onValueChange={(value) => navigate({ area: value })}
+        className="space-y-5"
+      >
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:flex sm:w-fit">
+          <TabsTrigger value="scales" className="px-4 py-2">
             <CalendarDays className="mr-2 h-4 w-4" />
-            Programações
-            {totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}
+            Escalas
           </TabsTrigger>
-          <TabsTrigger value="teams" className="px-4 py-2 text-sm font-medium">
+          <TabsTrigger value="teams" className="px-4 py-2">
             <UsersRound className="mr-2 h-4 w-4" />
             Equipes
           </TabsTrigger>
-          <TabsTrigger value="volunteers" className="px-4 py-2 text-sm font-medium">
+          <TabsTrigger value="volunteers" className="px-4 py-2">
             <UserRoundCheck className="mr-2 h-4 w-4" />
             Voluntários
           </TabsTrigger>
-          <TabsTrigger value="communication" className="px-4 py-2 text-sm font-medium">
-            <Settings className="mr-2 h-4 w-4" />
-            Comunicação & Ajustes
+          <TabsTrigger value="communication" className="px-4 py-2">
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Comunicados
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="programmings" className="space-y-4">
+        <TabsContent value="scales">
           <VolunteerProgrammingWorkspace data={data} />
-          <section id="montar-escala" className="scroll-mt-4 rounded-lg border p-4">
-            <ManagerSchedules data={data} />
-          </section>
-          <details className="rounded-lg border p-4">
-            <summary className="cursor-pointer font-medium">Planejamento avançado legado</summary>
-            <div className="mt-4"><ManagerWorship data={data} /></div>
-          </details>
         </TabsContent>
         <TabsContent value="teams">
           <ManagerTeams data={data} />
         </TabsContent>
-        <TabsContent value="volunteers" className="space-y-4">
+        <TabsContent value="volunteers">
           <ManagerVolunteers data={data} />
-          <details className="rounded-lg border p-4">
-            <summary className="cursor-pointer font-medium">Mais opções</summary>
-            <div className="mt-4 space-y-6">
-              <ManagerOverview data={data} />
-              <ManagerCommunication data={data} />
-              <ManagerReports data={data} />
-              <ManagerSettings data={data} />
-            </div>
-          </details>
         </TabsContent>
-        <TabsContent value="communication" className="space-y-6">
-          <div className="flex flex-col gap-1 border-b pb-3">
-            <h2 className="text-xl font-semibold">Comunicação e Ajustes</h2>
-            <p className="text-sm text-muted-foreground">
-              Métricas do voluntariado, recados e feed, relatórios e configurações do módulo.
-            </p>
-          </div>
-          <ManagerOverview data={data} />
+        <TabsContent value="communication">
           <ManagerCommunication data={data} />
-          <ManagerReports data={data} />
-          <ManagerSettings data={data} />
         </TabsContent>
       </Tabs>
+      {active === "reports" && (
+        <section className="space-y-6" aria-label="Relatórios">
+          <ManagerOverview data={data} />
+          <ManagerReports data={data} />
+        </section>
+      )}
+      {active === "settings" && (
+        <section className="space-y-6" aria-label="Configurações">
+          <PushControls mode="manager" />
+          <ManagerSettings data={data} />
+        </section>
+      )}
     </div>
   );
 }
@@ -2798,18 +2740,25 @@ function urlBase64ToUint8Array(base64String: string) {
   );
 }
 
-function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } = {}) {
+function PushControls({
+  mode = "manager",
+}: { mode?: "manager" | "volunteer" } = {}) {
   const [pushReady, setPushReady] = useState(false);
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    void navigator.serviceWorker.getRegistration().then(async (registration) => {
-      setPushReady(Boolean(await registration?.pushManager.getSubscription()));
-    });
+    void navigator.serviceWorker
+      .getRegistration()
+      .then(async (registration) => {
+        setPushReady(
+          Boolean(await registration?.pushManager.getSubscription()),
+        );
+      });
   }, []);
   async function enablePush() {
+    if (isVolunteerPreview()) return toast.info("Ativação de avisos desabilitada nesta prévia.");
     try {
       const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!key) return toast.error("Chave Web Push não configurada");
+      if (!key) return toast.error("Os avisos neste navegador ainda não foram configurados pela administração.");
       const permission = await Notification.requestPermission();
       if (permission !== "granted")
         return toast.error("Notificações não autorizadas");
@@ -2825,7 +2774,7 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
         auth: json.keys?.auth ?? "",
         userAgent: navigator.userAgent,
       });
-      if (ok(result, "Push ativado")) setPushReady(true);
+      if (ok(result, "Notificações ativadas")) setPushReady(true);
     } catch {
       toast.error("Não foi possível ativar o push neste navegador");
     }
@@ -2840,8 +2789,11 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
     const url = `${window.location.origin}${downloadUrl}`;
     const webcal = url.replace(/^https?:\/\//, "webcal://");
     void navigator.clipboard.writeText(webcal).then(
-      () => toast.success("Link do calendário copiado! Cole no seu aplicativo de agenda."),
-      () => toast.info(`Link de assinatura: ${webcal}`)
+      () =>
+        toast.success(
+          "Link do calendário copiado! Cole no seu aplicativo de agenda.",
+        ),
+      () => toast.info(`Link de assinatura: ${webcal}`),
     );
   }
 
@@ -2849,7 +2801,11 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
     if (typeof window === "undefined") return;
     const url = `${window.location.origin}${downloadUrl}`;
     const webcal = encodeURIComponent(url.replace(/^https?:\/\//, "webcal://"));
-    window.open(`https://calendar.google.com/calendar/render?cid=${webcal}`, "_blank", "noopener,noreferrer");
+    window.open(
+      `https://calendar.google.com/calendar/render?cid=${webcal}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   return (
@@ -2867,7 +2823,11 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button size="sm" variant="outline" data-testid="volunteer-calendar-button">
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="volunteer-calendar-button"
+            >
               <CalendarDays className="mr-2 h-4 w-4" />
               Adicionar calendário
               <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
@@ -2887,7 +2847,9 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
             <Download className="h-4 w-4 text-primary shrink-0" />
             <div className="flex flex-col text-left">
               <span className="font-medium text-sm">Baixar arquivo (.ics)</span>
-              <span className="text-xs text-muted-foreground">Apple Calendar, Outlook, celular</span>
+              <span className="text-xs text-muted-foreground">
+                Apple Calendar, Outlook, celular
+              </span>
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -2897,7 +2859,9 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
             <ExternalLink className="h-4 w-4 text-blue-500 shrink-0" />
             <div className="flex flex-col text-left">
               <span className="font-medium text-sm">Google Agenda</span>
-              <span className="text-xs text-muted-foreground">Abrir e assinar no Google</span>
+              <span className="text-xs text-muted-foreground">
+                Abrir e assinar no Google
+              </span>
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -2906,8 +2870,12 @@ function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } =
           >
             <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="flex flex-col text-left">
-              <span className="font-medium text-sm">Copiar link de assinatura</span>
-              <span className="text-xs text-muted-foreground">Sincronização contínua (Webcal)</span>
+              <span className="font-medium text-sm">
+                Copiar link de assinatura
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Sincronização contínua (Webcal)
+              </span>
             </div>
           </DropdownMenuItem>
           {isManager && (
@@ -3049,7 +3017,10 @@ function PortalPreferences({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"saved" | "error" | null>(null);
   const [error, setError] = useState("");
-  const labels: { key: keyof VolunteerNotificationPreferences; label: string }[] = [
+  const labels: {
+    key: keyof VolunteerNotificationPreferences;
+    label: string;
+  }[] = [
     { key: "scheduleEnabled", label: "Escalas" },
     { key: "reminderEnabled", label: "Lembretes" },
     { key: "swapEnabled", label: "Trocas" },
@@ -3102,19 +3073,38 @@ function PortalPreferences({
           </label>
         ))}
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <Button onClick={() => void save()} disabled={saving || !dirty} aria-busy={saving}>
+          <Button
+            onClick={() => void save()}
+            disabled={saving || !dirty}
+            aria-busy={saving}
+          >
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {saving ? "Salvando..." : "Salvar preferências"}
           </Button>
-          {status === "saved" && <p className="flex items-center gap-1 text-sm text-emerald-700"><Check className="h-4 w-4" />Preferências salvas.</p>}
-          {status === "error" && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          {status === "saved" && (
+            <p className="flex items-center gap-1 text-sm text-emerald-700">
+              <Check className="h-4 w-4" />
+              Preferências salvas.
+            </p>
+          )}
+          {status === "error" && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function PortalAssignment({ shift }: { shift: VolunteerShift }) {
+function PortalAssignment({
+  shift,
+  plans,
+}: {
+  shift: VolunteerShift;
+  plans: VolunteerEventPlan[];
+}) {
   const router = useRouter();
   const assignment = shift.assignments[0];
   const [reason, setReason] = useState("");
@@ -3205,15 +3195,10 @@ function PortalAssignment({ shift }: { shift: VolunteerShift }) {
         )}
         {["proposed", "notified"].includes(assignment.status) && (
           <>
-            <Input
-              placeholder="Motivo se recusar/trocar"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => respond("confirmed")}>
                 <Check className="mr-1 h-4 w-4" />
-                Confirmar
+                Confirmar presença
               </Button>
               <Button
                 size="sm"
@@ -3221,17 +3206,15 @@ function PortalAssignment({ shift }: { shift: VolunteerShift }) {
                 onClick={() => respond("declined")}
               >
                 <X className="mr-1 h-4 w-4" />
-                Recusar
-              </Button>
-              <Button size="sm" variant="outline" onClick={swap}>
-                <RefreshCw className="mr-1 h-4 w-4" />
-                Pedir troca
+                Não posso participar
               </Button>
             </div>
           </>
         )}
         {["confirmed", "notified"].includes(assignment.status) && (
-          <div className="space-y-2">
+          <details className="rounded-lg border p-3 space-y-2">
+            <summary className="cursor-pointer text-sm font-medium">Presença no dia da atividade</summary>
+            <p className="text-xs text-muted-foreground">Check-in disponível de {fmt(shift.checkinOpensAt)} até {fmt(shift.checkinClosesAt)}.</p>
             <Input
               placeholder="Código QR opcional"
               value={qr}
@@ -3242,7 +3225,7 @@ function PortalAssignment({ shift }: { shift: VolunteerShift }) {
               <QrCode className="mr-1 h-4 w-4" />
               Check-in
             </Button>
-          </div>
+          </details>
         )}
         {assignment.status === "checked_in" && (
           <Button size="sm" onClick={checkout}>
@@ -3303,6 +3286,23 @@ function PortalAssignment({ shift }: { shift: VolunteerShift }) {
             </Button>
           </div>
         )}
+        {["notified", "confirmed"].includes(assignment.status) && (
+          <details className="rounded-lg border p-3 space-y-2">
+            <summary className="cursor-pointer text-sm font-medium">Imprevisto ou pedido de troca</summary>
+            <Input aria-label="Motivo do imprevisto" placeholder="Conte o motivo (opcional)" value={reason} onChange={(event) => setReason(event.target.value)} />
+            <Button size="sm" variant="outline" onClick={swap}><RefreshCw className="mr-1 h-4 w-4" />Pedir troca</Button>
+          </details>
+        )}
+        <details className="rounded-lg border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Roteiro e detalhes da atividade
+          </summary>
+          <div className="mt-3">
+            <PortalWorship
+              plans={plans.filter((plan) => plan.eventId === shift.eventId)}
+            />
+          </div>
+        </details>
         <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
       </CardContent>
     </Card>
@@ -3316,7 +3316,9 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
         <Card key={plan.eventId}>
           <CardHeader>
             <CardTitle>{plan.eventTitle}</CardTitle>
-            <CardDescription>{fmt(plan.startsAt)} · roteiro do culto</CardDescription>
+            <CardDescription>
+              {fmt(plan.startsAt)} · roteiro do culto
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div>
@@ -3334,7 +3336,9 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
                 ))}
               </ol>
               {plan.timeline.length === 0 && (
-                <p className="text-sm text-muted-foreground">Roteiro ainda não informado.</p>
+                <p className="text-sm text-muted-foreground">
+                  Roteiro ainda não informado.
+                </p>
               )}
             </div>
           </CardContent>
@@ -3346,44 +3350,77 @@ function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
 
 export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
   const router = useRouter();
+  const { params, navigate } = useVolunteerNavigation();
+  const requested = params.get("area") ?? "schedule";
+  const active = [
+    "schedule",
+    "availability",
+    "updates",
+    "recognition",
+    "settings",
+  ].includes(requested)
+    ? requested
+    : "schedule";
+  const upcoming = [...data.upcomingAssignments].sort((a, b) =>
+    a.startsAt.localeCompare(b.startsAt),
+  );
+  const awaiting = upcoming.filter((shift) =>
+    ["proposed", "notified"].includes(shift.assignments[0]?.status),
+  );
   useVolunteerChatRealtime();
-  const totalUnread = data.upcomingAssignments.reduce((total, shift) => total + shift.unreadChatCount, 0);
+  const totalUnread = data.upcomingAssignments.reduce(
+    (total, shift) => total + shift.unreadChatCount,
+    0,
+  );
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Minha escala</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Minhas escalas</h1>
           <p className="text-muted-foreground">
             Olá, {data.volunteer.name}. Tudo para servir bem.
           </p>
         </div>
-        <PushControls mode="volunteer" />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => navigate({ area: "recognition" })}
+          >
+            Meu histórico
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate({ area: "settings" })}
+          >
+            Preferências de avisos
+          </Button>
+        </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric
-          title="Escalas"
-          value={data.volunteer.assignments}
-          icon={CalendarDays}
-        />
-        <Metric
-          title="Presenças"
-          value={data.volunteer.checkins}
-          icon={CheckCircle2}
-        />
-        <Metric
-          title="Equipes"
-          value={data.volunteer.departmentNames.length}
-          icon={UsersRound}
-        />
-      </div>
-      <Tabs defaultValue="schedule">
-        <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="schedule">Escalas{totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}</TabsTrigger>
+      {active === "schedule" && upcoming[0] && (
+        <div className="rounded-xl border bg-primary/5 p-4">
+          <p className="text-sm text-muted-foreground">
+            Seu próximo compromisso
+          </p>
+          <p className="mt-1 text-lg font-semibold">{upcoming[0].eventTitle}</p>
+          <p className="text-sm">
+            {fmt(upcoming[0].startsAt)} · {upcoming[0].departmentName} ·{" "}
+            {upcoming[0].roleName}
+          </p>
+          {awaiting.length > 0 && (
+            <p className="mt-2 text-sm font-medium">
+              Você tem {awaiting.length} escala(s) aguardando resposta.
+            </p>
+          )}
+        </div>
+      )}
+      <Tabs value={active} onValueChange={(value) => navigate({ area: value })}>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          <TabsTrigger value="schedule">
+            Minhas escalas
+            {totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="availability">Disponibilidade</TabsTrigger>
-          <TabsTrigger value="worship">Roteiro do culto</TabsTrigger>
-          <TabsTrigger value="updates">Atualizações</TabsTrigger>
-          <TabsTrigger value="recognition">Reconhecimento</TabsTrigger>
-          <TabsTrigger value="settings">Avisos</TabsTrigger>
+          <TabsTrigger value="updates">Comunicados</TabsTrigger>
         </TabsList>
         <TabsContent value="schedule" className="grid gap-4 lg:grid-cols-2">
           {data.upcomingAssignments.length === 0 && (
@@ -3391,8 +3428,15 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
               Nenhuma escala próxima.
             </p>
           )}
-          {data.upcomingAssignments.map((shift) => (
-            <PortalAssignment key={shift.id} shift={shift} />
+          {[
+            ...awaiting,
+            ...upcoming.filter((shift) => !awaiting.includes(shift)),
+          ].map((shift) => (
+            <PortalAssignment
+              key={shift.id}
+              shift={shift}
+              plans={data.eventPlans}
+            />
           ))}
           {data.swaps
             .filter(
@@ -3435,7 +3479,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
                           router.refresh();
                       }}
                     >
-                      Recusar
+                      Não posso participar
                     </Button>
                   </div>
                 </CardContent>
@@ -3444,9 +3488,6 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
         </TabsContent>
         <TabsContent value="availability">
           <PortalAvailability data={data} />
-        </TabsContent>
-        <TabsContent value="worship">
-          <PortalWorship plans={data.eventPlans} />
         </TabsContent>
         <TabsContent value="updates" className="space-y-3">
           {data.feedPosts.map((post) => (
@@ -3463,7 +3504,25 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
             </Card>
           ))}
         </TabsContent>
-        <TabsContent value="recognition" className="grid gap-3 md:grid-cols-2">
+        <TabsContent value="recognition" className="space-y-4">
+          {" "}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Metric
+              title="Escalas"
+              value={data.volunteer.assignments}
+              icon={CalendarDays}
+            />
+            <Metric
+              title="Presenças"
+              value={data.volunteer.checkins}
+              icon={CheckCircle2}
+            />
+            <Metric
+              title="Equipes"
+              value={data.volunteer.departmentNames.length}
+              icon={UsersRound}
+            />
+          </div>
           {data.recognitions.length === 0 && (
             <p className="text-sm text-muted-foreground">
               Seus agradecimentos aparecerão aqui.
@@ -3481,6 +3540,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
           ))}
         </TabsContent>
         <TabsContent value="settings">
+          <PushControls mode="volunteer" />
           <PortalPreferences preferences={data.notificationPreferences} />
         </TabsContent>
       </Tabs>

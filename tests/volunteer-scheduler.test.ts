@@ -4,6 +4,7 @@ import {
   rankVolunteersForShift,
   scoreVolunteerForShift,
   selectVolunteersForShift,
+  suggestVacantPlaces,
   withManualSelectionRules,
   type SchedulerCandidateInput,
   type SchedulerShiftInput,
@@ -96,7 +97,7 @@ test("escolha manual aceita equipe ou função diferente, mas bloqueia conflito"
   assert.equal(mismatch.selectableManually, true);
   assert.deepEqual(mismatch.warnings.sort(), [
     "Função incompatível",
-    "Não pertence ao departamento",
+    "Não pertence à equipe",
   ]);
   assert.deepEqual(mismatch.blockers, []);
 
@@ -199,4 +200,24 @@ test("resultado é determinístico mesmo com empate", () => {
   );
   assert.deepEqual(first, ["1", "2"]);
   assert.deepEqual(second, first);
+});
+
+test("sugestões preservam escolhas, recusas e remoções manuais", () => {
+  const people = ["chosen", "refused", "removed", "available"].map((id) => candidate({ id, name: id }));
+  const assignments = [
+    { volunteerId: "chosen", status: "proposed", locked: false },
+    { volunteerId: "refused", status: "declined", locked: false },
+    { volunteerId: "removed", status: "cancelled", locked: true },
+  ];
+  const before = structuredClone(assignments);
+  const result = suggestVacantPlaces(people, { ...shift, requiredVolunteers: 3 }, assignments);
+  assert.deepEqual(result.selected.map((item) => item.volunteerId), ["available"]);
+  assert.equal(result.shortages, 1);
+  assert.deepEqual(assignments, before);
+});
+
+test("escala preenchida não recebe novas sugestões", () => {
+  const result = suggestVacantPlaces([candidate()], shift, [{ volunteerId: "someone-else", status: "confirmed", locked: true }]);
+  assert.equal(result.selected.length, 0);
+  assert.equal(result.shortages, 0);
 });

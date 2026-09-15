@@ -11,6 +11,7 @@ import { afterResponse } from "@/lib/performance/after-response"
 import { rankVolunteersForShift, withManualSelectionRules, type SchedulerCandidateInput } from "@/lib/volunteers/scheduler"
 import { requireMinistryPermission } from "./access"
 import { slugifyMinistry, normalizeMinistrySlug } from "./slug"
+import { toUserFriendlyError } from "@/lib/errors/user-friendly-error"
 
 export type ActionResult = { ok: boolean; id?: string; error?: string; data?: unknown }
 
@@ -19,7 +20,8 @@ const optionalUuid = z.union([uuid, z.literal(""), z.null()]).optional().transfo
 
 function result(error: unknown): ActionResult {
   if (error instanceof z.ZodError) return { ok: false, error: error.issues[0]?.message ?? "Dados inválidos" }
-  return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  console.error("[ministries/actions error]:", error)
+  return { ok: false, error: toUserFriendlyError(error, "Erro inesperado") }
 }
 
 function refresh(ministryId: string, slug?: string | null) {
@@ -829,17 +831,17 @@ export async function publishMinistryScale(input: { ministryId: string; eventId:
         if (recipient.whatsapp_enabled && recipient.phone) await tx`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
         `
         if (recipient.email_enabled && recipient.email) await tx`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
           values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala publicada', ${content})
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
         `
         if (recipient.push_enabled) await tx`
           insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content, event_kind, payload)
           values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule', ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null do nothing
+          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
         `
       }
       await tx`

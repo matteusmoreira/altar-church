@@ -4,27 +4,24 @@ import { readE2EAccounts } from "./helpers/accounts"
 
 const e2e = readE2EAccounts()
 
-test("admin usa três áreas e abre assistente de programação", async ({ page }) => {
+test("admin usa quatro áreas e abre assistente de escala", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
   await page.goto("/voluntariado", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await page.locator('[data-testid="volunteer-manager"][data-ready="true"]').waitFor()
 
   await expect(page.getByRole("heading", { name: "Voluntariado" })).toBeVisible()
-  for (const tab of ["Programações", "Equipes", "Voluntários"]) {
+  for (const tab of ["Escalas", "Equipes", "Voluntários", "Comunicados"]) {
     await expect(page.getByRole("tab", { name: tab })).toBeVisible()
   }
-  await expect(page.getByText("Todas as programações")).toBeVisible()
-  await expect(page.getByRole("heading", { name: "Montar escala" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Sugerir para vagas vazias" }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: "Escolher pessoas" }).first()).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Escalas", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Lista", exact: true })).toBeVisible()
   await expect(page.getByText(/\bproposed\b/)).toHaveCount(0)
   await expect(page.getByText(/\d+ pts/)).toHaveCount(0)
-  await expect(page.getByRole("button", { name: "Excluir" }).first()).toBeVisible()
 
-  await page.getByRole("button", { name: "Nova programação" }).click()
+  await page.getByRole("button", { name: "Nova escala" }).click()
   await expect(page.locator('[data-testid="programming-wizard"]')).toBeVisible()
-  await expect(page.getByText("Etapa 1 de 4 · Dados")).toBeVisible()
+  await expect(page.getByText("Etapa 1 de 3 · Atividade e data")).toBeVisible()
   await expect(page.getByText("Nenhum aviso será enviado antes da publicação")).toHaveCount(0)
 })
 

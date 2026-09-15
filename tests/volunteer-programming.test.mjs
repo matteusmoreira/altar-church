@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildProgrammingOccurrenceDates } from "../src/lib/volunteers/recurrence.ts";
 
-const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\s+/g, " ");
 
 test("weekly programming creates Mondays and Sundays inside horizon", () => {
   assert.deepEqual(
@@ -45,11 +45,11 @@ test("wizard requires teams and keeps publishing explicit", () => {
   assert.match(actions, /positions: z\.array\(positionSchema\)\.min\(1/);
   assert.match(actions, /prepareVolunteerProgrammingMonth/);
   assert.match(actions, /publishVolunteerProgrammingEvents/);
-  assert.match(workspace, /Etapa \{step\} de 4/);
-  assert.match(workspace, /Depois escolherá as pessoas em cada data/);
+  assert.match(workspace, /Etapa \{step\} de 3/);
+  assert.match(workspace, /Depois, peça sugestões e revise as pessoas de cada data/);
   assert.match(workspace, /Nenhum aviso será enviado antes da publicação/);
   assert.match(actions, /Cada função deve aparecer apenas uma vez/);
-  assert.match(workspace, /Programações/);
+  assert.match(workspace, /Nova escala/);
 });
 
 test("manual schedule UI hides technical score and publication matches partial outbox index", () => {
@@ -62,7 +62,7 @@ test("manual schedule UI hides technical score and publication matches partial o
   assert.equal((publishBlock.match(/where assignment_id is not null/g) ?? []).length, 3);
   assert.match(publishBlock, /Preencha todas as vagas antes de publicar/);
   assert.match(workspace, /Escolher pessoas/);
-  assert.match(workspace, /Sugerir para vagas vazias/);
+  assert.match(read("src/app/(dashboard)/voluntariado/components/escala-culto-drawer.tsx"), /Sugerir pessoas/);
   assert.match(workspace, /Rascunho — ainda não avisado/);
   assert.doesNotMatch(workspace, /Candidatos explicados/);
   assert.doesNotMatch(workspace, /\$\{assignment\.score\} pts/);
@@ -85,6 +85,6 @@ test("only admins delete programming, team and volunteer while preserving histor
   );
   assert.doesNotMatch(deleteVolunteerBlock, /update public\.people/);
   assert.match(workspace, /Cadastro em Pessoas e histórico serão preservados/);
-  assert.match(programmingWorkspace, /Todas as programações/);
+  assert.match(programmingWorkspace, /Atividades recorrentes e modelos de programação/);
   assert.match(programmingWorkspace, /data\.canAdminDelete/);
 });

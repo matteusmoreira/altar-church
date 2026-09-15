@@ -95,6 +95,7 @@ export async function getVolunteerV2DashboardExtras(
   companyId: string,
   departmentScope: string[] = [],
   allDepartments = true,
+  period: string | null = null,
 ): Promise<
   Pick<
     VolunteerDashboardData,
@@ -131,7 +132,7 @@ export async function getVolunteerV2DashboardExtras(
         event.volunteer_schedule_published_at, setlist.id as setlist_id,
         setlist.title as setlist_title, setlist.notes as setlist_notes
       from public.events event left join public.volunteer_event_setlists setlist on setlist.event_id = event.id
-      where event.company_id = ${companyId} and event.deleted_at is null and event.starts_at >= now() - interval '1 day'
+      where event.company_id = ${companyId} and event.deleted_at is null and event.starts_at >= coalesce(${period}::date, now() - interval '1 day')
         and (${allDepartments} or exists(select 1 from public.volunteer_shifts shift
           where shift.event_id = event.id and shift.department_id = any(${departmentScope}::uuid[])))
       order by event.starts_at limit 50
@@ -140,11 +141,11 @@ export async function getVolunteerV2DashboardExtras(
       select item.*, setlist.event_id from public.volunteer_event_setlist_items item
       join public.volunteer_event_setlists setlist on setlist.id = item.setlist_id
       join public.events event on event.id = setlist.event_id
-      where item.company_id = ${companyId} and event.starts_at >= now() - interval '1 day' order by item.sort_order
+      where item.company_id = ${companyId} and event.starts_at >= coalesce(${period}::date, now() - interval '1 day') order by item.sort_order
     `,
     sql<Record<string, unknown>[]>`
       select * from public.volunteer_event_timeline_items
-      where company_id = ${companyId} and planned_at >= now() - interval '1 day' order by event_id, sort_order
+      where company_id = ${companyId} and planned_at >= coalesce(${period}::date, now() - interval '1 day') order by event_id, sort_order
     `,
     sql<Record<string, unknown>[]>`
       select position.*, department.name as department_name
@@ -153,7 +154,7 @@ export async function getVolunteerV2DashboardExtras(
       join public.events event on event.id = position.event_id
       where position.company_id = ${companyId}
         and event.deleted_at is null
-        and event.starts_at >= now() - interval '1 day'
+        and event.starts_at >= coalesce(${period}::date, now() - interval '1 day')
       order by position.event_id, position.sort_order
     `,
     sql<Record<string, unknown>[]>`

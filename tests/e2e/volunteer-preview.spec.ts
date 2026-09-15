@@ -1,0 +1,97 @@
+import { expect, test } from "@playwright/test"
+
+test.beforeEach(async ({ page }) => {
+  page.on("pageerror", (error) => { throw error })
+  await page.goto("/dev/voluntariado?month=2026-09")
+  await expect(page.getByRole("heading", { name: "Voluntariado", exact: true })).toBeVisible()
+})
+
+test("áreas e período sobrevivem à atualização e ao botão voltar", async ({ page }) => {
+  await expect(page.getByRole("tab")).toHaveCount(4)
+  await page.getByRole("tab", { name: "Equipes", exact: true }).click()
+  await expect(page).toHaveURL(/area=teams/)
+  await page.reload()
+  await expect(page.getByRole("tab", { name: "Equipes", exact: true })).toHaveAttribute("aria-selected", "true")
+  await page.getByRole("tab", { name: "Escalas", exact: true }).click()
+  await page.getByRole("button", { name: "Próximo mês" }).click()
+  await expect(page).toHaveURL(/month=2026-10/)
+  await expect(page.getByText("Nenhuma atividade neste mês.")).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole("heading", { name: "Culto de domingo", exact: true })).toBeVisible()
+})
+
+test("detalhe único da escala, candidatos e prévia sem mutação", async ({ page }) => {
+  let mutations = 0
+  page.on("request", (request) => { if (request.method() === "POST") mutations++ })
+  await page.getByRole("button", { name: "Completar equipe", exact: true }).click()
+  await expect(page).toHaveURL(/scale=event-1/)
+  await expect(page.getByRole("button", { name: "Preencha todas as vagas antes de publicar" })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole("button", { name: "Sugerir pessoas", exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Sugerir pessoas", exact: true }).click()
+  await expect(page.getByText("Esta é uma prévia com dados fictícios. Alterações e envios estão desabilitados.").first()).toBeVisible()
+  await page.getByRole("button", { name: "Escolher pessoas", exact: true }).click()
+  await expect(page.getByRole("dialog").last().getByText("Ana Oliveira")).toBeVisible()
+  expect(mutations).toBe(0)
+})
+
+test("atividade existente abre planejamento sem criar outro evento", async ({ page }) => {
+  await page.getByRole("button", { name: "Definir equipe", exact: true }).click()
+  await expect(page).toHaveURL(/scale=event-existing/)
+  await expect(page.getByRole("heading", { name: "Encontro de líderes", exact: true })).toBeVisible()
+  await expect(page.getByText("Equipes e funções necessárias", { exact: true })).toBeVisible()
+})
+
+test("escala publicada distingue fila, resposta, recusa e troca", async ({ page }) => {
+  await page.getByRole("button", { name: "Revisar trocas", exact: true }).click()
+  await expect(page.getByText(/1 aguardando resposta · 1 confirmações/)).toBeVisible()
+  await expect(page.getByText(/na fila · .*enviados · .*entregues/)).toBeVisible()
+  await expect(page.getByText("Recusas recebidas", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Escolher substituto", exact: true })).toBeVisible()
+  await expect(page.getByText(/voluntários já foram avisados/)).toHaveCount(0)
+})
+
+test("assistente compacto e repetição opcional", async ({ page }) => {
+  await page.getByRole("button", { name: "Nova escala", exact: true }).click()
+  const wizard = page.getByTestId("programming-wizard")
+  await expect(wizard.getByText("Etapa 1 de 3 · Atividade e data")).toBeVisible()
+  await wizard.getByPlaceholder("Ex.: Culto domingo 18h").fill("Culto de teste")
+  await wizard.locator('input[type="datetime-local"]').fill("2026-09-30T18:00")
+  await wizard.getByRole("button", { name: "Continuar", exact: true }).click()
+  await expect(wizard.getByText("Etapa 2 de 3 · Equipes e vagas")).toBeVisible()
+  await wizard.getByRole("button", { name: "Função", exact: true }).click()
+  await wizard.getByRole("button", { name: "Continuar", exact: true }).click()
+  await expect(wizard.getByRole("button", { name: "Salvar e montar escala", exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test("portal prioriza confirmação e mantém roteiro na escala", async ({ page }, testInfo) => {
+  await page.getByRole("link", { name: "Visão do voluntário" }).click()
+  await expect(page.getByRole("tab")).toHaveCount(3)
+  await expect(page.getByText("Seu próximo compromisso", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Confirmar presença", exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Não posso participar", exact: true })).toBeVisible()
+  await expect(page.getByText("Aguardando resposta", { exact: true })).toBeVisible()
+  await expect(page.getByText("notified", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Check-in", exact: true })).toBeHidden()
+  await page.getByText("Presença no dia da atividade", { exact: true }).click()
+  await expect(page.getByRole("button", { name: "Check-in", exact: true })).toBeVisible()
+  await page.getByText("Presença no dia da atividade", { exact: true }).click()
+  await page.getByText("Roteiro e detalhes da atividade", { exact: true }).click()
+  await expect(page.getByText(/Boas-vindas/)).toBeVisible()
+  await page.getByRole("tab", { name: "Disponibilidade", exact: true }).click()
+  await expect(page).toHaveURL(/area=availability/)
+  await page.reload()
+  await expect(page.getByRole("tab", { name: "Disponibilidade", exact: true })).toHaveAttribute("aria-selected", "true")
+  await page.getByRole("tab", { name: "Minhas escalas", exact: true }).click()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath("portal.png"), fullPage: true })
+})
+
+test("primeiro acesso orienta o cadastro e não transborda a tela", async ({ page }, testInfo) => {
+  await page.getByRole("link", { name: "Primeiro acesso" }).click()
+  await expect(page.getByText("Vamos preparar sua primeira escala", { exact: true })).toBeVisible()
+  for (const name of ["1. Cadastrar equipe e funções", "2. Adicionar voluntários", "3. Criar primeira escala"]) await expect(page.getByRole("button", { name, exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath("primeiro-acesso.png"), fullPage: true })
+})

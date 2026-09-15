@@ -56,6 +56,8 @@ function toVolunteer(row: Record<string, unknown>): VolunteerListItem {
 
 function toDepartment(row: Record<string, unknown>): VolunteerDepartment {
   return {
+    ministryId: row.ministry_id ? String(row.ministry_id) : null,
+    ministryName: row.ministry_name ? String(row.ministry_name) : null,
     id: String(row.id),
     name: String(row.name),
     description: String(row.description ?? ""),
@@ -78,8 +80,9 @@ function toFeedPost(row: Record<string, unknown>): VolunteerFeedPost {
   }
 }
 
-export async function getVolunteerDashboardData(companyIdInput?: string | null): Promise<VolunteerDashboardData> {
+export async function getVolunteerDashboardData(companyIdInput?: string | null, monthInput?: string): Promise<VolunteerDashboardData> {
   const resolvedCompanyId = await companyId(companyIdInput)
+  const period = monthInput && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthInput) ? `${monthInput}-01` : null
   await requirePermission("volunteers.view", resolvedCompanyId)
   const sql = getSql()
   const user = await getCurrentUser()
@@ -115,7 +118,10 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       order by person.full_name
     `,
     sql<Record<string, unknown>[]>`
-      select id, name, description, manager_profile_id, is_active
+      select id, name, description, manager_profile_id, is_active, ministry_id,
+             (select ministry.name from public.ministries ministry
+               where ministry.id = volunteer_departments.ministry_id
+                 and ministry.company_id = ${resolvedCompanyId} and ministry.deleted_at is null) as ministry_name
       from public.volunteer_departments
       where company_id = ${resolvedCompanyId} and deleted_at is null
         and (${allDepartments} or id = any(${departmentScope}::uuid[]))
@@ -142,7 +148,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     sql<Record<string, unknown>[]>`
       select id, month, status, published_at
       from public.volunteer_schedules
-      where company_id = ${resolvedCompanyId} and month >= date_trunc('month', now())::date - interval '1 month'
+      where company_id = ${resolvedCompanyId} and month >= coalesce(${period}::date, date_trunc('month', now())::date - interval '1 month')
         and (${allDepartments} or exists(select 1 from public.volunteer_shifts scope_shift
           where scope_shift.schedule_id = volunteer_schedules.id and scope_shift.department_id = any(${departmentScope}::uuid[])))
       order by month
@@ -150,6 +156,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
     `,
     sql<Record<string, unknown>[]>`
       select shift.id, shift.schedule_id, shift.event_id, coalesce(event.title, 'Escala avulsa') as event_title,
+             coalesce(event.volunteer_schedule_published_at, schedule.published_at) as schedule_published_at,
              shift.department_id, department.name as department_name, shift.role_name, shift.required_volunteers,
              shift.starts_at, shift.ends_at, shift.checkin_opens_at, shift.checkin_closes_at, shift.instructions,
              (select count(*)::int
@@ -163,14 +170,17 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       join public.volunteer_schedules schedule on schedule.id = shift.schedule_id
       join public.volunteer_departments department on department.id = shift.department_id
       left join public.events event on event.id = shift.event_id
-      where shift.company_id = ${resolvedCompanyId} and schedule.month >= date_trunc('month', now())::date - interval '1 month'
+      where shift.company_id = ${resolvedCompanyId} and schedule.month >= coalesce(${period}::date, date_trunc('month', now())::date - interval '1 month')
         and (${allDepartments} or shift.department_id = any(${departmentScope}::uuid[]))
       order by shift.starts_at, department.name, shift.role_name
     `,
     sql<Record<string, unknown>[]>`
       select assignment.id, assignment.shift_id, assignment.volunteer_id, person.full_name as volunteer_name,
              assignment.status, assignment.checked_in_at, assignment.checked_out_at, assignment.score,
-             assignment.score_reasons, assignment.is_locked, assignment.decline_reason
+             assignment.score_reasons, assignment.is_locked, assignment.decline_reason,
+             coalesce((select jsonb_agg(jsonb_build_object('channel', delivery.channel, 'status', delivery.status))
+               from public.volunteer_delivery_outbox delivery
+               where delivery.assignment_id = assignment.id and delivery.volunteer_id = assignment.volunteer_id and delivery.company_id = ${resolvedCompanyId}), '[]'::jsonb) as deliveries
       from public.volunteer_assignments assignment
       join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
       join public.people person on person.id = volunteer.person_id
@@ -258,8 +268,8 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       where event.company_id = ${resolvedCompanyId}
         and event.programming_id is not null
         and event.deleted_at is null
-        and event.starts_at >= date_trunc('month', now()) - interval '1 month'
-        and event.starts_at <= now() + interval '100 days'
+        and event.starts_at >= coalesce(${period}::date, date_trunc('month', now()) - interval '1 month')
+        and event.starts_at <= coalesce(${period}::date + interval '1 month', now() + interval '100 days')
         and (
           ${allDepartments}
           or exists (
@@ -336,6 +346,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
       checkedOutAt: iso(row.checked_out_at as DateValue),
       score: row.score === null || row.score === undefined ? null : Number(row.score),
       scoreReasons: Array.isArray(row.score_reasons) ? row.score_reasons as VolunteerAssignment["scoreReasons"] : [],
+      deliveries: Array.isArray(row.deliveries) ? row.deliveries as NonNullable<VolunteerAssignment["deliveries"]> : [],
       locked: Boolean(row.is_locked),
       declineReason: row.decline_reason ? String(row.decline_reason) : null,
     })
@@ -345,6 +356,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   const shiftsBySchedule = new Map<string, VolunteerShift[]>()
   for (const row of shiftRows) {
     const shift: VolunteerShift = {
+      schedulePublishedAt: iso(row.schedule_published_at as DateValue),
       id: String(row.id),
       eventId: row.event_id ? String(row.event_id) : null,
       eventTitle: String(row.event_title),
@@ -381,7 +393,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null):
   }
 
   const metrics = metricRows[0] ?? {}
-  const extras = await getVolunteerV2DashboardExtras(resolvedCompanyId, departmentScope, allDepartments)
+  const extras = await getVolunteerV2DashboardExtras(resolvedCompanyId, departmentScope, allDepartments, period)
   const occurrencesByProgramming = new Map<string, VolunteerProgramming["occurrences"]>()
   for (const row of occurrenceRows) {
     const programmingId = String(row.programming_id)
@@ -525,7 +537,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
       join public.volunteer_departments department on department.id = shift.department_id
       left join public.events event on event.id = shift.event_id
        where assignment.volunteer_id = ${volunteerId}
-        and assignment.status not in ('declined', 'cancelled')
+        and assignment.status not in ('proposed', 'declined', 'cancelled')
         and shift.starts_at >= now() - interval '1 day'
       order by shift.starts_at
       limit 40

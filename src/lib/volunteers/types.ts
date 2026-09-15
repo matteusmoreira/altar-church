@@ -10,6 +10,8 @@ export type VolunteerRecurrenceFrequency = "none" | "weekly" | "monthly"
 export type VolunteerProgrammingStatus = "no_team" | "draft" | "incomplete" | "ready" | "published"
 
 export interface VolunteerDepartment {
+  ministryId?: string | null
+  ministryName?: string | null
   id: string
   name: string
   description: string
@@ -140,6 +142,7 @@ export interface VolunteerAssignment {
   score: number | null
   scoreReasons: SchedulingReason[]
   locked: boolean
+  deliveries?: { channel: string; status: string }[]
   declineReason: string | null
 }
 
@@ -163,6 +166,7 @@ export interface SchedulingCandidate {
 }
 
 export interface VolunteerShift {
+  schedulePublishedAt?: string | null
   id: string
   eventId: string | null
   eventTitle: string
