@@ -1747,6 +1747,148 @@ export async function saveSupplier(formData: FormData): Promise<ActionResult> {
   }
 }
 
+export async function toggleRevenueReceived(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Lançamento inválido")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.revenues
+      set received = not coalesce(received, false),
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Receita não encontrada")
+    await audit("revenue.toggle_received", "revenues", rows[0].id, companyId)
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function toggleExpensePaid(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Lançamento inválido")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.expenses
+      set paid = not coalesce(paid, false),
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Despesa não encontrada")
+    await audit("expense.toggle_paid", "expenses", rows[0].id, companyId)
+    refresh(["/financeiro", "/relatorios", "/dashboard"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteFinancialCategory(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Categoria inválida")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.financial_categories
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Categoria não encontrada")
+    await audit("financial_category.delete", "financial_categories", rows[0].id, companyId)
+    refresh(["/financeiro"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteCostCenter(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Centro de custo inválido")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.cost_centers
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Centro de custo não encontrado")
+    await audit("cost_center.delete", "cost_centers", rows[0].id, companyId)
+    refresh(["/financeiro"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteBankAccount(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Conta bancária inválida")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.bank_accounts
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Conta bancária não encontrada")
+    await audit("bank_account.delete", "bank_accounts", rows[0].id, companyId)
+    refresh(["/financeiro"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteSupplier(formData: FormData): Promise<ActionResult> {
+  try {
+    validateActionForm(formData, deleteEntitySchema)
+    const id = uuid(formData, "id")
+    if (!id) throw new Error("Fornecedor inválido")
+    const { user, companyId } = await actionContext(formData, "finance.edit")
+    const rows = await getSql()<{ id: string }[]>`
+      update public.suppliers
+      set deleted_at = now(), updated_by = ${user.id}, updated_at = now()
+      where id = ${id}
+        and company_id = ${companyId}
+        and deleted_at is null
+      returning id
+    `
+    if (!rows[0]?.id) throw new Error("Fornecedor não encontrado")
+    await audit("supplier.delete", "suppliers", rows[0].id, companyId)
+    refresh(["/financeiro"])
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function saveDonation(formData: FormData): Promise<ActionResult> {
   try {
     validateActionForm(formData, donationSchema)

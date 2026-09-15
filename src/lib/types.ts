@@ -766,6 +766,7 @@ export interface Revenue {
   paymentDate: string
   received: boolean
   notes: string
+  receiptFileId?: string | null
   createdAt: string
 }
 
@@ -785,6 +786,7 @@ export interface Expense {
   paymentDate: string
   paid: boolean
   notes: string
+  receiptFileId?: string | null
   createdAt: string
 }
 

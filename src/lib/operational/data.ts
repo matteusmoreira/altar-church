@@ -286,6 +286,7 @@ interface RevenueRow {
   payment_date: Date | string
   received: boolean
   notes: string
+  receipt_file_id?: string | null
   created_at: Date | string
 }
 
@@ -305,6 +306,7 @@ interface ExpenseRow {
   payment_date: Date | string
   paid: boolean
   notes: string
+  receipt_file_id?: string | null
   created_at: Date | string
 }
 
@@ -670,6 +672,7 @@ function toRevenue(row: RevenueRow): Revenue {
     paymentDate: toDate(row.payment_date),
     received: row.received,
     notes: row.notes,
+    receiptFileId: row.receipt_file_id ?? null,
     createdAt: toIso(row.created_at) ?? "",
   }
 }
@@ -691,6 +694,7 @@ function toExpense(row: ExpenseRow): Expense {
     paymentDate: toDate(row.payment_date),
     paid: row.paid,
     notes: row.notes,
+    receiptFileId: row.receipt_file_id ?? null,
     createdAt: toIso(row.created_at) ?? "",
   }
 }
