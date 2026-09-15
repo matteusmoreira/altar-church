@@ -2,8 +2,11 @@ import { MembersClient } from "./members-client"
 import {
   getPeopleDashboardData,
   getPersonFormOptions,
+  listActivitiesWithCounts,
+  listJourneysWithSteps,
   listPeople,
 } from "@/lib/people/data"
+import { listFollowUpResponsibleOptions, listFollowUpTriggers } from "@/lib/people/follow-up"
 import { listCrmStages } from "@/lib/operational/data"
 import type { PeopleListFilters, PersonStatus, PersonType } from "@/lib/people/types"
 import type { CRMStage } from "@/lib/types"
@@ -63,11 +66,24 @@ export default async function MembersPage({
     pageSize: 20,
   }
 
-  const [peopleResult, dashboard, formOptions, crmStages] = await Promise.all([
+  const [
+    peopleResult,
+    dashboard,
+    formOptions,
+    crmStages,
+    activitiesWithCounts,
+    journeysWithSteps,
+    followUpTriggers,
+    responsibleOptions,
+  ] = await Promise.all([
     listPeople(filters),
     getPeopleDashboardData(),
     getPersonFormOptions(),
     listCrmStages().catch((): CRMStage[] => []),
+    listActivitiesWithCounts().catch(() => []),
+    listJourneysWithSteps().catch(() => []),
+    listFollowUpTriggers().catch(() => []),
+    listFollowUpResponsibleOptions().catch(() => []),
   ])
 
   return (
@@ -78,6 +94,10 @@ export default async function MembersPage({
       filters={filters}
       formOptions={formOptions}
       peopleResult={peopleResult}
+      initialActivities={activitiesWithCounts}
+      initialJourneys={journeysWithSteps}
+      initialTriggers={followUpTriggers}
+      responsibleOptions={responsibleOptions}
     />
   )
 }

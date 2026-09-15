@@ -6,16 +6,21 @@ import type {
   BirthdayPerson,
   DuplicateCandidateItem,
   DuplicateCandidateStatus,
+  MemberJourneyStep,
+  MemberJourneyWithSteps,
   PeopleDashboardData,
   PeopleListFilters,
   PeopleListResult,
+  PersonActivityWithCount,
   PersonDetail,
+  PersonEnrolledJourney,
   PersonFormOptions,
   PersonAccessRole,
   PersonGender,
   PersonListItem,
   PersonStatus,
   PersonType,
+  VisitorMetrics,
 } from "./types"
 
 interface PersonRow {
@@ -94,6 +99,7 @@ interface PersonJourneyStepRow {
   step_name: string
   description: string
   sort_order: number
+  estimated_days?: number
   completed_at: Date | string | null
   notes: string
 }
@@ -248,6 +254,7 @@ function toJourneyStep(row: PersonJourneyStepRow) {
     stepName: row.step_name,
     description: row.description,
     sortOrder: row.sort_order,
+    estimatedDays: typeof row.estimated_days === "number" ? row.estimated_days : 7,
     completedAt: row.completed_at ? toIso(row.completed_at) : null,
     notes: row.notes,
   }
@@ -339,7 +346,17 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
   await requirePermission("members.view", companyId)
 
   const sql = getSql()
-  const [peopleRows, customFieldRows, activityRows, journeyStepRows, timeline, followUpTasks] = await Promise.all([
+  const [
+    peopleRows,
+    customFieldRows,
+    activityRows,
+    journeyStepRows,
+    enrollmentRows,
+    availableJourneysRows,
+    availableActivitiesRows,
+    timeline,
+    followUpTasks,
+  ] = await Promise.all([
     sql<PersonDetailRow[]>`
       select
         p.id,
@@ -435,6 +452,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         mjs.name as step_name,
         mjs.description,
         mjs.sort_order,
+        coalesce(mjs.estimated_days, 7) as estimated_days,
         pjp.completed_at,
         coalesce(pjp.notes, '') as notes
       from public.member_journey_steps mjs
@@ -450,6 +468,46 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         and mj.is_active = true
       order by mj.sort_order, mj.name, mjs.sort_order
     `,
+    sql<{
+      enrollment_id: string
+      journey_id: string
+      journey_name: string
+      description: string
+      status: "in_progress" | "completed" | "dropped"
+      started_at: Date | string
+      completed_at: Date | string | null
+    }[]>`
+      select
+        pje.id as enrollment_id,
+        mj.id as journey_id,
+        mj.name as journey_name,
+        coalesce(mj.description, '') as description,
+        pje.status,
+        pje.started_at,
+        pje.completed_at
+      from public.person_journey_enrollments pje
+      inner join public.member_journeys mj on mj.id = pje.journey_id
+      where pje.person_id = ${personId}
+        and pje.company_id = ${companyId}
+        and mj.deleted_at is null
+      order by pje.started_at desc
+    `,
+    sql<{ id: string; name: string; description: string }[]>`
+      select id, name, coalesce(description, '') as description
+      from public.member_journeys
+      where company_id = ${companyId}
+        and deleted_at is null
+        and is_active = true
+      order by sort_order, name
+    `,
+    sql<{ id: string; description: string; category: string }[]>`
+      select id, description, category
+      from public.person_activities
+      where company_id = ${companyId}
+        and deleted_at is null
+        and is_active = true
+      order by category, description
+    `,
     listPersonTimeline(personId, companyId),
     listPersonFollowUpTasks(personId, companyId),
   ])
@@ -457,12 +515,70 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
   const personRow = peopleRows[0]
   if (!personRow) return null
 
+  const stepsList = journeyStepRows.map(toJourneyStep)
+
+  // Map enrolled journeys
+  let enrolledJourneys: PersonEnrolledJourney[] = enrollmentRows.map((e) => {
+    const steps = stepsList.filter((s) => s.journeyId === e.journey_id)
+    const completedSteps = steps.filter((s) => s.completedAt).length
+    const totalSteps = steps.length
+    const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+    return {
+      enrollmentId: e.enrollment_id,
+      journeyId: e.journey_id,
+      journeyName: e.journey_name,
+      description: e.description,
+      status: e.status,
+      startedAt: toIso(e.started_at) ?? "",
+      completedAt: e.completed_at ? toIso(e.completed_at) : null,
+      progressPercent,
+      steps,
+    }
+  })
+
+  // If no explicit enrollments exist yet, group active journey steps as legacy fallback
+  if (enrolledJourneys.length === 0 && stepsList.length > 0) {
+    const grouped = new Map<string, typeof stepsList>()
+    for (const st of stepsList) {
+      const list = grouped.get(st.journeyId) ?? []
+      list.push(st)
+      grouped.set(st.journeyId, list)
+    }
+    enrolledJourneys = Array.from(grouped.entries()).map(([jid, steps]) => {
+      const completedSteps = steps.filter((s) => s.completedAt).length
+      const totalSteps = steps.length
+      const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0
+      return {
+        enrollmentId: `legacy-${jid}`,
+        journeyId: jid,
+        journeyName: steps[0]?.journeyName ?? "Jornada",
+        description: "",
+        status: (progressPercent === 100 ? "completed" : "in_progress") as "completed" | "in_progress",
+        startedAt: personRow.created_at ? toIso(personRow.created_at) ?? "" : "",
+        completedAt: null,
+        progressPercent,
+        steps,
+      }
+    })
+  }
+
   return {
     ...toPerson(personRow),
     internalNotes: personRow.internal_notes,
     customFields: customFieldRows.map(toCustomField),
     activities: activityRows.map(toActivity),
-    journeySteps: journeyStepRows.map(toJourneyStep),
+    journeySteps: stepsList,
+    enrolledJourneys,
+    availableJourneys: availableJourneysRows.map((j) => ({
+      id: j.id,
+      name: j.name,
+      description: j.description,
+    })),
+    availableActivities: availableActivitiesRows.map((a) => ({
+      id: a.id,
+      description: a.description,
+      category: a.category,
+    })),
     timeline,
     followUpTasks,
   }
@@ -522,6 +638,9 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
   const status = filters.status && filters.status !== "all" ? filters.status : null
   const personType = filters.personType && filters.personType !== "all" ? filters.personType : null
   const congregationId = filters.congregationId && filters.congregationId !== "all" ? filters.congregationId : null
+  const journeyStatus = filters.journeyStatus && filters.journeyStatus !== "all" ? filters.journeyStatus : null
+  const accessProfile = filters.accessProfile && filters.accessProfile !== "all" ? filters.accessProfile : null
+  const cellId = filters.cellId && filters.cellId !== "all" ? filters.cellId : null
   const baptized = filters.baptized ?? null
   const emailValidated = filters.emailValidated ?? null
   const isActive = filters.isActive ?? null
@@ -554,7 +673,23 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
-        coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = p.id and cell.is_active = true and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
+        coalesce((
+          select array_agg(distinct cell.id)
+          from public.groups cell
+          where cell.company_id = p.company_id
+            and cell.type = 'cell'
+            and cell.is_active = true
+            and cell.deleted_at is null
+            and (
+              cell.leader_person_id = p.id
+              or exists (
+                select 1 from public.group_members gm
+                where gm.group_id = cell.id
+                  and gm.person_id = p.id
+                  and gm.status = 'active'
+              )
+            )
+        ), '{}')::uuid[] as cell_ids,
         p.status,
         p.person_type,
         p.journey_status,
@@ -576,6 +711,20 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         and (${status}::text is null or p.status = ${status})
         and (${personType}::text is null or p.person_type = ${personType})
         and (${congregationId}::uuid is null or p.congregation_id = ${congregationId})
+        and (${journeyStatus}::text is null or p.journey_status = ${journeyStatus})
+        and (${accessProfile}::text is null or p.access_profile = ${accessProfile})
+        and (
+          ${cellId}::text is null
+          or (${cellId} = 'none' and not exists (
+            select 1 from public.group_members gm
+            join public.groups g on g.id = gm.group_id
+            where gm.person_id = p.id and gm.status = 'active' and g.type = 'cell' and g.deleted_at is null
+          ))
+          or (${cellId} <> 'none' and exists (
+            select 1 from public.group_members gm
+            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${cellId}::uuid
+          ))
+        )
         and (${baptized}::boolean is null or p.baptized = ${baptized})
         and (${emailValidated}::boolean is null or p.email_validated = ${emailValidated})
         and (${isActive}::boolean is null or p.is_active = ${isActive})
@@ -601,6 +750,20 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         and (${status}::text is null or p.status = ${status})
         and (${personType}::text is null or p.person_type = ${personType})
         and (${congregationId}::uuid is null or p.congregation_id = ${congregationId})
+        and (${journeyStatus}::text is null or p.journey_status = ${journeyStatus})
+        and (${accessProfile}::text is null or p.access_profile = ${accessProfile})
+        and (
+          ${cellId}::text is null
+          or (${cellId} = 'none' and not exists (
+            select 1 from public.group_members gm
+            join public.groups g on g.id = gm.group_id
+            where gm.person_id = p.id and gm.status = 'active' and g.type = 'cell' and g.deleted_at is null
+          ))
+          or (${cellId} <> 'none' and exists (
+            select 1 from public.group_members gm
+            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${cellId}::uuid
+          ))
+        )
         and (${baptized}::boolean is null or p.baptized = ${baptized})
         and (${emailValidated}::boolean is null or p.email_validated = ${emailValidated})
         and (${isActive}::boolean is null or p.is_active = ${isActive})
@@ -623,6 +786,36 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
     page,
     pageSize,
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}
+
+export async function getVisitorMetrics(companyIdInput?: string | null): Promise<VisitorMetrics> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("members.view", companyId)
+
+  const sql = getSql()
+  const rows = await sql<{
+    total: number | string
+    new_count: number | string
+    following_count: number | string
+    converted_count: number | string
+  }[]>`
+    select
+      count(*) filter (where person_type = 'visitor') as total,
+      count(*) filter (where person_type = 'visitor' and (journey_status = 'new' or journey_status is null or journey_status = '')) as new_count,
+      count(*) filter (where person_type = 'visitor' and journey_status in ('contacted', 'following')) as following_count,
+      count(*) filter (where journey_status = 'converted' or (person_type = 'member' and access_profile is not null)) as converted_count
+    from public.people
+    where company_id = ${companyId}
+      and deleted_at is null
+  `
+
+  const r = rows[0]
+  return {
+    total: Number(r?.total ?? 0),
+    newCount: Number(r?.new_count ?? 0),
+    followingCount: Number(r?.following_count ?? 0),
+    convertedCount: Number(r?.converted_count ?? 0),
   }
 }
 
@@ -864,4 +1057,172 @@ export async function getPersonFormOptions(companyIdInput?: string | null): Prom
   ])
 
   return { congregations, cells, activities, journeys }
+}
+
+export async function listActivitiesWithCounts(
+  companyIdInput?: string | null,
+): Promise<PersonActivityWithCount[]> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("members.view", companyId)
+
+  const sql = getSql()
+  const rows = await sql<{
+    id: string
+    company_id: string
+    description: string
+    category: "pastoral" | "worship" | "ministry" | "small_group" | "volunteer"
+    is_active: boolean
+    assigned_count: string | number
+  }[]>`
+    select
+      pa.id,
+      pa.company_id,
+      pa.description,
+      pa.category,
+      pa.is_active,
+      count(paa.id) filter (where paa.is_active = true)::int as assigned_count
+    from public.person_activities pa
+    left join public.person_activity_assignments paa
+      on paa.activity_id = pa.id
+     and paa.company_id = pa.company_id
+    where pa.company_id = ${companyId}
+      and pa.deleted_at is null
+    group by pa.id
+    order by pa.category asc, pa.description asc
+  `
+
+  return rows.map((r) => ({
+    id: r.id,
+    companyId: r.company_id,
+    description: r.description,
+    category: r.category,
+    isActive: r.is_active,
+    assignedCount: Number(r.assigned_count) || 0,
+  }))
+}
+
+export async function listActivityMembers(
+  activityId: string,
+  companyIdInput?: string | null,
+) {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("members.view", companyId)
+
+  const sql = getSql()
+  const rows = await sql<{
+    assignment_id: string
+    person_id: string
+    full_name: string
+    email: string | null
+    phone: string
+    assigned_at: Date | string
+    is_active: boolean
+  }[]>`
+    select
+      paa.id as assignment_id,
+      p.id as person_id,
+      p.full_name,
+      p.email,
+      p.phone,
+      paa.assigned_at,
+      paa.is_active
+    from public.person_activity_assignments paa
+    inner join public.people p on p.id = paa.person_id and p.deleted_at is null
+    where paa.activity_id = ${activityId}
+      and paa.company_id = ${companyId}
+    order by paa.is_active desc, p.full_name asc
+  `
+
+  return rows.map((r) => ({
+    assignmentId: r.assignment_id,
+    personId: r.person_id,
+    fullName: r.full_name,
+    email: r.email,
+    phone: r.phone,
+    assignedAt: toIso(r.assigned_at) ?? "",
+    isActive: r.is_active,
+  }))
+}
+
+export async function listJourneysWithSteps(
+  companyIdInput?: string | null,
+): Promise<MemberJourneyWithSteps[]> {
+  const companyId = await resolveCompanyId(companyIdInput)
+  await requirePermission("members.view", companyId)
+
+  const sql = getSql()
+  const [journeyRows, stepRows, countRows] = await Promise.all([
+    sql<{
+      id: string
+      company_id: string
+      name: string
+      description: string
+      sort_order: number
+      is_active: boolean
+      is_auto_enroll: boolean
+      auto_enroll_type: "all" | "visitor" | "member" | null
+    }[]>`
+      select
+        id, company_id, name, coalesce(description, '') as description,
+        sort_order, is_active, coalesce(is_auto_enroll, false) as is_auto_enroll,
+        auto_enroll_type
+      from public.member_journeys
+      where company_id = ${companyId}
+        and deleted_at is null
+      order by sort_order asc, name asc
+    `,
+    sql<{
+      id: string
+      journey_id: string
+      name: string
+      description: string
+      sort_order: number
+      estimated_days: number
+      is_active: boolean
+    }[]>`
+      select
+        id, journey_id, name, coalesce(description, '') as description,
+        sort_order, coalesce(estimated_days, 7) as estimated_days, is_active
+      from public.member_journey_steps
+      where company_id = ${companyId}
+        and deleted_at is null
+      order by sort_order asc, name asc
+    `,
+    sql<{ journey_id: string; count: string | number }[]>`
+      select journey_id, count(*)::int as count
+      from public.person_journey_enrollments
+      where company_id = ${companyId}
+        and status = 'in_progress'
+      group by journey_id
+    `,
+  ])
+
+  const countsMap = new Map(countRows.map((c) => [c.journey_id, Number(c.count) || 0]))
+  const stepsByJourney = new Map<string, MemberJourneyStep[]>()
+  for (const s of stepRows) {
+    const list = stepsByJourney.get(s.journey_id) ?? []
+    list.push({
+      id: s.id,
+      journeyId: s.journey_id,
+      name: s.name,
+      description: s.description,
+      sortOrder: s.sort_order,
+      estimatedDays: s.estimated_days,
+      isActive: s.is_active,
+    })
+    stepsByJourney.set(s.journey_id, list)
+  }
+
+  return journeyRows.map((j) => ({
+    id: j.id,
+    companyId: j.company_id,
+    name: j.name,
+    description: j.description,
+    sortOrder: j.sort_order,
+    isActive: j.is_active,
+    isAutoEnroll: j.is_auto_enroll,
+    autoEnrollType: j.auto_enroll_type,
+    steps: stepsByJourney.get(j.id) ?? [],
+    enrolledCount: countsMap.get(j.id) ?? 0,
+  }))
 }

@@ -2590,6 +2590,35 @@ export async function sendKidCampaign(input: z.input<typeof kidCampaignSchema>):
   }
 }
 
+export async function deleteKidMessage(input: unknown): Promise<KidsActionResult> {
+  try {
+    const messageId = z.string().uuid("ID de mensagem inválido").parse(input)
+    const { user, companyId } = await context("kids.communicate")
+    const sql = getSql()
+
+    const updated = await sql<{ id: string }[]>`
+      update public.kid_messages
+      set deleted_at = now(), updated_at = now(), updated_by = ${user.id}
+      where id = ${messageId} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (updated.length === 0) {
+      throw new Error("Mensagem não encontrada ou já excluída")
+    }
+
+    await sql`
+      delete from public.kid_delivery_outbox
+      where message_id = ${messageId} and company_id = ${companyId} and status in ('pending', 'queued')
+    `
+
+    await audit("kids.message.delete", "kid_messages", messageId, companyId)
+    refresh()
+    return { ok: true, id: messageId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
 export async function listKidConversations(): Promise<{ ok: boolean; conversations?: KidConversation[]; error?: string }> {
   try {
     const user = await getCurrentUser()
@@ -2711,6 +2740,30 @@ export async function markKidConversationRead(input: unknown): Promise<KidsActio
       await context("kids.communicate")
       await sql`update public.kid_conversations set staff_read_at = now() where id = ${conversationId} and company_id = ${companyId}`
     }
+    return { ok: true, id: conversationId }
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function deleteKidConversation(input: unknown): Promise<KidsActionResult> {
+  try {
+    const conversationId = z.string().uuid("ID de conversa inválido").parse(input)
+    const { user, companyId } = await context("kids.communicate")
+    const sql = getSql()
+
+    const updated = await sql<{ id: string }[]>`
+      update public.kid_conversations
+      set deleted_at = now(), updated_at = now(), updated_by = ${user.id}
+      where id = ${conversationId} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (updated.length === 0) {
+      throw new Error("Conversa não encontrada ou já excluída")
+    }
+
+    await audit("kids.conversation.delete", "kid_conversations", conversationId, companyId)
+    refresh()
     return { ok: true, id: conversationId }
   } catch (error) {
     return failure(error)

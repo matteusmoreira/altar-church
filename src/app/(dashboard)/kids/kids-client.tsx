@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
+import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Loader2, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -95,6 +95,16 @@ function ageLabel(ageMonths: number | null) {
   if (years === 0) return `${months}m`
   if (months === 0) return `${years}a`
   return `${years}a ${months}m`
+}
+
+function formatClassroomAge(minAgeMonths: number, maxAgeMonths: number) {
+  const minYears = Math.floor(minAgeMonths / 12)
+  const maxYears = Math.floor(maxAgeMonths / 12)
+  if (minAgeMonths % 12 === 0 && maxAgeMonths % 12 === 0) {
+    if (minYears === maxYears) return `${minYears} ${minYears === 1 ? "ano" : "anos"}`
+    return `${minYears} a ${maxYears} anos`
+  }
+  return `${ageLabel(minAgeMonths)}–${ageLabel(maxAgeMonths)}`
 }
 
 function formatPhoneMask(value: string) {
@@ -208,8 +218,8 @@ interface ClassroomForm {
   id: string | null
   congregationId: string
   name: string
-  minAgeMonths: number
-  maxAgeMonths: number
+  minAgeYears: number
+  maxAgeYears: number
   capacity: number
   location: string
   isActive: boolean
@@ -219,8 +229,8 @@ const emptyClassroomForm: ClassroomForm = {
   id: null,
   congregationId: "",
   name: "",
-  minAgeMonths: 0,
-  maxAgeMonths: 216,
+  minAgeYears: 0,
+  maxAgeYears: 18,
   capacity: 12,
   location: "",
   isActive: true,
@@ -233,8 +243,8 @@ interface RuleForm {
   weekday: string
   startTime: string
   endTime: string
-  minAgeMonths: number
-  maxAgeMonths: number
+  minAgeYears: number
+  maxAgeYears: number
   priority: number
   isActive: boolean
 }
@@ -295,7 +305,6 @@ export function KidsClient({
   const [selectedHealth, setSelectedHealth] = useState<ChildForm["health"] | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
   const healthRequestRef = useRef(0)
-  const [classroomAgeUnits, setClassroomAgeUnits] = useState<{ min: "months" | "years"; max: "months" | "years" }>({ min: "months", max: "months" })
   const [pending, setPending] = useState(false)
   const [childSuggestions, setChildSuggestions] = useState<KidPersonSuggestion[]>([])
   const [guardianSuggestions, setGuardianSuggestions] = useState<KidPersonSuggestion[]>([])
@@ -532,8 +541,8 @@ export function KidsClient({
           id: classroomForm.id,
           congregationId: classroomForm.congregationId || null,
           name: classroomForm.name,
-          minAgeMonths: classroomForm.minAgeMonths,
-          maxAgeMonths: classroomForm.maxAgeMonths,
+          minAgeMonths: classroomForm.minAgeYears * 12,
+          maxAgeMonths: classroomForm.maxAgeYears * 12,
           capacity: classroomForm.capacity,
           location: classroomForm.location,
           isActive: classroomForm.isActive,
@@ -554,8 +563,8 @@ export function KidsClient({
           weekday: ruleForm.weekday === "" ? null : Number(ruleForm.weekday),
           startTime: ruleForm.startTime || null,
           endTime: ruleForm.endTime || null,
-          minAgeMonths: ruleForm.minAgeMonths,
-          maxAgeMonths: ruleForm.maxAgeMonths,
+          minAgeMonths: ruleForm.minAgeYears * 12,
+          maxAgeMonths: ruleForm.maxAgeYears * 12,
           priority: ruleForm.priority,
           isActive: ruleForm.isActive,
         }),
@@ -1031,7 +1040,7 @@ export function KidsClient({
             <Card className="glass h-fit">
               <CardHeader>
                 <CardTitle>{classroomForm.id ? "Editar sala" : "Nova sala"}</CardTitle>
-                <CardDescription>Faixa etária em meses ou anos, capacidade e localização.</CardDescription>
+                <CardDescription>Faixa etária em anos, capacidade e localização.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1058,24 +1067,26 @@ export function KidsClient({
                     <Input id="classroom-location" value={classroomForm.location} onChange={(event) => setClassroomForm({ ...classroomForm, location: event.target.value })} />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-min-age">Idade mínima</Label>
-                    <div className="flex gap-2">
-                      <Input id="classroom-min-age" type="number" min={0} value={classroomAgeUnits.min === "years" ? classroomForm.minAgeMonths / 12 : classroomForm.minAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, minAgeMonths: Number(event.target.value) * (classroomAgeUnits.min === "years" ? 12 : 1) })} />
-                      <select aria-label="Unidade da idade mínima" className="h-9 rounded-md border bg-background px-2 text-sm" value={classroomAgeUnits.min} onChange={(event) => setClassroomAgeUnits({ ...classroomAgeUnits, min: event.target.value as "months" | "years" })}>
-                        <option value="months">meses</option>
-                        <option value="years">anos</option>
-                      </select>
-                    </div>
+                    <Label htmlFor="classroom-min-age">Idade mínima (anos)</Label>
+                    <Input
+                      id="classroom-min-age"
+                      type="number"
+                      min={0}
+                      max={18}
+                      value={classroomForm.minAgeYears}
+                      onChange={(event) => setClassroomForm({ ...classroomForm, minAgeYears: Math.max(0, Number(event.target.value)) })}
+                    />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-max-age">Idade máxima</Label>
-                    <div className="flex gap-2">
-                      <Input id="classroom-max-age" type="number" min={0} value={classroomAgeUnits.max === "years" ? classroomForm.maxAgeMonths / 12 : classroomForm.maxAgeMonths} onChange={(event) => setClassroomForm({ ...classroomForm, maxAgeMonths: Number(event.target.value) * (classroomAgeUnits.max === "years" ? 12 : 1) })} />
-                      <select aria-label="Unidade da idade máxima" className="h-9 rounded-md border bg-background px-2 text-sm" value={classroomAgeUnits.max} onChange={(event) => setClassroomAgeUnits({ ...classroomAgeUnits, max: event.target.value as "months" | "years" })}>
-                        <option value="months">meses</option>
-                        <option value="years">anos</option>
-                      </select>
-                    </div>
+                    <Label htmlFor="classroom-max-age">Idade máxima (anos)</Label>
+                    <Input
+                      id="classroom-max-age"
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={classroomForm.maxAgeYears}
+                      onChange={(event) => setClassroomForm({ ...classroomForm, maxAgeYears: Math.max(0, Number(event.target.value)) })}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="classroom-capacity">Capacidade</Label>
@@ -1115,7 +1126,7 @@ export function KidsClient({
                     <div>
                       <CardTitle className="text-base">{classroom.name}</CardTitle>
                       <CardDescription>
-                        {ageLabel(classroom.minAgeMonths)}–{ageLabel(classroom.maxAgeMonths)} · capacidade {classroom.capacity}
+                        {formatClassroomAge(classroom.minAgeMonths, classroom.maxAgeMonths)} · capacidade {classroom.capacity}
                         {classroom.congregationName ? ` · ${classroom.congregationName}` : ""}
                         {classroom.location ? ` · ${classroom.location}` : ""}
                       </CardDescription>
@@ -1134,8 +1145,8 @@ export function KidsClient({
                                 id: classroom.id,
                                 congregationId: classroom.congregationId ?? "",
                                 name: classroom.name,
-                                minAgeMonths: classroom.minAgeMonths,
-                                maxAgeMonths: classroom.maxAgeMonths,
+                                minAgeYears: Math.floor(classroom.minAgeMonths / 12),
+                                maxAgeYears: Math.floor(classroom.maxAgeMonths / 12),
                                 capacity: classroom.capacity,
                                 location: classroom.location,
                                 isActive: classroom.isActive,
@@ -1168,8 +1179,8 @@ export function KidsClient({
                             weekday: "",
                             startTime: "",
                             endTime: "",
-                            minAgeMonths: classroom.minAgeMonths,
-                            maxAgeMonths: classroom.maxAgeMonths,
+                            minAgeYears: Math.floor(classroom.minAgeMonths / 12),
+                            maxAgeYears: Math.floor(classroom.maxAgeMonths / 12),
                             priority: 100,
                             isActive: true,
                           })
@@ -1184,7 +1195,7 @@ export function KidsClient({
                       <span>
                         {rule.congregationName ?? "Todas"} · {rule.weekday == null ? "todos os dias" : WEEKDAY_LABELS[rule.weekday]}
                         {rule.startTime ? ` · ${rule.startTime}` : ""}{rule.endTime ? `–${rule.endTime}` : ""}
-                        {` · ${ageLabel(rule.minAgeMonths)}–${ageLabel(rule.maxAgeMonths)} · prioridade ${rule.priority}`}
+                        {` · ${formatClassroomAge(rule.minAgeMonths, rule.maxAgeMonths)} · prioridade ${rule.priority}`}
                         {!rule.isActive ? " · inativa" : ""}
                       </span>
                       {canManageClasses && (
@@ -1202,8 +1213,8 @@ export function KidsClient({
                                 weekday: rule.weekday == null ? "" : String(rule.weekday),
                                 startTime: rule.startTime ?? "",
                                 endTime: rule.endTime ?? "",
-                                minAgeMonths: rule.minAgeMonths,
-                                maxAgeMonths: rule.maxAgeMonths,
+                                minAgeYears: Math.floor(rule.minAgeMonths / 12),
+                                maxAgeYears: Math.floor(rule.maxAgeMonths / 12),
                                 priority: rule.priority,
                                 isActive: rule.isActive,
                               })
@@ -1242,8 +1253,8 @@ export function KidsClient({
                         </select>
                         <Input type="time" className="h-8 text-xs" value={ruleForm.startTime} onChange={(event) => setRuleForm({ ...ruleForm, startTime: event.target.value })} />
                         <Input type="time" className="h-8 text-xs" value={ruleForm.endTime} onChange={(event) => setRuleForm({ ...ruleForm, endTime: event.target.value })} />
-                        <Input type="number" className="h-8 text-xs" placeholder="Idade mín. (meses)" value={ruleForm.minAgeMonths} onChange={(event) => setRuleForm({ ...ruleForm, minAgeMonths: Number(event.target.value) })} />
-                        <Input type="number" className="h-8 text-xs" placeholder="Idade máx. (meses)" value={ruleForm.maxAgeMonths} onChange={(event) => setRuleForm({ ...ruleForm, maxAgeMonths: Number(event.target.value) })} />
+                        <Input type="number" min={0} max={18} className="h-8 text-xs" placeholder="Idade mín. (anos)" value={ruleForm.minAgeYears} onChange={(event) => setRuleForm({ ...ruleForm, minAgeYears: Number(event.target.value) })} />
+                        <Input type="number" min={0} max={20} className="h-8 text-xs" placeholder="Idade máx. (anos)" value={ruleForm.maxAgeYears} onChange={(event) => setRuleForm({ ...ruleForm, maxAgeYears: Number(event.target.value) })} />
                         <Input type="number" className="h-8 text-xs" placeholder="Prioridade" value={ruleForm.priority} onChange={(event) => setRuleForm({ ...ruleForm, priority: Number(event.target.value) })} />
                         <label className="flex items-center gap-2 text-xs">
                           <input type="checkbox" checked={ruleForm.isActive} onChange={(event) => setRuleForm({ ...ruleForm, isActive: event.target.checked })} />
@@ -1263,18 +1274,39 @@ export function KidsClient({
         </TabsContent>
 
         <TabsContent value="sessoes">
-          {sessionsData ? <KidsSessionsTab data={sessionsData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "sessoes" ? "Carregando sessões..." : "Abra novamente para carregar."}</p>}
+          {sessionsData ? (
+            <KidsSessionsTab data={sessionsData} />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">{loadingTab === "sessoes" ? "Carregando sessões..." : "Abra novamente para carregar."}</p>
+            </div>
+          )}
         </TabsContent>
 
         {canCommunicate && (
           <TabsContent value="comunicacao">
-            {communicationData ? <KidsCommunicationTab data={communicationData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "comunicacao" ? "Carregando comunicação..." : "Abra novamente para carregar."}</p>}
+            {communicationData ? (
+              <KidsCommunicationTab data={communicationData} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">{loadingTab === "comunicacao" ? "Carregando comunicação..." : "Abra novamente para carregar."}</p>
+              </div>
+            )}
           </TabsContent>
         )}
 
         {canViewReports && (
           <TabsContent value="relatorios">
-            {reportsData ? <KidsReportsTab data={reportsData} /> : <p className="py-10 text-center text-sm text-muted-foreground">{loadingTab === "relatorios" ? "Carregando relatórios..." : "Abra novamente para carregar."}</p>}
+            {reportsData ? (
+              <KidsReportsTab data={reportsData} />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">{loadingTab === "relatorios" ? "Carregando relatórios..." : "Abra novamente para carregar."}</p>
+              </div>
+            )}
           </TabsContent>
         )}
 

@@ -17,7 +17,10 @@ import type {
   InvitePersonAccessInput,
   PeopleActionResult,
   PersonAccessRole,
+  SaveJourneyStepInput,
   SavePersonInput,
+  UpdateMemberJourneyInput,
+  UpdatePersonActivityInput,
 } from "./types"
 
 const nullableUuidSchema = z
@@ -554,6 +557,28 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
     const personId = rows[0]?.id ?? null
     if (!personId) throw new Error("Pessoa não foi salva")
 
+    if (!parsed.id && personId) {
+      try {
+        await sql`
+          insert into public.person_journey_enrollments (company_id, person_id, journey_id, status, started_at, created_by)
+          select ${companyId}, ${personId}, id, 'in_progress', now(), ${user.id}
+          from public.member_journeys
+          where company_id = ${companyId}
+            and deleted_at is null
+            and is_active = true
+            and is_auto_enroll = true
+            and (
+              auto_enroll_type = 'all'
+              or (auto_enroll_type = 'visitor' and (${parsed.status} = 'visitor' or ${parsed.personType} = 'visitor'))
+              or (auto_enroll_type = 'member' and (${parsed.personType} = 'member' or ${parsed.personType} = 'leader' or ${parsed.personType} = 'volunteer'))
+            )
+          on conflict (person_id, journey_id) do nothing
+        `
+      } catch (err) {
+        console.error("Erro na auto-inscrição em jornada:", err)
+      }
+    }
+
     if (parsed.inviteAccess && personId && parsed.accessRole && parsed.temporaryPassword) {
       const provisioned = await provisionPersonAccess({
         personId,
@@ -791,6 +816,130 @@ export async function createPersonActivity(input: CreatePersonActivityInput): Pr
   }
 }
 
+export async function updatePersonActivity(input: UpdatePersonActivityInput): Promise<PeopleActionResult> {
+  try {
+    const description = input.description.trim()
+    if (!description) {
+      return { ok: false, error: "Descrição da atividade é obrigatória" }
+    }
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      update public.person_activities
+      set description = ${description},
+          category = ${input.category},
+          is_active = ${input.isActive !== undefined ? input.isActive : true},
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${input.id} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (!rows[0]) return { ok: false, error: "Atividade não encontrada" }
+    await refreshPeoplePaths()
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deletePersonActivity(activityId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    await sql`
+      update public.person_activities
+      set deleted_at = now(),
+          is_active = false,
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${activityId} and company_id = ${companyId}
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: activityId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function assignPersonActivity(input: {
+  personId: string
+  activityId: string
+  companyId?: string | null
+}): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      insert into public.person_activity_assignments (
+        company_id, person_id, activity_id, is_active, assigned_by, assigned_at
+      ) values (
+        ${companyId}, ${input.personId}, ${input.activityId}, true, ${user.id}, now()
+      )
+      on conflict (person_id, activity_id)
+      do update set is_active = true, assigned_at = now(), updated_at = now()
+      returning id
+    `
+    await refreshPeoplePaths()
+    revalidatePath(`/pessoas/${input.personId}`)
+    return { ok: true, id: rows[0]?.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function removePersonActivity(assignmentId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
+  try {
+    const { companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ person_id: string }[]>`
+      delete from public.person_activity_assignments
+      where id = ${assignmentId} and company_id = ${companyId}
+      returning person_id
+    `
+    await refreshPeoplePaths()
+    if (rows[0]?.person_id) {
+      revalidatePath(`/pessoas/${rows[0].person_id}`)
+    }
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function togglePersonActivityAssignment(
+  assignmentId: string,
+  isActive: boolean,
+  companyIdInput?: string | null,
+): Promise<PeopleActionResult> {
+  try {
+    const { companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ person_id: string }[]>`
+      update public.person_activity_assignments
+      set is_active = ${isActive}, updated_at = now()
+      where id = ${assignmentId} and company_id = ${companyId}
+      returning person_id
+    `
+    await refreshPeoplePaths()
+    if (rows[0]?.person_id) {
+      revalidatePath(`/pessoas/${rows[0].person_id}`)
+    }
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function createMemberJourney(input: CreateMemberJourneyInput): Promise<PeopleActionResult> {
   try {
     const name = input.name.trim()
@@ -807,12 +956,137 @@ export async function createMemberJourney(input: CreateMemberJourneyInput): Prom
         name,
         description,
         is_active,
+        is_auto_enroll,
+        auto_enroll_type,
         created_by,
         updated_by
       ) values (
         ${companyId},
         ${name},
         ${input.description?.trim() || ""},
+        true,
+        ${Boolean(input.isAutoEnroll)},
+        ${input.autoEnrollType || null},
+        ${user.id},
+        ${user.id}
+      )
+      returning id
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: rows[0]?.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function updateMemberJourney(input: UpdateMemberJourneyInput): Promise<PeopleActionResult> {
+  try {
+    const name = input.name.trim()
+    if (!name) {
+      return { ok: false, error: "Nome da jornada é obrigatório" }
+    }
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      update public.member_journeys
+      set name = ${name},
+          description = ${input.description?.trim() || ""},
+          is_auto_enroll = ${input.isAutoEnroll !== undefined ? input.isAutoEnroll : false},
+          auto_enroll_type = ${input.autoEnrollType || null},
+          is_active = ${input.isActive !== undefined ? input.isActive : true},
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${input.id} and company_id = ${companyId} and deleted_at is null
+      returning id
+    `
+    if (!rows[0]) return { ok: false, error: "Jornada não encontrada" }
+    await refreshPeoplePaths()
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function deleteMemberJourney(journeyId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    await sql`
+      update public.member_journeys
+      set deleted_at = now(),
+          is_active = false,
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${journeyId} and company_id = ${companyId}
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: journeyId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function saveJourneyStep(input: SaveJourneyStepInput): Promise<PeopleActionResult> {
+  try {
+    const name = input.name.trim()
+    if (!name) {
+      return { ok: false, error: "Nome da etapa é obrigatório" }
+    }
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    if (input.id) {
+      const rows = await sql<{ id: string }[]>`
+        update public.member_journey_steps
+        set name = ${name},
+            description = ${input.description?.trim() || ""},
+            sort_order = ${typeof input.sortOrder === "number" ? input.sortOrder : 0},
+            estimated_days = ${typeof input.estimatedDays === "number" && input.estimatedDays > 0 ? input.estimatedDays : 7},
+            is_active = ${input.isActive !== undefined ? input.isActive : true},
+            updated_by = ${user.id},
+            updated_at = now()
+        where id = ${input.id} and company_id = ${companyId} and deleted_at is null
+        returning id
+      `
+      if (!rows[0]) return { ok: false, error: "Etapa não encontrada" }
+      await refreshPeoplePaths()
+      return { ok: true, id: rows[0].id }
+    }
+
+    // New step: determine sort_order if not provided
+    let sortOrder = input.sortOrder
+    if (typeof sortOrder !== "number") {
+      const maxRows = await sql<{ max_order: number | null }[]>`
+        select max(sort_order) as max_order
+        from public.member_journey_steps
+        where journey_id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null
+      `
+      sortOrder = (maxRows[0]?.max_order ?? 0) + 1
+    }
+
+    const rows = await sql<{ id: string }[]>`
+      insert into public.member_journey_steps (
+        company_id,
+        journey_id,
+        name,
+        description,
+        sort_order,
+        estimated_days,
+        is_active,
+        created_by,
+        updated_by
+      ) values (
+        ${companyId},
+        ${input.journeyId},
+        ${name},
+        ${input.description?.trim() || ""},
+        ${sortOrder},
+        ${typeof input.estimatedDays === "number" && input.estimatedDays > 0 ? input.estimatedDays : 7},
         true,
         ${user.id},
         ${user.id}
@@ -826,7 +1100,319 @@ export async function createMemberJourney(input: CreateMemberJourneyInput): Prom
   }
 }
 
+export async function deleteJourneyStep(stepId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    await sql`
+      update public.member_journey_steps
+      set deleted_at = now(),
+          is_active = false,
+          updated_by = ${user.id},
+          updated_at = now()
+      where id = ${stepId} and company_id = ${companyId}
+    `
+    await refreshPeoplePaths()
+    return { ok: true, id: stepId }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function reorderJourneySteps(
+  journeyId: string,
+  stepIds: string[],
+  companyIdInput?: string | null,
+): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    for (let i = 0; i < stepIds.length; i++) {
+      await sql`
+        update public.member_journey_steps
+        set sort_order = ${i + 1}, updated_by = ${user.id}, updated_at = now()
+        where id = ${stepIds[i]} and journey_id = ${journeyId} and company_id = ${companyId}
+      `
+    }
+    await refreshPeoplePaths()
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function enrollPersonInJourney(input: {
+  personId: string
+  journeyId: string
+  companyId?: string | null
+}): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ id: string }[]>`
+      insert into public.person_journey_enrollments (
+        company_id, person_id, journey_id, status, started_at, created_by
+      ) values (
+        ${companyId}, ${input.personId}, ${input.journeyId}, 'in_progress', now(), ${user.id}
+      )
+      on conflict (person_id, journey_id)
+      do update set status = 'in_progress', completed_at = null, updated_at = now()
+      returning id
+    `
+    await refreshPeoplePaths()
+    revalidatePath(`/pessoas/${input.personId}`)
+    return { ok: true, id: rows[0]?.id }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function unenrollPersonFromJourney(
+  enrollmentId: string,
+  companyIdInput?: string | null,
+): Promise<PeopleActionResult> {
+  try {
+    const { companyId } = await resolveActionCompanyId(companyIdInput)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    const rows = await sql<{ person_id: string }[]>`
+      delete from public.person_journey_enrollments
+      where id = ${enrollmentId} and company_id = ${companyId}
+      returning person_id
+    `
+    await refreshPeoplePaths()
+    if (rows[0]?.person_id) {
+      revalidatePath(`/pessoas/${rows[0].person_id}`)
+    }
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function toggleStepProgress(input: {
+  personId: string
+  journeyId: string
+  stepId: string
+  completed: boolean
+  notes?: string
+  completedAt?: string | null
+  companyId?: string | null
+}): Promise<PeopleActionResult> {
+  try {
+    const { user, companyId } = await resolveActionCompanyId(input.companyId)
+    await requirePermission("members.edit", companyId)
+
+    const sql = getSql()
+    if (input.completed) {
+      const completedAt = input.completedAt ? new Date(input.completedAt).toISOString() : new Date().toISOString()
+      await sql`
+        insert into public.person_journey_progress (
+          company_id, person_id, journey_id, step_id, completed_at, completed_by, notes, updated_at
+        ) values (
+          ${companyId}, ${input.personId}, ${input.journeyId}, ${input.stepId},
+          ${completedAt}, ${user.id}, ${input.notes?.trim() || ""}, now()
+        )
+        on conflict (person_id, journey_id, step_id)
+        do update set completed_at = ${completedAt}, completed_by = ${user.id},
+                      notes = ${input.notes?.trim() || ""}, updated_at = now()
+      `
+
+      // Make sure the person is enrolled in this journey
+      await sql`
+        insert into public.person_journey_enrollments (
+          company_id, person_id, journey_id, status, started_at, created_by
+        ) values (
+          ${companyId}, ${input.personId}, ${input.journeyId}, 'in_progress', now(), ${user.id}
+        )
+        on conflict (person_id, journey_id) do nothing
+      `
+
+      // Check if all active steps in this journey are now completed
+      const checkRows = await sql<{ total_steps: number; completed_steps: number }[]>`
+        select
+          count(mjs.id)::int as total_steps,
+          count(pjp.completed_at)::int as completed_steps
+        from public.member_journey_steps mjs
+        left join public.person_journey_progress pjp
+          on pjp.step_id = mjs.id
+         and pjp.person_id = ${input.personId}
+         and pjp.completed_at is not null
+        where mjs.journey_id = ${input.journeyId}
+          and mjs.company_id = ${companyId}
+          and mjs.deleted_at is null
+          and mjs.is_active = true
+      `
+      const counts = checkRows[0]
+      if (counts && counts.total_steps > 0 && counts.completed_steps >= counts.total_steps) {
+        await sql`
+          update public.person_journey_enrollments
+          set status = 'completed', completed_at = now(), updated_at = now()
+          where person_id = ${input.personId} and journey_id = ${input.journeyId} and company_id = ${companyId}
+        `
+      }
+    } else {
+      await sql`
+        update public.person_journey_progress
+        set completed_at = null, updated_at = now()
+        where person_id = ${input.personId} and journey_id = ${input.journeyId} and step_id = ${input.stepId}
+          and company_id = ${companyId}
+      `
+      await sql`
+        update public.person_journey_enrollments
+        set status = 'in_progress', completed_at = null, updated_at = now()
+        where person_id = ${input.personId} and journey_id = ${input.journeyId} and company_id = ${companyId}
+      `
+    }
+
+    await refreshPeoplePaths()
+    revalidatePath(`/pessoas/${input.personId}`)
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
 export async function loadBirthdayPeople(month?: number): Promise<BirthdayPerson[]> {
   const { listBirthdayPeople } = await import("./data")
   return listBirthdayPeople(month)
 }
+
+export async function convertVisitorToMember(personId: string): Promise<PeopleActionResult> {
+  return withActionTiming("people.convertVisitorToMember", async () => {
+    try {
+      const { user, companyId } = await resolveActionCompanyId()
+      await requirePermission("members.edit", companyId)
+      const sql = getSql()
+
+      await sql`
+        update public.people
+        set
+          person_type = 'member',
+          status = 'active',
+          journey_status = 'converted',
+          is_active = true,
+          updated_at = now()
+        where id = ${personId}
+          and company_id = ${companyId}
+          and deleted_at is null
+      `
+
+      await sql`
+        update public.group_members
+        set role = 'member', updated_at = now()
+        where company_id = ${companyId}
+          and person_id = ${personId}
+          and role = 'visitor'
+      `
+
+      await refreshMemberCount(companyId)
+      await refreshPeoplePaths(true)
+      await refreshPeoplePaths(false)
+      revalidatePath(`/pessoas/${personId}`)
+
+      await writeAuditLog({
+        action: "person.convert_to_member",
+        entityTable: "people",
+        companyId,
+        metadata: { personId, convertedBy: user.id },
+      })
+
+      return { ok: true, id: personId }
+    } catch (error) {
+      return toErrorResult(error)
+    }
+  })
+}
+
+export async function assignVisitorToCell(input: {
+  personId: string
+  cellId: string | null
+}): Promise<PeopleActionResult> {
+  return withActionTiming("people.assignVisitorToCell", async () => {
+    try {
+      const { user, companyId } = await resolveActionCompanyId()
+      await requirePermission("members.edit", companyId)
+      const sql = getSql()
+
+      if (!input.cellId) {
+        await sql`
+          update public.group_members
+          set status = 'inactive', left_at = current_date, updated_at = now()
+          where company_id = ${companyId}
+            and person_id = ${input.personId}
+            and group_id in (select id from public.groups where company_id = ${companyId} and type = 'cell')
+        `
+      } else {
+        const cellExists = await sql<{ id: string }[]>`
+          select id from public.groups
+          where id = ${input.cellId} and company_id = ${companyId} and type = 'cell' and is_active = true and deleted_at is null
+        `
+        if (cellExists.length === 0) {
+          return { ok: false, error: "Célula não encontrada ou inativa" }
+        }
+
+        await sql`
+          update public.group_members
+          set status = 'inactive', left_at = current_date, updated_at = now()
+          where company_id = ${companyId}
+            and person_id = ${input.personId}
+            and group_id in (select id from public.groups where company_id = ${companyId} and type = 'cell' and id <> ${input.cellId})
+        `
+
+        await sql`
+          insert into public.group_members (
+            company_id,
+            group_id,
+            person_id,
+            role,
+            status,
+            joined_at,
+            created_by,
+            updated_by
+          )
+          values (
+            ${companyId},
+            ${input.cellId},
+            ${input.personId},
+            'visitor',
+            'active',
+            current_date,
+            ${user.id},
+            ${user.id}
+          )
+          on conflict (group_id, person_id) do update
+          set
+            status = 'active',
+            left_at = null,
+            updated_by = excluded.updated_by,
+            updated_at = now()
+        `
+      }
+
+      await refreshPeoplePaths(true)
+      await refreshPeoplePaths(false)
+      revalidatePath(`/pessoas/${input.personId}`)
+      revalidatePath("/celulas")
+
+      await writeAuditLog({
+        action: "person.assign_cell",
+        entityTable: "group_members",
+        companyId,
+        metadata: { personId: input.personId, cellId: input.cellId, assignedBy: user.id },
+      })
+
+      return { ok: true, id: input.personId }
+    } catch (error) {
+      return toErrorResult(error)
+    }
+  })
+}
+

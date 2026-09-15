@@ -27,6 +27,7 @@ import {
   Loader2,
   MessageCircle,
   MoreVertical,
+  Play,
   Plus,
   Route,
   Search,
@@ -61,21 +62,31 @@ import { toCsv } from "@/lib/export/csv"
 import {
   createMemberJourney,
   createPersonActivity,
+  deleteMemberJourney,
+  deletePersonActivity,
   deletePeople,
   loadBirthdayPeople,
   loadDuplicateCandidates,
   movePersonToKanban,
   resolveDuplicateCandidate,
+  runFollowUpTriggers,
+  saveFollowUpTrigger,
   savePerson,
+  updateMemberJourney,
+  updatePersonActivity,
 } from "./actions"
 import type {
   BirthdayPerson,
   DuplicateCandidateItem,
   DuplicateCandidateResolution,
+  FollowUpTriggerConfig,
+  MemberJourneyWithSteps,
   PeopleDashboardData,
   PeopleListFilters,
   PeopleListResult,
   PersonAccessRole,
+  PersonActivityWithCount,
+  PersonFollowUpTrigger,
   PersonFormOptions,
   PersonGender,
   PersonListItem,
@@ -83,6 +94,9 @@ import type {
   PersonType,
 } from "@/lib/people/types"
 import type { CRMStage } from "@/lib/types"
+import { ActivityMembersSheet } from "@/components/people/activity-members-sheet"
+import { JourneyBuilderSheet } from "@/components/people/journey-builder-sheet"
+import { TriggerConfigDialog, triggerLabels } from "@/components/people/trigger-config-dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -104,6 +118,10 @@ interface MembersClientProps {
   filters: PeopleListFilters
   formOptions: PersonFormOptions
   peopleResult: PeopleListResult
+  initialActivities?: PersonActivityWithCount[]
+  initialJourneys?: MemberJourneyWithSteps[]
+  initialTriggers?: PersonFollowUpTrigger[]
+  responsibleOptions?: { id: string; name: string }[]
 }
 
 interface PersonFormState {
@@ -178,6 +196,14 @@ const personTypeLabels: Record<PersonType, string> = {
   member: "Membro",
   visitor: "Visitante",
   volunteer: "Voluntário",
+}
+
+const activityCategoryLabels: Record<string, { label: string; className: string }> = {
+  pastoral: { label: "Pastoral", className: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  worship: { label: "Louvor & Adoração", className: "bg-purple-500/10 text-purple-500 border-purple-500/20" },
+  ministry: { label: "Ministério", className: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20" },
+  small_group: { label: "Célula / PG", className: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+  volunteer: { label: "Voluntariado", className: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
 }
 
 const typeChartColors: Record<string, string> = {
@@ -382,6 +408,10 @@ export function MembersClient({
   filters,
   formOptions,
   peopleResult,
+  initialActivities = [],
+  initialJourneys = [],
+  initialTriggers = [],
+  responsibleOptions = [],
 }: MembersClientProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -406,22 +436,62 @@ export function MembersClient({
   const [birthdays, setBirthdays] = useState<BirthdayPerson[]>([])
   const [birthdaysLoading, setBirthdaysLoading] = useState(false)
 
-  // Activities & Journeys state
-  const [activitiesList, setActivitiesList] = useState(formOptions.activities)
-  const [journeysList, setJourneysList] = useState(formOptions.journeys)
+  // Activities, Journeys & Triggers state
+  const [activitiesList, setActivitiesList] = useState<PersonActivityWithCount[]>(initialActivities)
+  const [journeysList, setJourneysList] = useState<MemberJourneyWithSteps[]>(initialJourneys)
+  const [triggersList, setTriggersList] = useState<PersonFollowUpTrigger[]>(initialTriggers)
+
+  // Modals & Drawers state
   const [newActivityOpen, setNewActivityOpen] = useState(false)
+  const [editingActivity, setEditingActivity] = useState<PersonActivityWithCount | null>(null)
   const [newActivityForm, setNewActivityForm] = useState<{
     description: string
     category: "pastoral" | "worship" | "ministry" | "small_group" | "volunteer"
   }>({ description: "", category: "pastoral" })
   const [isCreatingActivity, setIsCreatingActivity] = useState(false)
 
+  const [selectedActivityForMembers, setSelectedActivityForMembers] = useState<PersonActivityWithCount | null>(null)
+  const [activityMembersSheetOpen, setActivityMembersSheetOpen] = useState(false)
+
   const [newJourneyOpen, setNewJourneyOpen] = useState(false)
-  const [newJourneyForm, setNewJourneyForm] = useState<{ name: string; description: string }>({
+  const [editingJourney, setEditingJourney] = useState<MemberJourneyWithSteps | null>(null)
+  const [newJourneyForm, setNewJourneyForm] = useState<{
+    name: string
+    description: string
+    isAutoEnroll: boolean
+    autoEnrollType: "all" | "visitor" | "member"
+  }>({
     name: "",
     description: "",
+    isAutoEnroll: false,
+    autoEnrollType: "visitor",
   })
   const [isCreatingJourney, setIsCreatingJourney] = useState(false)
+
+  const [selectedJourneyForBuilder, setSelectedJourneyForBuilder] = useState<MemberJourneyWithSteps | null>(null)
+  const [journeyBuilderOpen, setJourneyBuilderOpen] = useState(false)
+
+  const [selectedTriggerForConfig, setSelectedTriggerForConfig] = useState<{
+    trigger: PersonFollowUpTrigger | null
+    kind: string
+  } | null>(null)
+  const [triggerConfigOpen, setTriggerConfigOpen] = useState(false)
+  const [isRunningTriggers, setIsRunningTriggers] = useState(false)
+
+  const [deletingActivity, setDeletingActivity] = useState<PersonActivityWithCount | null>(null)
+  const [deletingJourney, setDeletingJourney] = useState<MemberJourneyWithSteps | null>(null)
+
+  useEffect(() => {
+    if (initialActivities) setActivitiesList(initialActivities)
+  }, [initialActivities])
+
+  useEffect(() => {
+    if (initialJourneys) setJourneysList(initialJourneys)
+  }, [initialJourneys])
+
+  useEffect(() => {
+    if (initialTriggers) setTriggersList(initialTriggers)
+  }, [initialTriggers])
 
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
@@ -511,29 +581,54 @@ export function MembersClient({
     }
   }
 
-  const handleCreateActivity = async () => {
+  const handleSaveActivity = async () => {
     if (!newActivityForm.description.trim()) {
       toast.error("Informe o nome ou descrição da atividade")
       return
     }
     setIsCreatingActivity(true)
     try {
-      const res = await createPersonActivity(newActivityForm)
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao cadastrar atividade")
-        return
-      }
-      toast.success("Atividade cadastrada com sucesso!")
-      setActivitiesList((current) => [
-        ...current,
-        {
-          id: res.id ?? String(Date.now()),
+      if (editingActivity) {
+        const res = await updatePersonActivity({
+          id: editingActivity.id,
           description: newActivityForm.description.trim(),
           category: newActivityForm.category,
-        },
-      ])
+        })
+        if (!res.ok) {
+          toast.error(res.error ?? "Erro ao atualizar atividade")
+          return
+        }
+        toast.success("Atividade atualizada com sucesso!")
+        setActivitiesList((current) =>
+          current.map((a) =>
+            a.id === editingActivity.id
+              ? { ...a, description: newActivityForm.description.trim(), category: newActivityForm.category }
+              : a,
+          ),
+        )
+      } else {
+        const res = await createPersonActivity(newActivityForm)
+        if (!res.ok) {
+          toast.error(res.error ?? "Erro ao cadastrar atividade")
+          return
+        }
+        toast.success("Atividade cadastrada com sucesso!")
+        setActivitiesList((current) => [
+          ...current,
+          {
+            id: res.id ?? String(Date.now()),
+            companyId: "",
+            description: newActivityForm.description.trim(),
+            category: newActivityForm.category,
+            isActive: true,
+            assignedCount: 0,
+          },
+        ])
+      }
+      setEditingActivity(null)
       setNewActivityForm({ description: "", category: "pastoral" })
       setNewActivityOpen(false)
+      router.refresh()
     } catch {
       toast.error("Não foi possível salvar a atividade")
     } finally {
@@ -541,32 +636,159 @@ export function MembersClient({
     }
   }
 
-  const handleCreateJourney = async () => {
+  const handleDeleteActivityConfirm = async () => {
+    if (!deletingActivity) return
+    try {
+      const res = await deletePersonActivity(deletingActivity.id)
+      if (!res.ok) {
+        toast.error(res.error ?? "Erro ao excluir atividade")
+        return
+      }
+      toast.success("Atividade removida com sucesso!")
+      setActivitiesList((current) => current.filter((a) => a.id !== deletingActivity.id))
+      setDeletingActivity(null)
+      router.refresh()
+    } catch {
+      toast.error("Erro ao excluir atividade")
+    }
+  }
+
+  const handleSaveJourney = async () => {
     if (!newJourneyForm.name.trim()) {
       toast.error("Informe o nome da jornada")
       return
     }
     setIsCreatingJourney(true)
     try {
-      const res = await createMemberJourney(newJourneyForm)
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao cadastrar jornada")
-        return
-      }
-      toast.success("Jornada cadastrada com sucesso!")
-      setJourneysList((current) => [
-        ...current,
-        {
-          id: res.id ?? String(Date.now()),
+      if (editingJourney) {
+        const res = await updateMemberJourney({
+          id: editingJourney.id,
           name: newJourneyForm.name.trim(),
-        },
-      ])
-      setNewJourneyForm({ name: "", description: "" })
+          description: newJourneyForm.description.trim(),
+          isAutoEnroll: newJourneyForm.isAutoEnroll,
+          autoEnrollType: newJourneyForm.isAutoEnroll ? newJourneyForm.autoEnrollType : null,
+        })
+        if (!res.ok) {
+          toast.error(res.error ?? "Erro ao atualizar jornada")
+          return
+        }
+        toast.success("Jornada atualizada com sucesso!")
+        setJourneysList((current) =>
+          current.map((j) =>
+            j.id === editingJourney.id
+              ? {
+                  ...j,
+                  name: newJourneyForm.name.trim(),
+                  description: newJourneyForm.description.trim(),
+                  isAutoEnroll: newJourneyForm.isAutoEnroll,
+                  autoEnrollType: newJourneyForm.isAutoEnroll ? newJourneyForm.autoEnrollType : null,
+                }
+              : j,
+          ),
+        )
+      } else {
+        const res = await createMemberJourney({
+          name: newJourneyForm.name.trim(),
+          description: newJourneyForm.description.trim(),
+          isAutoEnroll: newJourneyForm.isAutoEnroll,
+          autoEnrollType: newJourneyForm.isAutoEnroll ? newJourneyForm.autoEnrollType : null,
+        })
+        if (!res.ok) {
+          toast.error(res.error ?? "Erro ao cadastrar jornada")
+          return
+        }
+        toast.success("Jornada cadastrada com sucesso!")
+        setJourneysList((current) => [
+          ...current,
+          {
+            id: res.id ?? String(Date.now()),
+            companyId: "",
+            name: newJourneyForm.name.trim(),
+            description: newJourneyForm.description.trim(),
+            sortOrder: current.length + 1,
+            isActive: true,
+            isAutoEnroll: newJourneyForm.isAutoEnroll,
+            autoEnrollType: newJourneyForm.isAutoEnroll ? newJourneyForm.autoEnrollType : null,
+            steps: [],
+            enrolledCount: 0,
+          },
+        ])
+      }
+      setEditingJourney(null)
+      setNewJourneyForm({ name: "", description: "", isAutoEnroll: false, autoEnrollType: "visitor" })
       setNewJourneyOpen(false)
+      router.refresh()
     } catch {
       toast.error("Não foi possível salvar a jornada")
     } finally {
       setIsCreatingJourney(false)
+    }
+  }
+
+  const handleDeleteJourneyConfirm = async () => {
+    if (!deletingJourney) return
+    try {
+      const res = await deleteMemberJourney(deletingJourney.id)
+      if (!res.ok) {
+        toast.error(res.error ?? "Erro ao excluir jornada")
+        return
+      }
+      toast.success("Jornada excluída com sucesso!")
+      setJourneysList((current) => current.filter((j) => j.id !== deletingJourney.id))
+      setDeletingJourney(null)
+      router.refresh()
+    } catch {
+      toast.error("Erro ao excluir jornada")
+    }
+  }
+
+  const handleToggleTriggerActive = async (trigger: PersonFollowUpTrigger | undefined, kind: string, currentActive: boolean) => {
+    const meta = triggerLabels[kind] ?? { label: "Gatilho de Follow-up", defaultDays: 7 }
+    const nextActive = !currentActive
+    try {
+      const res = await saveFollowUpTrigger({
+        id: trigger?.id ?? null,
+        triggerKind: kind,
+        name: trigger?.name ?? `Acompanhar ${meta.label.toLowerCase()}`,
+        isActive: nextActive,
+        config: (trigger?.config ?? { daysThreshold: meta.defaultDays, dueDays: 2, priority: "normal" }) as Record<string, unknown>,
+      })
+      if (!res.ok) {
+        toast.error(res.error ?? "Erro ao alterar status do gatilho")
+        return
+      }
+      toast.success(nextActive ? "Gatilho ativado!" : "Gatilho pausado")
+      setTriggersList((prev) => {
+        const found = prev.find((t) => t.triggerKind === kind)
+        if (found) {
+          return prev.map((t) => (t.triggerKind === kind ? { ...t, isActive: nextActive } : t))
+        }
+        return [...prev, { id: res.id ?? "", triggerKind: kind, name: `Acompanhar ${meta.label.toLowerCase()}`, isActive: nextActive, config: {} }]
+      })
+      router.refresh()
+    } catch {
+      toast.error("Erro ao atualizar gatilho")
+    }
+  }
+
+  const handleRunFollowUpTriggers = async () => {
+    setIsRunningTriggers(true)
+    try {
+      const res = await runFollowUpTriggers()
+      if (!res.ok) {
+        toast.error(res.error ?? "Erro ao executar gatilhos")
+        return
+      }
+      toast.success(
+        "created" in res && typeof res.created === "number" && res.created > 0
+          ? `${res.created} nova(s) tarefa(s) de follow-up gerada(s)!`
+          : "Varredura concluída: nenhuma nova tarefa pendente gerada.",
+      )
+      router.refresh()
+    } catch {
+      toast.error("Erro ao executar varredura de follow-up")
+    } finally {
+      setIsRunningTriggers(false)
     }
   }
 
@@ -1895,35 +2117,103 @@ export function MembersClient({
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="h-5 w-5 text-primary" />
-                  Atividades e Vínculos Pastorais
+                  Atividades e Ministérios Pastorais
                 </CardTitle>
                 <CardDescription>
-                  Atividades que podem ser atribuídas ao histórico e ficha de membros (ex.: Louvor, Diaconia, Coral).
+                  Áreas de atuação, departamentos e ministérios da igreja atribuídos aos membros.
                 </CardDescription>
               </div>
-              <Button size="sm" onClick={() => setNewActivityOpen(true)} className="gradient-primary">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingActivity(null)
+                  setNewActivityForm({ description: "", category: "pastoral" })
+                  setNewActivityOpen(true)
+                }}
+                className="gradient-primary"
+              >
                 <Plus className="mr-2 h-4 w-4" /> Nova atividade
               </Button>
             </CardHeader>
             <CardContent>
               {activitiesList.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">Nenhuma atividade cadastrada ainda.</p>
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhuma atividade pastoral cadastrada ainda.
+                </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {activitiesList.map((act) => (
-                    <div
-                      key={act.id}
-                      className="flex items-center justify-between rounded-lg border border-border/40 p-3 bg-muted/20"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">{act.description}</p>
-                        <p className="text-xs text-muted-foreground capitalize mt-0.5">{act.category}</p>
+                  {activitiesList.map((act) => {
+                    const cat = activityCategoryLabels[act.category] ?? {
+                      label: act.category,
+                      className: "bg-muted text-muted-foreground",
+                    }
+                    return (
+                      <div
+                        key={act.id}
+                        className="flex flex-col justify-between rounded-lg border border-border/40 p-4 bg-muted/20 hover:border-primary/30 transition-colors"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <Badge variant="outline" className={`text-xs ${cat.className}`}>
+                              {cat.label}
+                            </Badge>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                }
+                              />
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setEditingActivity(act)
+                                    setNewActivityForm({
+                                      description: act.description,
+                                      category: act.category as any,
+                                    })
+                                    setNewActivityOpen(true)
+                                  }}
+                                >
+                                  <Edit className="mr-2 h-4 w-4" /> Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => setDeletingActivity(act)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm leading-snug">{act.description}</p>
+                            <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Users className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span>
+                                {act.assignedCount ?? 0} {act.assignedCount === 1 ? "membro vinculado" : "membros vinculados"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-border/20">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs"
+                            onClick={() => {
+                              setSelectedActivityForMembers(act)
+                              setActivityMembersSheetOpen(true)
+                            }}
+                          >
+                            <Users className="mr-1.5 h-3.5 w-3.5" /> Gerenciar membros
+                          </Button>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="text-xs">
-                        Ativa
-                      </Badge>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
@@ -1935,37 +2225,216 @@ export function MembersClient({
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Route className="h-5 w-5 text-primary" />
-                  Jornadas de Integração
+                  Trilhas de Crescimento & Integração
                 </CardTitle>
                 <CardDescription>
-                  Trilhas de passos espirituais e discipulado (ex.: Batismo, Novos Membros, Encontro).
+                  Jornadas estruturadas de passos espirituais, discipulado e formação com etapas e SLAs.
                 </CardDescription>
               </div>
-              <Button size="sm" onClick={() => setNewJourneyOpen(true)} variant="outline">
-                <Plus className="mr-2 h-4 w-4" /> Nova jornada
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingJourney(null)
+                  setNewJourneyForm({
+                    name: "",
+                    description: "",
+                    isAutoEnroll: false,
+                    autoEnrollType: "visitor",
+                  })
+                  setNewJourneyOpen(true)
+                }}
+                className="gradient-primary"
+              >
+                <Plus className="mr-2 h-4 w-4" /> Nova trilha
               </Button>
             </CardHeader>
             <CardContent>
               {journeysList.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">Nenhuma jornada cadastrada ainda.</p>
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhuma trilha de integração cadastrada ainda.
+                </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {journeysList.map((j) => (
                     <div
                       key={j.id}
-                      className="flex items-center justify-between rounded-lg border border-border/40 p-3 bg-muted/20"
+                      className="flex flex-col justify-between rounded-lg border border-border/40 p-4 bg-muted/20 hover:border-primary/30 transition-colors"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <Route className="h-4 w-4 text-primary shrink-0" />
-                        <span className="text-sm font-medium">{j.name}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant="secondary" className="text-xs">
+                              {j.steps?.length ?? 0} {(j.steps?.length ?? 0) === 1 ? "etapa" : "etapas"}
+                            </Badge>
+                            {j.isAutoEnroll ? (
+                              <Badge className="bg-primary/15 text-primary border-primary/20 text-xs">
+                                Auto: {j.autoEnrollType === "visitor" ? "Visitantes" : j.autoEnrollType === "member" ? "Membros" : "Todos"}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setEditingJourney(j)
+                                  setNewJourneyForm({
+                                    name: j.name,
+                                    description: j.description ?? "",
+                                    isAutoEnroll: !!j.isAutoEnroll,
+                                    autoEnrollType: j.autoEnrollType ?? "visitor",
+                                  })
+                                  setNewJourneyOpen(true)
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" /> Editar dados
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeletingJourney(j)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm leading-snug">{j.name}</p>
+                          {j.description ? (
+                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{j.description}</p>
+                          ) : null}
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <UserCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <span>
+                              {j.enrolledCount ?? 0} {(j.enrolledCount ?? 0) === 1 ? "pessoa cursando" : "pessoas cursando"}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <Badge variant="secondary" className="text-xs">
-                        Configurada
-                      </Badge>
+
+                      <div className="mt-4 pt-3 border-t border-border/20">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full text-xs"
+                          onClick={() => {
+                            setSelectedJourneyForBuilder(j)
+                            setJourneyBuilderOpen(true)
+                          }}
+                        >
+                          <Route className="mr-1.5 h-3.5 w-3.5" /> Gerenciar trilha & etapas
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Follow-up Triggers */}
+          <Card className="glass">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Gatilhos Automáticos de Follow-up
+                </CardTitle>
+                <CardDescription>
+                  Regras pastorais que analisam a base e geram tarefas e lembretes de acolhimento preventivo.
+                </CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRunFollowUpTriggers}
+                disabled={isRunningTriggers}
+                className="shrink-0"
+              >
+                {isRunningTriggers ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4 fill-current text-primary" />
+                )}
+                Executar varredura agora
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(Object.keys(triggerLabels) as (keyof typeof triggerLabels)[]).map((kind) => {
+                  const meta = triggerLabels[kind]
+                  const trig = triggersList.find((t) => t.triggerKind === kind)
+                  const isActive = trig?.isActive ?? true
+                  const cfg = (trig?.config ?? {}) as FollowUpTriggerConfig
+                  const daysThreshold = cfg.daysThreshold ?? meta.defaultDays
+                  const dueDays = cfg.dueDays ?? 2
+                  const priority = cfg.priority ?? "normal"
+
+                  return (
+                    <div
+                      key={kind}
+                      className="flex flex-col justify-between rounded-lg border border-border/40 p-4 bg-muted/20 hover:border-primary/30 transition-colors"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm leading-tight">{meta.label}</p>
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                              {meta.description}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={() => handleToggleTriggerActive(trig, kind, isActive)}
+                            aria-label={`Ativar ou pausar gatilho ${meta.label}`}
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <Badge variant="outline" className="text-[11px]">
+                            {daysThreshold} dias
+                          </Badge>
+                          <Badge variant="outline" className="text-[11px]">
+                            Prazo: {dueDays}d
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={`text-[11px] ${
+                              priority === "urgent"
+                                ? "text-destructive border-destructive/30"
+                                : priority === "high"
+                                  ? "text-warning border-warning/30"
+                                  : "text-muted-foreground"
+                            }`}
+                          >
+                            {priority === "urgent" ? "Urgente" : priority === "high" ? "Alta" : "Normal"}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-border/20">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-xs border border-border/40 hover:bg-muted/40"
+                          onClick={() => {
+                            setSelectedTriggerForConfig({ trigger: trig ?? null, kind })
+                            setTriggerConfigOpen(true)
+                          }}
+                        >
+                          <Settings2 className="mr-1.5 h-3.5 w-3.5" /> Calibrar parâmetros
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </CardContent>
           </Card>
 
@@ -1976,17 +2445,17 @@ export function MembersClient({
                 <CardTitle className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <Activity className="h-4 w-4 text-primary" />
-                    Gatilhos de Follow-up
+                    Central de Follow-up
                   </span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Automações para novos visitantes, aniversariantes e ausências.
+                  Tarefas e acompanhamentos pastorais gerados automaticamente.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Button render={<Link href="/configuracoes/follow-up" />} nativeButton={false} variant="outline" size="sm" className="w-full text-xs">
-                  Gerenciar gatilhos <ExternalLink className="ml-1.5 h-3 w-3" />
+                  Acessar tarefas <ExternalLink className="ml-1.5 h-3 w-3" />
                 </Button>
               </CardContent>
             </Card>
@@ -2373,13 +2842,24 @@ export function MembersClient({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* New Pastoral Activity Dialog */}
-      <Dialog open={newActivityOpen} onOpenChange={setNewActivityOpen}>
+      {/* Pastoral Activity Create/Edit Dialog */}
+      <Dialog
+        open={newActivityOpen}
+        onOpenChange={(open) => {
+          setNewActivityOpen(open)
+          if (!open) {
+            setEditingActivity(null)
+            setNewActivityForm({ description: "", category: "pastoral" })
+          }
+        }}
+      >
         <DialogContent className="glass-strong sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nova Atividade Pastoral</DialogTitle>
+            <DialogTitle>
+              {editingActivity ? "Editar Atividade Pastoral" : "Nova Atividade Pastoral"}
+            </DialogTitle>
             <DialogDescription>
-              Cadastre um ministério, área de atuação ou atividade da igreja.
+              Cadastre um ministério, área de atuação ou departamento da igreja.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-3">
@@ -2398,7 +2878,8 @@ export function MembersClient({
               <Select
                 value={newActivityForm.category}
                 onValueChange={(val) =>
-                  val && setNewActivityForm({
+                  val &&
+                  setNewActivityForm({
                     ...newActivityForm,
                     category: val as "pastoral" | "worship" | "ministry" | "small_group" | "volunteer",
                   })
@@ -2418,32 +2899,55 @@ export function MembersClient({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewActivityOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewActivityOpen(false)
+                setEditingActivity(null)
+                setNewActivityForm({ description: "", category: "pastoral" })
+              }}
+            >
               Cancelar
             </Button>
             <Button
-              onClick={handleCreateActivity}
+              onClick={handleSaveActivity}
               disabled={isCreatingActivity}
               className="gradient-primary"
             >
-              {isCreatingActivity ? "Cadastrando..." : "Cadastrar Atividade"}
+              {isCreatingActivity ? "Salvando..." : editingActivity ? "Salvar alterações" : "Cadastrar Atividade"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* New Member Journey Dialog */}
-      <Dialog open={newJourneyOpen} onOpenChange={setNewJourneyOpen}>
+      {/* Member Journey Create/Edit Dialog */}
+      <Dialog
+        open={newJourneyOpen}
+        onOpenChange={(open) => {
+          setNewJourneyOpen(open)
+          if (!open) {
+            setEditingJourney(null)
+            setNewJourneyForm({
+              name: "",
+              description: "",
+              isAutoEnroll: false,
+              autoEnrollType: "visitor",
+            })
+          }
+        }}
+      >
         <DialogContent className="glass-strong sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nova Jornada de Integração</DialogTitle>
+            <DialogTitle>
+              {editingJourney ? "Editar Trilha de Integração" : "Nova Trilha de Integração"}
+            </DialogTitle>
             <DialogDescription>
-              Crie uma trilha de passos espirituais ou discipulado da igreja.
+              Crie uma trilha de passos espirituais, batismo ou discipulado da igreja.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-3">
             <div className="grid gap-2">
-              <Label>Nome da Jornada *</Label>
+              <Label>Nome da Trilha *</Label>
               <Input
                 placeholder="Ex.: Trilha de Integração, Discipulado I, Batismo"
                 value={newJourneyForm.name}
@@ -2462,21 +2966,144 @@ export function MembersClient({
                 }
               />
             </div>
+
+            <div className="space-y-3 rounded-lg border border-border/40 p-3 bg-muted/20">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label>Inscrição Automática</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Inscrever automaticamente novos cadastros nesta trilha.
+                  </p>
+                </div>
+                <Switch
+                  checked={newJourneyForm.isAutoEnroll}
+                  onCheckedChange={(checked) =>
+                    setNewJourneyForm({ ...newJourneyForm, isAutoEnroll: checked })
+                  }
+                />
+              </div>
+
+              {newJourneyForm.isAutoEnroll ? (
+                <div className="grid gap-2 pt-2 border-t border-border/20">
+                  <Label>Inscrever automaticamente quem?</Label>
+                  <Select
+                    value={newJourneyForm.autoEnrollType}
+                    onValueChange={(val) =>
+                      val &&
+                      setNewJourneyForm({
+                        ...newJourneyForm,
+                        autoEnrollType: val as "all" | "visitor" | "member",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="visitor">Apenas novos Visitantes</SelectItem>
+                      <SelectItem value="member">Apenas novos Membros</SelectItem>
+                      <SelectItem value="all">Todas as pessoas cadastradas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewJourneyOpen(false)}>
               Cancelar
             </Button>
             <Button
-              onClick={handleCreateJourney}
+              onClick={handleSaveJourney}
               disabled={isCreatingJourney}
               className="gradient-primary"
             >
-              {isCreatingJourney ? "Cadastrando..." : "Cadastrar Jornada"}
+              {isCreatingJourney ? "Salvando..." : editingJourney ? "Salvar alterações" : "Cadastrar Trilha"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Activity Alert */}
+      <AlertDialog
+        open={!!deletingActivity}
+        onOpenChange={(open) => !open && setDeletingActivity(null)}
+      >
+        <AlertDialogContent className="glass-strong">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir atividade pastoral</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover a atividade &ldquo;{deletingActivity?.description}&rdquo;? As atribuições ativas de membros serão desvinculadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteActivityConfirm}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Journey Alert */}
+      <AlertDialog
+        open={!!deletingJourney}
+        onOpenChange={(open) => !open && setDeletingJourney(null)}
+      >
+        <AlertDialogContent className="glass-strong">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir trilha de integração</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover a trilha &ldquo;{deletingJourney?.name}&rdquo; e todas as suas etapas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteJourneyConfirm}
+              className="bg-destructive text-destructive-foreground"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Activity Members Sheet */}
+      <ActivityMembersSheet
+        open={activityMembersSheetOpen}
+        onOpenChange={setActivityMembersSheetOpen}
+        activity={selectedActivityForMembers}
+        availablePeople={peopleResult.people}
+        onMembersChanged={() => {
+          router.refresh()
+        }}
+      />
+
+      {/* Journey Builder Sheet */}
+      <JourneyBuilderSheet
+        open={journeyBuilderOpen}
+        onOpenChange={setJourneyBuilderOpen}
+        journey={selectedJourneyForBuilder}
+        onJourneyChanged={() => {
+          router.refresh()
+        }}
+      />
+
+      {/* Trigger Config Dialog */}
+      <TriggerConfigDialog
+        open={triggerConfigOpen}
+        onOpenChange={setTriggerConfigOpen}
+        trigger={selectedTriggerForConfig?.trigger ?? null}
+        triggerKind={selectedTriggerForConfig?.kind ?? "new_visitor"}
+        responsibleOptions={responsibleOptions}
+        onSaved={() => {
+          router.refresh()
+        }}
+      />
     </div>
   )
 }

@@ -179,6 +179,68 @@ export async function savePersonFollowUpTrigger(formData: FormData) {
       companyId,
       metadata: { triggerKind: selectedKind, isActive, profileId: user.id },
     })
+    revalidatePath("/pessoas")
+    revalidatePath("/pessoas/follow-up")
+    revalidatePath("/configuracoes/follow-up")
+    return { ok: true, id: rows[0].id }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Não foi possível salvar o gatilho" }
+  }
+}
+
+export async function updateTriggerConfigDirect(input: {
+  id?: string | null
+  triggerKind: string
+  name: string
+  isActive: boolean
+  config: Record<string, unknown>
+  companyId?: string | null
+}) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, input.companyId)
+    await requirePermission("crm.edit", companyId)
+
+    const selectedKind = triggerKind.parse(input.triggerKind)
+    const name = input.name.trim()
+    if (name.length < 3 || name.length > 180) throw new Error("Nome do gatilho inválido")
+    const sql = getSql()
+
+    const existing = input.id
+      ? await sql<{ id: string }[]>`
+          select id from public.person_follow_up_triggers
+          where id = ${input.id} and company_id = ${companyId} and deleted_at is null limit 1
+        `
+      : await sql<{ id: string }[]>`
+          select id from public.person_follow_up_triggers
+          where company_id = ${companyId} and trigger_kind = ${selectedKind} and deleted_at is null limit 1
+        `
+
+    const rows = existing[0]
+      ? await sql<{ id: string }[]>`
+          update public.person_follow_up_triggers
+          set trigger_kind = ${selectedKind}, name = ${name}, is_active = ${input.isActive}, config = ${JSON.stringify(input.config)}::jsonb,
+              updated_by = ${user.id}, updated_at = now()
+          where id = ${existing[0].id} and company_id = ${companyId}
+          returning id
+        `
+      : await sql<{ id: string }[]>`
+          insert into public.person_follow_up_triggers (company_id, trigger_kind, name, is_active, config, created_by, updated_by)
+          values (${companyId}, ${selectedKind}, ${name}, ${input.isActive}, ${JSON.stringify(input.config)}::jsonb, ${user.id}, ${user.id})
+          returning id
+        `
+
+    if (!rows[0]) throw new Error("Gatilho não foi salvo")
+    await writeAuditLog({
+      action: "person_follow_up_trigger.save",
+      entityTable: "person_follow_up_triggers",
+      entityId: rows[0].id,
+      companyId,
+      metadata: { triggerKind: selectedKind, isActive: input.isActive, profileId: user.id },
+    })
+
+    revalidatePath("/pessoas")
     revalidatePath("/pessoas/follow-up")
     revalidatePath("/configuracoes/follow-up")
     return { ok: true, id: rows[0].id }
@@ -191,6 +253,22 @@ export async function runPersonFollowUpTriggers(formData: FormData) {
   try {
     const { companyId } = await context(formData, "crm.edit")
     const result = await processFollowUpTriggers(companyId, 100)
+    revalidatePath("/pessoas")
+    revalidatePath("/pessoas/follow-up")
+    return { ok: true, ...result }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Não foi possível executar os gatilhos" }
+  }
+}
+
+export async function runFollowUpTriggersDirect(companyIdInput?: string | null) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user, companyIdInput)
+    await requirePermission("crm.edit", companyId)
+    const result = await processFollowUpTriggers(companyId, 100)
+    revalidatePath("/pessoas")
     revalidatePath("/pessoas/follow-up")
     return { ok: true, ...result }
   } catch (error) {

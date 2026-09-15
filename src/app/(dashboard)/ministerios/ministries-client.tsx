@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useState, useSyncExternalStore } from "react"
+import { FormEvent, useEffect, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { format, parseISO } from "date-fns"
@@ -47,11 +47,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { MinistryMembershipManager } from "@/components/member/ministry-membership-manager"
+import type { MinistryMembershipAdminItem } from "@/lib/member/types"
 
 interface MinistriesClientProps {
   ministriesResult: MinistriesListResult
   filters: PastoralListFilters
   leaderCandidates: { id: string; fullName: string }[]
+  memberships?: MinistryMembershipAdminItem[]
+  initialTab?: string
 }
 
 interface MinistryFormState {
@@ -127,11 +132,22 @@ function ministryToForm(ministry: MinistryListItem): MinistryFormState {
   }
 }
 
-export function MinistriesClient({ ministriesResult, filters, leaderCandidates }: MinistriesClientProps) {
+export function MinistriesClient({
+  ministriesResult,
+  filters,
+  leaderCandidates,
+  memberships = [],
+  initialTab = "ministerios",
+}: MinistriesClientProps) {
   const router = useRouter()
   const pathname = usePathname()
   const routePath = pathname ?? "/ministerios"
   const ministries = ministriesResult.items
+  const [activeTab, setActiveTab] = useState(initialTab)
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -147,9 +163,25 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
 
   const activeMinistries = ministries.filter((ministry) => ministry.isActive).length
   const totalMembers = ministries.reduce((sum, ministry) => sum + ministry.memberCount, 0)
+  const pendingRequestsCount = memberships.filter((item) => item.status === "pending").length
+  const activeMembersCount = memberships.filter((item) => item.status === "active").length
+
+  const handleTabChange = (nextTab: string) => {
+    setActiveTab(nextTab)
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
+    if (nextTab === "ministerios") {
+      params.delete("tab")
+      params.delete("aba")
+    } else {
+      params.set("tab", nextTab)
+    }
+    const query = params.toString()
+    router.replace(query ? `${routePath}?${query}` : routePath, { scroll: false })
+  }
 
   const updateRoute = (nextFilters: FilterState, page = 1) => {
     const params = new URLSearchParams()
+    if (activeTab && activeTab !== "ministerios") params.set("tab", activeTab)
     if (nextFilters.search.trim()) params.set("search", nextFilters.search.trim())
     if (nextFilters.isActive !== "all") params.set("isActive", nextFilters.isActive)
     if (page > 1) params.set("page", String(page))
@@ -252,191 +284,222 @@ export function MinistriesClient({ ministriesResult, filters, leaderCandidates }
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="glass py-0">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold">{ministriesResult.total}</p>
-              </div>
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <Heart className="h-5 w-5 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass py-0">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm text-muted-foreground">Ativos nesta página</p>
-                <p className="text-2xl font-bold">{activeMinistries}</p>
-              </div>
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success/10">
-                <Users className="h-5 w-5 text-success" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass py-0">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <p className="text-sm text-muted-foreground">Participantes vinculados</p>
-                <p className="text-2xl font-bold">{totalMembers}</p>
-              </div>
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10">
-                <User className="h-5 w-5 text-info" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="flex h-auto w-fit flex-wrap gap-1 rounded-xl border bg-muted/60 p-1">
+          <TabsTrigger value="ministerios" className="flex items-center gap-2 px-3.5 py-2">
+            <Heart className="h-4 w-4 text-primary" />
+            <span>Ministérios</span>
+            <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+              {ministriesResult.total}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="participantes" className="flex items-center gap-2 px-3.5 py-2">
+            <Users className="h-4 w-4 text-primary" />
+            <span>Participantes e solicitações</span>
+            {pendingRequestsCount > 0 ? (
+              <Badge variant="destructive" className="ml-1 px-1.5 py-0 text-xs animate-pulse">
+                {pendingRequestsCount} {pendingRequestsCount === 1 ? "pendente" : "pendentes"}
+              </Badge>
+            ) : memberships.length > 0 ? (
+              <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">
+                {activeMembersCount}
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
 
-      <form onSubmit={handleFilterSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, contato ou descrição"
-            value={filterState.search}
-            onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
-            className="pl-9 md:pl-9"
-          />
-        </div>
-        <Select
-          value={filterState.isActive}
-          onValueChange={(value) => setFilterState({ ...filterState, isActive: value ?? "all" })}
-        >
-          <SelectTrigger className="w-full sm:w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="yes">Ativos</SelectItem>
-            <SelectItem value="no">Inativos</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button type="submit" variant="outline" className="w-full sm:w-auto">
-          Filtrar
-        </Button>
-        <div className="flex w-fit self-end rounded-md border p-1 sm:self-auto" aria-label="Modo de visualização">
-          <Button
-            type="button"
-            variant={viewMode === "list" ? "secondary" : "ghost"}
-            size="icon-sm"
-            aria-label="Ver ministérios em lista"
-            aria-pressed={viewMode === "list"}
-            title="Lista"
-            onClick={() => changeViewMode("list")}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant={viewMode === "grid" ? "secondary" : "ghost"}
-            size="icon-sm"
-            aria-label="Ver ministérios em grade"
-            aria-pressed={viewMode === "grid"}
-            title="Grade"
-            onClick={() => changeViewMode("grid")}
-          >
-            <Grid2X2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </form>
-
-      <div className={viewMode === "grid" ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
-        {ministries.map((ministry) => (
-          <Card key={ministry.id} className="glass overflow-hidden group">
-            <CardHeader className={viewMode === "grid" ? "pb-3" : "pb-2"}>
-              <div className={viewMode === "grid" ? "flex items-start justify-between gap-3" : "flex items-center justify-between gap-3"}>
-                <div className="min-w-0 space-y-1">
-                  <CardTitle className="truncate text-base">{ministry.name}</CardTitle>
-                  <Badge
-                    className={
-                      ministry.isActive
-                        ? "bg-success/10 text-success border-success/20"
-                        : "bg-destructive/10 text-destructive border-destructive/20"
-                    }
-                  >
-                    {ministry.isActive ? "Ativo" : "Inativo"}
-                  </Badge>
+        <TabsContent value="ministerios" className="mt-0 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card className="glass py-0">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm text-muted-foreground">Total</p>
+                    <p className="text-2xl font-bold">{ministriesResult.total}</p>
+                  </div>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                    <Heart className="h-5 w-5 text-primary" />
+                  </div>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
-                    <MoreVertical className="h-4 w-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEditDialog(ministry)}>
-                      <Edit className="mr-2 h-4 w-4" />
-                      Editar
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setDeletingMinistry(ministry)
-                        setDeleteDialogOpen(true)
-                      }}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Excluir
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-            <CardContent className={viewMode === "grid" ? "space-y-3" : "flex flex-col gap-3 p-4 pt-0 sm:flex-row sm:items-center sm:py-4"}>
-              <p className={viewMode === "grid" ? "line-clamp-2 text-sm text-muted-foreground" : "min-w-0 flex-1 text-sm text-muted-foreground sm:line-clamp-1"}>
-                {ministry.description || "Sem descrição cadastrada."}
-              </p>
-              <div className={viewMode === "grid" ? "space-y-2 text-sm text-muted-foreground" : "flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground"}>
-                <div className="flex items-center gap-2">
-                  <User className="h-3.5 w-3.5" />
-                  <span className="truncate">{ministry.leaderName || "Responsável não informado"}</span>
+              </CardContent>
+            </Card>
+            <Card className="glass py-0">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm text-muted-foreground">Ativos nesta página</p>
+                    <p className="text-2xl font-bold">{activeMinistries}</p>
+                  </div>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success/10">
+                    <Users className="h-5 w-5 text-success" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5" />
-                  <span>{ministry.memberCount} participantes</span>
+              </CardContent>
+            </Card>
+            <Card className="glass py-0">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm text-muted-foreground">Participantes vinculados</p>
+                    <p className="text-2xl font-bold">{totalMembers}</p>
+                  </div>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10">
+                    <User className="h-5 w-5 text-info" />
+                  </div>
                 </div>
-                <p className="text-xs">Atualizado em {formatDate(ministry.updatedAt)}</p>
-              </div>
-              <Link href={`/ministerios/${ministry.slug || ministry.id}`} className={viewMode === "grid" ? "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground" : "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto sm:min-w-36"}>Abrir gestão</Link>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {ministries.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Heart className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">Nenhum ministério encontrado</p>
-        </div>
-      )}
-
-      {ministriesResult.total > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Página {ministriesResult.page} de {ministriesResult.pageCount}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              disabled={ministriesResult.page <= 1}
-              onClick={() => goToPage(ministriesResult.page - 1)}
-            >
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              disabled={ministriesResult.page >= ministriesResult.pageCount}
-              onClick={() => goToPage(ministriesResult.page + 1)}
-            >
-              Próxima
-            </Button>
+              </CardContent>
+            </Card>
           </div>
-        </div>
-      )}
+
+          <form onSubmit={handleFilterSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, contato ou descrição"
+                value={filterState.search}
+                onChange={(event) => setFilterState({ ...filterState, search: event.target.value })}
+                className="pl-9 md:pl-9"
+              />
+            </div>
+            <Select
+              value={filterState.isActive}
+              onValueChange={(value) => setFilterState({ ...filterState, isActive: value ?? "all" })}
+            >
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="yes">Ativos</SelectItem>
+                <SelectItem value="no">Inativos</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" variant="outline" className="w-full sm:w-auto">
+              Filtrar
+            </Button>
+            <div className="flex w-fit self-end rounded-md border p-1 sm:self-auto" aria-label="Modo de visualização">
+              <Button
+                type="button"
+                variant={viewMode === "list" ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label="Ver ministérios em lista"
+                aria-pressed={viewMode === "list"}
+                title="Lista"
+                onClick={() => changeViewMode("list")}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant={viewMode === "grid" ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label="Ver ministérios em grade"
+                aria-pressed={viewMode === "grid"}
+                title="Grade"
+                onClick={() => changeViewMode("grid")}
+              >
+                <Grid2X2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
+
+          <div className={viewMode === "grid" ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
+            {ministries.map((ministry) => (
+              <Card key={ministry.id} className="glass overflow-hidden group">
+                <CardHeader className={viewMode === "grid" ? "pb-3" : "pb-2"}>
+                  <div className={viewMode === "grid" ? "flex items-start justify-between gap-3" : "flex items-center justify-between gap-3"}>
+                    <div className="min-w-0 space-y-1">
+                      <CardTitle className="truncate text-base">{ministry.name}</CardTitle>
+                      <Badge
+                        className={
+                          ministry.isActive
+                            ? "bg-success/10 text-success border-success/20"
+                            : "bg-destructive/10 text-destructive border-destructive/20"
+                        }
+                      >
+                        {ministry.isActive ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                        <MoreVertical className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(ministry)}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setDeletingMinistry(ministry)
+                            setDeleteDialogOpen(true)
+                          }}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardHeader>
+                <CardContent className={viewMode === "grid" ? "space-y-3" : "flex flex-col gap-3 p-4 pt-0 sm:flex-row sm:items-center sm:py-4"}>
+                  <p className={viewMode === "grid" ? "line-clamp-2 text-sm text-muted-foreground" : "min-w-0 flex-1 text-sm text-muted-foreground sm:line-clamp-1"}>
+                    {ministry.description || "Sem descrição cadastrada."}
+                  </p>
+                  <div className={viewMode === "grid" ? "space-y-2 text-sm text-muted-foreground" : "flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground"}>
+                    <div className="flex items-center gap-2">
+                      <User className="h-3.5 w-3.5" />
+                      <span className="truncate">{ministry.leaderName || "Responsável não informado"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Users className="h-3.5 w-3.5" />
+                      <span>{ministry.memberCount} participantes</span>
+                    </div>
+                    <p className="text-xs">Atualizado em {formatDate(ministry.updatedAt)}</p>
+                  </div>
+                  <Link href={`/ministerios/${ministry.slug || ministry.id}`} className={viewMode === "grid" ? "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground" : "inline-flex min-h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto sm:min-w-36"}>Abrir gestão</Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {ministries.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Heart className="h-12 w-12 text-muted-foreground/50" />
+              <p className="mt-4 text-sm text-muted-foreground">Nenhum ministério encontrado</p>
+            </div>
+          )}
+
+          {ministriesResult.total > 0 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Página {ministriesResult.page} de {ministriesResult.pageCount}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  disabled={ministriesResult.page <= 1}
+                  onClick={() => goToPage(ministriesResult.page - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={ministriesResult.page >= ministriesResult.pageCount}
+                  onClick={() => goToPage(ministriesResult.page + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="participantes" className="mt-0 space-y-6">
+          <MinistryMembershipManager memberships={memberships} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="glass-strong max-h-[90vh] overflow-y-auto sm:max-w-lg">

@@ -149,6 +149,31 @@ export async function listPersonTimeline(personId: string, companyIdInput?: stri
       from public.audit_logs audit
       where audit.company_id = ${companyId}
         and audit.entity_table = 'people' and audit.entity_id = ${personId}
+
+      union all
+      select
+        pjp.id::text,
+        'journey'::text as kind,
+        'Etapa de jornada concluída'::text as title,
+        mj.name || ' — ' || mjs.name || coalesce(': ' || nullif(pjp.notes, ''), '') as description,
+        pjp.completed_at as occurred_at,
+        'person_journey_progress'::text as source
+      from public.person_journey_progress pjp
+      inner join public.member_journeys mj on mj.id = pjp.journey_id
+      inner join public.member_journey_steps mjs on mjs.id = pjp.step_id
+      where pjp.person_id = ${personId} and pjp.company_id = ${companyId} and pjp.completed_at is not null
+
+      union all
+      select
+        paa.id::text,
+        'activity'::text as kind,
+        'Vínculo de atividade pastoral'::text as title,
+        pa.description || ' (' || pa.category || ')' as description,
+        paa.assigned_at as occurred_at,
+        'person_activity_assignments'::text as source
+      from public.person_activity_assignments paa
+      inner join public.person_activities pa on pa.id = paa.activity_id
+      where paa.person_id = ${personId} and paa.company_id = ${companyId}
     ) timeline
     where occurred_at is not null
     order by occurred_at desc, id desc
@@ -231,14 +256,21 @@ export async function listFollowUpTriggers(companyIdInput?: string | null): Prom
 export async function processFollowUpTriggers(companyIdInput?: string | null, limit = 100) {
   const companyId = companyIdInput ?? null
   const sql = getSql()
-  const triggers = await sql<{ id: string; trigger_kind: string; name: string }[]>`
-    select id, trigger_kind, name from public.person_follow_up_triggers
+  const triggers = await sql<{ id: string; trigger_kind: string; name: string; config: Record<string, unknown> }[]>`
+    select id, trigger_kind, name, coalesce(config, '{}'::jsonb) as config from public.person_follow_up_triggers
     where deleted_at is null and is_active = true
       and (${companyId}::uuid is null or company_id = ${companyId}::uuid)
     order by company_id, trigger_kind
   `
   let created = 0
   for (const trigger of triggers) {
+    const config = (trigger.config ?? {}) as Record<string, any>
+    const days = typeof config.daysThreshold === "number" && config.daysThreshold > 0 ? Math.round(config.daysThreshold) : 30
+    const priority = ["low", "normal", "high", "urgent"].includes(config.priority) ? config.priority : "normal"
+    const dueDays = typeof config.dueDays === "number" && config.dueDays >= 0 ? Math.round(config.dueDays) : 2
+    const responsibleProfileId = typeof config.responsibleProfileId === "string" && config.responsibleProfileId.length > 0 ? config.responsibleProfileId : null
+    const customNotes = typeof config.notes === "string" && config.notes.trim() ? config.notes.trim() : "Criada automaticamente por gatilho configurado."
+
     const companies = await sql<{ company_id: string }[]>`
       select distinct company_id from public.person_follow_up_triggers
       where id = ${trigger.id}
@@ -249,7 +281,7 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
             select id as person_id, ${trigger.trigger_kind} || ':' || id::text as source_key
             from public.people
             where company_id = ${company.company_id} and deleted_at is null and is_active = true and status = 'visitor'
-              and created_at >= now() - interval '30 days'
+              and created_at >= now() - (${days} || ' days')::interval
             order by created_at desc limit ${limit}
           `
         : trigger.trigger_kind === "visitor_without_contact"
@@ -258,7 +290,7 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
               from public.people
               where company_id = ${company.company_id} and deleted_at is null and is_active = true and status = 'visitor'
                 and nullif(btrim(coalesce(email, '')), '') is null and nullif(btrim(coalesce(phone, '')), '') is null
-                and created_at >= now() - interval '30 days'
+                and created_at >= now() - (${days} || ' days')::interval
               order by created_at desc limit ${limit}
             `
           : trigger.trigger_kind === "without_cell"
@@ -290,7 +322,7 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
                     inner join public.profiles profile on (profile.auth_user_id = request.user_id or profile.id = request.user_id)
                       and profile.company_id = ${company.company_id} and profile.person_id is not null
                     where request.company_id = ${company.company_id} and request.deleted_at is null
-                      and request.created_at >= now() - interval '30 days'
+                      and request.created_at >= now() - (${days} || ' days')::interval
                     order by request.created_at desc limit ${limit}
                   `
                 : await sql<{ person_id: string; source_key: string }[]>`
@@ -305,18 +337,20 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
                       and not exists (
                         select 1 from public.attendance_records recent_attendance
                         where recent_attendance.company_id = person.company_id and recent_attendance.person_id = person.id
-                          and recent_attendance.deleted_at is null and recent_attendance.occurred_on >= current_date - 30
+                          and recent_attendance.deleted_at is null and recent_attendance.occurred_on >= current_date - (${days} || ' days')::interval
                       )
                     order by person.created_at desc limit ${limit}
                   `
       for (const candidate of candidates) {
         const rows = await sql<{ id: string }[]>`
           insert into public.person_follow_up_tasks (
-            company_id, person_id, title, notes, priority, status, origin, source_key
+            company_id, person_id, title, notes, priority, status, origin, source_key,
+            responsible_profile_id, due_at
           )
           values (
             ${company.company_id}, ${candidate.person_id}, ${trigger.name},
-            'Criada automaticamente por gatilho configurado.', 'normal', 'open', ${trigger.trigger_kind}, ${candidate.source_key}
+            ${customNotes}, ${priority}, 'open', ${trigger.trigger_kind}, ${candidate.source_key},
+            ${responsibleProfileId}, now() + (${dueDays} || ' days')::interval
           )
           on conflict do nothing
           returning id

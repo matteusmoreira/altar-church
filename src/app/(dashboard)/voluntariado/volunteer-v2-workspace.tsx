@@ -6,16 +6,21 @@ import { useRouter } from "next/navigation";
 import {
   Award,
   Bell,
+  CalendarCheck,
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Clock,
+  Copy,
   Download,
+  ExternalLink,
   HeartHandshake,
   Grid2X2,
+  Link2,
   List,
   Loader2,
   MessageSquare,
@@ -39,6 +44,13 @@ import { saveEvent } from "@/lib/operational/actions";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Card,
   CardContent,
@@ -2707,7 +2719,7 @@ export function VolunteerManagerV2({ data }: { data: VolunteerDashboardData }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <PushControls />
+          <PushControls mode="manager" />
           <Badge variant={data.v2Enabled ? "default" : "secondary"}>
             <ShieldCheck className="mr-1 h-3 w-3" />
             {data.v2Enabled ? "V2 ativo" : "V2 em validação"}
@@ -2786,7 +2798,7 @@ function urlBase64ToUint8Array(base64String: string) {
   );
 }
 
-function PushControls() {
+function PushControls({ mode = "manager" }: { mode?: "manager" | "volunteer" } = {}) {
   const [pushReady, setPushReady] = useState(false);
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -2818,6 +2830,28 @@ function PushControls() {
       toast.error("Não foi possível ativar o push neste navegador");
     }
   }
+
+  const isManager = mode === "manager";
+  const downloadUrl = `/api/v1/volunteers/calendar?scope=${isManager ? "church" : "my"}`;
+  const filename = isManager ? "escalas-voluntariado.ics" : "minha-escala.ics";
+
+  function copySubscriptionLink() {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}${downloadUrl}`;
+    const webcal = url.replace(/^https?:\/\//, "webcal://");
+    void navigator.clipboard.writeText(webcal).then(
+      () => toast.success("Link do calendário copiado! Cole no seu aplicativo de agenda."),
+      () => toast.info(`Link de assinatura: ${webcal}`)
+    );
+  }
+
+  function openGoogleCalendar() {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}${downloadUrl}`;
+    const webcal = encodeURIComponent(url.replace(/^https?:\/\//, "webcal://"));
+    window.open(`https://calendar.google.com/calendar/render?cid=${webcal}`, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="flex flex-wrap gap-2">
       <Button
@@ -2829,13 +2863,72 @@ function PushControls() {
         <Bell className="mr-2 h-4 w-4" />
         {pushReady ? "Push ativo" : "Ativar push"}
       </Button>
-      <Link
-        className={buttonVariants({ variant: "outline", size: "sm" })}
-        href="/api/v1/volunteers/calendar"
-      >
-        <CalendarDays className="mr-2 h-4 w-4" />
-        Adicionar calendário
-      </Link>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button size="sm" variant="outline" data-testid="volunteer-calendar-button">
+              <CalendarDays className="mr-2 h-4 w-4" />
+              Adicionar calendário
+              <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem
+            onClick={() => {
+              const anchor = document.createElement("a");
+              anchor.href = downloadUrl;
+              anchor.download = filename;
+              anchor.click();
+            }}
+            className="flex items-center gap-2 cursor-pointer py-1.5"
+          >
+            <Download className="h-4 w-4 text-primary shrink-0" />
+            <div className="flex flex-col text-left">
+              <span className="font-medium text-sm">Baixar arquivo (.ics)</span>
+              <span className="text-xs text-muted-foreground">Apple Calendar, Outlook, celular</span>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={openGoogleCalendar}
+            className="flex items-center gap-2 cursor-pointer py-1.5"
+          >
+            <ExternalLink className="h-4 w-4 text-blue-500 shrink-0" />
+            <div className="flex flex-col text-left">
+              <span className="font-medium text-sm">Google Agenda</span>
+              <span className="text-xs text-muted-foreground">Abrir e assinar no Google</span>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={copySubscriptionLink}
+            className="flex items-center gap-2 cursor-pointer py-1.5"
+          >
+            <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex flex-col text-left">
+              <span className="font-medium text-sm">Copiar link de assinatura</span>
+              <span className="text-xs text-muted-foreground">Sincronização contínua (Webcal)</span>
+            </div>
+          </DropdownMenuItem>
+          {isManager && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  const anchor = document.createElement("a");
+                  anchor.href = "/api/v1/volunteers/calendar?scope=my";
+                  anchor.download = "minha-escala.ics";
+                  anchor.click();
+                }}
+                className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground py-1.5"
+              >
+                <CalendarCheck className="h-3.5 w-3.5 shrink-0" />
+                <span>Minha escala pessoal (.ics)</span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -3264,7 +3357,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
             Olá, {data.volunteer.name}. Tudo para servir bem.
           </p>
         </div>
-        <PushControls />
+        <PushControls mode="volunteer" />
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Metric

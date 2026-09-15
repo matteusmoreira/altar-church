@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { customValuesSchema, EMPTY_KID_ADDRESS, kidAddressSchema } from "./form-model"
+import { customValuesSchema, EMPTY_KID_ADDRESS, kidAddressSchema } from "./form-model.ts"
 
 /** Versão corrente dos termos exibidos ao responsável (auditoria de aceite por versão). */
 export const KIDS_CONSENT_VERSION = "1.0"
@@ -107,14 +107,25 @@ export const kidClassroomSchema = z
     id: nullableUuidSchema,
     congregationId: nullableUuidSchema,
     name: z.string().trim().min(2, "Nome obrigatório").max(120),
-    minAgeMonths: z.coerce.number().int().min(0, "Idade mínima inválida").max(216),
-    maxAgeMonths: z.coerce.number().int().min(0, "Idade máxima inválida").max(240),
+    minAgeYears: z.coerce.number().int().min(0, "Idade mínima inválida").max(18).optional(),
+    maxAgeYears: z.coerce.number().int().min(0, "Idade máxima inválida").max(20).optional(),
+    minAgeMonths: z.coerce.number().int().min(0, "Idade mínima inválida").max(216).optional(),
+    maxAgeMonths: z.coerce.number().int().min(0, "Idade máxima inválida").max(240).optional(),
     capacity: z.coerce.number().int().min(1, "Capacidade mínima é 1"),
     location: z.string().trim().optional().default(""),
     isActive: z.boolean().default(true),
   })
+  .transform((data) => {
+    const minAgeMonths = data.minAgeYears != null ? data.minAgeYears * 12 : (data.minAgeMonths ?? 0)
+    const maxAgeMonths = data.maxAgeYears != null ? data.maxAgeYears * 12 : (data.maxAgeMonths ?? 216)
+    return {
+      ...data,
+      minAgeMonths,
+      maxAgeMonths,
+    }
+  })
   .refine((data) => data.maxAgeMonths >= data.minAgeMonths, {
-    message: "Faixa etária inválida",
+    message: "Faixa etária inválida: a idade máxima deve ser maior ou igual à mínima",
     path: ["maxAgeMonths"],
   })
 
@@ -129,13 +140,24 @@ export const kidClassroomRuleSchema = z
       .transform((value) => (value === "" || value == null ? null : value)),
     startTime: nullableTimeSchema,
     endTime: nullableTimeSchema,
-    minAgeMonths: z.coerce.number().int().min(0).max(216).default(0),
-    maxAgeMonths: z.coerce.number().int().min(0).max(240).default(216),
+    minAgeYears: z.coerce.number().int().min(0).max(18).optional(),
+    maxAgeYears: z.coerce.number().int().min(0).max(20).optional(),
+    minAgeMonths: z.coerce.number().int().min(0).max(216).optional(),
+    maxAgeMonths: z.coerce.number().int().min(0).max(240).optional(),
     priority: z.coerce.number().int().min(0).max(999).default(100),
     isActive: z.boolean().default(true),
   })
+  .transform((data) => {
+    const minAgeMonths = data.minAgeYears != null ? data.minAgeYears * 12 : (data.minAgeMonths ?? 0)
+    const maxAgeMonths = data.maxAgeYears != null ? data.maxAgeYears * 12 : (data.maxAgeMonths ?? 216)
+    return {
+      ...data,
+      minAgeMonths,
+      maxAgeMonths,
+    }
+  })
   .refine((data) => data.maxAgeMonths >= data.minAgeMonths, {
-    message: "Faixa etária inválida",
+    message: "Faixa etária inválida: a idade máxima deve ser maior ou igual à mínima",
     path: ["maxAgeMonths"],
   })
 

@@ -21,6 +21,9 @@ export interface PeopleListFilters {
   status?: PersonStatus | "all"
   personType?: PersonType | "all"
   congregationId?: string | "all"
+  accessProfile?: string | "all"
+  journeyStatus?: string | "all"
+  cellId?: string | "all" | "none"
   baptized?: boolean | null
   emailValidated?: boolean | null
   isActive?: boolean | null
@@ -96,8 +99,21 @@ export interface PersonJourneyStepDetail {
   stepName: string
   description: string
   sortOrder: number
+  estimatedDays?: number
   completedAt: string | null
   notes: string
+}
+
+export interface PersonEnrolledJourney {
+  enrollmentId: string
+  journeyId: string
+  journeyName: string
+  description: string
+  status: "in_progress" | "completed" | "dropped"
+  startedAt: string
+  completedAt: string | null
+  progressPercent: number
+  steps: PersonJourneyStepDetail[]
 }
 
 export interface PersonDetail extends PersonListItem {
@@ -105,6 +121,9 @@ export interface PersonDetail extends PersonListItem {
   customFields: PersonCustomFieldValue[]
   activities: PersonActivityDetail[]
   journeySteps: PersonJourneyStepDetail[]
+  enrolledJourneys: PersonEnrolledJourney[]
+  availableJourneys: { id: string; name: string; description: string }[]
+  availableActivities: { id: string; description: string; category: string }[]
   timeline: PersonTimelineItem[]
   followUpTasks: PersonFollowUpTask[]
 }
@@ -120,6 +139,8 @@ export type PersonTimelineKind =
   | "prayer"
   | "communication"
   | "audit"
+  | "journey"
+  | "activity"
 
 export interface PersonTimelineItem {
   id: string
@@ -252,10 +273,81 @@ export interface CreatePersonActivityInput {
   companyId?: string | null
 }
 
+export interface UpdatePersonActivityInput {
+  id: string
+  description: string
+  category: "pastoral" | "worship" | "ministry" | "small_group" | "volunteer"
+  isActive?: boolean
+  companyId?: string | null
+}
+
+export interface PersonActivityWithCount {
+  id: string
+  companyId: string
+  description: string
+  category: "pastoral" | "worship" | "ministry" | "small_group" | "volunteer"
+  isActive: boolean
+  assignedCount: number
+}
+
+export interface MemberJourneyStep {
+  id: string
+  journeyId: string
+  name: string
+  description: string
+  sortOrder: number
+  estimatedDays: number
+  isActive: boolean
+}
+
+export interface MemberJourneyWithSteps {
+  id: string
+  companyId: string
+  name: string
+  description: string
+  sortOrder: number
+  isActive: boolean
+  isAutoEnroll: boolean
+  autoEnrollType: "all" | "visitor" | "member" | null
+  steps: MemberJourneyStep[]
+  enrolledCount: number
+}
+
 export interface CreateMemberJourneyInput {
   name: string
   description?: string
+  isAutoEnroll?: boolean
+  autoEnrollType?: "all" | "visitor" | "member" | null
   companyId?: string | null
+}
+
+export interface UpdateMemberJourneyInput {
+  id: string
+  name: string
+  description?: string
+  isAutoEnroll?: boolean
+  autoEnrollType?: "all" | "visitor" | "member" | null
+  isActive?: boolean
+  companyId?: string | null
+}
+
+export interface SaveJourneyStepInput {
+  id?: string | null
+  journeyId: string
+  name: string
+  description?: string
+  sortOrder?: number
+  estimatedDays?: number
+  isActive?: boolean
+  companyId?: string | null
+}
+
+export interface FollowUpTriggerConfig {
+  daysThreshold?: number
+  dueDays?: number
+  priority?: PersonFollowUpPriority
+  responsibleProfileId?: string | null
+  notes?: string
 }
 
 export interface PersonFormOptions {
@@ -317,4 +409,11 @@ export interface PeopleActionResult {
   ok: boolean
   id?: string
   error?: string
+}
+
+export interface VisitorMetrics {
+  total: number
+  newCount: number
+  followingCount: number
+  convertedCount: number
 }

@@ -1,5 +1,4 @@
 import { MinistriesClient } from "./ministries-client"
-import { MinistryMembershipManager } from "@/components/member/ministry-membership-manager"
 import { getCurrentUser } from "@/lib/auth/server"
 import { listManagedMinistryMemberships } from "@/lib/member/data"
 import { listMinistries, listMinistryLeaderCandidates } from "@/lib/pastoral/data"
@@ -36,23 +35,24 @@ export default async function MinistriesPage({ searchParams }: { searchParams?: 
     pageSize: 10,
   }
   const user = await getCurrentUser()
-  const [ministriesResult, leaderCandidates] = await Promise.all([
+  const [ministriesResult, leaderCandidates, memberships] = await Promise.all([
     listMinistries(filters),
     listMinistryLeaderCandidates(),
+    user ? listManagedMinistryMemberships(user) : Promise.resolve([]),
   ])
+
+  const rawTab = firstParam(params.tab) || firstParam(params.aba)
+  const initialTab = rawTab === "participantes" ? "participantes" : "ministerios"
 
   return (
     <div className="space-y-6">
-      <MinistriesClient ministriesResult={ministriesResult} filters={filters} leaderCandidates={leaderCandidates} />
-      <Suspense fallback={<div className="h-32 animate-pulse rounded-xl border bg-muted/30" />}>
-        <ManagedMemberships user={user} />
-      </Suspense>
+      <MinistriesClient
+        ministriesResult={ministriesResult}
+        filters={filters}
+        leaderCandidates={leaderCandidates}
+        memberships={memberships}
+        initialTab={initialTab}
+      />
     </div>
   )
 }
-
-async function ManagedMemberships({ user }: { user: Awaited<ReturnType<typeof getCurrentUser>> }) {
-  const memberships = user ? await listManagedMinistryMemberships(user) : []
-  return <MinistryMembershipManager memberships={memberships} />
-}
-import { Suspense } from "react"
