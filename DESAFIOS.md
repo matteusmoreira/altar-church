@@ -42,6 +42,14 @@
 - O job `validate` do CI **não** define `POSTGRES_URL`, então os testes de integração que leem o schema no Supabase remoto fazem `skip` lá. Rodando local com `.env.local`, eles executam e podem falhar com `EMAXCONNSESSION: max clients are limited to pool_size: 15` — o pooler em modo sessão tem 15 slots compartilhados com a aplicação em produção. Essa falha é de capacidade externa, não regressão de código.
 - **Causa concreta do `EMAXCONNSESSION` nas rodadas locais:** um `next start` deste projeto segura ~5 conexões do pooler. Com dois servidores no ar (10 de 15 slots), `npm test` falha nos testes de banco (p95, kids e p10). **Parar os servidores antes de rodar `npm test`.** Além disso, `Stop-Process` no processo do wrapper `next start` **não** mata o `next-server` filho, que continua segurando as conexões — matar pelo `CommandLine` correspondente (`Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*next start -p 3457*' }` retorna o filho; o wrapper some, o filho fica).
 
+## Job E2E: falta um tenant `status = 'test'` — 21/09/2026
+
+- O job `E2E (tenant de teste)` usa `environment: e2e`. `E2E_DEFAULT_PASSWORD` foi publicado nesse escopo em 21/09/2026 (o valor do `.env.local`, validado por login real) e o job passou a falhar um passo depois: `E2E_COMPANY_LEGACY_ID obrigatório; o setup não escolhe tenant por fallback`.
+- **`E2E_COMPANY_LEGACY_ID` não tem valor válido hoje.** `scripts/ensure-e2e-users.mjs` procura `public.companies where legacy_id = $1 and status = 'test' and active = true` e aborta se não achar. Consulta read-only no banco da aplicação (o mesmo que o CI usa — a auditoria de 12/09 já registrava "0 empresas `test`, 1 ativa, 7 usuários/perfis E2E", e o local confere): existe **uma única** empresa, `Dignus Est` (slug `dignus-est`), com `legacy_id = NULL` e `status = 'active'`; `public.companies` tem 0 linhas com `status = 'test'`.
+- O valor `c1` que aparece em `docs/testing/e2e-accounts.local.md` é anterior ao endurecimento pedido na auditoria: a migration `20260529124259` semeia um tenant `c1` ("Igreja Batista Central") que **não existe** neste banco. Publicar `c1` só trocaria a mensagem de erro para `Tenant E2E c1 não encontrado com status=test e active=true`.
+- Rodar E2E apontando para o único tenant existente está fora de questão: ele é o dado real da igreja, e o próprio relatório da auditoria manda abortar sem tenant de teste. Para destravar o job é preciso **criar** um tenant `status = 'test'` (com `legacy_id`, `active = true` e os módulos ligados) e publicar o `legacy_id` dele no secret, ou apontar o job para um projeto Supabase separado.
+
+
 ## Erros de lint pré-existentes (28) — resolvidos em 21/09/2026
 
 Todos os 28 erros foram corrigidos em código, sem rebaixar regra para warning. `npx eslint .` agora sai com 0 erros e 25 warnings (todos pré-existentes ou órfãos herdados). Padrões usados, para reutilizar:
