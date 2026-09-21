@@ -19,6 +19,7 @@
     "test:operations": "node --experimental-strip-types --test tests/operations-health.test.mjs",
     "test:security": "node --experimental-strip-types --test tests/security-hardening.test.ts",
     "test:volunteers:v2": "node --experimental-strip-types --test tests/volunteer-scheduler.test.ts",
+    "e2e:tenant": "node scripts/ensure-test-tenant.mjs",
     "e2e:setup": "node scripts/ensure-e2e-users.mjs",
     "test:e2e": "playwright test",
     "test:e2e:list": "playwright test --list",
