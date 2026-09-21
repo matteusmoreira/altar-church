@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -482,17 +482,27 @@ export function MembersClient({
   const [deletingActivity, setDeletingActivity] = useState<PersonActivityWithCount | null>(null)
   const [deletingJourney, setDeletingJourney] = useState<MemberJourneyWithSteps | null>(null)
 
-  useEffect(() => {
+  // Espelha as listas vindas do servidor durante o render quando chegam dados
+  // novos, sem estado intermediário nem render em cascata.
+  const [syncedLists, setSyncedLists] = useState({
+    activities: initialActivities,
+    journeys: initialJourneys,
+    triggers: initialTriggers,
+  })
+  if (
+    initialActivities !== syncedLists.activities ||
+    initialJourneys !== syncedLists.journeys ||
+    initialTriggers !== syncedLists.triggers
+  ) {
+    setSyncedLists({
+      activities: initialActivities,
+      journeys: initialJourneys,
+      triggers: initialTriggers,
+    })
     if (initialActivities) setActivitiesList(initialActivities)
-  }, [initialActivities])
-
-  useEffect(() => {
     if (initialJourneys) setJourneysList(initialJourneys)
-  }, [initialJourneys])
-
-  useEffect(() => {
     if (initialTriggers) setTriggersList(initialTriggers)
-  }, [initialTriggers])
+  }
 
   const [filterState, setFilterState] = useState<FilterState>({
     search: filters.search ?? "",
@@ -2119,7 +2129,7 @@ export function MembersClient({
                                     setEditingActivity(act)
                                     setNewActivityForm({
                                       description: act.description,
-                                      category: act.category as any,
+                                      category: act.category,
                                     })
                                     setNewActivityOpen(true)
                                   }}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowDownRight,
@@ -153,14 +153,17 @@ function isOverdue(dueDateString?: string | null, isSettled?: boolean) {
 
 type PeriodFilter = "this-month" | "last-month" | "last-30-days" | "last-90-days" | "this-year" | "all"
 
+// Assinatura vazia: a única mudança observada é a própria hidratação.
+const subscribeToHydration = () => () => {}
+const getHydratedOnClient = () => true
+const getHydratedOnServer = () => false
+
 export function FinanceClient({ initialData }: { initialData: FinanceData }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [isMounted, setIsMounted] = useState(false)
-
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
+  // Marca a hidratação concluída sem setState em efeito: no servidor é false e
+  // no cliente passa a true, evitando divergência de HTML.
+  const isMounted = useSyncExternalStore(subscribeToHydration, getHydratedOnClient, getHydratedOnServer)
 
   // Primary Navigation
   const [activeTab, setActiveTab] = useState<string>("visao-geral")

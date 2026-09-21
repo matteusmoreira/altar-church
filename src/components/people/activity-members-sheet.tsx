@@ -75,6 +75,20 @@ export function ActivityMembersSheet({
   const [searchMember, setSearchMember] = useState("")
   const [selectedPersonId, setSelectedPersonId] = useState("")
 
+  // Limpa a busca e a seleção durante o render quando o painel abre para uma
+  // atividade (ou troca de atividade), sem estado intermediário visível.
+  const [syncedActivity, setSyncedActivity] = useState<{ open: boolean; activityId: string | undefined }>({
+    open: false,
+    activityId: undefined,
+  })
+  if (syncedActivity.open !== open || syncedActivity.activityId !== activity?.id) {
+    setSyncedActivity({ open, activityId: activity?.id })
+    if (open && activity) {
+      setSelectedPersonId("")
+      setSearchMember("")
+    }
+  }
+
   const fetchMembers = async () => {
     if (!activity) return
     setLoading(true)
@@ -89,11 +103,10 @@ export function ActivityMembersSheet({
   }
 
   useEffect(() => {
-    if (open && activity) {
-      fetchMembers()
-      setSelectedPersonId("")
-      setSearchMember("")
-    }
+    if (!open || !activity) return
+    void (async () => {
+      await fetchMembers()
+    })()
   }, [open, activity?.id])
 
   const handleAssignPerson = () => {

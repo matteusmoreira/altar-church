@@ -439,7 +439,7 @@ export function MinistryMembershipManager({ memberships = [] }: { memberships?: 
             <Users className="h-10 w-10 text-muted-foreground/50" />
             <p className="mt-3 text-sm font-medium">Nenhum resultado encontrado</p>
             <p className="text-xs text-muted-foreground">
-              Não encontramos participantes ou solicitações para o termo "{search}".
+              Não encontramos participantes ou solicitações para o termo &quot;{search}&quot;.
             </p>
           </div>
         )}

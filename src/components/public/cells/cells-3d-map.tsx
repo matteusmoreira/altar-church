@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Building2, Compass, Moon, Sun, Sunset } from "lucide-react"
 import type { PublicCellItem } from "@/lib/cells/public-cells"
 import "mapbox-gl/dist/mapbox-gl.css"
@@ -78,6 +78,29 @@ function applyTerrainElevation(map: any) {
   }
 }
 
+const SHOW_POIS_KEY = "altar_cells_map_show_pois"
+const SHOW_POIS_EVENT = "altar-cells-map-show-pois-change"
+let currentShowPois = true
+
+function subscribeToShowPois(callback: () => void) {
+  window.addEventListener(SHOW_POIS_EVENT, callback)
+  return () => window.removeEventListener(SHOW_POIS_EVENT, callback)
+}
+
+function getShowPois(): boolean {
+  try {
+    const stored = window.localStorage.getItem(SHOW_POIS_KEY)
+    if (stored !== null) currentShowPois = stored === "true"
+  } catch {
+    // Ignora falhas em ambientes com localStorage bloqueado
+  }
+  return currentShowPois
+}
+
+function getServerShowPois(): boolean {
+  return true
+}
+
 export function Cells3dMap({
   cells,
   centerCoordinates,
@@ -99,23 +122,11 @@ export function Cells3dMap({
   const [pitch3d, setPitch3d] = useState(true)
   const [bearing, setBearing] = useState(-18)
   const [lightPreset, setLightPreset] = useState<LightPreset>(() => (themeMode === "light" ? "day" : "dusk"))
-  const [showPois, setShowPois] = useState<boolean>(true)
+  const showPois = useSyncExternalStore(subscribeToShowPois, getShowPois, getServerShowPois)
   const showPoisRef = useRef(showPois)
-  showPoisRef.current = showPois
-
-  // Carrega preferência do usuário salva no navegador após hidratação (evita hydration mismatch)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("altar_cells_map_show_pois")
-      if (saved !== null) {
-        const val = saved === "true"
-        setShowPois(val)
-        showPoisRef.current = val
-      }
-    } catch {
-      // Ignora falhas em ambientes com localStorage bloqueado
-    }
-  }, [])
+    showPoisRef.current = showPois
+  }, [showPois])
 
   const [mapError, setMapError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -216,8 +227,9 @@ export function Cells3dMap({
       mapRef.current = map
       loadTimeout = setTimeout(showLoadError, 20000)
 
-      map.on("error", (e: any) => {
-        if (e?.error?.status === 401 || e?.error?.status === 403) {
+      map.on("error", (event) => {
+        const status = (event.error as Error & { status?: number }).status
+        if (status === 401 || status === 403) {
           showLoadError()
         }
       })
@@ -340,15 +352,14 @@ export function Cells3dMap({
 
   // Alterna visibilidade de pontos comerciais e referências
   const togglePois = () => {
-    setShowPois((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem("altar_cells_map_show_pois", String(next))
-      } catch {
-        // Ignora erro se localStorage estiver bloqueado
-      }
-      return next
-    })
+    const next = !showPois
+    currentShowPois = next
+    try {
+      localStorage.setItem(SHOW_POIS_KEY, String(next))
+    } catch {
+      // Ignora erro se localStorage estiver bloqueado
+    }
+    window.dispatchEvent(new Event(SHOW_POIS_EVENT))
   }
 
   // Foco cinematográfico ao selecionar uma célula

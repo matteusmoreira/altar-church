@@ -1,12 +1,13 @@
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
-import type {
-  PersonFollowUpPriority,
-  PersonFollowUpStatus,
-  PersonFollowUpTask,
-  PersonFollowUpTrigger,
-  PersonTimelineItem,
+import {
+  isFollowUpPriority,
+  type PersonFollowUpPriority,
+  type PersonFollowUpStatus,
+  type PersonFollowUpTask,
+  type PersonFollowUpTrigger,
+  type PersonTimelineItem,
 } from "./types"
 
 type TimelineRow = {
@@ -264,9 +265,9 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
   `
   let created = 0
   for (const trigger of triggers) {
-    const config = (trigger.config ?? {}) as Record<string, any>
+    const config = (trigger.config ?? {}) as Record<string, unknown>
     const days = typeof config.daysThreshold === "number" && config.daysThreshold > 0 ? Math.round(config.daysThreshold) : 30
-    const priority = ["low", "normal", "high", "urgent"].includes(config.priority) ? config.priority : "normal"
+    const priority: PersonFollowUpPriority = isFollowUpPriority(config.priority) ? config.priority : "normal"
     const dueDays = typeof config.dueDays === "number" && config.dueDays >= 0 ? Math.round(config.dueDays) : 2
     const responsibleProfileId = typeof config.responsibleProfileId === "string" && config.responsibleProfileId.length > 0 ? config.responsibleProfileId : null
     const customNotes = typeof config.notes === "string" && config.notes.trim() ? config.notes.trim() : "Criada automaticamente por gatilho configurado."

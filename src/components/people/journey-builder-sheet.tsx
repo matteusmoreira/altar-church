@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import {
   ArrowDown,
   ArrowUp,
@@ -67,17 +67,22 @@ export function JourneyBuilderSheet({
   const [stepDesc, setStepDesc] = useState("")
   const [stepDays, setStepDays] = useState(7)
 
-  useEffect(() => {
-    if (journey) {
-      setName(journey.name)
-      setDescription(journey.description)
-      setIsAutoEnroll(journey.isAutoEnroll)
-      setAutoEnrollType(journey.autoEnrollType ?? "visitor")
-      setSteps(journey.steps)
-      setEditingStepId(null)
-      setShowAddStepForm(false)
-    }
-  }, [journey, open])
+  // Sincroniza o formulário com a jornada recebida durante o render, para não
+  // commitar um estado intermediário nem disparar render em cascata.
+  const [synced, setSynced] = useState<{ journey: MemberJourneyWithSteps | null; open: boolean }>({
+    journey: null,
+    open: false,
+  })
+  if (journey && (journey !== synced.journey || open !== synced.open)) {
+    setSynced({ journey, open })
+    setName(journey.name)
+    setDescription(journey.description)
+    setIsAutoEnroll(journey.isAutoEnroll)
+    setAutoEnrollType(journey.autoEnrollType ?? "visitor")
+    setSteps(journey.steps)
+    setEditingStepId(null)
+    setShowAddStepForm(false)
+  }
 
   const handleSaveJourneySettings = () => {
     if (!journey) return
@@ -384,7 +389,7 @@ export function JourneyBuilderSheet({
               <Route className="h-8 w-8 text-muted-foreground mx-auto stroke-1" />
               <p className="text-sm font-medium">Nenhuma etapa cadastrada ainda</p>
               <p className="text-xs text-muted-foreground">
-                Clique em "Adicionar Etapa" para criar a sequência de passos espirituais da trilha.
+                Clique em &quot;Adicionar Etapa&quot; para criar a sequência de passos espirituais da trilha.
               </p>
             </div>
           ) : (

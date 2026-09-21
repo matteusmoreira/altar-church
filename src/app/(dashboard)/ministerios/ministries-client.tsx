@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useState, useSyncExternalStore } from "react"
+import { FormEvent, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { format, parseISO } from "date-fns"
@@ -146,9 +146,13 @@ export function MinistriesClient({
   const ministries = ministriesResult.items
   const [activeTab, setActiveTab] = useState(initialTab)
 
-  useEffect(() => {
+  // Segue a aba da URL durante o render quando ela muda (voltar/avançar do
+  // navegador), mantendo a resposta imediata do clique na aba.
+  const [syncedTab, setSyncedTab] = useState(initialTab)
+  if (initialTab !== syncedTab) {
+    setSyncedTab(initialTab)
     setActiveTab(initialTab)
-  }, [initialTab])
+  }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)

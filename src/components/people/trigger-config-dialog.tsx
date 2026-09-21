@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import { CalendarClock, Loader2, Settings2, ShieldCheck, UserCheck } from "lucide-react"
 import { toast } from "sonner"
 import { saveFollowUpTrigger } from "@/app/(dashboard)/pessoas/actions"
-import type { PersonFollowUpPriority, PersonFollowUpTrigger } from "@/lib/people/types"
+import { isFollowUpPriority, type PersonFollowUpPriority, type PersonFollowUpTrigger } from "@/lib/people/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -87,16 +87,24 @@ export function TriggerConfigDialog({
   const [responsibleId, setResponsibleId] = useState("")
   const [notes, setNotes] = useState("")
 
-  useEffect(() => {
+  // Preenche o formulário durante o render quando o gatilho, o tipo ou a abertura
+  // mudam, evitando commitar estado intermediário e render em cascata.
+  const [synced, setSynced] = useState<{
+    trigger: PersonFollowUpTrigger | null
+    kind: string
+    open: boolean
+  } | null>(null)
+  if (!synced || trigger !== synced.trigger || kind !== synced.kind || open !== synced.open) {
+    setSynced({ trigger, kind, open })
     if (trigger) {
       setName(trigger.name)
       setIsActive(trigger.isActive)
-      const cfg = (trigger.config ?? {}) as Record<string, any>
+      const cfg = (trigger.config ?? {}) as Record<string, unknown>
       setDaysThreshold(typeof cfg.daysThreshold === "number" ? cfg.daysThreshold : meta.defaultDays)
       setDueDays(typeof cfg.dueDays === "number" ? cfg.dueDays : 2)
-      setPriority(cfg.priority ?? "normal")
-      setResponsibleId(cfg.responsibleProfileId ?? "")
-      setNotes(cfg.notes ?? "")
+      setPriority(isFollowUpPriority(cfg.priority) ? cfg.priority : "normal")
+      setResponsibleId(typeof cfg.responsibleProfileId === "string" ? cfg.responsibleProfileId : "")
+      setNotes(typeof cfg.notes === "string" ? cfg.notes : "")
     } else {
       setName(`Acompanhar ${meta.label.toLowerCase()}`)
       setIsActive(true)
@@ -106,7 +114,7 @@ export function TriggerConfigDialog({
       setResponsibleId("")
       setNotes("Entrar em contato para orar, acolher e orientar os próximos passos.")
     }
-  }, [trigger, kind, open])
+  }
 
   const handleSave = () => {
     if (!name.trim()) {

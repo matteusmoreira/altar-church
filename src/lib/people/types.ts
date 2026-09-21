@@ -152,6 +152,12 @@ export interface PersonTimelineItem {
 }
 
 export type PersonFollowUpPriority = "low" | "normal" | "high" | "urgent"
+
+/** Valida prioridade vinda de `config` jsonb, que chega como `unknown`. */
+export function isFollowUpPriority(value: unknown): value is PersonFollowUpPriority {
+  return value === "low" || value === "normal" || value === "high" || value === "urgent"
+}
+
 export type PersonFollowUpStatus = "open" | "in_progress" | "completed" | "canceled"
 
 export interface PersonFollowUpTask {

@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import { FormEvent, useMemo, useState, useTransition } from "react"
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -145,9 +145,13 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Espelha os cartões do servidor durante o render quando chega uma lista nova
+  // (ex.: após router.refresh), sem estado intermediário nem render em cascata.
+  const [syncedCards, setSyncedCards] = useState(cards)
+  if (cards !== syncedCards) {
+    setSyncedCards(cards)
     setCardsList(cards)
-  }, [cards])
+  }
 
   const [cardOpen, setCardOpen] = useState(false)
   const [cardForm, setCardForm] = useState<CardFormState>(() => emptyCardForm(defaultStageId))

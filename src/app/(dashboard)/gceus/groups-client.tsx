@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react"
+import { FormEvent, useMemo, useState, useSyncExternalStore, useTransition } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
@@ -264,6 +264,29 @@ function Metric({ title, value, icon: Icon }: { title: string; value: string | n
   )
 }
 
+type ViewMode = "grid" | "list"
+
+const CELLS_VIEW_MODE_KEY = "altar_cells_view_mode"
+const CELLS_VIEW_MODE_EVENT = "altar-cells-view-mode-change"
+let currentCellsViewMode: ViewMode = "grid"
+
+function subscribeToCellsViewMode(callback: () => void) {
+  window.addEventListener(CELLS_VIEW_MODE_EVENT, callback)
+  return () => window.removeEventListener(CELLS_VIEW_MODE_EVENT, callback)
+}
+
+function getCellsViewMode(): ViewMode {
+  try {
+    const storedViewMode = window.localStorage.getItem(CELLS_VIEW_MODE_KEY)
+    if (storedViewMode === "list" || storedViewMode === "grid") currentCellsViewMode = storedViewMode
+  } catch { }
+  return currentCellsViewMode
+}
+
+function getServerCellsViewMode(): ViewMode {
+  return "grid"
+}
+
 export function GroupsClient({
   dashboard,
   filters,
@@ -297,18 +320,11 @@ export function GroupsClient({
 
   const [activeTab, setActiveTab] = useState(initialTab || "celulas")
   const [selectedCellForOps, setSelectedCellForOps] = useState<string>(groupsResult.groups[0]?.id ?? "")
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("altar_cells_view_mode")
-      if (saved === "grid" || saved === "list") {
-        setViewMode(saved)
-      }
-    } catch {
-      // ignore in environments with restricted storage
-    }
-  }, [])
+  const viewMode = useSyncExternalStore(
+    subscribeToCellsViewMode,
+    getCellsViewMode,
+    getServerCellsViewMode
+  )
 
   function handleTabChange(tab: string) {
     setActiveTab(tab)
@@ -320,12 +336,13 @@ export function GroupsClient({
   }
 
   function handleViewModeChange(mode: "grid" | "list") {
-    setViewMode(mode)
+    currentCellsViewMode = mode
     try {
-      localStorage.setItem("altar_cells_view_mode", mode)
+      localStorage.setItem(CELLS_VIEW_MODE_KEY, mode)
     } catch {
       // ignore
     }
+    window.dispatchEvent(new Event(CELLS_VIEW_MODE_EVENT))
   }
 
   function goToCellParticipants(groupId: string) {

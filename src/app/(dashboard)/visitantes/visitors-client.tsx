@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
@@ -261,6 +261,29 @@ function formatDate(value: string) {
   }
 }
 
+type ViewMode = "grid" | "list"
+
+const VISITORS_VIEW_MODE_KEY = "altar_visitors_view_mode"
+const VISITORS_VIEW_MODE_EVENT = "altar-visitors-view-mode-change"
+let currentVisitorsViewMode: ViewMode = "grid"
+
+function subscribeToVisitorsViewMode(callback: () => void) {
+  window.addEventListener(VISITORS_VIEW_MODE_EVENT, callback)
+  return () => window.removeEventListener(VISITORS_VIEW_MODE_EVENT, callback)
+}
+
+function getVisitorsViewMode(): ViewMode {
+  try {
+    const storedViewMode = window.localStorage.getItem(VISITORS_VIEW_MODE_KEY)
+    if (storedViewMode === "list" || storedViewMode === "grid") currentVisitorsViewMode = storedViewMode
+  } catch { }
+  return currentVisitorsViewMode
+}
+
+function getServerVisitorsViewMode(): ViewMode {
+  return "grid"
+}
+
 export function VisitorsClient({
   visitorsResult,
   filters,
@@ -273,26 +296,20 @@ export function VisitorsClient({
   const visitors = visitorsResult.people
 
   // Visualização Grade / Lista
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("altar_visitors_view_mode")
-      if (saved === "grid" || saved === "list") {
-        setViewMode(saved)
-      }
-    } catch {
-      // ignore
-    }
-  }, [])
+  const viewMode = useSyncExternalStore(
+    subscribeToVisitorsViewMode,
+    getVisitorsViewMode,
+    getServerVisitorsViewMode
+  )
 
   const handleViewModeChange = (mode: "grid" | "list") => {
-    setViewMode(mode)
+    currentVisitorsViewMode = mode
     try {
-      localStorage.setItem("altar_visitors_view_mode", mode)
+      localStorage.setItem(VISITORS_VIEW_MODE_KEY, mode)
     } catch {
       // ignore
     }
+    window.dispatchEvent(new Event(VISITORS_VIEW_MODE_EVENT))
   }
 
   // Filtros

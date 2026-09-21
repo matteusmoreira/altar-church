@@ -81,7 +81,7 @@ export function BalloonPopCelebration() {
 
     let width = (canvas.width = window.innerWidth)
     let height = (canvas.height = window.innerHeight)
-    let dpr = window.devicePixelRatio || 1
+    const dpr = window.devicePixelRatio || 1
 
     function resize() {
       if (!canvas) return
@@ -463,12 +463,12 @@ export function BalloonPopCelebration() {
 }
 
 function shadeColor(color: string, percent: number) {
-  let num = parseInt(color.replace("#", ""), 16)
+  const num = parseInt(color.replace("#", ""), 16)
   if (isNaN(num)) return color
-  let amt = Math.round(2.55 * percent)
-  let R = (num >> 16) + amt
-  let B = ((num >> 8) & 0x00ff) + amt
-  let G = (num & 0x0000ff) + amt
+  const amt = Math.round(2.55 * percent)
+  const R = (num >> 16) + amt
+  const B = ((num >> 8) & 0x00ff) + amt
+  const G = (num & 0x0000ff) + amt
   return (
     "#" +
     (
@@ -493,7 +493,7 @@ function drawStar(
   let rot = (Math.PI / 2) * 3
   let x = cx
   let y = cy
-  let step = Math.PI / spikes
+  const step = Math.PI / spikes
 
   ctx.beginPath()
   ctx.moveTo(cx, cy - outerRadius)
