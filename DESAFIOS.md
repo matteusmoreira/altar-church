@@ -26,3 +26,11 @@
 
 - Usar `playwright.volunteers-preview.config.ts` para a prévia fictícia, sem setup de usuários ou integrações remotas. As ações são bloqueadas nessa rota; os testes visuais não comprovam gravação autenticada ou entrega nos provedores.
 - `next dev` pode reescrever o `AGENTS.md` automaticamente. Conferir o diff e preservar as instruções originais do projeto.
+
+## Polimento de layout e design system — 21/09/2026
+
+- Sintoma exato do item acima sobre `next dev` antigo: quando o WebSocket de HMR falha (`ERR_INVALID_HTTP_RESPONSE`), a página carrega e renderiza o HTML, mas os Client Components **não hidratam** — nenhum `useEffect` roda. Na landing, que usa `<Reveal>` com `IntersectionObserver`, isso deixa todas as seções abaixo do hero em `opacity-0` e a página parece vazia, sem nenhum erro no console. Diagnosticar comparando com um `next start` novo em porta isolada antes de acusar regressão de layout.
+- Existe um `playwright.volunteers-preview.config.ts` para a prévia fictícia. Reusar essa config em vez de criar outra paralela para screenshots de verificação.
+- Um template literal dentro de um atributo JSX de um elemento que já está dentro de outro atributo (`actions={ <div>…</div> }` no `PageHeader`) quebra o parser do TypeScript (`TS2657` / `TS1003` / `TS17002`) — mesmo com JSX válido. Isolado com a API do compilador: reescrever o bloco na forma `children` zera os `parseDiagnostics`. Documentado em `DESIGN.md` §4.1.
+- `.glass` / `.glass-strong` / `.glass-subtle` desenham **apenas** fundo + blur. Se voltarem a declarar `border`, todo `<Card className="glass">` exibe borda dupla de 2 px, porque o `Card` já desenha `ring-1`.
+- Testes de contrato de fonte (`tests/*.test.mjs`) travam strings literais de classes e rótulos. Mover um literal de um ramo de código para um array de opções (ex.: `viewMode === "list"` para dentro das opções do `ViewToggle`) exige atualizar a asserção junto com o comportamento.
