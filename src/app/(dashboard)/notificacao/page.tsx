@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState, PageHeader } from "@/components/shared"
 import { saveNotification, saveNotificationGroup } from "@/lib/operational/actions"
 import { listNotificationAudienceOptions, listNotificationGroups, listNotifications } from "@/lib/operational/data"
 import type { Notification } from "@/lib/types"
@@ -58,10 +59,7 @@ export default async function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Notificação</h1>
-        <p className="text-muted-foreground">Notificações push e grupos de envio persistidos.</p>
-      </div>
+      <PageHeader title="Notificação" description="Notificações push e grupos de envio persistidos." />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="glass">
@@ -126,7 +124,7 @@ export default async function NotificationsPage() {
                 </div>
                 <p className="self-end text-xs text-muted-foreground">Sem data, campanha entra na fila agora. Preferências opt-out são respeitadas.</p>
               </div>
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 Criar campanha
               </Button>
             </form>
@@ -147,7 +145,7 @@ export default async function NotificationsPage() {
                 <Input id="groupName" name="name" required />
               </div>
               <input type="hidden" name="active" value="true" />
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 Criar Grupo
               </Button>
             </form>
@@ -227,10 +225,7 @@ export default async function NotificationsPage() {
       </Card>
 
       {notifications.length === 0 && groups.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Bell className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">Nenhuma notificação encontrada</p>
-        </div>
+        <EmptyState icon={Bell} title="Nenhuma notificação encontrada" />
       )}
     </div>
   )

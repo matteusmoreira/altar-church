@@ -59,6 +59,7 @@ import { toast } from "sonner"
 import { useAuth } from "@/lib/auth/context"
 import { PersonAddressFields } from "@/components/people/address-fields"
 import { toCsv } from "@/lib/export/csv"
+import { EmptyState, MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import {
   createMemberJourney,
   createPersonActivity,
@@ -1019,121 +1020,88 @@ export function MembersClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Pessoas</h1>
-          <p className="text-muted-foreground">
-            Gestão completa de membros, visitantes, congregações e liderança pastoral.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportCurrentListCsv}
-            className="w-full sm:w-auto"
-            title="Exportar registros filtrados para planilha CSV"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Exportar CSV
-          </Button>
-          <Button
-            render={<Link href="/pessoas/follow-up" />}
-            nativeButton={false}
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto"
-          >
-            <Activity className="mr-2 h-4 w-4" />
-            Follow-up
-          </Button>
-          <Button
-            onClick={openCreateDialog}
-            size="sm"
-            className="gradient-primary w-full sm:w-auto shadow-sm"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Nova pessoa
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Pessoas"
+        description="Gestão completa de membros, visitantes, congregações e liderança pastoral."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCurrentListCsv}
+              className="w-full sm:w-auto"
+              title="Exportar registros filtrados para planilha CSV"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+            <Button
+              render={<Link href="/pessoas/follow-up" />}
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              <Activity className="mr-2 h-4 w-4" />
+              Follow-up
+            </Button>
+            <Button
+              onClick={openCreateDialog}
+              size="sm"
+              variant="brand"
+              className="w-full sm:w-auto shadow-sm"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Nova pessoa
+            </Button>
+          </>
+        }
+      />
 
       {/* Primary KPI Highlights Banner */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="glass cursor-pointer transition-all hover:border-primary/40" onClick={() => handleQuickFilter("all")}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Total de Pessoas
-            </CardTitle>
-            <Users className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">Cadastros gerais na igreja</p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass cursor-pointer transition-all hover:border-success/40" onClick={() => handleQuickFilter("member")}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Membros Ativos
-            </CardTitle>
-            <UserCheck className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeMembers}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {totalCount > 0 ? `${Math.round((activeMembers / totalCount) * 100)}% da congregação` : "Comunhão ativa"}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="glass cursor-pointer transition-all hover:border-info/40" onClick={() => handleQuickFilter("visitor")}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Visitantes
-            </CardTitle>
-            <UserPlus className="h-4 w-4 text-info" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{visitorsCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">Em acolhimento e integração</p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={`glass cursor-pointer transition-all ${
-            pendingDuplicates > 0
-              ? "border-warning/40 bg-warning/5 hover:border-warning"
-              : "hover:border-primary/40"
-          }`}
+      <MetricGrid columns={4}>
+        <MetricCard
+          title="Total de Pessoas"
+          value={totalCount}
+          icon={Users}
+          tone="primary"
+          hint="Cadastros gerais na igreja"
+          onClick={() => handleQuickFilter("all")}
+        />
+        <MetricCard
+          title="Membros Ativos"
+          value={activeMembers}
+          icon={UserCheck}
+          tone="success"
+          hint={totalCount > 0 ? `${Math.round((activeMembers / totalCount) * 100)}% da congregação` : "Comunhão ativa"}
+          onClick={() => handleQuickFilter("member")}
+        />
+        <MetricCard
+          title="Visitantes"
+          value={visitorsCount}
+          icon={UserPlus}
+          tone="info"
+          hint="Em acolhimento e integração"
+          onClick={() => handleQuickFilter("visitor")}
+        />
+        <MetricCard
+          title="Duplicidades"
+          value={pendingDuplicates}
+          icon={AlertTriangle}
+          tone={pendingDuplicates > 0 ? "warning" : "neutral"}
+          badge={
+            pendingDuplicates > 0 ? (
+              <Badge variant="outline" className="border-warning/40 text-xs text-warning">
+                Revisar
+              </Badge>
+            ) : undefined
+          }
+          hint={pendingDuplicates > 0 ? "Suspeitas a consolidar" : "Base saneada"}
           onClick={() => setActiveTab("duplicidades")}
-        >
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Duplicidades
-            </CardTitle>
-            <AlertTriangle
-              className={`h-4 w-4 ${pendingDuplicates > 0 ? "text-warning" : "text-muted-foreground"}`}
-            />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold">{pendingDuplicates}</div>
-              {pendingDuplicates > 0 && (
-                <Badge variant="outline" className="border-warning/40 text-warning text-xs">
-                  Revisar
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {pendingDuplicates > 0 ? "Suspeitas a consolidar" : "Base saneada"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        />
+      </MetricGrid>
 
-      <Tabs value={activeTab} onValueChange={(value) => value && void handleTabChange(value)}>
+      <Tabs value={activeTab} onValueChange={(value) => value && void handleTabChange(value)} className="space-y-6">
         <TabsList className="flex h-auto flex-wrap p-1 bg-muted/50 rounded-lg">
           <TabsTrigger value="lista" className="gap-2">
             <List className="h-4 w-4" />
@@ -1162,7 +1130,7 @@ export function MembersClient({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="lista" className="mt-4">
+        <TabsContent value="lista" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader className="space-y-3 pb-3">
               {/* Quick Pills for 1-Click Filtering */}
@@ -1611,10 +1579,11 @@ export function MembersClient({
               </div>
 
               {peopleResult.people.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Users className="h-12 w-12 text-muted-foreground/50" />
-                  <p className="mt-4 text-sm text-muted-foreground">Nenhuma pessoa encontrada</p>
-                </div>
+                <EmptyState
+                  icon={Users}
+                  title="Nenhuma pessoa encontrada"
+                  description="Ajuste os filtros ou cadastre uma nova pessoa para começar."
+                />
               )}
 
               <div className="mt-4 flex flex-col gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1643,7 +1612,7 @@ export function MembersClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="duplicidades" className="mt-4">
+        <TabsContent value="duplicidades" className="mt-0 space-y-6">
           <div className="space-y-4">
             <div>
               <h2 className="text-xl font-semibold tracking-tight">Duplicidades</h2>
@@ -1658,10 +1627,10 @@ export function MembersClient({
               </div>
             ) : duplicates.length === 0 ? (
               <Card className="glass">
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <CheckCircle2 className="h-12 w-12 text-success/70" />
-                  <p className="mt-4 text-sm text-muted-foreground">Nenhuma possível duplicidade aberta.</p>
-                </CardContent>
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="Nenhuma possível duplicidade aberta."
+                />
               </Card>
             ) : (
               duplicates.map((candidate) => {
@@ -1692,7 +1661,7 @@ export function MembersClient({
                           {isResolving ? "Atualizando..." : "Ignorar suspeita"}
                         </Button>
                         <Button
-                          className="gradient-primary"
+                          variant="brand"
                           disabled={Boolean(resolvingDuplicateId)}
                           onClick={() => handleResolveDuplicate(candidate, "merged")}
                         >
@@ -1715,57 +1684,38 @@ export function MembersClient({
         </TabsContent>
 
         {/* TAB 2: DASHBOARD GRÁFICO */}
-        <TabsContent value="dashboard" className="mt-4 space-y-6">
+        <TabsContent value="dashboard" className="mt-0 space-y-6">
           {/* Top Pastoral Overview Row */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="glass">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <TrendingUp className="h-3.5 w-3.5 text-primary" /> Novos Membros (6m)
-                </CardDescription>
-                <CardTitle className="text-2xl font-bold">
-                  {(dashboard.monthlyRegistrations ?? []).reduce((acc, m) => acc + m.count, 0)}
-                </CardTitle>
-                <p className="text-[11px] text-muted-foreground">Cadastrados no último semestre</p>
-              </CardHeader>
-            </Card>
-
-            <Card className="glass">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <Cake className="h-3.5 w-3.5 text-info" /> Taxa de Batismo
-                </CardDescription>
-                <CardTitle className="text-2xl font-bold">{baptizedPct}%</CardTitle>
-                <p className="text-[11px] text-muted-foreground">
-                  {dashboard.baptized} de {dashboard.total} pessoas batizadas
-                </p>
-              </CardHeader>
-            </Card>
-
-            <Card className="glass">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <Sparkles className="h-3.5 w-3.5 text-warning" /> Comunhão e Atividade
-                </CardDescription>
-                <CardTitle className="text-2xl font-bold">
-                  {totalCount > 0 ? `${Math.round((activeMembers / totalCount) * 100)}%` : "0%"}
-                </CardTitle>
-                <p className="text-[11px] text-muted-foreground">
-                  {activeMembers} cadastros ativos no momento
-                </p>
-              </CardHeader>
-            </Card>
-
-            <Card className="glass">
-              <CardHeader className="pb-2">
-                <CardDescription className="flex items-center gap-1.5 text-xs">
-                  <UserCheck className="h-3.5 w-3.5 text-success" /> Acesso ao Portal
-                </CardDescription>
-                <CardTitle className="text-2xl font-bold">{dashboard.emailValidated}</CardTitle>
-                <p className="text-[11px] text-muted-foreground">E-mails verificados na igreja</p>
-              </CardHeader>
-            </Card>
-          </div>
+          <MetricGrid columns={4}>
+            <MetricCard
+              title="Novos Membros (6m)"
+              value={(dashboard.monthlyRegistrations ?? []).reduce((acc, m) => acc + m.count, 0)}
+              icon={TrendingUp}
+              tone="primary"
+              hint="Cadastrados no último semestre"
+            />
+            <MetricCard
+              title="Taxa de Batismo"
+              value={`${baptizedPct}%`}
+              icon={Cake}
+              tone="info"
+              hint={`${dashboard.baptized} de ${dashboard.total} pessoas batizadas`}
+            />
+            <MetricCard
+              title="Comunhão e Atividade"
+              value={totalCount > 0 ? `${Math.round((activeMembers / totalCount) * 100)}%` : "0%"}
+              icon={Sparkles}
+              tone="warning"
+              hint={`${activeMembers} cadastros ativos no momento`}
+            />
+            <MetricCard
+              title="Acesso ao Portal"
+              value={dashboard.emailValidated}
+              icon={UserCheck}
+              tone="success"
+              hint="E-mails verificados na igreja"
+            />
+          </MetricGrid>
 
           {/* Charts Row 1: Monthly Evolution & Profile Breakdown */}
           <div className="grid gap-6 lg:grid-cols-2">
@@ -1942,7 +1892,7 @@ export function MembersClient({
         </TabsContent>
 
         {/* TAB 3: ANIVERSÁRIOS & RELATÓRIOS */}
-        <TabsContent value="relatorios" className="mt-4 space-y-6">
+        <TabsContent value="relatorios" className="mt-0 space-y-6">
           {/* Aniversariantes do Mês Section */}
           <Card className="glass">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1991,13 +1941,11 @@ export function MembersClient({
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando aniversariantes...
                 </div>
               ) : birthdays.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <Cake className="h-10 w-10 text-muted-foreground/40" />
-                  <p className="mt-3 text-sm font-medium">Nenhum aniversariante encontrado neste mês</p>
-                  <p className="text-xs text-muted-foreground">
-                    Verifique se os cadastros possuem data de nascimento preenchida.
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Cake}
+                  title="Nenhum aniversariante encontrado neste mês"
+                  description="Verifique se os cadastros possuem data de nascimento preenchida."
+                />
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {birthdays.map((person) => {
@@ -2110,7 +2058,7 @@ export function MembersClient({
         </TabsContent>
 
         {/* TAB 5: PARÂMETROS & ATIVIDADES */}
-        <TabsContent value="config" className="mt-4 space-y-6">
+        <TabsContent value="config" className="mt-0 space-y-6">
           {/* Pastoral Activities Management */}
           <Card className="glass">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2125,12 +2073,12 @@ export function MembersClient({
               </div>
               <Button
                 size="sm"
+                variant="brand"
                 onClick={() => {
                   setEditingActivity(null)
                   setNewActivityForm({ description: "", category: "pastoral" })
                   setNewActivityOpen(true)
                 }}
-                className="gradient-primary"
               >
                 <Plus className="mr-2 h-4 w-4" /> Nova atividade
               </Button>
@@ -2233,6 +2181,7 @@ export function MembersClient({
               </div>
               <Button
                 size="sm"
+                variant="brand"
                 onClick={() => {
                   setEditingJourney(null)
                   setNewJourneyForm({
@@ -2243,7 +2192,6 @@ export function MembersClient({
                   })
                   setNewJourneyOpen(true)
                 }}
-                className="gradient-primary"
               >
                 <Plus className="mr-2 h-4 w-4" /> Nova trilha
               </Button>
@@ -2808,7 +2756,7 @@ export function MembersClient({
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={isSaving} className="gradient-primary">
+            <Button onClick={handleSave} disabled={isSaving} variant="brand">
               {isSaving ? "Salvando..." : formData.id ? "Salvar alterações" : "Cadastrar"}
             </Button>
           </DialogFooter>
@@ -2912,7 +2860,7 @@ export function MembersClient({
             <Button
               onClick={handleSaveActivity}
               disabled={isCreatingActivity}
-              className="gradient-primary"
+              variant="brand"
             >
               {isCreatingActivity ? "Salvando..." : editingActivity ? "Salvar alterações" : "Cadastrar Atividade"}
             </Button>
@@ -3016,7 +2964,7 @@ export function MembersClient({
             <Button
               onClick={handleSaveJourney}
               disabled={isCreatingJourney}
-              className="gradient-primary"
+              variant="brand"
             >
               {isCreatingJourney ? "Salvando..." : editingJourney ? "Salvar alterações" : "Cadastrar Trilha"}
             </Button>

@@ -8,15 +8,19 @@ import {
 import { useVolunteerNavigation } from "./use-volunteer-navigation";
 import { useRouter } from "next/navigation";
 import {
-  Trash2,
+  ArrowLeftRight,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Loader2,
   Plus,
   Send,
+  Trash2,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MetricCard, MetricGrid, SectionHeader } from "@/components/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -981,40 +985,41 @@ export function VolunteerProgrammingWorkspace({
   const openedProgramming = data.programmings.find((item) =>
     item.occurrences.some((occurrence) => occurrence.eventId === drawerEventId),
   );
+  const missingSlots = monthItems.reduce((sum, item) => sum + item.missing, 0);
+  const awaitingSlots = monthItems.reduce((sum, item) => sum + item.awaiting, 0);
+  const openSwaps = monthItems.reduce((sum, item) => sum + item.swaps, 0);
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">Escalas</h2>
-          <p className="text-sm text-muted-foreground">
-            Escolha a atividade, monte a equipe e acompanhe as respostas.
-          </p>
-        </div>
-        <Button onClick={openNew}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova escala
-        </Button>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border p-4">
-          <p className="text-2xl font-semibold">
-            {monthItems.reduce((sum, item) => sum + item.missing, 0)}
-          </p>
-          <p className="text-sm text-muted-foreground">Vagas para preencher</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-2xl font-semibold">
-            {monthItems.reduce((sum, item) => sum + item.awaiting, 0)}
-          </p>
-          <p className="text-sm text-muted-foreground">Aguardando resposta</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-2xl font-semibold">
-            {monthItems.reduce((sum, item) => sum + item.swaps, 0)}
-          </p>
-          <p className="text-sm text-muted-foreground">Trocas em andamento</p>
-        </div>
-      </div>
+      <SectionHeader
+        title="Escalas"
+        description="Escolha a atividade, monte a equipe e acompanhe as respostas."
+        action={
+          <Button onClick={openNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova escala
+          </Button>
+        }
+      />
+      <MetricGrid columns={3}>
+        <MetricCard
+          title="Vagas para preencher"
+          value={missingSlots}
+          icon={UserPlus}
+          tone={missingSlots > 0 ? "warning" : "neutral"}
+        />
+        <MetricCard
+          title="Aguardando resposta"
+          value={awaitingSlots}
+          icon={Clock}
+          tone="info"
+        />
+        <MetricCard
+          title="Trocas em andamento"
+          value={openSwaps}
+          icon={ArrowLeftRight}
+          tone="info"
+        />
+      </MetricGrid>
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">

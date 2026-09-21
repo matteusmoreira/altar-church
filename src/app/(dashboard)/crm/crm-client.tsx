@@ -28,8 +28,7 @@ import {
 } from "@/lib/operational/actions"
 import type { CRMCard, CRMStage, PersonDirectoryOption } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { EmptyState } from "@/components/shared/empty-state"
-import { PageHeader } from "@/components/shared/page-header"
+import { EmptyState, PageHeader } from "@/components/shared"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -397,7 +396,7 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
             <Columns3 className="mr-2 h-4 w-4" />
             Nova coluna
           </Button>
-          <Button type="button" className="gradient-primary" onClick={() => openCreateCard()}>
+          <Button type="button" variant="brand" onClick={() => openCreateCard()}>
             <UserPlus className="mr-2 h-4 w-4" />
             Novo card
           </Button>
@@ -847,7 +846,7 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
               <Button type="button" variant="outline" onClick={() => setCardOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="gradient-primary" disabled={pending}>
+              <Button type="submit" variant="brand" disabled={pending}>
                 {cardForm.id ? "Salvar" : "Criar card"}
               </Button>
             </DialogFooter>
@@ -913,7 +912,7 @@ export function CrmClient({ stages, cards, people }: CrmClientProps) {
               <Button type="button" variant="outline" onClick={() => setStageOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="gradient-primary" disabled={pending}>
+              <Button type="submit" variant="brand" disabled={pending}>
                 Salvar coluna
               </Button>
             </DialogFooter>

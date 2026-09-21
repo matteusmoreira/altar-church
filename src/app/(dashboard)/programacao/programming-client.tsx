@@ -45,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState, PageHeader } from "@/components/shared"
 
 interface ProgrammingClientProps {
   programmingsResult: ProgrammingsListResult
@@ -218,16 +219,16 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Programação</h1>
-          <p className="text-muted-foreground">Planeje cultos e encontros com dados persistidos.</p>
-        </div>
-        <Button onClick={openCreateDialog} className="gradient-primary w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Programação
-        </Button>
-      </div>
+      <PageHeader
+        title="Programação"
+        description="Planeje cultos e encontros com dados persistidos."
+        actions={
+          <Button onClick={openCreateDialog} variant="brand" className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Programação
+          </Button>
+        }
+      />
 
       <form onSubmit={handleFilterSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -307,10 +308,10 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
       </div>
 
       {programmings.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <CalendarDays className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">Nenhuma programação encontrada</p>
-        </div>
+        <EmptyState
+          icon={CalendarDays}
+          title="Nenhuma programação encontrada"
+        />
       )}
 
       {programmingsResult.total > 0 && (
@@ -415,7 +416,7 @@ export function ProgrammingClient({ programmingsResult, filters }: ProgrammingCl
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} className="gradient-primary" disabled={isSaving}>
+            <Button onClick={handleSave} variant="brand" disabled={isSaving}>
               {isSaving ? "Salvando..." : editingProgramming ? "Salvar alterações" : "Criar programação"}
             </Button>
           </DialogFooter>

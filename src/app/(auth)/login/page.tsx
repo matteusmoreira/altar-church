@@ -91,7 +91,7 @@ export default function LoginPage() {
             role="tab"
             aria-selected={loginMethod === "whatsapp"}
             data-testid="login-method-whatsapp"
-            className={`flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-all ${
+            className={`flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-xs font-medium transition-all sm:gap-2 sm:px-3 ${
               loginMethod === "whatsapp"
                 ? "bg-emerald-500/15 text-emerald-300 shadow-sm ring-1 ring-emerald-400/20"
                 : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
@@ -106,7 +106,7 @@ export default function LoginPage() {
             role="tab"
             aria-selected={loginMethod === "email"}
             data-testid="login-method-email"
-            className={`flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-all ${
+            className={`flex min-h-10 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-xs font-medium transition-all sm:gap-2 sm:px-3 ${
               loginMethod === "email"
                 ? "bg-sky-500/15 text-sky-300 shadow-sm ring-1 ring-sky-400/20"
                 : "text-slate-400 hover:bg-white/5 hover:text-slate-200"

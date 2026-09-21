@@ -7,6 +7,7 @@ import { FileText, Plug, Search, ShieldCheck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { PageHeader } from "@/components/shared"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -69,12 +70,9 @@ export function SettingsClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Configurações</h1>
-        <p className="text-muted-foreground">Conta, acessos e integrações externas (API / webhooks).</p>
-      </div>
+      <PageHeader title="Configurações" description="Conta, acessos e integrações externas (API / webhooks)." />
 
-      <Tabs defaultValue="conta">
+      <Tabs defaultValue="conta" className="space-y-6">
         <TabsList>
           <TabsTrigger value="conta">
             <FileText className="h-4 w-4" />
@@ -90,7 +88,7 @@ export function SettingsClient({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="conta" className="mt-4">
+        <TabsContent value="conta" className="mt-0">
           <Card className="glass">
             <CardHeader>
               <CardTitle className="text-base">Dados da empresa</CardTitle>
@@ -124,7 +122,7 @@ export function SettingsClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="acessos" className="mt-4 space-y-4">
+        <TabsContent value="acessos" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <div className="relative">
@@ -181,7 +179,7 @@ export function SettingsClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="integracoes" className="mt-4 space-y-4">
+        <TabsContent value="integracoes" className="mt-0 space-y-6">
           {uazapiData && <UazapiInstancesPanel data={uazapiData} />}
           {settingsData.company && settingsData.integrations ? (
             <IntegrationsPanel

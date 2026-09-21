@@ -40,6 +40,7 @@ import type {
   CompanyStatus,
 } from "@/lib/admin/types"
 import type { UserRole } from "@/lib/types"
+import { MetricCard, MetricGrid, PageHeader, ViewToggle } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -224,30 +225,15 @@ function ViewModeToggle({
   onChange: (value: ViewMode) => void
 }) {
   return (
-    <div className="flex rounded-lg border border-border/60 p-0.5" aria-label="Modo de visualização">
-      <Button
-        type="button"
-        variant={value === "list" ? "secondary" : "ghost"}
-        size="icon"
-        className="h-8 w-8"
-        aria-label="Modo lista"
-        aria-pressed={value === "list"}
-        onClick={() => onChange("list")}
-      >
-        <List className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant={value === "grid" ? "secondary" : "ghost"}
-        size="icon"
-        className="h-8 w-8"
-        aria-label="Modo grade"
-        aria-pressed={value === "grid"}
-        onClick={() => onChange("grid")}
-      >
-        <Grid2X2 className="h-4 w-4" />
-      </Button>
-    </div>
+    <ViewToggle
+      value={value}
+      onChange={onChange}
+      ariaLabel="Modo de visualização"
+      options={[
+        { value: "list", label: "Modo lista", icon: List },
+        { value: "grid", label: "Modo grade", icon: Grid2X2 },
+      ]}
+    />
   )
 }
 
@@ -280,13 +266,13 @@ function ModulesPicker({
                   key={module.id}
                   type="button"
                   onClick={() => onToggle(module.id)}
-                  className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border/40 p-3 text-left transition-colors hover:bg-muted/40"
+                  className="surface flex min-h-16 items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{module.label}</p>
                     <p className="line-clamp-2 text-xs text-muted-foreground">{module.description}</p>
                   </div>
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/60">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border">
                     {checked && <Check className="h-3.5 w-3.5 text-primary" />}
                   </div>
                 </button>
@@ -526,76 +512,24 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-warning/10">
-            <Shield className="h-5 w-5 text-warning" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">SuperAdmin</h1>
-            <p className="text-muted-foreground">Empresas, usuários, planos e módulos</p>
-          </div>
-        </div>
-        <Button onClick={() => openCompany()} className="gradient-primary">
+      <PageHeader
+        title="SuperAdmin"
+        description="Empresas, usuários, planos e módulos"
+        icon={Shield}
+        actions={<Button variant="brand" onClick={() => openCompany()}>
           <Plus className="mr-2 h-4 w-4" />
           Nova Empresa
-        </Button>
-      </div>
+        </Button>}
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="glass">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Empresas</p>
-                <p className="text-2xl font-bold">{data.companies.length}</p>
-                <p className="text-xs text-success">{activeCompanies} ativas</p>
-              </div>
-              <Building2 className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Usuários</p>
-                <p className="text-2xl font-bold">{data.users.length}</p>
-                <p className="text-xs text-muted-foreground">Perfis cadastrados</p>
-              </div>
-              <Users className="h-8 w-8 text-info" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">MRR</p>
-                <p className="text-2xl font-bold">
-                  {monthlyRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </p>
-                <p className="text-xs text-muted-foreground">Planos ativos</p>
-              </div>
-              <DollarSign className="h-8 w-8 text-warning" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="glass">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Módulos</p>
-                <p className="text-2xl font-bold">{data.modules.length}</p>
-                <p className="text-xs text-muted-foreground">{totalMembers.toLocaleString("pt-BR")} membros</p>
-              </div>
-              <Layers3 className="h-8 w-8 text-success" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard title="Empresas" value={data.companies.length} icon={Building2} tone="primary" hint={`${activeCompanies} ativas`} />
+        <MetricCard title="Usuários" value={data.users.length} icon={Users} tone="info" hint="Perfis cadastrados" />
+        <MetricCard title="MRR" value={monthlyRevenue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} icon={DollarSign} tone="warning" hint="Planos ativos" />
+        <MetricCard title="Módulos" value={data.modules.length} icon={Layers3} tone="success" hint={`${totalMembers.toLocaleString("pt-BR")} membros`} />
+      </MetricGrid>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">
             <Activity />
@@ -619,10 +553,10 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
+        <TabsContent value="overview" className="mt-0 space-y-6">
           <div className="grid gap-4 lg:grid-cols-2">
             {data.companies.slice(0, 6).map((company) => (
-              <div key={company.id} className="rounded-lg border border-border/40 p-4">
+              <div key={company.id} className="surface p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">{company.name}</p>
@@ -652,7 +586,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </div>
         </TabsContent>
 
-        <TabsContent value="companies" className="space-y-4">
+        <TabsContent value="companies" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -720,7 +654,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {filteredCompanies.map((company) => (
-                    <div key={company.id} className="rounded-lg border border-border/40 p-4">
+                    <div key={company.id} className="surface p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{company.name}</p>
@@ -753,7 +687,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </Card>
         </TabsContent>
 
-        <TabsContent value="users" className="space-y-4">
+        <TabsContent value="users" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -833,7 +767,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {filteredUsers.map((user) => (
-                    <div key={user.id} className="rounded-lg border border-border/40 p-4">
+                    <div key={user.id} className="surface p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{user.name}</p>
@@ -864,7 +798,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </Card>
         </TabsContent>
 
-        <TabsContent value="plans" className="space-y-4">
+        <TabsContent value="plans" className="mt-0 space-y-6">
           <div className="flex justify-end gap-2">
             <ViewModeToggle value={planView} onChange={setPlanView} />
             <Button onClick={() => openPlan()}>
@@ -875,7 +809,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           {planView === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {data.plans.map((plan) => (
-                <div key={plan.id} className="rounded-lg border border-border/40 p-4">
+                <div key={plan.id} className="surface p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold">{plan.name}</p>
@@ -937,7 +871,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           )}
         </TabsContent>
 
-        <TabsContent value="modules" className="space-y-4">
+        <TabsContent value="modules" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
@@ -949,7 +883,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
               {moduleView === "grid" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {data.modules.map((module) => (
-                    <div key={module.id} className="flex items-center justify-between gap-4 rounded-lg border border-border/40 p-4">
+                    <div key={module.id} className="surface flex items-center justify-between gap-4 p-4">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{module.label}</p>
@@ -1121,7 +1055,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCompanyDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCompanySave} disabled={isPending} className="gradient-primary">Salvar</Button>
+            <Button onClick={handleCompanySave} disabled={isPending} variant="brand">Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1189,7 +1123,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPlanDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handlePlanSave} disabled={isPending} className="gradient-primary">Salvar</Button>
+            <Button onClick={handlePlanSave} disabled={isPending} variant="brand">Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1255,13 +1189,13 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
               </div>
             </div>
             {profileForm.role === "cell_leader" ? (
-              <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3">
+              <div className="space-y-2 rounded-control border border-primary/20 bg-background/60 p-3">
                 <Label>Células do líder *</Label>
                 <p className="text-xs text-muted-foreground">Selecione uma ou mais células da igreja escolhida.</p>
                 {profileForm.companyId ? (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {data.cells.filter((cell: AdminCellOption) => cell.companyId === profileForm.companyId).map((cell) => (
-                      <label key={cell.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                    <label key={cell.id} className="flex items-center gap-2 rounded-control border p-2 text-sm">
                         <input
                           type="checkbox"
                           checked={profileForm.cellIds.includes(cell.id)}
@@ -1276,14 +1210,14 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                 )}
               </div>
             ) : null}
-            <div className="flex items-center justify-between rounded-lg border border-border/40 p-3">
+            <div className="surface flex items-center justify-between p-3">
               <Label>Usuário ativo</Label>
               <Switch checked={profileForm.active} onCheckedChange={(checked) => setProfileForm({ ...profileForm, active: !!checked })} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setProfileDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleProfileSave} disabled={isPending} className="gradient-primary">Salvar</Button>
+            <Button onClick={handleProfileSave} disabled={isPending} variant="brand">Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1320,7 +1254,7 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handlePasswordReset} disabled={isPending} className="gradient-primary">
+            <Button onClick={handlePasswordReset} disabled={isPending} variant="brand">
               Salvar senha
             </Button>
           </DialogFooter>

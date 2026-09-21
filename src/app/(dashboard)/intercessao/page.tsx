@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { deletePrayerRequest, savePrayerRequest } from "@/lib/operational/actions"
 import { listPrayerRequests } from "@/lib/operational/data"
 import type { PrayerRequest } from "@/lib/types"
@@ -39,17 +40,14 @@ export default async function PrayerPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Oração / Intercessão</h1>
-        <p className="text-muted-foreground">Pedidos de oração persistidos por igreja.</p>
-      </div>
+      <PageHeader title="Oração / Intercessão" description="Pedidos de oração persistidos por igreja." />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric title="Abertos" value={open} icon={Heart} />
-        <Metric title="Em oração" value={praying} icon={Clock} />
-        <Metric title="Respondidos" value={answered} icon={CheckCircle2} />
-        <Metric title="Arquivados" value={archived} icon={HandHeart} />
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard title="Abertos" value={open} icon={Heart} tone="primary" />
+        <MetricCard title="Em oração" value={praying} icon={Clock} tone="primary" />
+        <MetricCard title="Respondidos" value={answered} icon={CheckCircle2} tone="primary" />
+        <MetricCard title="Arquivados" value={archived} icon={HandHeart} tone="primary" />
+      </MetricGrid>
 
       <Card className="glass">
         <CardHeader>
@@ -117,7 +115,7 @@ export default async function PrayerPage() {
                 <input name="receiveCall" type="checkbox" className="h-4 w-4 rounded border-border" />
                 Receber ligação
               </label>
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 Cadastrar
               </Button>
             </div>
@@ -163,23 +161,5 @@ export default async function PrayerPage() {
         </Table>
       </Card>
     </div>
-  )
-}
-
-function Metric({ title, value, icon: Icon }: { title: string; value: number; icon: React.ElementType }) {
-  return (
-    <Card className="glass py-0">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Icon className="h-5 w-5 text-primary" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

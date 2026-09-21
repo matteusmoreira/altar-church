@@ -67,6 +67,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { EmptyState, MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 
 import {
   deleteBankAccount,
@@ -591,20 +592,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
   return (
     <div className="space-y-6">
       {/* Top Header - Executive Minimalist */}
-      <div className="flex flex-col gap-4 border-b border-border/40 pb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-3xl">Financeiro</h1>
-            <Badge variant="outline" className="text-xs font-medium text-muted-foreground">
-              Módulo Executivo
-            </Badge>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gestão de receitas, despesas, fluxo de caixa e centros de custo.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader title="Financeiro" description="Gestão de receitas, despesas, fluxo de caixa e centros de custo." badge={<Badge variant="outline" className="text-xs font-medium text-muted-foreground">Módulo Executivo</Badge>} actions={<div className="flex flex-wrap items-center gap-2">
           {/* Period Selector */}
           <Select
             value={period}
@@ -642,7 +630,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               setExpensePaidNow(true)
               setIsExpenseSheetOpen(true)
             }}
-            className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900/50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+            className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive dark:border-destructive/40 dark:text-destructive dark:hover:bg-destructive/10"
           >
             <ArrowDownRight className="mr-1.5 h-4 w-4" />
             Nova Despesa
@@ -655,13 +643,12 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               setRevenueReceivedNow(true)
               setIsRevenueSheetOpen(true)
             }}
-            className="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            className="bg-success text-white hover:bg-success/90 dark:bg-success dark:hover:bg-success/90"
           >
             <ArrowUpRight className="mr-1.5 h-4 w-4" />
             Nova Receita
           </Button>
-        </div>
-      </div>
+        </div>} />
 
       {/* Main Tabs Navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -672,16 +659,16 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               Visão Geral
             </TabsTrigger>
             <TabsTrigger value="receitas" className="gap-2 text-xs font-medium sm:text-sm shrink-0">
-              <ArrowUpRight className="h-4 w-4 text-emerald-500" />
+              <ArrowUpRight className="h-4 w-4 text-success" />
               Receitas
-              <span className="ml-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="ml-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                 {filteredRevenues.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="despesas" className="gap-2 text-xs font-medium sm:text-sm shrink-0">
-              <ArrowDownRight className="h-4 w-4 text-rose-500" />
+              <ArrowDownRight className="h-4 w-4 text-destructive" />
               Despesas
-              <span className="ml-1 rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+              <span className="ml-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
                 {filteredExpenses.length}
               </span>
             </TabsTrigger>
@@ -695,114 +682,20 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         {/* ========================================================================= */}
         {/* TAB 1: VISÃO GERAL (DASHBOARD) */}
         {/* ========================================================================= */}
-        <TabsContent value="visao-geral" className="space-y-6 outline-none">
+        <TabsContent value="visao-geral" className="mt-0 space-y-6 outline-none">
           {/* 5 Compact Executive KPI Cards */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {/* Total Receitas */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Total Receitas</span>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                    <TrendingUp className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="mt-2 text-xl font-bold tracking-tight text-foreground">
-                  R$ {money(totalRevenues)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {periodRevenues.filter((r: Revenue) => r.received).length} entradas recebidas
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Total Despesas */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Total Despesas</span>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                    <TrendingDown className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="mt-2 text-xl font-bold tracking-tight text-foreground">
-                  R$ {money(totalExpenses)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {periodExpenses.filter((e: Expense) => e.paid).length} saídas pagas
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Saldo Líquido */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Saldo Líquido</span>
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-md ${
-                      netBalance >= 0
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                    }`}
-                  >
-                    <Wallet className="h-4 w-4" />
-                  </div>
-                </div>
-                <div
-                  className={`mt-2 text-xl font-bold tracking-tight ${
-                    netBalance >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                  }`}
-                >
-                  R$ {money(netBalance)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {netBalance >= 0 ? "Superávit operacional" : "Déficit no período"}
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* A Receber (Pendente) */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">A Receber</span>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="mt-2 text-xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
-                  R$ {money(pendingRevenues)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {periodRevenues.filter((r: Revenue) => !r.received).length} pendências futuras
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* A Pagar (Pendente) */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">A Pagar</span>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                </div>
-                <div className="mt-2 text-xl font-bold tracking-tight text-rose-600 dark:text-rose-400">
-                  R$ {money(pendingExpenses)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {periodExpenses.filter((e: Expense) => !e.paid).length} contas em aberto
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          <MetricGrid columns={5}>
+            <MetricCard variant="executive" title="Total Receitas" value={`R$ ${money(totalRevenues)}`} icon={TrendingUp} tone="success" hint={`${periodRevenues.filter((r: Revenue) => r.received).length} entradas recebidas`} />
+            <MetricCard variant="executive" title="Total Despesas" value={`R$ ${money(totalExpenses)}`} icon={TrendingDown} tone="destructive" hint={`${periodExpenses.filter((e: Expense) => e.paid).length} saídas pagas`} />
+            <MetricCard variant="executive" title="Saldo Líquido" value={`R$ ${money(netBalance)}`} icon={Wallet} tone={netBalance >= 0 ? "success" : "destructive"} hint={netBalance >= 0 ? "Superávit operacional" : "Déficit no período"} />
+            <MetricCard variant="executive" title="A Receber" value={`R$ ${money(pendingRevenues)}`} icon={Clock} tone="warning" hint={`${periodRevenues.filter((r: Revenue) => !r.received).length} pendências futuras`} />
+            <MetricCard variant="executive" title="A Pagar" value={`R$ ${money(pendingExpenses)}`} icon={Clock} tone="destructive" hint={`${periodExpenses.filter((e: Expense) => !e.paid).length} contas em aberto`} />
+          </MetricGrid>
 
           {/* Charts Row */}
           <div className="grid gap-6 lg:grid-cols-12">
             {/* Monthly Flux Chart (7 cols) */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs lg:col-span-7">
+            <Card className="bg-card/60 shadow-xs lg:col-span-7">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -813,11 +706,11 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                   </div>
                   <div className="flex items-center gap-3 text-xs">
                     <div className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-xs bg-emerald-500" />
+                      <span className="h-2.5 w-2.5 rounded-xs bg-success" />
                       <span className="text-muted-foreground">Receitas</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-xs bg-rose-500" />
+                      <span className="h-2.5 w-2.5 rounded-xs bg-destructive" />
                       <span className="text-muted-foreground">Despesas</span>
                     </div>
                   </div>
@@ -858,7 +751,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
             </Card>
 
             {/* Expenses by Category (5 cols) */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs lg:col-span-5">
+            <Card className="bg-card/60 shadow-xs lg:col-span-5">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">Despesas por Categoria</CardTitle>
                 <CardDescription className="text-xs">
@@ -867,10 +760,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               </CardHeader>
               <CardContent className="pt-2">
                 {expensesByCategoryData.length === 0 ? (
-                  <div className="flex h-[260px] flex-col items-center justify-center text-center text-muted-foreground">
-                    <Tag className="mb-2 h-8 w-8 stroke-[1.5] text-muted-foreground/40" />
-                    <p className="text-xs">Nenhuma despesa registrada neste período.</p>
-                  </div>
+                  <EmptyState icon={Tag} title="Nenhuma despesa registrada neste período." />
                 ) : (
                   <div className="flex flex-col items-center sm:flex-row sm:justify-between">
                     <div className="h-[180px] w-[180px]">
@@ -924,7 +814,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
           {/* Bottom Section: Upcoming Pending & Bank Accounts */}
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Próximos Vencimentos */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
+            <Card className="bg-card/60 shadow-xs">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-semibold">Próximos Vencimentos</CardTitle>
@@ -948,8 +838,8 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           <div
                             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
                               item.kind === "revenue"
-                                ? "bg-emerald-500/10 text-emerald-600"
-                                : "bg-rose-500/10 text-rose-600"
+                                ? "bg-success/10 text-success"
+                                : "bg-destructive/10 text-destructive"
                             }`}
                           >
                             {item.kind === "revenue" ? (
@@ -962,14 +852,14 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                             <p className="truncate font-medium text-foreground">{item.description}</p>
                             <p className="text-[11px] text-muted-foreground">
                               Vencimento: {formatDate(item.dueDate)}{" "}
-                              {overdue && <span className="font-semibold text-rose-600">(Vencido)</span>}
+                              {overdue && <span className="font-semibold text-destructive">(Vencido)</span>}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <span
                             className={`font-semibold ${
-                              item.kind === "revenue" ? "text-emerald-600" : "text-rose-600"
+                              item.kind === "revenue" ? "text-success" : "text-destructive"
                             }`}
                           >
                             R$ {money(item.amount)}
@@ -983,7 +873,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                             }
                             disabled={isPending}
                           >
-                            <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-emerald-500" />
+                            <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-success" />
                             {item.kind === "revenue" ? "Receber" : "Pagar"}
                           </Button>
                         </div>
@@ -995,7 +885,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
             </Card>
 
             {/* Contas Bancárias & Saldos Cadastrados */}
-            <Card className="border border-border/60 bg-card/60 shadow-xs">
+            <Card className="bg-card/60 shadow-xs">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-semibold">Contas Bancárias Ativas</CardTitle>
@@ -1026,7 +916,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                         className="flex items-center justify-between rounded-lg border border-border/40 p-2.5 text-xs hover:bg-muted/40"
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-info/10 text-info">
                             <Landmark className="h-4 w-4" />
                           </div>
                           <div>
@@ -1051,7 +941,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         {/* ========================================================================= */}
         {/* TAB 2: RECEITAS */}
         {/* ========================================================================= */}
-        <TabsContent value="receitas" className="space-y-4 outline-none">
+        <TabsContent value="receitas" className="mt-0 space-y-6 outline-none">
           {/* Toolbar */}
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -1105,7 +995,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                 setRevenueReceivedNow(true)
                 setIsRevenueSheetOpen(true)
               }}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="bg-success text-white hover:bg-success/90"
             >
               <Plus className="mr-1 h-4 w-4" />
               Nova Receita
@@ -1113,7 +1003,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
           </div>
 
           {/* Table */}
-          <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+          <Card className="bg-card/60 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1150,7 +1040,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           <TableCell>
                             <div className="font-medium text-xs text-foreground">{rev.description}</div>
                             {rev.receiptFileId && (
-                              <div className="flex items-center gap-1 text-[11px] text-emerald-600">
+                              <div className="flex items-center gap-1 text-[11px] text-success">
                                 <FileCheck className="h-3 w-3" />
                                 Comprovante anexado
                               </div>
@@ -1174,18 +1064,18 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{rev.bankAccount || "-"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{rev.receivedFromName || "-"}</TableCell>
-                          <TableCell className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          <TableCell className="text-xs font-semibold text-success">
                             + R$ {money(rev.amount)}
                           </TableCell>
                           <TableCell>
                             {rev.received ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                                <span className="h-1.5 w-1.5 rounded-full bg-success" />
                                 Recebido
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-foreground dark:text-warning">
+                                <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                                 A Receber
                               </span>
                             )}
@@ -1201,7 +1091,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                                 disabled={isPending}
                               >
                                 <CheckCircle2
-                                  className={`h-4 w-4 ${rev.received ? "text-emerald-500" : "text-muted-foreground/50"}`}
+                                  className={`h-4 w-4 ${rev.received ? "text-success" : "text-muted-foreground/50"}`}
                                 />
                               </Button>
                               <Button
@@ -1243,7 +1133,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         {/* ========================================================================= */}
         {/* TAB 3: DESPESAS */}
         {/* ========================================================================= */}
-        <TabsContent value="despesas" className="space-y-4 outline-none">
+        <TabsContent value="despesas" className="mt-0 space-y-6 outline-none">
           {/* Toolbar */}
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -1315,7 +1205,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                 setExpensePaidNow(true)
                 setIsExpenseSheetOpen(true)
               }}
-              className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-500"
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
               <Plus className="mr-1 h-4 w-4" />
               Nova Despesa
@@ -1323,7 +1213,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
           </div>
 
           {/* Table */}
-          <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+          <Card className="bg-card/60 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1361,7 +1251,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           <TableCell>
                             <div className="font-medium text-xs text-foreground">{exp.description}</div>
                             {exp.receiptFileId && (
-                              <div className="flex items-center gap-1 text-[11px] text-rose-600">
+                              <div className="flex items-center gap-1 text-[11px] text-destructive">
                                 <FileCheck className="h-3 w-3" />
                                 Comprovante anexado
                               </div>
@@ -1385,23 +1275,23 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{exp.paidToName || "-"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{exp.costCenter || "-"}</TableCell>
-                          <TableCell className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                          <TableCell className="text-xs font-semibold text-destructive">
                             - R$ {money(exp.amount)}
                           </TableCell>
                           <TableCell>
                             {exp.paid ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                                <span className="h-1.5 w-1.5 rounded-full bg-success" />
                                 Pago
                               </span>
                             ) : overdue ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-destructive/25 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                                <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
                                 Vencido
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning-foreground dark:text-warning">
+                                <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                                 A Pagar
                               </span>
                             )}
@@ -1417,7 +1307,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                                 disabled={isPending}
                               >
                                 <CheckCircle2
-                                  className={`h-4 w-4 ${exp.paid ? "text-emerald-500" : "text-muted-foreground/50"}`}
+                                  className={`h-4 w-4 ${exp.paid ? "text-success" : "text-muted-foreground/50"}`}
                                 />
                               </Button>
                               <Button
@@ -1459,7 +1349,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         {/* ========================================================================= */}
         {/* TAB 4: CADASTROS (CATEGORIAS, CENTROS, CONTAS, FORNECEDORES) */}
         {/* ========================================================================= */}
-        <TabsContent value="cadastros" className="space-y-4 outline-none">
+        <TabsContent value="cadastros" className="mt-0 space-y-6 outline-none">
           {/* Sub-tabs pills */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/40 p-1">
@@ -1530,7 +1420,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
 
           {/* Sub-tab: Categorias */}
           {activeCadastrosTab === "categorias" && (
-            <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+            <Card className="bg-card/60 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -1571,7 +1461,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className="text-xs text-emerald-600 dark:text-emerald-400">Ativo</span>
+                            <span className="text-xs text-success">Ativo</span>
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -1600,7 +1490,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
 
           {/* Sub-tab: Centros de Custo */}
           {activeCadastrosTab === "centros" && (
-            <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+            <Card className="bg-card/60 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -1626,7 +1516,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                           <TableCell className="text-xs text-muted-foreground">{center.responsible || "-"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{center.description || "-"}</TableCell>
                           <TableCell>
-                            <span className="text-xs text-emerald-600 dark:text-emerald-400">Ativo</span>
+                            <span className="text-xs text-success">Ativo</span>
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -1655,7 +1545,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
 
           {/* Sub-tab: Contas Bancárias */}
           {activeCadastrosTab === "contas" && (
-            <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+            <Card className="bg-card/60 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -1715,7 +1605,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
 
           {/* Sub-tab: Fornecedores */}
           {activeCadastrosTab === "fornecedores" && (
-            <Card className="border border-border/60 bg-card/60 shadow-xs overflow-hidden">
+            <Card className="bg-card/60 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -1745,7 +1635,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                             {sup.phone || sup.email ? `${sup.phone || ""} ${sup.email ? `(${sup.email})` : ""}` : "-"}
                           </TableCell>
                           <TableCell>
-                            <span className="text-xs text-emerald-600 dark:text-emerald-400">Ativo</span>
+                            <span className="text-xs text-success">Ativo</span>
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -1781,7 +1671,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         <SheetContent className="w-full sm:max-w-md p-0 flex flex-col">
           <SheetHeader className="border-b border-border/40 p-5">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
                 <ArrowUpRight className="h-5 w-5" />
               </div>
               <div>
@@ -1805,7 +1695,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                   min="0.01"
                   placeholder="0,00"
                   required
-                  className="text-base font-bold text-emerald-600 dark:text-emerald-400"
+                  className="text-base font-bold text-success"
                 />
               </div>
 
@@ -1963,7 +1853,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               <Button
                 type="submit"
                 size="sm"
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
+                className="bg-success text-white hover:bg-success/90"
                 disabled={isPending}
               >
                 {isPending ? "Salvando..." : "Registrar Receita"}
@@ -1980,7 +1870,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         <SheetContent className="w-full sm:max-w-md p-0 flex flex-col">
           <SheetHeader className="border-b border-border/40 p-5">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
                 <ArrowDownRight className="h-5 w-5" />
               </div>
               <div>
@@ -2004,7 +1894,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                   min="0.01"
                   placeholder="0,00"
                   required
-                  className="text-base font-bold text-rose-600 dark:text-rose-400"
+                  className="text-base font-bold text-destructive"
                 />
               </div>
 
@@ -2157,7 +2047,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
               <Button
                 type="submit"
                 size="sm"
-                className="bg-rose-600 text-white hover:bg-rose-700"
+                className="bg-destructive text-white hover:bg-destructive/90"
                 disabled={isPending}
               >
                 {isPending ? "Salvando..." : "Registrar Despesa"}
@@ -2180,8 +2070,8 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                     <div
                       className={`flex h-8 w-8 items-center justify-center rounded-lg ${
                         selectedTransaction.type === "revenue"
-                          ? "bg-emerald-500/10 text-emerald-600"
-                          : "bg-rose-500/10 text-rose-600"
+                          ? "bg-success/10 text-success"
+                          : "bg-destructive/10 text-destructive"
                       }`}
                     >
                       {selectedTransaction.type === "revenue" ? (
@@ -2209,20 +2099,20 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                   <div
                     className={`mt-1 text-2xl font-black ${
                       selectedTransaction.type === "revenue"
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
+                        ? "text-success"
+                        : "text-destructive"
                     }`}
                   >
                     {selectedTransaction.type === "revenue" ? "+" : "-"} R$ {money(selectedTransaction.amount)}
                   </div>
                   <div className="mt-2 flex justify-center">
                     {(selectedTransaction as Revenue).received || (selectedTransaction as Expense).paid ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         {selectedTransaction.type === "revenue" ? "Recebida" : "Paga"}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning-foreground dark:text-warning">
                         <Clock className="h-3.5 w-3.5" />
                         {selectedTransaction.type === "revenue" ? "Pendente (A Receber)" : "Pendente (A Pagar)"}
                       </span>
@@ -2330,8 +2220,8 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
                     size="sm"
                     className={`flex-1 ${
                       selectedTransaction.type === "revenue"
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                        : "bg-rose-600 hover:bg-rose-700 text-white"
+                        ? "bg-success hover:bg-success/90 text-white"
+                        : "bg-destructive hover:bg-destructive/90 text-white"
                     }`}
                     onClick={(e) => {
                       if (selectedTransaction.type === "revenue") {

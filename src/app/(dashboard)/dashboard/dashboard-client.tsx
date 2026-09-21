@@ -25,7 +25,7 @@ import {
   UsersRound,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { MetricCard, ShortcutCard } from "@/components/shared"
+import { MetricCard, MetricGrid, PageHeader, ShortcutCard } from "@/components/shared"
 import type { GroupDashboardData } from "@/lib/groups/types"
 import type { PeopleDashboardData } from "@/lib/people/types"
 
@@ -99,53 +99,50 @@ export function DashboardClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Dashboard</h1>
-        <p className="text-muted-foreground">Visão real da operação já persistida.</p>
-      </div>
+      <PageHeader title="Dashboard" description="Visão real da operação já persistida." />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <MetricGrid columns={3}>
         <MetricCard
           title="Pessoas Ativas"
           value={data.people.active}
           icon={Users}
           trend={activeRate > 0 ? "up" : undefined}
           trendValue={`${activeRate}% do total`}
-          color="gradient-primary"
+          tone="primary"
         />
         <MetricCard
           title="Visitantes"
           value={data.people.visitors}
           icon={UserPlus}
-          color="bg-info"
+          tone="info"
         />
         <MetricCard
           title="Grupos Ativos"
           value={data.groups.active}
           icon={UsersRound}
           trendValue={`${data.groups.members} participantes`}
-          color="bg-success"
+          tone="success"
         />
         <MetricCard
           title="Conteúdos Publicados"
           value={data.content.publishedPosts}
           icon={BookOpen}
           trendValue={`${data.content.posts} posts totais`}
-          color="bg-primary"
+          tone="primary"
         />
         <MetricCard
           title="Banners Ativos"
           value={data.content.activeBanners}
           icon={ClipboardList}
-          color="bg-warning"
+          tone="warning"
         />
         <MetricCard
           title="Possíveis Duplicidades"
           value={data.people.possibleDuplicates}
           icon={Heart}
-          color="bg-destructive"
+          tone="destructive"
         />
-      </div>
+      </MetricGrid>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="glass">

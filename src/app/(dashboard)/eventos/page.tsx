@@ -1,6 +1,6 @@
 import { CalendarDays, CheckCircle2, Clock3, Users } from "lucide-react"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { requireUser } from "@/lib/auth/server"
 import { hasPermission } from "@/lib/types"
 import { listEventForms, listEventMinistries, listEvents, normalizeEventFilters } from "@/lib/operational/data"
@@ -42,17 +42,14 @@ export default async function EventsPage({ searchParams }: { searchParams?: Prom
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div><div className="mb-2 flex items-center gap-2"><Badge variant="outline">Central operacional</Badge><span className="text-xs text-muted-foreground">Release 1</span></div><h1 className="text-2xl font-bold tracking-tight md:text-3xl">Eventos</h1><p className="text-muted-foreground">Crie, organize e acompanhe cada evento sem perder histórico.</p></div>
-        <div className="text-sm text-muted-foreground">{events.length} resultado(s) filtrado(s)</div>
-      </div>
+      <PageHeader title="Eventos" description="Crie, organize e acompanhe cada evento sem perder histórico." badge={<><Badge variant="outline">Central operacional</Badge><span className="text-xs text-muted-foreground">Release 1</span></>} actions={<div className="text-sm text-muted-foreground">{events.length} resultado(s) filtrado(s)</div>} />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardContent className="flex items-center gap-3 p-4"><CalendarDays className="h-5 w-5 text-primary" /><div><p className="text-xs text-muted-foreground">Eventos carregados</p><p className="text-xl font-semibold">{events.length}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><CheckCircle2 className="h-5 w-5 text-emerald-500" /><div><p className="text-xs text-muted-foreground">Publicados</p><p className="text-xl font-semibold">{published}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><Clock3 className="h-5 w-5 text-amber-500" /><div><p className="text-xs text-muted-foreground">Próximos</p><p className="text-xl font-semibold">{upcoming}</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><Users className="h-5 w-5 text-sky-500" /><div><p className="text-xs text-muted-foreground">Inscrições</p><p className="text-xl font-semibold">{registrations}</p></div></CardContent></Card>
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard variant="compact" title="Eventos carregados" value={events.length} icon={CalendarDays} tone="primary" />
+        <MetricCard variant="compact" title="Publicados" value={published} icon={CheckCircle2} tone="success" />
+        <MetricCard variant="compact" title="Próximos" value={upcoming} icon={Clock3} tone="warning" />
+        <MetricCard variant="compact" title="Inscrições" value={registrations} icon={Users} tone="info" />
+      </MetricGrid>
 
       <EventFilters values={filters} ministries={ministries} />
       <EventCreateForm canCreate={canCreate} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} />

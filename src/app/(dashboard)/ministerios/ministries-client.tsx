@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { EmptyState, MetricCard, MetricGrid, PageHeader, ViewToggle } from "@/components/shared"
 import { MinistryMembershipManager } from "@/components/member/ministry-membership-manager"
 import type { MinistryMembershipAdminItem } from "@/lib/member/types"
 
@@ -273,16 +274,16 @@ export function MinistriesClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Gestão de Ministérios</h1>
-          <p className="text-muted-foreground">Gerencie ministérios com dados persistidos por igreja.</p>
-        </div>
-        <Button onClick={openCreateDialog} className="gradient-primary w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Ministério
-        </Button>
-      </div>
+      <PageHeader
+        title="Gestão de Ministérios"
+        description="Gerencie ministérios com dados persistidos por igreja."
+        actions={
+          <Button onClick={openCreateDialog} variant="brand" className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Ministério
+          </Button>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="flex h-auto w-fit flex-wrap gap-1 rounded-xl border bg-muted/60 p-1">
@@ -309,47 +310,11 @@ export function MinistriesClient({
         </TabsList>
 
         <TabsContent value="ministerios" className="mt-0 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card className="glass py-0">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm text-muted-foreground">Total</p>
-                    <p className="text-2xl font-bold">{ministriesResult.total}</p>
-                  </div>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                    <Heart className="h-5 w-5 text-primary" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass py-0">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm text-muted-foreground">Ativos nesta página</p>
-                    <p className="text-2xl font-bold">{activeMinistries}</p>
-                  </div>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success/10">
-                    <Users className="h-5 w-5 text-success" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="glass py-0">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm text-muted-foreground">Participantes vinculados</p>
-                    <p className="text-2xl font-bold">{totalMembers}</p>
-                  </div>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10">
-                    <User className="h-5 w-5 text-info" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <MetricGrid columns={3}>
+            <MetricCard title="Total" value={ministriesResult.total} icon={Heart} tone="primary" />
+            <MetricCard title="Ativos nesta página" value={activeMinistries} icon={Users} tone="success" />
+            <MetricCard title="Participantes vinculados" value={totalMembers} icon={User} tone="info" />
+          </MetricGrid>
 
           <form onSubmit={handleFilterSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="relative flex-1">
@@ -377,30 +342,16 @@ export function MinistriesClient({
             <Button type="submit" variant="outline" className="w-full sm:w-auto">
               Filtrar
             </Button>
-            <div className="flex w-fit self-end rounded-md border p-1 sm:self-auto" aria-label="Modo de visualização">
-              <Button
-                type="button"
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                size="icon-sm"
-                aria-label="Ver ministérios em lista"
-                aria-pressed={viewMode === "list"}
-                title="Lista"
-                onClick={() => changeViewMode("list")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="icon-sm"
-                aria-label="Ver ministérios em grade"
-                aria-pressed={viewMode === "grid"}
-                title="Grade"
-                onClick={() => changeViewMode("grid")}
-              >
-                <Grid2X2 className="h-4 w-4" />
-              </Button>
-            </div>
+            <ViewToggle
+              value={viewMode}
+              onChange={changeViewMode}
+              ariaLabel="Modo de visualização"
+              className="self-end sm:self-auto"
+              options={[
+                { value: "list", label: "Ver ministérios em lista", icon: List },
+                { value: "grid", label: "Ver ministérios em grade", icon: Grid2X2 },
+              ]}
+            />
           </form>
 
           <div className={viewMode === "grid" ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
@@ -465,10 +416,7 @@ export function MinistriesClient({
           </div>
 
           {ministries.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Heart className="h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-4 text-sm text-muted-foreground">Nenhum ministério encontrado</p>
-            </div>
+            <EmptyState icon={Heart} title="Nenhum ministério encontrado" />
           )}
 
           {ministriesResult.total > 0 && (
@@ -593,7 +541,7 @@ export function MinistriesClient({
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} className="gradient-primary" disabled={isSaving}>
+            <Button onClick={handleSave} variant="brand" disabled={isSaving}>
               {isSaving ? "Salvando..." : editingMinistry ? "Salvar alterações" : "Criar ministério"}
             </Button>
           </DialogFooter>

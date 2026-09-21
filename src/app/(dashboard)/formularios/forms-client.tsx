@@ -15,8 +15,7 @@ import {
 import { toast } from "sonner"
 import { deleteForm, saveForm } from "@/lib/forms/actions"
 import type { ChurchForm, FormStatus, FormsDashboardData } from "@/lib/forms/types"
-import { EmptyState } from "@/components/shared/empty-state"
-import { PageHeader } from "@/components/shared/page-header"
+import { EmptyState, PageHeader } from "@/components/shared"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -163,7 +162,7 @@ export function FormsClient({ data }: FormsClientProps) {
         title="Formulários"
         description="Crie formulários públicos e direcione as respostas para o Kanban."
       >
-        <Button type="button" className="gradient-primary" onClick={openCreate}>
+        <Button type="button" variant="brand" onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Novo formulário
         </Button>
@@ -372,7 +371,7 @@ export function FormsClient({ data }: FormsClientProps) {
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="gradient-primary" disabled={pending}>
+              <Button type="submit" variant="brand" disabled={pending}>
                 Criar e editar
               </Button>
             </DialogFooter>

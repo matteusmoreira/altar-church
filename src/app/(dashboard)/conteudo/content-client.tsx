@@ -24,8 +24,7 @@ import {
   saveContentPost,
   uploadContentAsset,
 } from "./actions"
-import { EmptyState } from "@/components/shared/empty-state"
-import { PageHeader } from "@/components/shared/page-header"
+import { EmptyState, MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -202,23 +201,6 @@ function StatusBadge({ status }: { status: ContentStatus }) {
   return <Badge variant="secondary">Rascunho</Badge>
 }
 
-function TypeMetric({ type, total }: { type: ContentType; total: number }) {
-  const Icon = typeIcons[type]
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">{typeLabels[type]}</p>
-          <p className="text-2xl font-bold">{total}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 function categoriesForType(categories: ContentCategory[], type: ContentType) {
   return categories.filter((category) => !category.contentType || category.contentType === type)
 }
@@ -380,7 +362,7 @@ export function ContentClient({ data }: ContentClientProps) {
   return (
     <div className="space-y-6">
       <PageHeader title="Conteúdo" description="Gerencie publicações, devocionais, EBDs e banners com persistência real.">
-        <Button onClick={() => openNewPost(activeType)} className="gradient-primary">
+        <Button onClick={() => openNewPost(activeType)} variant="brand">
           <Plus className="mr-2 h-4 w-4" />
           Novo conteúdo
         </Button>
@@ -390,13 +372,13 @@ export function ContentClient({ data }: ContentClientProps) {
         </Button>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricGrid columns={4}>
         {metrics.map((metric) => (
-          <TypeMetric key={metric.type} type={metric.type} total={metric.total} />
+          <MetricCard key={metric.type} title={typeLabels[metric.type]} value={metric.total} icon={typeIcons[metric.type]} tone="primary" variant="compact" />
         ))}
-      </div>
+      </MetricGrid>
 
-      <Tabs value={activeType} onValueChange={(value) => setActiveType(value as ContentType)}>
+      <Tabs value={activeType} onValueChange={(value) => setActiveType(value as ContentType)} className="space-y-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <TabsList className="grid w-full grid-cols-2 lg:w-auto lg:grid-cols-4">
             {(Object.keys(typeLabels) as ContentType[]).map((type) => (
@@ -417,7 +399,7 @@ export function ContentClient({ data }: ContentClientProps) {
         </div>
 
         {(Object.keys(typeLabels) as ContentType[]).map((type) => (
-          <TabsContent key={type} value={type} className="mt-4">
+          <TabsContent key={type} value={type} className="mt-0 space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>{typeLabels[type]}</CardTitle>
@@ -681,7 +663,7 @@ export function ContentClient({ data }: ContentClientProps) {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPostDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isPending} className="gradient-primary">Salvar</Button>
+              <Button type="submit" disabled={isPending} variant="brand">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -755,7 +737,7 @@ export function ContentClient({ data }: ContentClientProps) {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setBannerDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isPending} className="gradient-primary">Salvar</Button>
+              <Button type="submit" disabled={isPending} variant="brand">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>

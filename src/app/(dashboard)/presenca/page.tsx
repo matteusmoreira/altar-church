@@ -2,6 +2,7 @@ import { CalendarDays, CheckCircle, Clock, Plus, Trash2, UserCheck, UserX } from
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -54,17 +55,14 @@ export default async function AttendancePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Presença e Check-in</h1>
-        <p className="text-muted-foreground">Registros vinculados ao cadastro de pessoas quando disponível.</p>
-      </div>
+      <PageHeader title="Presença e Check-in" description="Registros vinculados ao cadastro de pessoas quando disponível." />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric title="Total Check-ins" value={records.length} icon={CalendarDays} />
-        <Metric title="Presentes Hoje" value={presentToday} icon={UserCheck} tone="success" />
-        <Metric title="Ausentes Hoje" value={absentToday} icon={UserX} tone="destructive" />
-        <Metric title="Justificados" value={justifiedToday} icon={Clock} tone="warning" />
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard title="Total Check-ins" value={records.length} icon={CalendarDays} tone="primary" />
+        <MetricCard title="Presentes Hoje" value={presentToday} icon={UserCheck} tone="success" />
+        <MetricCard title="Ausentes Hoje" value={absentToday} icon={UserX} tone="destructive" />
+        <MetricCard title="Justificados" value={justifiedToday} icon={Clock} tone="warning" />
+      </MetricGrid>
 
       <Card className="glass">
         <CardHeader>
@@ -137,7 +135,7 @@ export default async function AttendancePage() {
               <Input id="time" name="time" type="time" />
             </div>
             <div className="flex items-end">
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Registrar
               </Button>
@@ -192,40 +190,5 @@ export default async function AttendancePage() {
         </Table>
       </Card>
     </div>
-  )
-}
-
-function Metric({
-  title,
-  value,
-  icon: Icon,
-  tone = "primary",
-}: {
-  title: string
-  value: number
-  icon: React.ElementType
-  tone?: "primary" | "success" | "destructive" | "warning"
-}) {
-  const toneClass = {
-    primary: "gradient-primary text-white",
-    success: "bg-success/10 text-success",
-    destructive: "bg-destructive/10 text-destructive",
-    warning: "bg-warning/10 text-warning",
-  }[tone]
-
-  return (
-    <Card className="glass">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-          <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${toneClass}`}>
-            <Icon className="h-6 w-6" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

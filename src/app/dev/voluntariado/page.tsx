@@ -30,7 +30,7 @@ export default async function VolunteerPreview({
   }
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 md:p-8">
-      <aside className="rounded-xl border bg-muted p-4 text-sm space-y-2">
+      <aside className="surface-muted space-y-2 p-4 text-sm">
         <p className="font-semibold">
           Prévia local · dados fictícios · alterações e envios desabilitados
         </p>

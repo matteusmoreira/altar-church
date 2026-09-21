@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState, PageHeader } from "@/components/shared"
 import { deleteAnnouncement, saveAnnouncement } from "@/lib/operational/actions"
 import { listAnnouncements } from "@/lib/operational/data"
 import type { Announcement } from "@/lib/types"
@@ -35,10 +36,7 @@ export default async function CommunicationPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Comunicação</h1>
-        <p className="text-muted-foreground">Avisos e comunicados persistidos da igreja.</p>
-      </div>
+      <PageHeader title="Comunicação" description="Avisos e comunicados persistidos da igreja." />
 
       <Card className="glass">
         <CardHeader>
@@ -85,7 +83,7 @@ export default async function CommunicationPage() {
               <Textarea id="content" name="content" rows={4} required />
             </div>
             <div className="lg:col-span-6">
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 Criar Aviso
               </Button>
             </div>
@@ -134,10 +132,7 @@ export default async function CommunicationPage() {
       </div>
 
       {announcements.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Megaphone className="h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-sm text-muted-foreground">Nenhum aviso encontrado</p>
-        </div>
+        <EmptyState icon={Megaphone} title="Nenhum aviso encontrado" />
       )}
     </div>
   )

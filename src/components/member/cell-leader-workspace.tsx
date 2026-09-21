@@ -7,6 +7,7 @@ import { createCellLeaderPerson, linkCellLeaderPerson, saveLeaderCell, searchCel
 import type { CellFormValues, SupervisorSearchState } from "@/components/cells/cell-form-fields"
 import { CellFormFields } from "@/components/cells/cell-form-fields"
 import type { CellLeaderCell, CellLeaderWorkspaceData, SaveLeaderCellInput } from "@/lib/cells/types"
+import { EmptyState, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -247,16 +248,14 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Minhas células</h1>
-          <p className="text-muted-foreground">Gerencie somente células onde você é líder.</p>
-        </div>
-        <Button onClick={openCreate} className="gradient-primary"><Plus className="mr-2 h-4 w-4" />Nova célula</Button>
-      </div>
+      <PageHeader
+        title="Minhas células"
+        description="Gerencie somente células onde você é líder."
+        actions={<Button variant="brand" onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nova célula</Button>}
+      />
 
       {data.cells.length === 0 ? (
-        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Nenhuma célula vinculada. Crie sua primeira célula.</CardContent></Card>
+        <EmptyState variant="card" icon={UsersRound} title="Nenhuma célula vinculada." description="Crie sua primeira célula." />
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2">
@@ -299,7 +298,7 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
                   <Button type="submit" variant="outline" disabled={isPending}><Search className="mr-2 h-4 w-4" />Buscar</Button>
                 </form>
                 {searchResults.map((person) => (
-                  <div key={person.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                  <div key={person.id} className="surface flex items-center justify-between gap-3 p-3 text-sm">
                     <div><p className="font-medium">{person.name}</p><p className="text-muted-foreground">{person.phone || "Sem telefone"}</p></div>
                     <Button size="sm" variant="outline" disabled={isPending} onClick={() => linkPerson(person)}><Link2 className="mr-2 h-4 w-4" />Vincular</Button>
                   </div>
@@ -309,7 +308,7 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
               <div className="space-y-3">
                 <h3 className="flex items-center gap-2 font-semibold"><UsersRound className="h-4 w-4 text-primary" />Pessoas em {selectedCell?.name}</h3>
                 {selectedParticipants.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma pessoa vinculada.</p> : selectedParticipants.map((person) => (
-                  <div key={person.id} className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                  <div key={person.id} className="surface flex items-center justify-between p-3 text-sm">
                     <span className="font-medium">{person.name}</span><span className="text-muted-foreground">{person.phone || "Sem telefone"}</span>
                   </div>
                 ))}

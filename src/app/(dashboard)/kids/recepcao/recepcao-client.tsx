@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { EmptyState } from "@/components/shared"
+import { EmptyState, PageHeader } from "@/components/shared"
 import { usePermission } from "@/lib/permissions"
 import {
   callKidGuardian,
@@ -279,7 +279,7 @@ export function RecepcaoClient({
   if (openSessions.length === 0) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Recepção Kids</h1>
+        <PageHeader title="Recepção Kids" description="Check-in, etiquetas, chamados e checkout seguro." />
         <EmptyState
           icon={Baby}
           title="Nenhuma sessão aberta"
@@ -294,28 +294,28 @@ export function RecepcaoClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Recepção Kids</h1>
-          <p className="text-muted-foreground">Check-in, etiquetas, chamados e checkout seguro.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            className="h-10 min-w-56 rounded-md border bg-background px-3 text-sm"
-            value={selectedSessionId}
-            onChange={(event) => router.push(`/kids/recepcao?session=${event.target.value}`)}
-          >
-            {openSessions.map((session) => (
-              <option key={session.id} value={session.id}>
-                {session.title} · {formatTime(session.startsAt)}
-              </option>
-            ))}
-          </select>
-          <Button type="button" variant="outline" size="icon" onClick={() => router.refresh()} title="Atualizar">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Recepção Kids"
+        description="Check-in, etiquetas, chamados e checkout seguro."
+        actions={
+          <>
+            <select
+              className="h-10 min-w-56 rounded-md border bg-background px-3 text-sm"
+              value={selectedSessionId}
+              onChange={(event) => router.push(`/kids/recepcao?session=${event.target.value}`)}
+            >
+              {openSessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.title} · {formatTime(session.startsAt)}
+                </option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" size="icon" onClick={() => router.refresh()} title="Atualizar">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
 
       {data && (
         <div className="grid gap-6 xl:grid-cols-2">

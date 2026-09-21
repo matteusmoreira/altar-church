@@ -10,6 +10,7 @@ import {
   updateOwnMinistrySettings,
 } from "@/lib/member/actions"
 import type { MemberMinistryItem } from "@/lib/member/types"
+import { EmptyState, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -91,18 +92,18 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
   }
 
   return (
-    <div className="space-y-5 lg:pt-12">
-      <div>
-        <Badge variant="outline" className="mb-2"><HeartHandshake className="mr-1 h-3 w-3" />Conecte-se</Badge>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Ministérios</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Conheça equipes, encontre seu lugar e acompanhe seus pedidos.</p>
-      </div>
+    <div className="space-y-6 lg:pt-12">
+      <PageHeader
+        title="Ministérios"
+        description="Conheça equipes, encontre seu lugar e acompanhe seus pedidos."
+        badge={<Badge variant="outline"><HeartHandshake className="mr-1 h-3 w-3" />Conecte-se</Badge>}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         {ministries.map((ministry) => {
           const loading = isPending && pendingId === ministry.id
           return (
-            <Card key={ministry.id} className="overflow-hidden rounded-3xl border-border/60 bg-card/85 py-0 shadow-sm">
+            <Card key={ministry.id} className="overflow-hidden py-0 shadow-sm">
               <div className="h-1.5 bg-gradient-to-r from-primary via-blue-500 to-violet-500" />
               <CardContent className="space-y-4 p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -110,7 +111,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     <h2 className="truncate text-lg font-bold">{ministry.name}</h2>
                     <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{ministry.description || "Ministério aberto para servir e crescer em comunidade."}</p>
                   </div>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-panel bg-primary/10 text-primary">
                     <HeartHandshake className="h-5 w-5" />
                   </div>
                 </div>
@@ -133,11 +134,11 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                   </div>
                 ) : null}
                 {ministry.membershipRole === "leader" || ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
-                  <Button type="button" variant="outline" className="min-h-11 w-full rounded-xl" disabled={loading} onClick={() => run(ministry.id, true)}>
+                  <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={() => run(ministry.id, true)}>
                     Cancelar solicitação
                   </Button>
                 ) : (
-                  <Button type="button" className="min-h-11 w-full rounded-xl gradient-primary" disabled={loading} onClick={() => run(ministry.id)}>
+                  <Button type="button" variant="brand" className="w-full" disabled={loading} onClick={() => run(ministry.id)}>
                     {ministry.membershipStatus === "rejected" || ministry.membershipStatus === "inactive" ? <RotateCcw className="mr-2 h-4 w-4" /> : <HeartHandshake className="mr-2 h-4 w-4" />}
                     {loading ? "Enviando..." : "Quero participar"}
                   </Button>
@@ -146,7 +147,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                   <Button
                     type="button"
                     variant="outline"
-                    className="min-h-11 w-full rounded-xl"
+                    className="w-full"
                     onClick={() => openSettings(ministry)}
                   >
                     <Settings2 className="mr-2 h-4 w-4" />
@@ -159,7 +160,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
         })}
       </div>
       {ministries.length === 0 && (
-        <div className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">Nenhum ministério ativo no momento.</div>
+        <EmptyState variant="card" icon={HeartHandshake} title="Nenhum ministério ativo no momento." />
       )}
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent>
@@ -197,7 +198,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                 onChange={(event) => setSettings({ ...settings, contact: event.target.value })}
               />
             </div>
-            <div className="flex items-center justify-between rounded-xl border p-3">
+            <div className="flex items-center justify-between rounded-control border p-3">
               <div>
                 <Label htmlFor="ministry-active">Ministério ativo</Label>
                 <p className="text-xs text-muted-foreground">Inativos deixam de aparecer para demais membros.</p>

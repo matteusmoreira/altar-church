@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import {
   deleteReadingPlan,
   deleteReadingPlanStep,
@@ -44,17 +45,14 @@ export default async function ReadingPlansPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Planos de Leitura / Discipulado</h1>
-        <p className="text-muted-foreground">Planos e etapas diárias persistidos para leitura e discipulado.</p>
-      </div>
+      <PageHeader title="Planos de Leitura / Discipulado" description="Planos e etapas diárias persistidos para leitura e discipulado." />
 
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Metric title="Total de Planos" value={plans.length} icon={BookOpen} />
-        <Metric title="Publicados" value={published} icon={CheckCircle2} />
-        <Metric title="Rascunhos" value={drafts} icon={FilePen} />
-        <Metric title="Etapas" value={totalSteps} icon={Plus} />
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard title="Total de Planos" value={plans.length} icon={BookOpen} tone="primary" />
+        <MetricCard title="Publicados" value={published} icon={CheckCircle2} tone="primary" />
+        <MetricCard title="Rascunhos" value={drafts} icon={FilePen} tone="primary" />
+        <MetricCard title="Etapas" value={totalSteps} icon={Plus} tone="primary" />
+      </MetricGrid>
 
       <Card className="glass">
         <CardHeader>
@@ -103,7 +101,7 @@ export default async function ReadingPlansPage() {
             </div>
             <div className="lg:col-span-6">
               <input type="hidden" name="active" value="true" />
-              <Button type="submit" className="gradient-primary">
+              <Button type="submit" variant="brand">
                 Criar Plano
               </Button>
             </div>
@@ -155,7 +153,7 @@ export default async function ReadingPlansPage() {
                 <Textarea id="stepContent" name="content" rows={3} placeholder="Orientação, reflexão ou texto" />
               </div>
               <div className="lg:col-span-6">
-                <Button type="submit" className="gradient-primary">
+                <Button type="submit" variant="brand">
                   Salvar etapa
                 </Button>
               </div>
@@ -245,23 +243,5 @@ export default async function ReadingPlansPage() {
         )
       )}
     </div>
-  )
-}
-
-function Metric({ title, value, icon: Icon }: { title: string; value: number; icon: React.ElementType }) {
-  return (
-    <Card className="glass">
-      <CardContent className="p-6">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Icon className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

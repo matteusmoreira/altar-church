@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { assignVisitorToCell, convertVisitorToMember, deletePerson, savePerson } from "@/lib/people/actions"
+import { EmptyState, MetricCard, MetricGrid, PageHeader, ViewToggle } from "@/components/shared"
 import type {
   PeopleListFilters,
   PeopleListResult,
@@ -258,34 +259,6 @@ function formatDate(value: string) {
   } catch {
     return value
   }
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-}: {
-  title: string
-  value: string
-  icon: React.ElementType
-  color: string
-}) {
-  return (
-    <Card className="glass overflow-hidden border-border/60 transition-all hover:shadow-md">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold tracking-tight">{value}</p>
-          </div>
-          <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${color} shadow-sm`}>
-            <Icon className="h-6 w-6 text-white" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
 }
 
 export function VisitorsClient({
@@ -626,55 +599,53 @@ export function VisitorsClient({
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Gestão de Visitantes</h1>
-          <p className="text-muted-foreground">
-            Acompanhe, acolha e integre novos visitantes em células e na comunidade.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={handleExportCsv} className="gap-2 shadow-sm">
-            <Download className="h-4 w-4" />
-            Exportar CSV
-          </Button>
-          <Button onClick={openCreateDialog} className="gradient-primary gap-2 shadow-sm">
-            <Plus className="h-4 w-4" />
-            Novo Visitante
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Gestão de Visitantes"
+        description="Acompanhe, acolha e integre novos visitantes em células e na comunidade."
+        actions={
+          <>
+            <Button variant="outline" onClick={handleExportCsv} className="gap-2 shadow-sm">
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </Button>
+            <Button variant="brand" onClick={openCreateDialog} className="gap-2 shadow-sm">
+              <Plus className="h-4 w-4" />
+              Novo Visitante
+            </Button>
+          </>
+        }
+      />
 
       {/* Global Stat Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
+      <MetricGrid columns={4}>
+        <MetricCard
           title="Total de Visitantes"
           value={String(metrics.total)}
           icon={Users}
-          color="gradient-primary"
+          tone="primary"
         />
-        <StatCard
+        <MetricCard
           title="Novos (Aguardando)"
           value={String(metrics.newCount)}
           icon={UserPlus}
-          color="bg-info"
+          tone="info"
         />
-        <StatCard
+        <MetricCard
           title="Em Acompanhamento"
           value={String(metrics.followingCount)}
           icon={Heart}
-          color="bg-primary"
+          tone="primary"
         />
-        <StatCard
+        <MetricCard
           title="Convertidos em Membro"
           value={String(metrics.convertedCount)}
           icon={UserCheck}
-          color="bg-success"
+          tone="success"
         />
-      </div>
+      </MetricGrid>
 
       {/* Filter & View Switcher Bar */}
-      <Card className="glass border-border/60">
+      <Card className="glass">
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <form onSubmit={handleFilterSubmit} className="flex flex-1 flex-wrap items-center gap-3">
@@ -763,53 +734,44 @@ export function VisitorsClient({
             </form>
 
             {/* View Mode Toggle: Grade vs Lista */}
-            <div className="flex items-center gap-1 self-end rounded-lg border bg-muted/40 p-1 lg:self-auto">
-              <Button
-                type="button"
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 gap-1.5 px-2.5 text-xs shadow-none"
-                onClick={() => handleViewModeChange("grid")}
-              >
-                <LayoutGrid className="h-4 w-4" />
-                Grade
-              </Button>
-              <Button
-                type="button"
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 gap-1.5 px-2.5 text-xs shadow-none"
-                onClick={() => handleViewModeChange("list")}
-              >
-                <List className="h-4 w-4" />
-                Lista
-              </Button>
-            </div>
+            <ViewToggle
+              value={viewMode}
+              onChange={handleViewModeChange}
+              ariaLabel="Modo de visualização"
+              showLabel
+              className="self-end lg:self-auto"
+              options={[
+                { value: "grid", label: "Grade", icon: LayoutGrid },
+                { value: "list", label: "Lista", icon: List },
+              ]}
+            />
           </div>
         </CardHeader>
 
         <CardContent className="pt-2">
           {/* Empty State */}
           {visitors.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Users className="h-12 w-12 text-muted-foreground/40" />
-              <p className="mt-4 text-base font-semibold">Nenhum visitante encontrado</p>
-              <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-                {hasActiveFilters
+            <EmptyState
+              icon={Users}
+              title="Nenhum visitante encontrado"
+              description={
+                hasActiveFilters
                   ? "Tente ajustar ou limpar os filtros para encontrar os visitantes."
-                  : "Cadastre o primeiro visitante para iniciar o fluxo de recepção e discipulado."}
-              </p>
-              {hasActiveFilters ? (
-                <Button variant="outline" onClick={clearFilters} className="mt-4">
-                  Limpar filtros
-                </Button>
-              ) : (
-                <Button onClick={openCreateDialog} className="gradient-primary mt-4">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Cadastrar visitante
-                </Button>
-              )}
-            </div>
+                  : "Cadastre o primeiro visitante para iniciar o fluxo de recepção e discipulado."
+              }
+              action={
+                hasActiveFilters ? (
+                  <Button variant="outline" onClick={clearFilters}>
+                    Limpar filtros
+                  </Button>
+                ) : (
+                  <Button variant="brand" onClick={openCreateDialog}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Cadastrar visitante
+                  </Button>
+                )
+              }
+            />
           ) : viewMode === "grid" ? (
             /* ============================================================ */
             /* MODO GRADE (CARDS MODERNOS)                                 */
@@ -1253,7 +1215,7 @@ export function VisitorsClient({
             <Button variant="outline" onClick={() => setCellDialogOpen(false)} disabled={isSavingCell}>
               Cancelar
             </Button>
-            <Button onClick={handleSaveCellAssignment} className="gradient-primary" disabled={isSavingCell}>
+            <Button onClick={handleSaveCellAssignment} variant="brand" disabled={isSavingCell}>
               {isSavingCell ? "Salvando..." : "Salvar vínculo"}
             </Button>
           </DialogFooter>
@@ -1463,7 +1425,7 @@ export function VisitorsClient({
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} className="gradient-primary" disabled={isSaving}>
+            <Button onClick={handleSave} variant="brand" disabled={isSaving}>
               {isSaving ? "Salvando..." : editingVisitor ? "Salvar alterações" : "Cadastrar visitante"}
             </Button>
           </DialogFooter>

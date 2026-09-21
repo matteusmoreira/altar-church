@@ -9,6 +9,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        /* Branded gradient CTA. Use for the single most important action of a
+           screen (page header, hero, primary empty state). In dialogs and forms
+           the submit stays `default` so the gradient keeps its meaning.
+           See DESIGN.md "Botões". */
+        brand:
+          "relative overflow-hidden gradient-primary text-white shadow-elevation-1 hover:brightness-110 hover:shadow-elevation-2 focus-visible:ring-2 focus-visible:ring-ring/60",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

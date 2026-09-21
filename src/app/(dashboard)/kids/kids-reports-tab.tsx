@@ -4,7 +4,7 @@ import { AlertTriangle, Baby, CalendarCheck2, Download, HeartPulse, UserPlus, Us
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { MetricCard } from "@/components/shared"
+import { MetricCard, MetricGrid } from "@/components/shared"
 import { usePermission } from "@/lib/permissions"
 import type { KidsReportsData } from "@/lib/kids/types"
 
@@ -40,12 +40,12 @@ export function KidsReportsTab({ data }: { data: KidsReportsData }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricGrid columns={4}>
         <MetricCard title="Presenças (30 dias)" value={data.metrics.attendancesLast30d} icon={CalendarCheck2} />
-        <MetricCard title="Crianças presentes (30d)" value={`${data.metrics.childrenWithAttendance30d}/${data.metrics.activeChildren}`} icon={Users} color="bg-info" />
-        <MetricCard title="Visitantes (30d)" value={data.metrics.newVisitorsLast30d} icon={UserPlus} color="bg-success" />
-        <MetricCard title="Incidentes (30d)" value={`${data.metrics.incidentsLast30d} · ${data.metrics.criticalIncidentsLast30d} críticos`} icon={AlertTriangle} color="bg-warning" />
-      </div>
+        <MetricCard title="Crianças presentes (30d)" value={`${data.metrics.childrenWithAttendance30d}/${data.metrics.activeChildren}`} icon={Users} tone="info" />
+        <MetricCard title="Visitantes (30d)" value={data.metrics.newVisitorsLast30d} icon={UserPlus} tone="success" />
+        <MetricCard title="Incidentes (30d)" value={`${data.metrics.incidentsLast30d} · ${data.metrics.criticalIncidentsLast30d} críticos`} icon={AlertTriangle} tone="warning" />
+      </MetricGrid>
 
       {canExport && (
         <div className="flex flex-wrap gap-2">

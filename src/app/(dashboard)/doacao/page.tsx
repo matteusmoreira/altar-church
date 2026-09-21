@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { saveDonation, saveDonationRecurrence } from "@/lib/operational/actions"
 import { getDonationData } from "@/lib/operational/data"
 import type { Donation, DonationRecurrence } from "@/lib/types"
@@ -61,24 +62,24 @@ export default async function DonationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Doação</h1>
-          <p className="text-muted-foreground">Doações e recorrências persistidas.</p>
-        </div>
-        <a href="/api/donations/export" className={buttonVariants({ variant: "outline" })}>
-          <Download className="h-4 w-4" />
-          Exportar CSV
-        </a>
-      </div>
+      <PageHeader
+        title="Doação"
+        description="Doações e recorrências persistidas."
+        actions={
+          <a href="/api/donations/export" className={buttonVariants({ variant: "outline" })}>
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </a>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Metric title="Total Doações" value={`R$ ${money(totalDonations)}`} icon={Heart} />
-        <Metric title="Este Mês" value={`R$ ${money(thisMonth)}`} icon={Calendar} />
-        <Metric title="Recorrentes" value={`R$ ${money(recurringTotal)}`} icon={Repeat} />
-      </div>
+      <MetricGrid columns={3}>
+        <MetricCard title="Total Doações" value={`R$ ${money(totalDonations)}`} icon={Heart} tone="primary" />
+        <MetricCard title="Este Mês" value={`R$ ${money(thisMonth)}`} icon={Calendar} tone="primary" />
+        <MetricCard title="Recorrentes" value={`R$ ${money(recurringTotal)}`} icon={Repeat} tone="primary" />
+      </MetricGrid>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
           <TabsTrigger value="overview">
             <BarChart3 className="h-4 w-4" />
@@ -94,7 +95,7 @@ export default async function DonationsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-4">
+        <TabsContent value="overview" className="mt-0 space-y-6">
           <Card className="glass overflow-hidden">
             <CardHeader>
               <CardTitle className="text-base">Doações Recentes</CardTitle>
@@ -128,7 +129,7 @@ export default async function DonationsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="new" className="mt-4">
+        <TabsContent value="new" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -189,7 +190,7 @@ export default async function DonationsPage() {
                   <Input id="receiptFile" name="receiptFile" type="file" accept="image/png,image/jpeg,image/webp,application/pdf" />
                 </div>
                 <div className="flex items-end">
-                  <Button type="submit" className="gradient-primary">
+                  <Button type="submit" variant="brand">
                     Registrar
                   </Button>
                 </div>
@@ -198,7 +199,7 @@ export default async function DonationsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="recurrences" className="mt-4 space-y-4">
+        <TabsContent value="recurrences" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -237,7 +238,7 @@ export default async function DonationsPage() {
                 </div>
                 <div className="flex items-end gap-3">
                   <input type="hidden" name="active" value="true" />
-                  <Button type="submit" className="gradient-primary">
+                  <Button type="submit" variant="brand">
                     Criar
                   </Button>
                 </div>
@@ -274,23 +275,5 @@ export default async function DonationsPage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-function Metric({ title, value, icon: Icon }: { title: string; value: string; icon: React.ElementType }) {
-  return (
-    <Card className="glass py-0">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold">{value}</p>
-          </div>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Icon className="h-5 w-5 text-primary" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   )
 }

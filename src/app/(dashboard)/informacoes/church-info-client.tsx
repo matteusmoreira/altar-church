@@ -71,6 +71,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { EmptyState, MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -162,7 +163,7 @@ function statusBadge(active: boolean) {
       variant="outline"
       className={
         active
-          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium"
+          ? "border-success/30 bg-success/10 text-success font-medium"
           : "border-muted-foreground/30 bg-muted/40 text-muted-foreground"
       }
     >
@@ -171,30 +172,10 @@ function statusBadge(active: boolean) {
   )
 }
 
-function EmptyState({
-  label,
-  actionLabel,
-  actionHref,
-}: {
-  label: string
-  actionLabel?: string
-  actionHref?: string
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/70 p-8 text-center bg-muted/10">
-      <p className="text-sm text-muted-foreground mb-3">{label}</p>
-      {actionLabel && actionHref && (
-        <Button size="sm" variant="outline" render={<Link href={actionHref} />}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          {actionLabel}
-        </Button>
-      )}
-    </div>
-  )
-}
-
 function getSocialIcon(platform: string) {
   const p = platform.toLowerCase()
+  // Platform brand marks keep their own colours (DESIGN.md §8) — they identify a
+  // network, they are not status.
   if (p.includes("instagram")) return <InstagramIcon className="h-4 w-4 text-pink-500" />
   if (p.includes("facebook")) return <FacebookIcon className="h-4 w-4 text-blue-600" />
   if (p.includes("youtube")) return <YoutubeIcon className="h-4 w-4 text-red-500" />
@@ -435,7 +416,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
       />
 
       {/* HEADER HERO INSTITUCIONAL */}
-      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+      <div className="relative overflow-hidden rounded-hero border bg-card shadow-sm">
         {/* Banner de Capa */}
         <div className="relative h-44 w-full md:h-56 bg-gradient-to-r from-primary/25 via-primary/10 to-muted flex items-center justify-center overflow-hidden">
           {assetUrls.cover ? (
@@ -472,7 +453,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               {/* Avatar com sobreposição controlada apenas no ícone/logo */}
               <div
-                className="group relative -mt-12 sm:-mt-14 h-24 w-24 rounded-2xl border-4 border-card bg-muted shadow-md overflow-hidden flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] shrink-0 z-10"
+                className="group relative -mt-12 sm:-mt-14 h-24 w-24 rounded-hero border-4 border-card bg-muted shadow-md overflow-hidden flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] shrink-0 z-10"
                 onClick={() => logoInputRef.current?.click()}
                 title="Clique para alterar o logotipo"
               >
@@ -494,16 +475,17 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
               </div>
 
               {/* Textos posicionados com segurança abaixo da imagem de capa */}
-              <div className="space-y-1 pt-1 sm:pt-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                    Informações da Igreja
-                  </h1>
-                  <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                    Ativa
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-2">
+              <div className="pt-1 sm:pt-3">
+                <PageHeader
+                  title="Informações da Igreja"
+                  badge={
+                    <Badge variant="outline" className="border-success/30 bg-success/10 text-success font-medium">
+                      Ativa
+                    </Badge>
+                  }
+                />
+                {/* Linha de contexto: nome público • cidade • responsável */}
+                <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span className="font-semibold text-foreground">
                     {formData.publicName || formData.companyName}
                   </span>
@@ -535,7 +517,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                 className="text-xs"
               >
                 {copiedLink ? (
-                  <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
+                  <Check className="mr-1.5 h-3.5 w-3.5 text-success" />
                 ) : (
                   <Share2 className="mr-1.5 h-3.5 w-3.5" />
                 )}
@@ -565,7 +547,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                         window.location.href = `/api/church-info/export?format=xlsx&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`
                       }}
                     >
-                      <FileSpreadsheet className="mr-2 h-4 w-4 text-emerald-600" />
+                      <FileSpreadsheet className="mr-2 h-4 w-4 text-success" />
                       <span>Planilha Excel (.xls)</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -583,7 +565,8 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
               <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="gradient-primary text-xs"
+                variant="brand"
+                className="text-xs"
                 size="sm"
               >
                 {isSaving ? "Salvando..." : "Salvar perfil"}
@@ -594,70 +577,43 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
       </div>
 
       {/* CARDS DE MÉTRICAS / KPIS */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card className="glass shadow-none hover:border-primary/40 transition-colors">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Congregações</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold">{churchInfoData.congregations.length}</span>
-                <span className="text-xs text-muted-foreground">({activeCongregationsCount} ativas)</span>
-              </div>
-            </div>
-            <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
-              <Building2 className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass shadow-none hover:border-primary/40 transition-colors">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Ministérios</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold">{churchInfoData.ministries.length}</span>
-                <span className="text-xs text-muted-foreground">({activeMinistriesCount} ativos)</span>
-              </div>
-            </div>
-            <div className="rounded-xl bg-pink-500/10 p-2.5 text-pink-500">
-              <Heart className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass shadow-none hover:border-primary/40 transition-colors">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Programações</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold">{churchInfoData.programmings.length}</span>
-                <span className="text-xs text-muted-foreground">cultos e eventos</span>
-              </div>
-            </div>
-            <div className="rounded-xl bg-amber-500/10 p-2.5 text-amber-500">
-              <Calendar className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass shadow-none hover:border-primary/40 transition-colors">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Canais Oficiais</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold">{activeSocialCount}</span>
-                <span className="text-xs text-muted-foreground">de {socialLinks.length} redes</span>
-              </div>
-            </div>
-            <div className="rounded-xl bg-sky-500/10 p-2.5 text-sky-500">
-              <Globe className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <MetricGrid columns={4}>
+        <MetricCard
+          title="Congregações"
+          value={churchInfoData.congregations.length}
+          icon={Building2}
+          tone="primary"
+          variant="compact"
+          hint={`(${activeCongregationsCount} ativas)`}
+        />
+        <MetricCard
+          title="Ministérios"
+          value={churchInfoData.ministries.length}
+          icon={Heart}
+          tone="primary"
+          variant="compact"
+          hint={`(${activeMinistriesCount} ativos)`}
+        />
+        <MetricCard
+          title="Programações"
+          value={churchInfoData.programmings.length}
+          icon={Calendar}
+          tone="primary"
+          variant="compact"
+          hint="cultos e eventos"
+        />
+        <MetricCard
+          title="Canais Oficiais"
+          value={activeSocialCount}
+          icon={Globe}
+          tone="primary"
+          variant="compact"
+          hint={`de ${socialLinks.length} redes`}
+        />
+      </MetricGrid>
 
       {/* TABS DE CONTEÚDO */}
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs defaultValue="general" className="w-full space-y-6">
         <TabsList className="flex h-auto flex-wrap border-b rounded-none bg-transparent p-0 gap-2">
           <TabsTrigger
             value="general"
@@ -699,7 +655,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
         </TabsList>
 
         {/* ABA: INFORMAÇÕES GERAIS */}
-        <TabsContent value="general" className="mt-6 space-y-6">
+        <TabsContent value="general" className="mt-0 space-y-6">
           <div className="grid gap-6">
             {/* Bloco 1: Dados Cadastrais & Liderança */}
             <Card className="glass">
@@ -1099,7 +1055,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
         </TabsContent>
 
         {/* ABA: MINISTÉRIOS */}
-        <TabsContent value="ministries" className="mt-6">
+        <TabsContent value="ministries" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -1140,13 +1096,19 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
 
               {filteredMinistries.length === 0 ? (
                 <EmptyState
-                  label={
+                  icon={Users}
+                  variant="card"
+                  title={
                     searchMinistries
                       ? "Nenhum ministério encontrado com o termo pesquisado."
                       : "Nenhum ministério cadastrado."
                   }
-                  actionLabel="Cadastrar novo ministério"
-                  actionHref="/ministerios"
+                  action={
+                    <Button size="sm" variant="outline" render={<Link href="/ministerios" />}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Cadastrar novo ministério
+                    </Button>
+                  }
                 />
               ) : (
                 <div className="rounded-xl border border-border/70 overflow-hidden">
@@ -1210,7 +1172,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
         </TabsContent>
 
         {/* ABA: PROGRAMAÇÃO */}
-        <TabsContent value="programming" className="mt-6">
+        <TabsContent value="programming" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -1251,13 +1213,19 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
 
               {filteredProgrammings.length === 0 ? (
                 <EmptyState
-                  label={
+                  icon={Calendar}
+                  variant="card"
+                  title={
                     searchProgramming
                       ? "Nenhuma programação encontrada com o termo pesquisado."
                       : "Nenhuma programação cadastrada."
                   }
-                  actionLabel="Criar nova programação"
-                  actionHref="/programacao"
+                  action={
+                    <Button size="sm" variant="outline" render={<Link href="/programacao" />}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Criar nova programação
+                    </Button>
+                  }
                 />
               ) : (
                 <div className="rounded-xl border border-border/70 overflow-hidden">
@@ -1320,7 +1288,7 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
         </TabsContent>
 
         {/* ABA: CONGREGAÇÕES */}
-        <TabsContent value="congregations" className="mt-6">
+        <TabsContent value="congregations" className="mt-0 space-y-6">
           <Card className="glass">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -1361,13 +1329,19 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
 
               {filteredCongregations.length === 0 ? (
                 <EmptyState
-                  label={
+                  icon={Building2}
+                  variant="card"
+                  title={
                     searchCongregations
                       ? "Nenhuma congregação encontrada com o termo pesquisado."
                       : "Nenhuma congregação cadastrada."
                   }
-                  actionLabel="Cadastrar congregação"
-                  actionHref="/congregacoes"
+                  action={
+                    <Button size="sm" variant="outline" render={<Link href="/congregacoes" />}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Cadastrar congregação
+                    </Button>
+                  }
                 />
               ) : (
                 <div className="rounded-xl border border-border/70 overflow-hidden">

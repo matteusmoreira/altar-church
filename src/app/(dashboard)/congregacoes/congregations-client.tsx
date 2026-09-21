@@ -34,6 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { EmptyState, PageHeader } from "@/components/shared"
 import {
   Dialog,
   DialogContent,
@@ -210,16 +211,16 @@ export function CongregationsClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Congregações</h1>
-          <p className="text-muted-foreground">Gerencie as congregações da igreja.</p>
-        </div>
-        <Button onClick={openCreateDialog} className="gradient-primary w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          Nova congregação
-        </Button>
-      </div>
+      <PageHeader
+        title="Congregações"
+        description="Gerencie as congregações da igreja."
+        actions={
+          <Button variant="brand" onClick={openCreateDialog} className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            Nova congregação
+          </Button>
+        }
+      />
 
       <Card className="glass">
         <CardHeader>
@@ -381,10 +382,10 @@ export function CongregationsClient({
           </div>
 
           {congregationsResult.congregations.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <MapPin className="h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-4 text-sm text-muted-foreground">Nenhuma congregação encontrada</p>
-            </div>
+            <EmptyState
+              icon={MapPin}
+              title="Nenhuma congregação encontrada"
+            />
           )}
 
           <div className="mt-4 flex flex-col gap-3 border-t border-border/50 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -469,7 +470,7 @@ export function CongregationsClient({
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={isSaving} className="gradient-primary">
+            <Button onClick={handleSave} disabled={isSaving} variant="brand">
               {isSaving ? "Salvando..." : editingCongregation ? "Salvar alterações" : "Cadastrar"}
             </Button>
           </DialogFooter>

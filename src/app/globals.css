@@ -61,6 +61,18 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Design system — semantic radius aliases (see DESIGN.md) */
+  --radius-control: var(--radius); /* buttons, inputs, selects, tabs */
+  --radius-card: var(--radius); /* cards, stat tiles, table shells */
+  --radius-panel: calc(var(--radius) * 1.4); /* dialogs, sheets, popovers, nav pills */
+  --radius-hero: calc(var(--radius) * 1.8); /* marketing panels, hero blocks */
+
+  /* Design system — elevation ramp (see DESIGN.md) */
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
+  --shadow-elevation-4: var(--elevation-4);
 }
 
 :root {
@@ -103,6 +115,13 @@
   --sidebar-accent-foreground: oklch(0.25 0.05 260);
   --sidebar-border: oklch(0.91 0.01 260);
   --sidebar-ring: oklch(0.45 0.15 260);
+
+  /* Design system — elevation ramp (see DESIGN.md).
+     e1 card at rest · e2 card hovered/raised · e3 popover & dropdown · e4 dialog & sheet */
+  --elevation-1: 0 1px 2px -1px oklch(0.2 0.03 260 / 0.1), 0 1px 3px oklch(0.2 0.03 260 / 0.06);
+  --elevation-2: 0 2px 4px -2px oklch(0.2 0.03 260 / 0.12), 0 6px 14px -4px oklch(0.2 0.03 260 / 0.08);
+  --elevation-3: 0 4px 8px -4px oklch(0.2 0.03 260 / 0.14), 0 14px 28px -8px oklch(0.2 0.03 260 / 0.12);
+  --elevation-4: 0 8px 16px -8px oklch(0.2 0.03 260 / 0.16), 0 28px 56px -12px oklch(0.2 0.03 260 / 0.2);
 }
 
 .dark {
@@ -144,6 +163,12 @@
   --sidebar-accent-foreground: oklch(0.93 0.01 260);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.65 0.18 250);
+
+  /* Dark mode leans on deeper, blacker shadows so elevation still reads on tinted surfaces. */
+  --elevation-1: 0 1px 2px -1px oklch(0 0 0 / 0.5), 0 1px 3px oklch(0 0 0 / 0.35);
+  --elevation-2: 0 2px 6px -2px oklch(0 0 0 / 0.55), 0 8px 18px -6px oklch(0 0 0 / 0.45);
+  --elevation-3: 0 4px 10px -4px oklch(0 0 0 / 0.6), 0 16px 34px -10px oklch(0 0 0 / 0.55);
+  --elevation-4: 0 8px 20px -8px oklch(0 0 0 / 0.65), 0 32px 64px -16px oklch(0 0 0 / 0.6);
 }
 
 @layer base {
@@ -151,25 +176,77 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     overflow-x: hidden;
   }
   html {
     @apply font-sans;
     overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Typography defaults — headings share the display font and never leave a
+     single orphan word on the last line; body copy avoids ragged line ends. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Numbers that sit in columns (metrics, tables, money) stay aligned. */
+  [data-slot="table"] td,
+  [data-slot="table"] th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-foreground;
   }
 }
 
 @layer utilities {
+  /* ---------------------------------------------------------------------
+     Surfaces — see DESIGN.md "Superfícies".
+     `.glass*` is a BACKGROUND treatment only: it never draws an outline, so
+     pairing it with `Card` (which owns a single 1px ring) cannot produce a
+     double border. Hand-rolled surfaces use `.surface-*`, which does draw one.
+     --------------------------------------------------------------------- */
   .glass {
-    @apply bg-card backdrop-blur-xl border border-border/50;
+    @apply bg-card/85 backdrop-blur-xl;
   }
   .glass-strong {
-    @apply bg-card/80 backdrop-blur-2xl border border-border/30;
+    @apply bg-card/70 backdrop-blur-2xl;
   }
   .glass-subtle {
-    @apply bg-card/40 backdrop-blur-md border border-border/20;
+    @apply bg-card/50 backdrop-blur-md;
   }
+
+  .surface {
+    @apply rounded-card border border-border/70 bg-card;
+  }
+  .surface-raised {
+    @apply rounded-card border border-border/70 bg-card shadow-elevation-1;
+  }
+  .surface-muted {
+    @apply rounded-card border border-border/60 bg-muted/40;
+  }
+  .surface-inset {
+    @apply rounded-card border border-dashed border-border/70 bg-muted/20;
+  }
+  /* Interactive surfaces (clickable cards, list rows, nav tiles). */
+  .surface-interactive {
+    @apply transition-[box-shadow,border-color,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevation-2 active:translate-y-0 motion-reduce:hover:translate-y-0;
+  }
+  /* One shared keyboard focus ring for interactive surfaces and links. */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
   .gradient-primary {
     background: linear-gradient(135deg, oklch(0.45 0.15 260), oklch(0.55 0.18 240));
   }
@@ -235,19 +312,24 @@
   .btn-shine:hover::after {
     transform: translateX(130%);
   }
+  /* Scrollbars inherit the theme instead of the old hardcoded dark thumb. */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.3 0.02 260) transparent;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: oklch(0.3 0.02 260);
+    background: color-mix(in oklch, var(--foreground) 18%, transparent);
     border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--foreground) 30%, transparent);
   }
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);

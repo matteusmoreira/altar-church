@@ -31,8 +31,7 @@ import { GroupOperationsPanel } from "./group-operations-panel"
 import { CellFormFields } from "@/components/cells/cell-form-fields"
 import { CellRequestsTab } from "@/components/cells/cell-requests-tab"
 import type { CellRequestsTabInitialData } from "@/lib/cells/requests-types"
-import { EmptyState } from "@/components/shared/empty-state"
-import { PageHeader } from "@/components/shared/page-header"
+import { EmptyState, PageHeader } from "@/components/shared"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -461,10 +460,10 @@ export function GroupsClient({
             </Button>
           )}
           <Button render={<Link href="/celulas/saude" />} nativeButton={false} variant="outline">
-            <Activity className="mr-2 h-4 w-4 text-emerald-500" />
+            <Activity className="mr-2 h-4 w-4 text-success" />
             Saúde das células
           </Button>
-          <Button onClick={openCreate} className="gradient-primary">
+          <Button onClick={openCreate} variant="brand">
             <Plus className="mr-2 h-4 w-4" />
             Nova célula
           </Button>
@@ -606,7 +605,7 @@ export function GroupsClient({
                     const openSpots = maxCapacity > 0 ? Math.max(0, maxCapacity - memberCount) : null
 
                     return (
-                      <Card key={group.id} className="flex flex-col justify-between overflow-hidden border-border/80 transition-all hover:shadow-md hover:border-primary/40">
+                      <Card key={group.id} className="flex flex-col justify-between overflow-hidden transition-all hover:shadow-md hover:border-primary/40">
                         <CardHeader className="pb-3 space-y-2">
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -693,7 +692,7 @@ export function GroupsClient({
                               <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
                                 <div
                                   className={`h-full transition-all ${
-                                    occupancyPercent >= 90 ? "bg-amber-500" : "bg-primary"
+                                    occupancyPercent >= 90 ? "bg-warning" : "bg-primary"
                                   }`}
                                   style={{ width: `${occupancyPercent}%` }}
                                 />
@@ -931,7 +930,7 @@ export function GroupsClient({
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button data-testid="group-save-button" type="submit" disabled={isPending} className="gradient-primary">Salvar</Button>
+              <Button data-testid="group-save-button" type="submit" disabled={isPending} variant="brand">Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -951,7 +950,7 @@ export function GroupsClient({
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCategoryDialogOpen(false)}>Cancelar</Button>
-              <Button data-testid="group-category-save-button" type="submit" disabled={isPending || !categoryName.trim()} className="gradient-primary">Criar categoria</Button>
+              <Button data-testid="group-category-save-button" type="submit" disabled={isPending || !categoryName.trim()} variant="brand">Criar categoria</Button>
             </DialogFooter>
           </form>
         </DialogContent>

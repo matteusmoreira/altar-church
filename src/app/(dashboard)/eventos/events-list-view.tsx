@@ -2,10 +2,11 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, Globe, MapPin, Users } from "lucide-react"
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock, Globe, List, MapPin, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { EmptyState, ViewToggle } from "@/components/shared"
 import { EventActions } from "./event-actions"
 import type { EventListItem } from "@/lib/operational/data"
 import type { ChurchEvent } from "@/lib/types"
@@ -122,11 +123,11 @@ export function EventsListView({ events, canEdit, canCreate, canDelete }: { even
   const [view, setView] = useState<"list" | "month" | "week">("list")
   const [cursor, setCursor] = useState(() => new Date(events[0]?.startDate ?? Date.now()))
   const monthEvents = useMemo(() => events.filter((event) => new Date(event.startDate).getMonth() === cursor.getMonth() && new Date(event.startDate).getFullYear() === cursor.getFullYear()), [cursor, events])
-  if (!events.length) return <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16 text-center"><CalendarDays className="h-12 w-12 text-muted-foreground/50" /><p className="mt-4 text-sm text-muted-foreground">Nenhum evento encontrado com esses filtros.</p></div>
+  if (!events.length) return <EmptyState variant="card" icon={CalendarDays} title="Nenhum evento encontrado com esses filtros." />
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{view === "month" ? `${monthEvents.length} evento(s) no mês` : `${events.length} evento(s) encontrado(s)`}</p><div className="flex rounded-lg border p-1">{(["list", "month", "week"] as const).map((item) => <Button key={item} type="button" size="sm" variant={view === item ? "default" : "ghost"} onClick={() => setView(item)}>{item === "list" ? "Lista" : item === "month" ? "Mês" : "Semana"}</Button>)}</div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{view === "month" ? `${monthEvents.length} evento(s) no mês` : `${events.length} evento(s) encontrado(s)`}</p><ViewToggle showLabel value={view} onChange={setView} ariaLabel="Modo de visualização" options={[{ value: "list", label: "Lista", icon: List }, { value: "month", label: "Mês", icon: CalendarDays }, { value: "week", label: "Semana", icon: CalendarRange }]} /></div>
       {view === "list" && <div className="space-y-3">{events.map((event) => <EventCard key={event.id} event={event} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />)}</div>}
       {view === "month" && <MonthView events={monthEvents} cursor={cursor} onCursorChange={setCursor} />}
       {view === "week" && <WeekView events={events} cursor={cursor} onCursorChange={setCursor} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />}

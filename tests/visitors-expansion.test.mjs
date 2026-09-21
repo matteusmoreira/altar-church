@@ -38,10 +38,12 @@ test("Visitors client interface: view modes, WhatsApp templates and modals", () 
   assert.match(page, /getPersonFormOptions\(\)/)
   assert.match(page, /listPeople\(filters\)/)
 
-  // Client View Modes
+  // Client View Modes — grid/list are declared as ViewToggle options and the
+  // grid branch is what render decides on; the choice persists per browser.
   assert.match(client, /altar_visitors_view_mode/)
   assert.match(client, /viewMode === "grid"/)
-  assert.match(client, /viewMode === "list"/)
+  assert.match(client, /ViewToggle/)
+  assert.match(client, /value: "list", label: "Lista", icon: List/)
   assert.match(client, /LayoutGrid/)
   assert.match(client, /List/)
 

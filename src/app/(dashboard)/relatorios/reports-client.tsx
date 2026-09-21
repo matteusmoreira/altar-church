@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MetricCard } from "@/components/shared"
+import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import type { GroupDashboardData } from "@/lib/groups/types"
 import type { PeopleDashboardData } from "@/lib/people/types"
 import type { EventDashboardSummary } from "@/lib/events/types"
@@ -186,25 +186,25 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Relatórios</h1>
-          <p className="text-muted-foreground">Indicadores reais dos módulos já persistidos.</p>
-        </div>
-        <a href="/api/reports/export" className={buttonVariants({ variant: "outline" })}>
-          <Download className="h-4 w-4" />
-          Exportar CSV
-        </a>
-      </div>
+      <PageHeader
+        title="Relatórios"
+        description="Indicadores reais dos módulos já persistidos."
+        actions={
+          <a href="/api/reports/export" className={buttonVariants({ variant: "outline" })}>
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </a>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricGrid columns={4}>
         <MetricCard
           title="Pessoas"
           value={data.people.total}
           icon={Users}
           trend={data.people.active > 0 ? "up" : undefined}
           trendValue={`${activeRate} ativas`}
-          color="gradient-primary"
+          tone="primary"
         />
         <MetricCard
           title="Visitantes"
@@ -212,25 +212,25 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           icon={UserPlus}
           trend={data.visitors.converted > 0 ? "up" : undefined}
           trendValue={`${conversionRate} conversão`}
-          color="bg-info"
+          tone="info"
         />
         <MetricCard
           title="Grupos Ativos"
           value={data.groups.active}
           icon={UsersRound}
           trendValue={`${data.groups.members} participantes`}
-          color="bg-success"
+          tone="success"
         />
         <MetricCard
           title="Conteúdos Publicados"
           value={data.content.publishedPosts}
           icon={BookOpen}
           trendValue={`${data.content.posts} posts`}
-          color="bg-warning"
+          tone="warning"
         />
-      </div>
+      </MetricGrid>
 
-      <Tabs defaultValue="pessoas">
+      <Tabs defaultValue="pessoas" className="space-y-6">
         <TabsList>
           <TabsTrigger value="pessoas">
             <Users className="h-4 w-4" />
@@ -254,13 +254,13 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pessoas" className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Ativas" value={data.people.active} icon={Heart} trendValue={activeRate} color="bg-success" />
-            <MetricCard title="Batizadas" value={data.people.baptized} icon={Target} color="bg-primary" />
-            <MetricCard title="Em acompanhamento" value={data.visitors.inFollowUp} icon={UserPlus} color="bg-info" />
-            <MetricCard title="Duplicidades" value={data.people.possibleDuplicates} icon={AlertTriangle} color="bg-destructive" />
-          </div>
+        <TabsContent value="pessoas" className="mt-0 space-y-6">
+          <MetricGrid columns={4}>
+            <MetricCard title="Ativas" value={data.people.active} icon={Heart} trendValue={activeRate} tone="success" />
+            <MetricCard title="Batizadas" value={data.people.baptized} icon={Target} tone="primary" />
+            <MetricCard title="Em acompanhamento" value={data.visitors.inFollowUp} icon={UserPlus} tone="info" />
+            <MetricCard title="Duplicidades" value={data.people.possibleDuplicates} icon={AlertTriangle} tone="destructive" />
+          </MetricGrid>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ReportCard title="Distribuição de Pessoas" icon={Users}>
@@ -302,13 +302,13 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="eventos" className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Eventos no mês" value={data.events.total} icon={CalendarDays} color="gradient-primary" />
-            <MetricCard title="Publicados" value={data.events.published} icon={Church} color="bg-success" />
-            <MetricCard title="Inscrições" value={data.events.registrations} icon={Users} color="bg-info" />
-            <MetricCard title="Presentes" value={data.events.present} icon={Activity} trendValue={data.events.attendanceRate === null ? "sem base" : `${data.events.attendanceRate}% presença`} color="bg-warning" />
-          </div>
+        <TabsContent value="eventos" className="mt-0 space-y-6">
+          <MetricGrid columns={4}>
+            <MetricCard title="Eventos no mês" value={data.events.total} icon={CalendarDays} tone="primary" />
+            <MetricCard title="Publicados" value={data.events.published} icon={Church} tone="success" />
+            <MetricCard title="Inscrições" value={data.events.registrations} icon={Users} tone="info" />
+            <MetricCard title="Presentes" value={data.events.present} icon={Activity} trendValue={data.events.attendanceRate === null ? "sem base" : `${data.events.attendanceRate}% presença`} tone="warning" />
+          </MetricGrid>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ReportCard title="Eventos por tipo" icon={CalendarDays}>
@@ -337,13 +337,13 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="grupos" className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Grupos" value={data.groups.total} icon={UsersRound} color="gradient-primary" />
-            <MetricCard title="Células Ativas" value={activeCells.length} icon={Church} color="bg-success" />
-            <MetricCard title="Presença Média" value={data.meetingSummary.averagePresent} icon={Activity} color="bg-info" />
-            <MetricCard title="Reuniões Reportadas" value={data.meetingSummary.reported} icon={CalendarDays} color="bg-warning" />
-          </div>
+        <TabsContent value="grupos" className="mt-0 space-y-6">
+          <MetricGrid columns={4}>
+            <MetricCard title="Grupos" value={data.groups.total} icon={UsersRound} tone="primary" />
+            <MetricCard title="Células Ativas" value={activeCells.length} icon={Church} tone="success" />
+            <MetricCard title="Presença Média" value={data.meetingSummary.averagePresent} icon={Activity} tone="info" />
+            <MetricCard title="Reuniões Reportadas" value={data.meetingSummary.reported} icon={CalendarDays} tone="warning" />
+          </MetricGrid>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <ReportCard title="Capacidade dos Grupos" icon={UsersRound}>
@@ -429,13 +429,13 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="conteudo" className="mt-6 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard title="Categorias" value={data.content.categories} icon={FileText} color="gradient-primary" />
-            <MetricCard title="Posts" value={data.content.posts} icon={BookOpen} color="bg-info" />
-            <MetricCard title="Rascunhos" value={data.content.draftPosts} icon={FileText} color="bg-warning" />
-            <MetricCard title="Banners Ativos" value={data.content.activeBanners} icon={BarChart3} color="bg-success" />
-          </div>
+        <TabsContent value="conteudo" className="mt-0 space-y-6">
+          <MetricGrid columns={4}>
+            <MetricCard title="Categorias" value={data.content.categories} icon={FileText} tone="primary" />
+            <MetricCard title="Posts" value={data.content.posts} icon={BookOpen} tone="info" />
+            <MetricCard title="Rascunhos" value={data.content.draftPosts} icon={FileText} tone="warning" />
+            <MetricCard title="Banners Ativos" value={data.content.activeBanners} icon={BarChart3} tone="success" />
+          </MetricGrid>
 
           <ReportCard title="Publicações por Tipo" icon={BookOpen}>
             {contentChart.length > 0 ? (
@@ -465,7 +465,7 @@ export function ReportsClient({ data }: { data: ReportsClientData }) {
           </ReportCard>
         </TabsContent>
 
-        <TabsContent value="geral" className="mt-6 space-y-6">
+        <TabsContent value="geral" className="mt-0 space-y-6">
           <div className="grid gap-6 lg:grid-cols-2">
             <ReportCard title="Resumo de Pessoas" icon={Users}>
               <div className="space-y-3 text-sm">

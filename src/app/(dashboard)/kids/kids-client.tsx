@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { EmptyState, MetricCard, PageHeader } from "@/components/shared"
+import { EmptyState, MetricCard, MetricGrid, PageHeader, ViewToggle } from "@/components/shared"
 import {
   deleteKid,
   deleteKidClassroom,
@@ -620,7 +620,7 @@ export function KidsClient({
     <div className="space-y-6">
       <PageHeader title="Kids" description="Cadastro infantil, famílias, salas e configurações do ministério." />
 
-      <Tabs defaultValue="visao-geral" onValueChange={(value) => void loadTab(value)}>
+      <Tabs defaultValue="visao-geral" onValueChange={(value) => void loadTab(value)} className="space-y-6">
         <TabsList>
           <TabsTrigger value="visao-geral">Visão geral</TabsTrigger>
           <TabsTrigger value="familias">Famílias</TabsTrigger>
@@ -631,14 +631,14 @@ export function KidsClient({
           {canManageSettings && <TabsTrigger value="configuracoes">Configurações</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="visao-geral" className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <TabsContent value="visao-geral" className="mt-0 space-y-6">
+          <MetricGrid columns={5}>
             <MetricCard title="Crianças" value={data.metrics.totalChildren} icon={Baby} />
-            <MetricCard title="Responsáveis" value={data.metrics.totalGuardians} icon={Users} color="bg-info" />
-            <MetricCard title="Salas ativas" value={data.metrics.activeClassrooms} icon={DoorOpen} color="bg-success" />
-            <MetricCard title="Visitantes" value={data.metrics.visitors} icon={UserPlus} color="bg-warning" />
-            <MetricCard title="Alertas de saúde" value={data.metrics.childrenWithHealthAlerts} icon={HeartPulse} color="bg-destructive" />
-          </div>
+            <MetricCard title="Responsáveis" value={data.metrics.totalGuardians} icon={Users} tone="info" />
+            <MetricCard title="Salas ativas" value={data.metrics.activeClassrooms} icon={DoorOpen} tone="success" />
+            <MetricCard title="Visitantes" value={data.metrics.visitors} icon={UserPlus} tone="warning" />
+            <MetricCard title="Alertas de saúde" value={data.metrics.childrenWithHealthAlerts} icon={HeartPulse} tone="destructive" />
+          </MetricGrid>
 
           <Card className="glass">
             <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -646,14 +646,15 @@ export function KidsClient({
                 <CardTitle>Crianças cadastradas</CardTitle>
                 <CardDescription>Cadastros mais recentes do ministério infantil.</CardDescription>
               </div>
-              <div className="flex rounded-md border p-1" aria-label="Modo de visualização">
-                <Button type="button" variant={overviewMode === "list" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setOverviewMode("list")} aria-label="Ver em lista" title="Lista">
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant={overviewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" onClick={() => setOverviewMode("grid")} aria-label="Ver em grade" title="Grade">
-                  <Grid2X2 className="h-4 w-4" />
-                </Button>
-              </div>
+              <ViewToggle
+                value={overviewMode}
+                onChange={setOverviewMode}
+                ariaLabel="Modo de visualização"
+                options={[
+                  { value: "list", label: "Lista", icon: List },
+                  { value: "grid", label: "Grade", icon: Grid2X2 },
+                ]}
+              />
             </CardHeader>
             <CardContent className={overviewMode === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
               {children.length === 0 && (
@@ -706,7 +707,7 @@ export function KidsClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="familias" className="grid gap-6 lg:grid-cols-2">
+        <TabsContent value="familias" className="mt-0 grid gap-6 lg:grid-cols-2">
           {canManageChildren && (
             <Card className="glass h-fit">
               <CardHeader>
@@ -1035,7 +1036,7 @@ export function KidsClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="salas" className="grid gap-6 lg:grid-cols-2">
+        <TabsContent value="salas" className="mt-0 grid gap-6 lg:grid-cols-2">
           {canManageClasses && (
             <Card className="glass h-fit">
               <CardHeader>
@@ -1273,7 +1274,7 @@ export function KidsClient({
           </div>
         </TabsContent>
 
-        <TabsContent value="sessoes">
+        <TabsContent value="sessoes" className="mt-0 space-y-6">
           {sessionsData ? (
             <KidsSessionsTab data={sessionsData} />
           ) : (
@@ -1285,7 +1286,7 @@ export function KidsClient({
         </TabsContent>
 
         {canCommunicate && (
-          <TabsContent value="comunicacao">
+          <TabsContent value="comunicacao" className="mt-0 space-y-6">
             {communicationData ? (
               <KidsCommunicationTab data={communicationData} />
             ) : (
@@ -1298,7 +1299,7 @@ export function KidsClient({
         )}
 
         {canViewReports && (
-          <TabsContent value="relatorios">
+          <TabsContent value="relatorios" className="mt-0 space-y-6">
             {reportsData ? (
               <KidsReportsTab data={reportsData} />
             ) : (
@@ -1311,7 +1312,7 @@ export function KidsClient({
         )}
 
         {canManageSettings && (
-          <TabsContent value="configuracoes" className="space-y-6">
+          <TabsContent value="configuracoes" className="mt-0 space-y-6">
             <CustomFieldBuilder fields={data.customFields} />
             <KidsLabelBuilder congregations={data.congregations} customFields={data.customFields} availableChildren={children.map((child) => ({ id: child.id, fullName: child.fullName }))} canViewHealth={canViewHealth} />
             <Card className="glass max-w-2xl">
