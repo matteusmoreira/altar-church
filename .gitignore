@@ -50,6 +50,9 @@ resend.txt
 *.credentials
 *.zip
 
+# dumps de dados de producao (contem PII)
+/backups/
+
 # vercel
 .vercel
 
