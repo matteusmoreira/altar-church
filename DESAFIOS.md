@@ -20,7 +20,7 @@
 - O limitador público depende de headers saneados pelo proxy; confirmar `x-real-ip`/egress/DNS no provedor antes de considerar antiabuso e SSRF encerrados.
 - O checkout local recebeu guards de tenant, Kids, CSV, E2E e CI; migrations/RLS/trigger SQL continuam deliberadamente fora do patch por dependerem de autorização e ambiente remoto.
 - Segunda rodada aplicada: isolamento tenant do Volunteer V2 e origem Supabase do E2E foram endurecidos; SSRF ganhou loopback IPv6 expandido e revalidação DNS; rate limit público exige proxy confiável explícito e falha fechado em produção. Ainda falta confirmar o valor do proxy no provedor, DNS rebinding/egress real e o worker SQL.
-- Aplicação remota concluída no projeto correto: migrations 76/76, FK/RLS sem gaps e Edge Functions `integration-delivery-worker` v4 e `volunteer-delivery-worker` v5 ACTIVE. Cron `auth-rate-limit-prune-daily` também ativo via Management API (`jobid=9`, `17 3 * * *` UTC); falta confirmar a primeira execução em `cron.job_run_details`.
+- Aplicação remota concluída no projeto correto: migrations 76/76, FK/RLS sem gaps e Edge Functions `integration-delivery-worker` v4 e `volunteer-delivery-worker` v5 ACTIVE. Cron `auth-rate-limit-prune-daily` também ativo via Management API (`jobid=9`, `17 3 * * *` UTC). **Confirmado em 21/09/2026**: o job roda desde 13/09 e acumula 9 execuções `succeeded` em `cron.job_run_details` (a mais recente em 21/09 03:17 UTC) — a pendência de verificação está fechada.
 
 ## Prévia do voluntariado — 15/09/2026
 
@@ -76,4 +76,33 @@ Todos os 28 erros foram corrigidos em código, sem rebaixar regra para warning. 
 - **Porta ocupada por outro projeto**: `next start -p 3210` anunciou "Ready", mas a porta já era do `convex dev` de outro projeto — as requisições respondiam 404 com corpo "This Convex deployment is running." Sempre validar a porta com `curl` (`/` e uma rota real) e checar `netstat -ano | grep LISTENING` antes de acusar a aplicação.
 - **Porta ≠ sessão**: o cookie de sessão ignora a porta. Trocar de `:3457` para `:3458` mantém o login (`e2e.admin@altar-church.test`, senha em `E2E_DEFAULT_PASSWORD` do `.env.local`), o que permite rodar build antigo e novo lado a lado sem novo login.
 - **A/B para suspeita de regressão**: `git stash push` → `npm run build` → `next start` em outra porta → comparar a mesma tela. Foi o que provou que `/eventos` e `/pessoas/follow-up` ficam presos no skeleton de carregamento **também no código anterior** (não é regressão das mudanças de lint). Vale medir por `document.body.innerText.length` + contagem de `[class*="animate-pulse"]`, porque a árvore ARIA pode vir vazia durante o carregamento e dar falso diagnóstico.
+
+## Pendências de banco aplicadas — 21/09/2026
+
+**Como conectar quando o pooler de sessão está lotado.** `psql "…@aws-1-sa-east-1.pooler.supabase.com:5432/postgres"` falha com `FATAL: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15`. Não é credencial nem rede: os 15 slots estão ocupados. Duas saídas que funcionam neste projeto, sem mexer em configuração:
+- **Pooler de transação, porta 6543** — mesmo host e usuário, sem o limite de sessão. Foi o que sustentou toda a auditoria e a limpeza. `DML` e `\copy` funcionam normalmente.
+- **Conexão direta** `postgres@db.<ref>.supabase.co:5432` — também responde.
+
+Antes de trocar de porta, vale liberar slots de verdade: um `next start` deste projeto segura ~5. Em 21/09 havia um `next start -p 3210` resíduo da sessão anterior (criado 19:40); `Stop-Process` via PowerShell **não** o matou, `taskkill //F //T //PID` matou. Sobrou na 3210 apenas o `convex-local-backend.exe` do projeto vizinho `altar virtual`, que não usa este banco.
+
+**Paridade de migrations confirmada.** 82 arquivos no repo e 82 linhas em `supabase_migrations.schema_migrations`, comparadas **por versão** (`comm` nos dois sentidos), não só por contagem. Nenhuma divergência. `scripts/apply-pending-migrations.mjs` compara só os 14 primeiros dígitos, que é o que a tabela guarda.
+
+**Resíduo E2E removido do tenant de produção.** O tenant `Dignus Est` (`d2f5b9c0-…`) carregava lixo da época em que o harness E2E rodava contra produção. Aplicado em 21/09 via `scripts/cleanup-e2e-residue.sql` (idempotente, com guarda `deleted_at is not null` em ministérios e pessoas, para nunca apagar linha viva):
+
+| Removido de `Dignus Est` | Linhas | Observação |
+|---|---|---|
+| `ministries` com "E2E" no nome | 41 | todas já soft-deleted: 37 `Performance E2E <ts>-<n>`, 2 `Ministério Líder E2E`, 2 `Ministério Líder Voluntário E2E` |
+| `people` com e-mail `e2e.%@altar-church.test` | 18 | todas já soft-deleted; 6 e-mails × 3 cópias acumuladas |
+| `ministry_memberships` | 9 | cascata do delete dos ministérios |
+| `volunteer_profiles` | 6 | cascata do delete das pessoas |
+| `congregations` com "E2E" no nome | 1 | `Congregacao E2E 1784594618930`, sem nenhum dependente |
+| `auth_rate_limits` | 9 | janelas já expiradas do rate limit do login |
+
+Preservado e verificado depois: os 2 ministérios reais e ativos (`Ministério de Casais`, `Ministério de Homens`), as 6 pessoas E2E vivas + 7 profiles do tenant de teste, os 8 `auth.users` E2E e os 2 ministérios do tenant de teste. Zero órfãos em `ministry_memberships` e `volunteer_profiles` após a cascata. `Dignus Est` foi de 98 para 80 pessoas soft-deleted — exatamente as 18.
+
+**Backup antes de apagar:** `backups/e2e-residue/*.csv` (um por tabela, com as 41/18/6/9/1/9 linhas exatas). `/backups/` foi adicionado ao `.gitignore` — são dados de produção com PII e não podem ser versionados.
+
+**Achado que quase passou:** 2 dos 9 `ministry_memberships` apontavam para pessoas que **não** são contas E2E — `stefanie@gmail.com` ("Stefanie Loubach") e `lider@gmail.com` ("lider de célula"), ambas soft-deleted e com duas cópias cada. A cascata as removeu junto. Isso **não** apaga as pessoas (a FK é `membership → person`, não o inverso); o que sumiu foram vínculos com um ministério de teste. Ainda assim, é o motivo de o escopo ser por `company_id` + padrão de nome, e nunca por "tudo que estiver soft-deleted": `Dignus Est` tem **80** outras pessoas soft-deleted que não são resíduo E2E e não foram tocadas.
+
+**Ainda em aberto (não é banco):** o rate limit do login continua derrubando a suíte E2E (`auth.login.ip` 30/15min, `auth.login.identifier` 8/15min). As saídas (a) sessão reaproveitada via `storageState`, (b) limites configuráveis por env, (c) ambas seguem exigindo decisão do usuário.
 
