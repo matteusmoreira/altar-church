@@ -106,3 +106,13 @@ Preservado e verificado depois: os 2 ministérios reais e ativos (`Ministério d
 
 **Ainda em aberto (não é banco):** o rate limit do login continua derrubando a suíte E2E (`auth.login.ip` 30/15min, `auth.login.identifier` 8/15min). As saídas (a) sessão reaproveitada via `storageState`, (b) limites configuráveis por env, (c) ambas seguem exigindo decisão do usuário.
 
+
+## Landing page nova (identidade 1.0) — 24/09/2026
+
+- `lucide-react` v1.16 não exporta mais `PrayingHands` (muitos ícones foram renomeados/reorganizados na v1.x). Antes de usar um ícone, validar o nome: `node -e "const l=require('lucide-react'); console.log('PrayingHands' in l)"`. Substituto adotado para "Intercessão & oração": `Flame` (alinha com o conceito de chama da marca).
+- O Read tool não renderiza PDF nesta máquina (`pdftoppm` ausente). Extrair texto do manual da marca com `pdftotext -enc UTF-8 arquivo.pdf out.txt` (o `pdftotext` do Git Bash mingw64 existe; sem `-enc UTF-8` acentuação vira mojibake).
+- No browser IAB, `locator.click()` (Playwright, com actionability) dá timeout em elementos que existem no snapshot e estão visíveis. Para verificação visual somente, `tab.playwright.evaluate(() => el.click())` resolve.
+- `next dev` antigo com HMR quebrado (`ERR_INVALID_HTTP_RESPONSE`, já documentado acima) faz o `npm run build`/prerender passar limpo, mas a página não hidrata. Ao revisar a landing, confirmar que os Client Components (`ScrollProgress`, `CountUp`, `Reveal`) hidratam olhando o badge de issues do Next.js.
+- A landing agora usa a fonte Inter (manual da marca p.14) via `next/font` só no componente, com override `.ac-landing h1..h4 { font-family: inherit }` no `globals.css` — sem trocar a fonte do app (Geist segue sendo a do dashboard, por `DESIGN.md`).
+- As logos do kit 1.0 são raster (PNG com transparência, sem vetor homologado). Para web está ok; o manual exige matriz vetorial antes de fachada/impressão ampliada. Ficaram em `public/brand/altar/` com o nome oficial do kit; a `public/brand/logo-reduzida.png` antiga ficou órfã (nenhuma referência) — decidir se remove.
+- `favicon.ico` e os ícones PWA (`public/icons/*`, `manifest.ts`) ainda usam a identidade antiga — atualizá-los é uma tarefa separada (exige redimensionar o símbolo e o maskable).
