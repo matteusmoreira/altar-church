@@ -195,15 +195,6 @@
     text-wrap: balance;
   }
 
-  /* Landing (/) is the brand-kit exception (DESIGN.md §8): the manual fixes
-     Inter as the supporting family for communication pieces, so inside
-     `.ac-landing` headings inherit Inter instead of the app's display font. */
-  .ac-landing h1,
-  .ac-landing h2,
-  .ac-landing h3,
-  .ac-landing h4 {
-    font-family: inherit;
-  }
   p {
     text-wrap: pretty;
   }
@@ -219,36 +210,7 @@
   }
 }
 
-/* ---------------------------------------------------------------------
-   Landing (/) — brand kit 1.0 palette. Deliberate exception (DESIGN.md §8):
-   the marketing page uses the identity-kit tokens, never the theme tokens.
-   Scoped to `.ac-landing` so nothing leaks into the authenticated app.
-   --------------------------------------------------------------------- */
-.ac-landing {
-  --ac-navy: #091426;
-  --ac-surface: #111f34;
-  --ac-border: #26364f;
-  --ac-blue: #2563eb;
-  --ac-cyan: #00c9e8;
-  --ac-violet: #6c43ff;
-  --ac-fog: #f3f6fb;
-  --ac-muted: #a8b8d0;
-  --ac-gradient: linear-gradient(135deg, #00c9e8 0%, #2563eb 50%, #6c43ff 100%);
-}
-
 @layer utilities {
-  /* Brand gradient (manual p.12): ciano → azul → violeta. Acento, nunca
-     o fundo de tudo; botões usam azul uniforme. */
-  .bg-ac-gradient {
-    background-image: var(--ac-gradient, linear-gradient(135deg, #00c9e8 0%, #2563eb 50%, #6c43ff 100%));
-  }
-  .text-ac-gradient {
-    background-image: var(--ac-gradient, linear-gradient(135deg, #00c9e8 0%, #2563eb 50%, #6c43ff 100%));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
   /* ---------------------------------------------------------------------
      Surfaces — see DESIGN.md "Superfícies".
      `.glass*` is a BACKGROUND treatment only: it never draws an outline, so
@@ -331,15 +293,6 @@
   .animate-aurora {
     animation: aurora-drift 16s ease-in-out infinite alternate;
   }
-  .animate-bar-grow {
-    transform-origin: bottom;
-    animation: bar-grow 1s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  /* Anel do hero (raio fixo 42, circunferência ≈ 264): desenha até o valor
-     final definido inline em `stroke-dashoffset`. */
-  .animate-ring-draw {
-    animation: ring-draw 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
-  }
   .auth-grid {
     background-image:
       linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px),
@@ -420,23 +373,12 @@
   to { transform: translate3d(5%, 6%, 0) scale(1.15); }
 }
 
-@keyframes bar-grow {
-  from { transform: scaleY(0); }
-  to { transform: scaleY(1); }
-}
-
-@keyframes ring-draw {
-  from { stroke-dashoffset: 264; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animate-marquee,
   .animate-spin-slow,
   .animate-float,
   .animate-aurora,
-  .animate-glow,
-  .animate-bar-grow,
-  .animate-ring-draw {
+  .animate-glow {
     animation: none;
   }
 }
