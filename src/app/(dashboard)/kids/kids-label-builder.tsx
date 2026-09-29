@@ -19,6 +19,7 @@ import {
 } from "@/lib/kids/label-actions"
 import { createDefaultLabelDesign, KID_LABEL_FIELDS, KID_LABEL_FONTS, labelContainsSensitiveFields, SAMPLE_LABEL_CONTEXT } from "@/lib/kids/label-design"
 import { EDITOR_PX_PER_MM, populateLabelCanvas, renderLabelToPng } from "@/lib/kids/label-renderer"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 import type { KidCustomFieldDefinition, KidLabelDesign, KidLabelElement, KidLabelKind, KidLabelTemplate } from "@/lib/kids/types"
 
 const PRESETS = [
@@ -66,6 +67,9 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
   const [previewUrl, setPreviewUrl] = useState("")
   const [previewKidId, setPreviewKidId] = useState("")
   const [previewLabel, setPreviewLabel] = useState("Dados fictícios")
+  const confirmSensitive = useConfirmAction()
+  const confirmRestore = useConfirmAction()
+  const confirmArchive = useConfirmAction()
   const selected = design.elements.find((item) => item.id === selectedIds[0]) ?? null
   useEffect(() => { designRef.current = design }, [design])
   useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds])
@@ -228,14 +232,28 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
     }
     const sensitive = design.elements.some((item) => KID_LABEL_FIELDS.some((field) => field.value === item.field && field.sensitive) || item.field?.startsWith("custom."))
     if (sensitive && !canViewHealth) return toast.error("Campos sensíveis exigem permissão kids.health.view")
-    const confirmed = !sensitive || window.confirm("Este modelo imprime dados sensíveis. Confirma publicação e responsabilidade pelo uso?")
-    if (!confirmed) return
+    if (sensitive) {
+      confirmSensitive.confirm({ title: "Publicar com dados sensíveis", message: "Este modelo imprime dados sensíveis. Confirma publicação e responsabilidade pelo uso?", confirmLabel: "Publicar", action: () => void doPublish(template.id, revisionId) })
+      return
+    }
     setPending(true)
-    try { const result = await publishKidLabelRevision({ templateId: template.id, revisionId, sensitiveConfirmed: sensitive }); if (!result.ok) return toast.error(result.error ?? "Falha ao publicar"); toast.success("Modelo publicado"); await load(scope, kind) } finally { setPending(false) }
+    try { const result = await publishKidLabelRevision({ templateId: template.id, revisionId, sensitiveConfirmed: false }); if (!result.ok) return toast.error(result.error ?? "Falha ao publicar"); toast.success("Modelo publicado"); await load(scope, kind) } finally { setPending(false) }
   }
-  async function restore(revisionId: string) { if (!template || !window.confirm("Restaurar esta revisão como nova versão publicada?")) return; const result = await restoreKidLabelRevision({ templateId: template.id, revisionId, sensitiveConfirmed: canViewHealth }); if (!result.ok) toast.error(result.error ?? "Falha ao restaurar"); else { toast.success("Revisão restaurada"); await load(scope, kind) } }
+  async function doPublish(templateId: string, revisionId: string) {
+    setPending(true)
+    try { const result = await publishKidLabelRevision({ templateId, revisionId, sensitiveConfirmed: true }); if (!result.ok) return toast.error(result.error ?? "Falha ao publicar"); toast.success("Modelo publicado"); await load(scope, kind) } finally { setPending(false) }
+  }
+  async function restore(revisionId: string) {
+    if (!template) return
+    const target = template
+    confirmRestore.confirm({ title: "Restaurar revisão", message: "Restaurar esta revisão como nova versão publicada?", confirmLabel: "Restaurar", action: () => void (async () => { const result = await restoreKidLabelRevision({ templateId: target.id, revisionId, sensitiveConfirmed: canViewHealth }); if (!result.ok) toast.error(result.error ?? "Falha ao restaurar"); else { toast.success("Revisão restaurada"); await load(scope, kind) } })() })
+  }
   async function duplicateTemplate() { if (!template) return; const result = await duplicateKidLabelTemplate(template.id); if (!result.ok || !result.id) return toast.error(result.error ?? "Falha ao duplicar"); toast.success("Modelo duplicado"); await load(scope, kind, result.id) }
-  async function archiveTemplate() { if (!template || !window.confirm("Arquivar este modelo? A recepção usará o padrão disponível.")) return; const result = await archiveKidLabelTemplate(template.id); if (!result.ok) return toast.error(result.error ?? "Falha ao arquivar"); toast.success("Modelo arquivado"); await load(scope, kind) }
+  async function archiveTemplate() {
+    if (!template) return
+    const target = template
+    confirmArchive.confirm({ title: "Arquivar modelo", message: "Arquivar este modelo? A recepção usará o padrão disponível.", confirmLabel: "Arquivar", action: () => void (async () => { const result = await archiveKidLabelTemplate(target.id); if (!result.ok) return toast.error(result.error ?? "Falha ao arquivar"); toast.success("Modelo arquivado"); await load(scope, kind) })() })
+  }
   async function preview(useReal = false) {
     setPending(true)
     try {
@@ -325,6 +343,9 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
         </div>
         <div className="flex flex-wrap items-center gap-2"><Button onClick={() => void saveDraft()} disabled={pending}><Save className="mr-1 h-4 w-4" />Salvar rascunho</Button><Button variant="secondary" onClick={() => void publish()} disabled={pending}>Publicar</Button><Button variant="outline" onClick={() => void preview()} disabled={pending}><Eye className="mr-1 h-4 w-4" />Preview fictício</Button><select className="h-9 min-w-56 rounded-md border bg-background px-2 text-sm" value={previewKidId} onChange={(event) => setPreviewKidId(event.target.value)}><option value="">Presença real…</option>{availableChildren.map((child) => <option key={child.id} value={child.id}>{child.fullName}</option>)}</select><Button variant="outline" onClick={() => void preview(true)} disabled={pending || !previewKidId}>Testar presença</Button>{template?.publishedRevisionId && <Badge>Publicado v{template.revisions.find((item) => item.id === template.publishedRevisionId)?.version}</Badge>}</div>
         {previewUrl && <div className="rounded-lg border bg-muted p-4"><p className="mb-2 text-center text-xs text-muted-foreground">{previewLabel}</p><img src={previewUrl} alt="Preview da etiqueta" className="mx-auto max-h-96 max-w-full bg-white shadow" /></div>}
+        {confirmSensitive.dialog()}
+        {confirmRestore.dialog()}
+        {confirmArchive.dialog()}
         {template && <div className="space-y-2"><Label>Histórico imutável</Label><div className="flex flex-wrap gap-2">{template.revisions.map((revision) => <Button key={revision.id} size="sm" variant={revision.id === template.publishedRevisionId ? "secondary" : "outline"} onClick={() => revision.id !== template.publishedRevisionId && void restore(revision.id)}><RotateCcw className="mr-1 h-3.5 w-3.5" />v{revision.version} · {revision.status}</Button>)}</div></div>}
       </CardContent>
     </Card>

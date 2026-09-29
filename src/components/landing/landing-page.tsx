@@ -238,7 +238,7 @@ function SectionIntro({
 /** Painel "janela de app" do hero: presença ao vivo, barras e KPIs. */
 function HeroDashboard() {
   return (
-    <div className="relative rounded-3xl border border-white/10 bg-(--ac-surface)/70 p-6 shadow-[0_30px_80px_-20px_rgba(2,6,23,0.9)] backdrop-blur-xl">
+    <div role="img" aria-label="Demonstração ilustrativa do painel: culto de domingo com 82 por cento de presença, 412 presentes, 37 visitantes e 86 crianças no Kids" className="relative rounded-3xl border border-white/10 bg-(--ac-surface)/70 p-6 shadow-[0_30px_80px_-20px_rgba(2,6,23,0.9)] backdrop-blur-xl" aria-hidden={false}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-medium tracking-wider text-white/40 uppercase">Visão geral</p>

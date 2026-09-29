@@ -15,7 +15,7 @@ test("member can edit and delete only authorized contacts they added", () => {
   assert.match(actions, /set deleted_at = now\(\)[\s\S]*created_by = \$\{user\.id\}[\s\S]*is_primary = false/)
   assert.match(client, /guardian\.canManage/)
   assert.match(client, /startEditContact/)
-  assert.match(client, /window\.confirm/)
+  assert.match(client, /confirmDelete\.confirm/)
 })
 
 test("authorized contact accepts private gallery photo with scoped ownership", () => {

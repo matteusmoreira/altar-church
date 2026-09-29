@@ -17,6 +17,7 @@ import { PhotoCapture } from "@/components/kids/photo-capture"
 import { AddressFields } from "@/components/kids/address-fields"
 import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 import {
   deleteGuardianContact,
   generateGuardianPickupCode,
@@ -149,6 +150,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   } | null>(null)
   const [pickupCode, setPickupCode] = useState<(GuardianPickupCode & { childName: string }) | null>(null)
   const [pending, setPending] = useState(false)
+  const confirmDelete = useConfirmAction()
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
   const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
@@ -490,11 +492,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                           size="icon"
                           className="h-8 w-8 text-destructive"
                           aria-label={`Excluir ${guardian.name}`}
-                          onClick={() => {
-                            if (window.confirm(`Excluir ${guardian.name} das pessoas autorizadas de ${child.firstName}?`)) {
-                              void run(() => deleteGuardianContact({ kidId: child.kidId, guardianLinkId: guardian.id }), "Contato removido")
-                            }
-                          }}
+                          onClick={() => confirmDelete.confirm({ title: "Remover contato", message: `Excluir ${guardian.name} das pessoas autorizadas de ${child.firstName}?`, action: () => void run(() => deleteGuardianContact({ kidId: child.kidId, guardianLinkId: guardian.id }), "Contato removido") })}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -568,16 +566,16 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">
-                <Label>Nome completo *</Label>
-                <Input value={childForm.fullName} onChange={(event) => setChildForm({ ...childForm, fullName: event.target.value })} />
+                <Label htmlFor="familia-kid-name">Nome completo *</Label>
+                <Input id="familia-kid-name" value={childForm.fullName} onChange={(event) => setChildForm({ ...childForm, fullName: event.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label>Nascimento</Label>
-                <Input type="date" value={childForm.birthDate} onChange={(event) => setChildForm({ ...childForm, birthDate: event.target.value })} />
+                <Label htmlFor="familia-kid-birth">Nascimento</Label>
+                <Input id="familia-kid-birth" type="date" value={childForm.birthDate} onChange={(event) => setChildForm({ ...childForm, birthDate: event.target.value })} />
               </div>
               <div className="space-y-1">
-                <Label>Congregação</Label>
-                <select
+                <Label htmlFor="familia-kid-congregation">Congregação</Label>
+                <select id="familia-kid-congregation"
                   className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                   value={childForm.congregationId}
                   onChange={(event) => setChildForm({ ...childForm, congregationId: event.target.value })}
@@ -591,8 +589,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
             </div>
             <CustomFieldInputs definitions={data.customFields} target="child" surface="portal" values={childForm.customValues} onChange={(customValues) => setChildForm({ ...childForm, customValues })} disabled={pending} />
             <div className="space-y-1">
-              <Label>Observações gerais</Label>
-              <Textarea rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
+              <Label htmlFor="familia-kid-notes">Observações gerais</Label>
+              <Textarea id="familia-kid-notes" rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
             </div>
             {!childForm.kidId && (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -666,6 +664,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
           </Card>
         </div>
       )}
+    {confirmDelete.dialog()}
     </main>
   )
 }

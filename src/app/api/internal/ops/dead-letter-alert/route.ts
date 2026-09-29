@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       from,
       to: [to],
       subject: `[Altar Church] ${total} dead letter(s) nas filas`,
-      text: `Dead letters detectados em ${new Date().toISOString()}: ${detail}. Ver painel operacional /admin/operacoes.`,
+      text: `Falhas permanentes (dead letter) detectadas em ${new Date().toISOString()}: ${detail}. Ver painel operacional /admin/operacoes.`,
     }),
     signal: AbortSignal.timeout(10_000),
   })

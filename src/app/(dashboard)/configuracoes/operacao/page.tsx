@@ -88,7 +88,7 @@ export default async function OperationalHealthPage() {
         {[
           { label: "Migrations", value: `${data.migrations.remoteCount}/${data.migrations.localCount}`, icon: Database },
           { label: "Fila operacional", value: backlog, icon: Clock3 },
-          { label: "Dead letters", value: dead, icon: TriangleAlert },
+          { label: "Cartas mortas (falhas)", value: dead, icon: TriangleAlert },
           { label: "Crons ativos", value: `${activeCrons}/${data.cronJobs.length}`, icon: Activity },
         ].map((metric) => (
           <Card className="glass" key={metric.label}>

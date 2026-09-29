@@ -304,6 +304,7 @@ export function KidsClient({
   const [ruleForm, setRuleForm] = useState<RuleForm | null>(null)
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(defaultSettingsForm)
   const [deleteChildId, setDeleteChildId] = useState<string | null>(null)
+  const [unlinkGuardian, setUnlinkGuardian] = useState<{ kidId: string; guardianPersonId: string; guardianName: string; childName: string } | null>(null)
   const [deleteClassroomId, setDeleteClassroomId] = useState<string | null>(null)
   const [overviewMode, setOverviewMode] = useState<"list" | "grid">("list")
   const [selectedFamily, setSelectedFamily] = useState<KidListItem | null>(null)
@@ -1020,9 +1021,7 @@ export function KidsClient({
                       <div key={guardian.id} className="flex items-center gap-1 rounded-md border px-2 py-1">
                         <span className="text-xs">{guardian.name} · {RELATIONSHIP_LABELS[guardian.relationship]}{guardian.isPrimary ? " · principal" : ""}</span>
                         {canManageGuardians && <Button type="button" variant="ghost" size="sm" onClick={() => startEditChild(child)}>Editar responsável</Button>}
-                        {canManageGuardians && child.guardians.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => {
-                          if (window.confirm(`Desvincular ${guardian.name} somente de ${child.fullName}?`)) void run(() => unlinkKidGuardian({ kidId: child.id, guardianPersonId: guardian.personId }), "Responsável desvinculado")
-                        }}>Desvincular</Button>}
+                        {canManageGuardians && child.guardians.length > 1 && <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setUnlinkGuardian({ kidId: child.id, guardianPersonId: guardian.personId, guardianName: guardian.name, childName: child.fullName })}>Desvincular</Button>}
                       </div>
                     ))}
                   </div>
@@ -1592,6 +1591,30 @@ export function KidsClient({
               }}
             >
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={unlinkGuardian !== null} onOpenChange={(open) => !open && setUnlinkGuardian(null)}>
+        <AlertDialogContent className="glass-strong">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desvincular responsável?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Desvincular {unlinkGuardian?.guardianName} somente de {unlinkGuardian?.childName}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground"
+              onClick={() => {
+                const target = unlinkGuardian
+                setUnlinkGuardian(null)
+                if (target) void run(() => unlinkKidGuardian({ kidId: target.kidId, guardianPersonId: target.guardianPersonId }), "Responsável desvinculado")
+              }}
+            >
+              Desvincular
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

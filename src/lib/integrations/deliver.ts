@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db/client"
 import { jsonbPayloadToHttpBody } from "@/lib/db/jsonb"
 import { assertResolvableSafeWebhookUrl, signWebhookBody } from "./crypto"
+import { isPermanentProviderError } from "@/lib/delivery/retry-policy"
 
 interface ClaimedRow {
   id: string
@@ -30,6 +31,7 @@ interface EndpointSecretRow {
 
 const BACKOFF_MINUTES = [1, 5, 15, 60, 120, 360, 720, 1440]
 const MAX_ATTEMPTS = 8
+/** Status permanentes (401/403): ver isPermanentProviderError. */
 const FETCH_TIMEOUT_MS = 10_000
 
 function backoffMinutes(attempts: number) {
@@ -131,7 +133,8 @@ async function markFailed(
   responseStatus: number | null,
 ) {
   const attempts = row.attempts
-  if (attempts >= MAX_ATTEMPTS) {
+  const permanent = responseStatus === 401 || responseStatus === 403 || isPermanentProviderError(new Error(lastError))
+  if (attempts >= MAX_ATTEMPTS || permanent) {
     await sql`
       update public.integration_delivery_outbox
       set status = 'dead',

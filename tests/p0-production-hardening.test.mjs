@@ -45,7 +45,7 @@ test("P0 provides CI gate with typecheck, lint, node tests, build, E2E and audit
     /npm ci/,
     /npm run typecheck/,
     /npm run lint/,
-    /node --test/,
+    /npm test/,
     /npm run build/,
     /npm run e2e:setup/,
     /npm run test:e2e/,

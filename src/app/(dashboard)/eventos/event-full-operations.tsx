@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 import { QRCodeSVG } from "qrcode.react"
 import { Clipboard, Download, ExternalLink, FileText, Link2, QrCode, Send, UserCheck } from "lucide-react"
 import { toast } from "sonner"
@@ -62,7 +63,8 @@ export function EventResourcesPanel({ event, resources, canEdit, canDelete }: { 
 
 export function EventPublicShare({ event, canEdit }: { event: EventDetail; canEdit: boolean }) {
   const [copied, setCopied] = useState(false)
+  const confirmRotate = useConfirmAction()
   if (!event.publicToken) return <p className="text-sm text-muted-foreground">Link público ainda não disponível. A migration de eventos precisa estar aplicada.</p>
   const path = publicUrl(event.publicToken)
-  return <div className="flex flex-wrap items-center gap-2 text-sm"><Button variant="outline" onClick={() => { navigator.clipboard?.writeText(path); setCopied(true); toast.success("Link copiado") }}><Link2 className="mr-2 h-4 w-4" />{copied ? "Copiado" : "Copiar link público"}</Button><Button render={<a href={path} target="_blank" rel="noreferrer" />} variant="ghost"><ExternalLink className="mr-2 h-4 w-4" />Abrir público</Button>{canEdit && <Button variant="ghost" onClick={() => { if (!window.confirm("Rotacionar link? O link atual deixará de funcionar.")) return; rotateEventPublicToken(event.id).then((result) => { if (result.ok) { toast.success("Link rotacionado"); window.location.reload() } else toast.error(result.error ?? "Não foi possível rotacionar") }) }}>Rotacionar link</Button>}</div>
+  return <div className="flex flex-wrap items-center gap-2 text-sm"><Button variant="outline" onClick={() => { navigator.clipboard?.writeText(path); setCopied(true); toast.success("Link copiado") }}><Link2 className="mr-2 h-4 w-4" />{copied ? "Copiado" : "Copiar link público"}</Button><Button render={<a href={path} target="_blank" rel="noreferrer" />} variant="ghost"><ExternalLink className="mr-2 h-4 w-4" />Abrir público</Button>{canEdit && <Button variant="ghost" onClick={() => confirmRotate.confirm({ title: "Rotacionar link", message: "Rotacionar link? O link atual deixará de funcionar.", confirmLabel: "Rotacionar", action: () => rotateEventPublicToken(event.id).then((result) => { if (result.ok) { toast.success("Link rotacionado"); window.location.reload() } else toast.error(result.error ?? "Não foi possível rotacionar") }) })}>Rotacionar link</Button>}{confirmRotate.dialog()}</div>
 }

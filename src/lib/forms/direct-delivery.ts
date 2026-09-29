@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db/client"
 import { jsonbParam, parseJsonbObject } from "@/lib/db/jsonb"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { buildUazapiPayload, directMediaTypeMatches, parseDirectMessageConfig, renderDirectMessage } from "./direct-message"
+import { isPermanentProviderError } from "@/lib/delivery/retry-policy"
 import type { FormDirectMessage } from "./types"
 
 type Queryable = ReturnType<typeof getSql>
@@ -125,7 +126,7 @@ async function sendDelivery(sql: Queryable, delivery: DeliveryRow): Promise<Prov
 
 async function markFailure(sql: Queryable, delivery: DeliveryRow, error: unknown) {
   const message = error instanceof Error ? error.message : "Falha no envio"
-  if (delivery.attempts >= MAX_ATTEMPTS) {
+  if (delivery.attempts >= MAX_ATTEMPTS || isPermanentProviderError(error)) {
     await sql`
       update public.form_whatsapp_deliveries
       set status = 'dead', last_error = ${message}, locked_at = null, updated_at = now()

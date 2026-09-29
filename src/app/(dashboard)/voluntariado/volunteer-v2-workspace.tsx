@@ -35,6 +35,7 @@ import {
 import { toast } from "sonner";
 import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
 import { createClient } from "@/lib/supabase/client";
+import { useConfirmAction } from "@/components/shared/use-confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -660,6 +661,7 @@ function ManagerOverview({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
+  const confirmRemove = useConfirmAction();
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "grid">("grid");
@@ -773,12 +775,6 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
     }
   }
   async function remove(id: string) {
-    if (
-      !window.confirm(
-        "Excluir este voluntário? Cadastro em Pessoas e histórico serão preservados.",
-      )
-    )
-      return;
     if (ok(await softDeleteVolunteer(id), "Voluntário excluído"))
       router.refresh();
   }
@@ -1129,7 +1125,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                     size="sm"
                     variant="ghost"
                     className="text-destructive"
-                    onClick={() => remove(volunteer.id)}
+                    onClick={() => confirmRemove.confirm({ title: "Excluir voluntário", message: "Excluir este voluntário? Cadastro em Pessoas e histórico serão preservados.", action: () => void remove(volunteer.id) })}
                   >
                     <Trash2 className="mr-1 h-4 w-4" />
                     Excluir
@@ -1140,12 +1136,14 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
           </Card>
         ))}
       </div>
+      {confirmRemove.dialog()}
     </div>
   );
 }
 
 function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
+  const confirmRemoveDept = useConfirmAction();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [deptDialogOpen, setDeptDialogOpen] = useState(false);
   const [department, setDepartment] = useState<{
@@ -1267,12 +1265,6 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
   async function removeDepartment(
     item: VolunteerDashboardData["departments"][number],
   ) {
-    if (
-      !window.confirm(
-        `Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`,
-      )
-    )
-      return;
     if (ok(await softDeleteVolunteerDepartment(item.id), "Equipe excluída")) {
       if (department.id === item.id)
         setDepartment({ id: null, name: "", description: "", active: true });
@@ -1423,7 +1415,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
                         size="sm"
                         variant="ghost"
                         className="text-destructive hover:bg-destructive/10"
-                        onClick={() => removeDepartment(item)}
+                        onClick={() => confirmRemoveDept.confirm({ title: "Excluir equipe", message: `Excluir equipe "${item.name}"? Vínculos ativos e rascunhos futuros serão removidos. Histórico publicado será preservado.`, action: () => void removeDepartment(item) })}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1801,6 +1793,7 @@ function ManagerTeams({ data }: { data: VolunteerDashboardData }) {
           </div>
         </DialogContent>
       </Dialog>
+      {confirmRemoveDept.dialog()}
     </div>
   );
 }

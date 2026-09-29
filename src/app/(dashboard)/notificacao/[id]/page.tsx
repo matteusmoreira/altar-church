@@ -8,7 +8,7 @@ import { getNotificationDetails } from "@/lib/notifications/data"
 import { retryNotificationDeliveryAction } from "@/lib/notifications/actions"
 
 const statusLabels: Record<string, string> = {
-  pending: "Pendente", processing: "Processando", sent: "Enviado", failed: "Falhou", canceled: "Cancelado", dead: "Dead letter",
+  pending: "Pendente", processing: "Processando", sent: "Enviado", failed: "Falhou", canceled: "Cancelado", dead: "Falha permanente",
 }
 
 function maskRecipient(value: string, channel: string) {

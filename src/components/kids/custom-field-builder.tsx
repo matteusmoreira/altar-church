@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 import { deleteKidCustomField, reorderKidCustomFields, saveKidCustomField } from "@/lib/kids/custom-field-actions"
 import type { KidCustomFieldDefinition, KidCustomFieldSurface, KidCustomFieldTarget, KidCustomFieldType } from "@/lib/kids/types"
 
@@ -21,6 +22,7 @@ export function CustomFieldBuilder({ fields }: { fields: KidCustomFieldDefinitio
   const router = useRouter()
   const [form, setForm] = useState<Form | null>(null)
   const [pending, setPending] = useState(false)
+  const confirmDelete = useConfirmAction()
   const edit = (field: KidCustomFieldDefinition) => setForm({ ...field, id: field.id, optionsText: field.options.join("\n") })
   const toggle = <T extends string>(items: T[], item: T) => items.includes(item) ? items.filter((value) => value !== item) : [...items, item]
 
@@ -36,7 +38,6 @@ export function CustomFieldBuilder({ fields }: { fields: KidCustomFieldDefinitio
   }
 
   async function remove(id: string) {
-    if (!window.confirm("Excluir este campo? Valores existentes serão preservados para auditoria.")) return
     const result = await deleteKidCustomField(id)
     if (result.ok) {
       toast.success("Campo removido")
@@ -65,7 +66,7 @@ export function CustomFieldBuilder({ fields }: { fields: KidCustomFieldDefinitio
         {fields.map((field, index) => (
           <div key={field.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
             <div><p className="font-medium">{field.name}</p><div className="mt-1 flex flex-wrap gap-1"><Badge variant="outline">{typeLabels[field.fieldType]}</Badge>{field.targets.map((target) => <Badge key={target} variant="secondary">{target === "child" ? "Criança" : "Responsável"}</Badge>)}{field.required && <Badge>Obrigatório</Badge>}{!field.isActive && <Badge variant="destructive">Inativo</Badge>}</div></div>
-            <div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void move(index, -1)} disabled={index === 0}><ArrowUp /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => void move(index, 1)} disabled={index === fields.length - 1}><ArrowDown /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => edit(field)}><Pencil /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => void remove(field.id)}><Trash2 /></Button></div>
+            <div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void move(index, -1)} disabled={index === 0}><ArrowUp /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => void move(index, 1)} disabled={index === fields.length - 1}><ArrowDown /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => edit(field)}><Pencil /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => confirmDelete.confirm({ title: "Excluir campo", message: "Excluir este campo? Valores existentes serão preservados para auditoria.", action: () => void remove(field.id) })}><Trash2 /></Button></div>
           </div>
         ))}
       </CardContent>
@@ -82,6 +83,7 @@ export function CustomFieldBuilder({ fields }: { fields: KidCustomFieldDefinitio
           <DialogFooter><Button type="button" variant="outline" onClick={() => setForm(null)}>Cancelar</Button><Button type="button" disabled={pending} onClick={() => void save()}>Salvar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+      {confirmDelete.dialog()}
     </Card>
   )
 }

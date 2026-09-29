@@ -29,6 +29,7 @@ import {
 import type { UazapiActionResult, UazapiInstanceStatus, UazapiInstancesData } from "@/lib/uazapi/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -96,6 +97,7 @@ function connectionFromResult(
 export function UazapiInstancesPanel({ data }: { data: UazapiInstancesData }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const confirmUnlink = useConfirmAction()
   const [name, setName] = useState("")
   const [token, setToken] = useState("")
   const [pairingPhone, setPairingPhone] = useState("")
@@ -489,18 +491,14 @@ export function UazapiInstancesPanel({ data }: { data: UazapiInstancesData }) {
                       size="sm"
                       variant="ghost"
                       disabled={pending}
-                      onClick={() => {
-                        if (window.confirm("Remover o vínculo desta instância com a igreja?")) {
-                          startTransition(async () => {
+                      onClick={() => confirmUnlink.confirm({ title: "Remover vínculo", message: "Remover o vínculo desta instância com a igreja?", action: () => startTransition(async () => {
                             const result = await removeUazapiInstance(instance.id)
                             if (result.ok) {
                               if (activeConnection?.instanceId === instance.id) setActiveConnection(null)
                               toast.success("Instância removida.")
                               router.refresh()
                             } else toast.error(result.error ?? "Não foi possível remover a instância.")
-                          })
-                        }
-                      }}
+                          }) })}
                     >
                       <Trash2 className="h-4 w-4" />
                       Remover
@@ -529,7 +527,7 @@ export function UazapiInstancesPanel({ data }: { data: UazapiInstancesData }) {
               Nenhuma instância WhatsApp conectada nesta igreja.
             </p>
           )}
-        </div>
+        </div>{confirmUnlink.dialog()}
       </CardContent>
     </Card>
   )

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { MetricCard, MetricGrid, SectionHeader } from "@/components/shared";
+import { useConfirmAction } from "@/components/shared/use-confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -889,6 +890,7 @@ export function VolunteerProgrammingWorkspace({
   const [wizardForm, setWizardForm] = useState<WizardForm>(emptyForm());
   const [selected, setSelected] = useState<string[]>([]);
   const [working, setWorking] = useState(false);
+  const confirmRemove = useConfirmAction();
   const events = useMemo(() => buildWorkspaceEvents(data), [data]);
   const monthItems = events.filter((event) => sameMonth(event.startsAt, month));
   const selectedReady = selected.filter((id) =>
@@ -961,12 +963,6 @@ export function VolunteerProgrammingWorkspace({
     }
   }
   async function removeProgramming(programming: VolunteerProgramming) {
-    if (
-      !window.confirm(
-        `Excluir "${programming.title}"? Rascunhos futuros serão removidos. Escalas publicadas e histórico serão preservados.`,
-      )
-    )
-      return;
     setWorking(true);
     try {
       const result = await deleteVolunteerProgramming(programming.id);
@@ -1235,7 +1231,7 @@ export function VolunteerProgrammingWorkspace({
                   <Button
                     variant="ghost"
                     disabled={working}
-                    onClick={() => removeProgramming(programming)}
+                    onClick={() => confirmRemove.confirm({ title: "Excluir programação", message: `Excluir "${programming.title}"? Rascunhos futuros serão removidos. Escalas publicadas e histórico serão preservados.`, action: () => void removeProgramming(programming) })}
                   >
                     Excluir
                   </Button>
@@ -1273,6 +1269,7 @@ export function VolunteerProgrammingWorkspace({
             : undefined
         }
       />
+      {confirmRemove.dialog()}
     </div>
   );
 }

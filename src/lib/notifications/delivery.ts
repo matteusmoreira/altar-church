@@ -1,6 +1,7 @@
 import webpush from "web-push"
 import { toUazapiNumber } from "@/lib/auth/phone"
 import { getSql } from "@/lib/db/client"
+import { isPermanentProviderError } from "@/lib/delivery/retry-policy"
 
 type DeliveryRow = {
   id: string
@@ -147,7 +148,7 @@ async function markFailure(delivery: DeliveryRow, error: unknown) {
     `
   }
 
-  if (invalidPushEndpoint || delivery.attempts >= MAX_ATTEMPTS) {
+  if (invalidPushEndpoint || delivery.attempts >= MAX_ATTEMPTS || isPermanentProviderError(error)) {
     await sql`
       update public.notification_deliveries
       set status = 'dead', last_error = ${message}, locked_at = null, updated_at = now()

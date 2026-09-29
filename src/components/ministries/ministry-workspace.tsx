@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, publishMinistryScale, recordMinistryAttendance, removeMinistryActivity, removeMinistryAttendance, removeMinistryCommunication, removeMinistryFollowUp, removeMinistryScale, removeMinistryTeam, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryResource } from "@/lib/ministries/actions"
 import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
@@ -148,6 +149,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
 
   const [activeTab, setActiveTab] = useState("visao-geral")
   const [peopleSearch, setPeopleSearch] = useState("")
+  const [confirmDelete, setConfirmDelete] = useState<{ label: string; run: () => void } | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState("")
   const [profileForm, setProfileForm] = useState({
     name: profile.name,
@@ -263,8 +265,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
     })
   }
 
-  function confirmRemoval(label: string) {
-    return window.confirm(`Excluir ${label}? Esta ação não poderá ser desfeita.`)
+  function confirmRemoval(label: string, run: () => void) {
+    setConfirmDelete({ label, run })
   }
 
   const normalizedPeopleSearch = peopleSearch.trim().toLocaleLowerCase("pt-BR")
@@ -620,9 +622,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           variant="ghost"
                           className="text-destructive hover:text-destructive"
                           disabled={pending}
-                          onClick={() => {
-                            if (!confirmRemoval(`${member.personName} do ministério`)) return
-                            run(
+                          onClick={() => confirmRemoval(`${member.personName} do ministério`, () => run(
                               () =>
                                 reviewMinistryMember({
                                   ministryId: profile.id,
@@ -630,8 +630,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                   decision: "remove",
                                 }),
                               "Pessoa removida do ministério",
-                            )
-                          }}
+                            ))
+                          }
                         >
                           <UserMinus className="mr-1 h-3.5 w-3.5" />
                           Remover
@@ -919,13 +919,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                 className="text-destructive hover:text-destructive"
                                 disabled={pending}
                                 aria-label={`Excluir equipe ${team.name}`}
-                                onClick={() => {
-                                  if (!confirmRemoval(`a equipe ${team.name}`)) return
-                                  run(
+                                onClick={() => confirmRemoval(`a equipe ${team.name}`, () => run(
                                     () => removeMinistryTeam({ ministryId: profile.id, teamId: team.id }),
                                     "Equipe excluída",
-                                  )
-                                }}
+                                  ))
+                                }
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1245,13 +1243,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           className="text-destructive hover:text-destructive"
                           disabled={pending}
                           aria-label={`Excluir atividade ${activity.title}`}
-                          onClick={() => {
-                            if (!confirmRemoval(`a atividade ${activity.title} e as ocorrências não publicadas`)) return
-                            run(
+                          onClick={() => confirmRemoval(`a atividade ${activity.title} e as ocorrências não publicadas`, () => run(
                               () => removeMinistryActivity({ ministryId: profile.id, eventId: activity.id }),
                               "Atividade excluída",
-                            )
-                          }}
+                            ))
+                          }
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1448,13 +1444,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                 className="text-destructive hover:text-destructive"
                                 disabled={pending}
                                 aria-label={`Excluir escala de ${scale.eventTitle}`}
-                                onClick={() => {
-                                  if (!confirmRemoval(`a escala de ${scale.eventTitle}`)) return
-                                  run(
+                                onClick={() => confirmRemoval(`a escala de ${scale.eventTitle}`, () => run(
                                     () => removeMinistryScale({ ministryId: profile.id, eventId: scale.eventId }),
                                     "Escala excluída",
-                                  )
-                                }}
+                                  ))
+                                }
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1684,13 +1678,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               className="shrink-0 text-destructive hover:text-destructive"
                               disabled={pending}
                               aria-label={`Excluir presença de ${record.personName}`}
-                              onClick={() => {
-                                if (!confirmRemoval(`o registro de presença de ${record.personName}`)) return
-                                run(
+                              onClick={() => confirmRemoval(`o registro de presença de ${record.personName}`, () => run(
                                   () => removeMinistryAttendance({ ministryId: profile.id, attendanceId: record.id }),
                                   "Presença excluída",
-                                )
-                              }}
+                                ))
+                              }
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1883,13 +1875,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         className="text-destructive hover:text-destructive"
                         disabled={pending}
                         aria-label={`Excluir comunicação ${communication.title}`}
-                        onClick={() => {
-                          if (!confirmRemoval(`a comunicação ${communication.title}`)) return
-                          run(
+                        onClick={() => confirmRemoval(`a comunicação ${communication.title}`, () => run(
                             () => removeMinistryCommunication({ ministryId: profile.id, communicationId: communication.id }),
                             "Comunicação excluída",
-                          )
-                        }}
+                          ))
+                        }
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -2094,13 +2084,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             className="text-destructive hover:text-destructive"
                             disabled={pending}
                             aria-label={`Excluir acompanhamento de ${task.personName}`}
-                            onClick={() => {
-                              if (!confirmRemoval(`o acompanhamento de ${task.personName}`)) return
-                              run(
+                            onClick={() => confirmRemoval(`o acompanhamento de ${task.personName}`, () => run(
                                 () => removeMinistryFollowUp({ ministryId: profile.id, taskId: task.id }),
                                 "Acompanhamento excluído",
-                              )
-                            }}
+                              ))
+                            }
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -2179,17 +2167,15 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           size="icon-sm"
                           variant="ghost"
                           disabled={pending}
-                          onClick={() => {
-                            if (!confirmRemoval(`o checklist ${template.name}`)) return
-                            run(
+                          onClick={() => confirmRemoval(`o checklist ${template.name}`, () => run(
                               () =>
                                 removeMinistryOnboardingTemplate({
                                   ministryId: profile.id,
                                   templateId: template.id,
                                 }),
                               "Checklist removida",
-                            )
-                          }}
+                            ))
+                          }
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -2209,17 +2195,15 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               size="icon-xs"
                               variant="ghost"
                               disabled={pending}
-                              onClick={() => {
-                                if (!confirmRemoval(`a etapa ${step.title}`)) return
-                                run(
+                              onClick={() => confirmRemoval(`a etapa ${step.title}`, () => run(
                                   () =>
                                     removeMinistryOnboardingStep({
                                       ministryId: profile.id,
                                       stepId: step.id,
                                     }),
                                   "Etapa removida",
-                                )
-                              }}
+                                ))
+                              }
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2484,17 +2468,15 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         size="icon-sm"
                         variant="ghost"
                         disabled={pending}
-                        onClick={() => {
-                          if (!confirmRemoval(`o recurso ${resource.title}`)) return
-                          run(
+                        onClick={() => confirmRemoval(`o recurso ${resource.title}`, () => run(
                             () =>
                               removeMinistryResource({
                                 ministryId: profile.id,
                                 resourceId: resource.id,
                               }),
                             "Recurso removido",
-                          )
-                        }}
+                          ))
+                        }
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -2850,6 +2832,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           </Card>
         </TabsContent>
       </Tabs>
+      <AlertDialog open={confirmDelete !== null} onOpenChange={(open) => { if (!open) setConfirmDelete(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir</AlertDialogTitle>
+            <AlertDialogDescription>
+              Excluir {confirmDelete?.label}? Esta ação não poderá ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { confirmDelete?.run(); setConfirmDelete(null) }}>
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

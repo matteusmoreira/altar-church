@@ -68,6 +68,7 @@ async function providerRequest(
 ) {
   const { baseUrl, adminToken } = providerConfig()
   if (options.admin && !adminToken) throw new Error("UAZAPI_ADMIN_TOKEN não configurado")
+  // Timeout proprio: sem ele a action pendura ate o limite da Vercel (auditoria 29/09/2026).
   const response = await fetch(`${baseUrl}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -76,6 +77,7 @@ async function providerRequest(
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   })
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
   if (!response.ok) {
