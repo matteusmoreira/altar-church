@@ -175,13 +175,25 @@ export interface CellMemberCheckin {
   source: CellCheckinSource
 }
 
+export interface CellFeaturesCell {
+  id: string
+  name: string
+  cellPhotoUrl?: string | null
+  meetingDay?: string | null
+  meetingTime?: string | null
+  meetingLocation?: string | null
+  neighborhood?: string | null
+  city?: string | null
+  description?: string | null
+}
+
 export interface CellFeaturesData {
   mode: "manager" | "leader" | "portal"
   canPublishToAll: boolean
   canDeleteStudies: boolean
   personId: string | null
   churchSlug?: string | null
-  cells: { id: string; name: string }[]
+  cells: CellFeaturesCell[]
   people: { id: string; name: string; phone: string; visitor: boolean }[]
   meetings: CellPortalMeeting[]
   studies: CellStudyFile[]

@@ -260,15 +260,28 @@ export function CellLeaderWorkspace({ data }: { data: CellLeaderWorkspaceData })
         <>
           <div className="grid gap-4 md:grid-cols-2">
             {data.cells.map((cell) => (
-              <Card key={cell.id} className={cell.id === selectedCell?.id ? "border-primary/40" : undefined}>
-                <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <Card key={cell.id} className={`overflow-hidden transition-all hover:shadow-md ${cell.id === selectedCell?.id ? "border-primary/40 ring-1 ring-primary/30" : ""}`}>
+                {cell.cellPhotoUrl && (
+                  <div className="relative h-36 w-full overflow-hidden bg-muted border-b border-border/40">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={cell.cellPhotoUrl}
+                      alt={cell.name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.parentElement?.classList.add("hidden")
+                      }}
+                    />
+                  </div>
+                )}
+                <CardHeader className="flex flex-row items-start justify-between gap-3 pb-2">
                   <div>
                     <CardTitle>{cell.name}</CardTitle>
                     <CardDescription>{cell.meetingDay || "Dia não informado"}{cell.meetingTime ? ` · ${cell.meetingTime.slice(0, 5)}` : ""}</CardDescription>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => openEdit(cell)}><Edit className="mr-2 h-4 w-4" />Editar</Button>
                 </CardHeader>
-                <CardContent className="flex items-center justify-between gap-3 text-sm">
+                <CardContent className="flex items-center justify-between gap-3 text-sm pt-0">
                   <span className="text-muted-foreground">Participantes</span>
                   <Badge variant="secondary">{cell.memberCount}</Badge>
                 </CardContent>

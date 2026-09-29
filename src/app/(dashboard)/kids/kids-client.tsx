@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { AddressFields } from "@/components/kids/address-fields"
 import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
 import { CustomFieldBuilder } from "@/components/kids/custom-field-builder"
@@ -986,7 +987,14 @@ export function KidsClient({
                 <div key={child.id} className="rounded-lg border border-border/60 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <Avatar size="lg">
+                      <Avatar
+                        size="lg"
+                        className={child.photoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                        onClick={() => {
+                          if (child.photoUrl) setPhotoPreview({ url: child.photoUrl, name: child.fullName })
+                        }}
+                        title={child.photoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                      >
                         {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
                         <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -1552,25 +1560,12 @@ export function KidsClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={photoPreview !== null} onOpenChange={(open) => { if (!open) setPhotoPreview(null) }}>
-        <DialogContent className="w-auto max-w-[calc(100vw-2rem)] bg-black p-2 sm:max-w-4xl">
-          {photoPreview && (
-            <>
-              <DialogHeader className="sr-only">
-                <DialogTitle>Foto de {photoPreview.name}</DialogTitle>
-                <DialogDescription>Foto ampliada</DialogDescription>
-              </DialogHeader>
-              {/* A URL assinada pode vir de domínios variáveis do armazenamento privado. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photoPreview.url}
-                alt={photoPreview.name}
-                className="max-h-[calc(100dvh-4rem)] max-w-full rounded-lg object-contain"
-              />
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PhotoLightbox
+        open={photoPreview !== null}
+        url={photoPreview?.url ?? null}
+        title={photoPreview?.name ? `Foto de ${photoPreview.name}` : "Foto"}
+        onClose={() => setPhotoPreview(null)}
+      />
 
       <AlertDialog open={deleteChildId !== null} onOpenChange={(open) => !open && setDeleteChildId(null)}>
         <AlertDialogContent className="glass-strong">

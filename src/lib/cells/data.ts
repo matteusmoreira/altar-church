@@ -35,8 +35,8 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const sql = getSql()
 
   const cellRows = manager
-    ? await sql<{ id: string; name: string }[]>`
-        select id, name from public.groups cell
+    ? await sql<{ id: string; name: string; cell_photo_url?: string | null; meeting_day?: string | null; meeting_time?: string | null; meeting_location?: string | null; neighborhood?: string | null; city?: string | null; description?: string | null }[]>`
+        select id, name, cell_photo_url, meeting_day, meeting_time::text as meeting_time, meeting_location, neighborhood, city, description from public.groups cell
         where cell.company_id = ${context.companyId} and cell.type = 'cell' and cell.deleted_at is null
           and (${context.user.role} not in ('cell_supervisor', 'cell_leader')
             or (${context.user.role} = 'cell_supervisor' and cell.coordinator_person_id = ${context.personId})
@@ -44,16 +44,16 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
         order by name
       `
     : leader
-      ? await sql<{ id: string; name: string }[]>`
-          select cell.id, cell.name
+      ? await sql<{ id: string; name: string; cell_photo_url?: string | null; meeting_day?: string | null; meeting_time?: string | null; meeting_location?: string | null; neighborhood?: string | null; city?: string | null; description?: string | null }[]>`
+          select cell.id, cell.name, cell.cell_photo_url, cell.meeting_day, cell.meeting_time::text as meeting_time, cell.meeting_location, cell.neighborhood, cell.city, cell.description
           from public.groups cell
           where cell.company_id = ${context.companyId} and cell.type = 'cell'
             and cell.leader_person_id = ${context.personId} and cell.deleted_at is null and cell.is_active = true
           order by cell.name
         `
     : context.personId
-      ? await sql<{ id: string; name: string }[]>`
-          select cell.id, cell.name from public.group_members member
+      ? await sql<{ id: string; name: string; cell_photo_url?: string | null; meeting_day?: string | null; meeting_time?: string | null; meeting_location?: string | null; neighborhood?: string | null; city?: string | null; description?: string | null }[]>`
+          select cell.id, cell.name, cell.cell_photo_url, cell.meeting_day, cell.meeting_time::text as meeting_time, cell.meeting_location, cell.neighborhood, cell.city, cell.description from public.group_members member
           join public.groups cell on cell.id = member.group_id
           where member.company_id = ${context.companyId} and member.person_id = ${context.personId}
             and member.status = 'active' and cell.type = 'cell' and cell.deleted_at is null
@@ -239,9 +239,22 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   }))
 
   return {
-    mode: leader ? "leader" : manager ? "manager" : "portal", canPublishToAll,
-    canDeleteStudies: leader || isCellAdministrator(context.user), personId: context.personId,
-    churchSlug, cells: cellRows,
+    mode: leader ? "leader" : manager ? "manager" : "portal",
+    canPublishToAll,
+    canDeleteStudies: leader || isCellAdministrator(context.user),
+    personId: context.personId,
+    churchSlug,
+    cells: cellRows.map((cell) => ({
+      id: cell.id,
+      name: cell.name,
+      cellPhotoUrl: cell.cell_photo_url ?? null,
+      meetingDay: cell.meeting_day ?? null,
+      meetingTime: cell.meeting_time ? cell.meeting_time.slice(0, 5) : null,
+      meetingLocation: cell.meeting_location ?? null,
+      neighborhood: cell.neighborhood ?? null,
+      city: cell.city ?? null,
+      description: cell.description ?? null,
+    })),
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
     myCheckins: myCheckinRows.map((checkin) => ({

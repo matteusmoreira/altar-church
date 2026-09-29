@@ -608,6 +608,9 @@ export function CellsListDrawer({
                             src={cell.cellPhotoUrl}
                             alt={cell.name}
                             className="h-full w-full object-cover group-hover:scale-105 transition duration-300"
+                            onError={(e) => {
+                              e.currentTarget.parentElement?.classList.add("hidden")
+                            }}
                           />
                         </div>
                       )}

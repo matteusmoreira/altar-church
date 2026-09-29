@@ -45,6 +45,6 @@ test("dashboard child and guardian photos open an accessible enlarged preview", 
 
   assert.match(dashboard, /setPhotoPreview\(\{ url: child\.photoUrl!?, name: child\.fullName \}\)/)
   assert.match(dashboard, /setPhotoPreview\(\{ url: guardian\.photoUrl!?, name: guardian\.name \}\)/)
-  assert.match(dashboard, /<DialogTitle>Foto de \{photoPreview\.name\}<\/DialogTitle>/)
-  assert.match(dashboard, /max-h-\[calc\(100dvh-4rem\)\].*object-contain/)
+  assert.match(dashboard, /<PhotoLightbox/)
 })
+

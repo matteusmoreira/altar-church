@@ -151,4 +151,40 @@ export async function runFollowUpTriggers() {
   return runFollowUpTriggersDirect()
 }
 
+export async function savePersonPhoto(formData: FormData) {
+  const { replacePersonPhoto, removePersonPhoto, getOptionalFile } = await import("@/lib/files/server")
+  const { requirePermission, writeAuditLog } = await import("@/lib/auth/permissions")
+  const { getCurrentUser, requireUserCompanyId } = await import("@/lib/auth/server")
+  const { revalidatePath } = await import("next/cache")
+  const { z } = await import("zod")
+
+  try {
+    const personId = z.string().uuid().parse(formData.get("personId"))
+    const remove = formData.get("remove") === "true"
+    const user = await getCurrentUser()
+    if (!user) throw new Error("Acesso negado")
+    const companyId = requireUserCompanyId(user)
+    await requirePermission("members.edit", companyId)
+
+    if (remove) {
+      const oldFileId = await removePersonPhoto(personId, companyId)
+      await writeAuditLog({ action: "people.photo.delete", entityTable: "people", entityId: personId, companyId, metadata: { oldFileId } })
+    } else {
+      const file = getOptionalFile(formData, "file")
+      if (!file) throw new Error("Foto obrigatória")
+      await replacePersonPhoto({ file, personId, companyId, ownerProfileId: user.id })
+      await writeAuditLog({ action: "people.photo.save", entityTable: "people", entityId: personId, companyId, metadata: { source: "person-detail" } })
+    }
+
+    revalidatePath("/pessoas")
+    revalidatePath(`/pessoas/${personId}`)
+    revalidatePath("/kids")
+    revalidatePath("/kids/recepcao")
+    revalidatePath("/membro/kids")
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro ao salvar foto" }
+  }
+}
+
 

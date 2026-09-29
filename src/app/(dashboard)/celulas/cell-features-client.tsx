@@ -4,7 +4,7 @@ import Image from "next/image"
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { QRCodeSVG } from "qrcode.react"
-import { BarChart3, BookOpen, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Compass, Download, ExternalLink, Heart, ImageIcon, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
+import { BarChart3, BookOpen, CalendarPlus, Camera, CheckCircle2, ClipboardCheck, Compass, Download, ExternalLink, Heart, ImageIcon, MapPin, Megaphone, QrCode, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import {
   closeCellCheckin,
@@ -190,6 +190,51 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
             </Button>
           )}
         </div>
+
+        {/* Células vinculadas do membro com foto de capa */}
+        {data.cells.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {data.cells.map((cell) => (
+              <Card key={cell.id} className="overflow-hidden border border-border/60 transition hover:shadow-md">
+                {cell.cellPhotoUrl && (
+                  <div className="relative h-40 w-full overflow-hidden bg-muted">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={cell.cellPhotoUrl}
+                      alt={cell.name}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.parentElement?.classList.add("hidden")
+                      }}
+                    />
+                  </div>
+                )}
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base font-bold">{cell.name}</CardTitle>
+                    {cell.meetingDay && (
+                      <Badge variant="outline" className="text-xs">
+                        {cell.meetingDay}{cell.meetingTime ? ` às ${cell.meetingTime}` : ""}
+                      </Badge>
+                    )}
+                  </div>
+                  {cell.description && (
+                    <CardDescription className="text-xs line-clamp-2 mt-1">{cell.description}</CardDescription>
+                  )}
+                </CardHeader>
+                {(cell.meetingLocation || cell.neighborhood) && (
+                  <CardContent className="px-4 pb-3 pt-0 text-xs text-muted-foreground flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span className="truncate">
+                      {[cell.neighborhood, cell.city].filter(Boolean).join(" - ") || cell.meetingLocation}
+                    </span>
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+
         <Tabs defaultValue="encontros">
           <TabsList className="flex h-auto flex-wrap gap-1 rounded-2xl bg-muted/60 p-1 sm:gap-1.5">
             <TabsTrigger value="encontros" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">

@@ -15,10 +15,15 @@ function text(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function refreshKids() {
+function refreshKids(personId?: string) {
   revalidatePath("/kids")
   revalidatePath("/kids/recepcao")
   revalidatePath("/membro/kids")
+  revalidatePath("/familia/kids")
+  revalidatePath("/pessoas")
+  if (personId) {
+    revalidatePath(`/pessoas/${personId}`)
+  }
 }
 
 async function uploadPhoto(input: { file: File; personId: string; companyId: string; ownerProfileId?: string | null; source: string }) {
@@ -75,7 +80,7 @@ export async function saveKidsPersonPhoto(formData: FormData): Promise<KidsActio
       if (!file) throw new Error("Foto obrigatória")
       await uploadPhoto({ file, personId, companyId, ownerProfileId: user.id, source: `dashboard-${subject}` })
     }
-    refreshKids()
+    refreshKids(personId)
     return { ok: true, id: personId }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
@@ -86,23 +91,106 @@ export async function saveGuardianChildWithPhotos(formData: FormData): Promise<K
   try {
     const payload = guardianChildSchema.parse(JSON.parse(text(formData, "payload")))
     const result = await saveGuardianChild(payload)
-    if (!result.ok || payload.id) return result
+    if (!result.ok) return result
 
-    const user = await getCurrentUser()
-    if (!user || !user.churchId) throw new Error("Acesso negado")
+    const { requireGuardianUser } = await import("./portal")
+    const user = await requireGuardianUser().catch(() => getCurrentUser())
+    const churchId = user?.churchId
+    if (!user || !churchId) throw new Error("Acesso negado")
+
     const warnings: string[] = []
     const childPhoto = getOptionalFile(formData, "childPhoto")
     const guardianPhoto = getOptionalFile(formData, "guardianPhoto")
+    const childPhotoRemoved = text(formData, "childPhotoRemoved") === "true"
 
-    if (childPhoto && result.personId && result.createdPerson) {
-      await uploadPhoto({ file: childPhoto, personId: result.personId, companyId: user.churchId, ownerProfileId: user.id, source: "guardian-registration-child" }).catch(() => warnings.push("foto da criança"))
+    if (childPhotoRemoved && result.personId) {
+      const oldFileId = await removePersonPhoto(result.personId, churchId).catch((err) => {
+        console.error("Erro ao remover foto da criança:", err)
+        warnings.push("remover foto da criança")
+        return null
+      })
+      if (oldFileId) {
+        await writeAuditLog({
+          action: "kids.photo.delete",
+          entityTable: "people",
+          entityId: result.personId,
+          companyId: churchId,
+          metadata: { oldFileId, subject: "guardian-child-photo" },
+        })
+      }
+    } else if (childPhoto && result.personId) {
+      await uploadPhoto({
+        file: childPhoto,
+        personId: result.personId,
+        companyId: churchId,
+        ownerProfileId: user.id,
+        source: "guardian-registration-child",
+      }).catch((err) => {
+        console.error("Erro ao salvar foto da criança:", err)
+        warnings.push("foto da criança")
+      })
     }
+
     const guardianPersonId = result.guardianPersonIds?.[0]
     if (guardianPhoto && guardianPersonId) {
-      await uploadPhoto({ file: guardianPhoto, personId: guardianPersonId, companyId: user.churchId, ownerProfileId: user.id, source: "guardian-registration-self" }).catch(() => warnings.push("foto do responsável"))
+      await uploadPhoto({
+        file: guardianPhoto,
+        personId: guardianPersonId,
+        companyId: churchId,
+        ownerProfileId: user.id,
+        source: "guardian-registration-self",
+      }).catch((err) => {
+        console.error("Erro ao salvar foto do responsável:", err)
+        warnings.push("foto do responsável")
+      })
     }
-    refreshKids()
+
+    refreshKids(result.personId ?? undefined)
     return { ...result, warning: warnings.length ? `Cadastro salvo, mas não foi possível salvar ${warnings.join(" e ")}.` : undefined }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+export async function saveGuardianSelfPhoto(formData: FormData): Promise<KidsPortalActionResult> {
+  try {
+    const { requireGuardianUser } = await import("./portal")
+    const user = await requireGuardianUser()
+    if (!user.churchId) throw new Error("Acesso negado")
+
+    const remove = text(formData, "remove") === "true"
+    const sql = getSql()
+    const guardianPerson = await sql<{ id: string }[]>`
+      select id from public.people
+      where profile_id = ${user.id} and company_id = ${user.churchId} and deleted_at is null
+      limit 1
+    `
+    const personId = guardianPerson[0]?.id
+    if (!personId) throw new Error("Cadastro de responsável não encontrado")
+
+    if (remove) {
+      const oldFileId = await removePersonPhoto(personId, user.churchId)
+      await writeAuditLog({
+        action: "kids.photo.delete",
+        entityTable: "people",
+        entityId: personId,
+        companyId: user.churchId,
+        metadata: { oldFileId, subject: "guardian-self" },
+      })
+    } else {
+      const file = getOptionalFile(formData, "file")
+      if (!file) throw new Error("Foto obrigatória")
+      await uploadPhoto({
+        file,
+        personId,
+        companyId: user.churchId,
+        ownerProfileId: user.id,
+        source: "guardian-self-photo",
+      })
+    }
+
+    refreshKids(personId)
+    return { ok: true, id: personId, personId }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
   }
@@ -154,7 +242,7 @@ export async function saveGuardianContactWithPhoto(formData: FormData): Promise<
     } catch {
       return { ...result, warning: "Contato salvo, mas não foi possível salvar a foto." }
     }
-    refreshKids()
+    refreshKids(result.personId)
     return result
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
@@ -177,21 +265,33 @@ export async function registerVisitorKidWithPhotos(formData: FormData): Promise<
     const warnings: string[] = []
     const childPhoto = getOptionalFile(formData, "childPhoto")
     const guardianPhoto = getOptionalFile(formData, "guardianPhoto")
-    if (childPhoto) {
+
+    if (childPhoto && result.personId) {
       if (result.createdPerson && result.personId) {
-        await uploadPhoto({ file: childPhoto, personId: result.personId, companyId, source: "public-registration-child" }).catch(() => warnings.push("foto da criança"))
+        await uploadPhoto({
+          file: childPhoto,
+          personId: result.personId,
+          companyId,
+          source: "public-registration-child",
+        }).catch(() => warnings.push("foto da criança"))
       } else {
-        warnings.push("foto da criança já cadastrada")
+        warnings.push("foto da criança já cadastrada (preservada)")
       }
     }
     const guardianPersonId = result.guardianPersonIds?.[0]
-    if (guardianPhoto) {
+    if (guardianPhoto && guardianPersonId) {
       if (result.createdGuardian && guardianPersonId) {
-        await uploadPhoto({ file: guardianPhoto, personId: guardianPersonId, companyId, source: "public-registration-guardian" }).catch(() => warnings.push("foto do responsável"))
+        await uploadPhoto({
+          file: guardianPhoto,
+          personId: guardianPersonId,
+          companyId,
+          source: "public-registration-guardian",
+        }).catch(() => warnings.push("foto do responsável"))
       } else {
-        warnings.push("foto do responsável já cadastrado")
+        warnings.push("foto do responsável já cadastrado (preservada)")
       }
     }
+    refreshKids(result.personId ?? undefined)
     return { ok: true, id: result.id, warning: warnings.length ? `Cadastro salvo; a recepção deve revisar ${warnings.join(" e ")}.` : undefined }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }

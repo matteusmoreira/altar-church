@@ -623,6 +623,19 @@ export function GroupsClient({
 
                     return (
                       <Card key={group.id} className="flex flex-col justify-between overflow-hidden transition-all hover:shadow-md hover:border-primary/40">
+                        {group.cellPhotoUrl && (
+                          <div className="relative h-36 w-full overflow-hidden bg-muted border-b border-border/40">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={group.cellPhotoUrl}
+                              alt={group.name}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.parentElement?.classList.add("hidden")
+                              }}
+                            />
+                          </div>
+                        )}
                         <CardHeader className="pb-3 space-y-2">
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -758,12 +771,27 @@ export function GroupsClient({
                       {groupsResult.groups.map((group) => (
                         <TableRow key={group.id}>
                           <TableCell>
-                            <div className="max-w-md">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium">{group.name}</p>
-                                <Badge className={typeColors[group.type]}>{typeLabels[group.type]}</Badge>
+                            <div className="flex items-center gap-3 max-w-md">
+                              {group.cellPhotoUrl && (
+                                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={group.cellPhotoUrl}
+                                    alt={group.name}
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.parentElement?.classList.add("hidden")
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-medium">{group.name}</p>
+                                  <Badge className={typeColors[group.type]}>{typeLabels[group.type]}</Badge>
+                                </div>
+                                <p className="line-clamp-1 text-sm text-muted-foreground">{group.categoryName ?? "Sem categoria"} · {group.description || "Sem descrição"}</p>
                               </div>
-                              <p className="line-clamp-1 text-sm text-muted-foreground">{group.categoryName ?? "Sem categoria"} · {group.description || "Sem descrição"}</p>
                             </div>
                           </TableCell>
                           <TableCell>

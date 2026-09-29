@@ -144,6 +144,19 @@ export function CellVisitModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {cell.cellPhotoUrl && (
+              <div className="relative h-28 w-full overflow-hidden rounded-xl border border-border/50 bg-muted/30">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={cell.cellPhotoUrl}
+                  alt={cell.name}
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.parentElement?.classList.add("hidden")
+                  }}
+                />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2 text-primary">
                 <Sparkles className="h-4 w-4" />

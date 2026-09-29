@@ -82,7 +82,7 @@ export function CellDetailSheet({
       className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg animate-in slide-in-from-bottom duration-300 pointer-events-auto"
       data-testid="cell-detail-sheet"
     >
-      <div className="relative mx-3 mb-3 rounded-2xl border border-border/80 bg-background/95 p-5 shadow-2xl backdrop-blur-xl">
+      <div className="relative mx-3 mb-3 max-h-[85vh] overflow-y-auto rounded-2xl border border-border/80 bg-background/95 p-5 shadow-2xl backdrop-blur-xl">
         {/* Top Handle */}
         <div className="mx-auto -mt-2 mb-3 h-1.5 w-12 rounded-full bg-muted-foreground/30" />
 
@@ -123,6 +123,21 @@ export function CellDetailSheet({
             </Badge>
           )}
         </div>
+
+        {/* Cell Cover Photo */}
+        {cell.cellPhotoUrl && (
+          <div className="mt-3 relative h-44 w-full overflow-hidden rounded-xl border border-border/50 bg-muted/40 shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={cell.cellPhotoUrl}
+              alt={cell.name}
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.parentElement?.classList.add("hidden")
+              }}
+            />
+          </div>
+        )}
 
         {/* Title & Description */}
         <div className="mt-2.5">

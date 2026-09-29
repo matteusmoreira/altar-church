@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { AddressFields } from "@/components/kids/address-fields"
 import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
@@ -44,7 +45,7 @@ import {
   signOutFamily,
   updateGuardianConsents,
 } from "@/lib/kids/portal-actions"
-import { saveGuardianChildWithPhotos, saveGuardianContactWithPhoto } from "@/lib/kids/photo-actions"
+import { saveGuardianChildWithPhotos, saveGuardianContactWithPhoto, saveGuardianSelfPhoto } from "@/lib/kids/photo-actions"
 import { markKidConversationRead, sendKidInternalMessage } from "@/lib/kids/actions"
 import { createClient } from "@/lib/supabase/client"
 import type {
@@ -112,6 +113,7 @@ interface ChildFormState {
     instructions: string
   }
   customValues: import("@/lib/kids/types").KidCustomFieldValue[]
+  photoUrl?: string | null
 }
 
 const emptyChildForm: ChildFormState = {
@@ -121,6 +123,7 @@ const emptyChildForm: ChildFormState = {
   birthDate: "",
   congregationId: "",
   notes: "",
+  photoUrl: null,
   health: {
     hasAllergy: false,
     hasDietaryRestriction: false,
@@ -170,7 +173,9 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   const [pending, setPending] = useState(false)
   const confirmDelete = useConfirmAction()
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
+  const [childPhotoRemoved, setChildPhotoRemoved] = useState(false)
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title: string; subtitle?: string } | null>(null)
   const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
   const hasGuardianAddress = Boolean(
     guardianAddress.street?.trim() ||
@@ -250,6 +255,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   }
 
   function startEditChild(child: GuardianChildItem) {
+    setChildPhoto(null)
+    setChildPhotoRemoved(false)
     setChildForm({
       kidId: child.kidId,
       personId: child.personId,
@@ -257,9 +264,23 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
       birthDate: child.birthDate ?? "",
       congregationId: child.congregationId ?? "",
       notes: child.notes,
+      photoUrl: child.photoUrl,
       health: { ...child.health, ...child.healthDetails },
       customValues: child.customValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("child"))),
     })
+  }
+
+  async function handleSaveSelfPhoto(file: File | null) {
+    const formData = new FormData()
+    if (!file) {
+      formData.set("remove", "true")
+    } else {
+      formData.set("file", file)
+    }
+    await run(
+      () => saveGuardianSelfPhoto(formData),
+      file ? "Foto do perfil atualizada" : "Foto removida",
+    )
   }
 
   async function submitChild() {
@@ -277,7 +298,11 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
     }
     const request = new FormData()
     request.set("payload", JSON.stringify(payload))
-    if (childPhoto) request.set("childPhoto", childPhoto)
+    if (childPhotoRemoved) {
+      request.set("childPhotoRemoved", "true")
+    } else if (childPhoto) {
+      request.set("childPhoto", childPhoto)
+    }
     if (guardianPhoto) request.set("guardianPhoto", guardianPhoto)
     await run(
       () => saveGuardianChildWithPhotos(request),
@@ -285,6 +310,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
       (result) => {
         if (result.warning) toast.warning(result.warning)
         setChildPhoto(null)
+        setChildPhotoRemoved(false)
         setGuardianPhoto(null)
         setChildForm(null)
       },
@@ -410,9 +436,21 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
     <main className={embedded ? "mx-auto w-full max-w-3xl space-y-6 lg:pt-12" : "mx-auto min-h-screen w-full max-w-3xl space-y-6 p-4 pb-16"}>
       {!embedded && <header className="flex items-center justify-between gap-3 pt-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-primary">
-            <Church className="h-5 w-5 text-white" />
-          </div>
+          <Avatar
+            className={`h-10 w-10 border border-border/60 ${data.guardianPhotoUrl ? "cursor-zoom-in hover:opacity-90 transition-opacity" : ""}`}
+            onClick={() => {
+              if (data.guardianPhotoUrl) {
+                setLightboxPhoto({
+                  url: data.guardianPhotoUrl,
+                  title: data.guardianName,
+                  subtitle: "Responsável",
+                })
+              }
+            }}
+          >
+            {data.guardianPhotoUrl && <AvatarImage src={data.guardianPhotoUrl} alt={data.guardianName} />}
+            <AvatarFallback className="font-semibold text-xs">{data.guardianName.slice(0, 2).toUpperCase()}</AvatarFallback>
+          </Avatar>
           <div>
             <h1 className="text-xl font-bold tracking-tight">Portal da Família</h1>
             <p className="text-xs text-muted-foreground">{data.companyName} · {data.guardianName}</p>
@@ -505,6 +543,16 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
         {isAddressExpanded && (
           <CardContent className="space-y-4 pt-0 border-t border-border/40 mt-1">
             <div className="pt-4 space-y-4">
+              <div className="rounded-lg border border-border/60 p-3 bg-muted/10 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Minha foto de perfil</p>
+                <PhotoCapture
+                  label="do meu perfil"
+                  currentUrl={data.guardianPhotoUrl}
+                  disabled={pending}
+                  onChange={(file) => void handleSaveSelfPhoto(file)}
+                  onError={(message) => toast.error(message)}
+                />
+              </div>
               <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
               <CustomFieldInputs
                 definitions={data.customFields}
@@ -536,7 +584,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
             <p className="text-sm text-muted-foreground max-w-sm">
               Nenhuma criança vinculada à sua conta ainda. Cadastre abaixo ou fale com a recepção do Kids.
             </p>
-            <Button type="button" onClick={() => setChildForm({ ...emptyChildForm })}>
+            <Button type="button" onClick={() => { setChildPhoto(null); setChildForm({ ...emptyChildForm }) }}>
               <Plus className="mr-2 h-4 w-4" />Cadastrar primeira criança
             </Button>
           </CardContent>
@@ -548,7 +596,19 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="flex items-center gap-3">
-                <Avatar size="lg">
+                <Avatar
+                  size="lg"
+                  className={child.photoUrl ? "cursor-zoom-in hover:opacity-90 transition-opacity" : ""}
+                  onClick={() => {
+                    if (child.photoUrl) {
+                      setLightboxPhoto({
+                        url: child.photoUrl,
+                        title: child.fullName,
+                        subtitle: `${ageLabel(child.ageMonths)}${child.congregationName ? ` · ${child.congregationName}` : ""}`,
+                      })
+                    }
+                  }}
+                >
                   {child.photoUrl && <AvatarImage src={child.photoUrl} alt={child.fullName} />}
                   <AvatarFallback>{child.firstName.slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -628,7 +688,18 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                 {child.guardians.map((guardian) => (
                   <div key={guardian.id} className="flex items-center justify-between gap-2 rounded-md border border-border/50 p-3 text-sm">
                     <div className="flex items-center gap-2">
-                      <Avatar>
+                      <Avatar
+                        className={guardian.photoUrl ? "cursor-zoom-in hover:opacity-90 transition-opacity" : ""}
+                        onClick={() => {
+                          if (guardian.photoUrl) {
+                            setLightboxPhoto({
+                              url: guardian.photoUrl,
+                              title: guardian.name,
+                              subtitle: RELATIONSHIP_LABELS[guardian.relationship],
+                            })
+                          }
+                        }}
+                      >
                         {guardian.photoUrl && <AvatarImage src={guardian.photoUrl} alt={guardian.name} />}
                         <AvatarFallback>{guardian.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -753,12 +824,31 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
               <Label htmlFor="familia-kid-notes">Observações gerais</Label>
               <Textarea id="familia-kid-notes" rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
             </div>
-            {!childForm.kidId && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <PhotoCapture label="da criança" value={childPhoto} disabled={pending} onChange={(file) => setChildPhoto(file)} onError={(message) => toast.error(message)} />
-                <PhotoCapture label="do responsável" currentUrl={data.guardianPhotoUrl} value={guardianPhoto} allowRemove={false} disabled={pending} onChange={(file) => setGuardianPhoto(file)} onError={(message) => toast.error(message)} />
-              </div>
-            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PhotoCapture
+                label="da criança"
+                currentUrl={childForm.photoUrl}
+                value={childPhoto}
+                removed={childPhotoRemoved}
+                disabled={pending}
+                onChange={(file, removed) => {
+                  setChildPhoto(file)
+                  setChildPhotoRemoved(Boolean(removed))
+                }}
+                onError={(message) => toast.error(message)}
+              />
+              {!childForm.kidId && (
+                <PhotoCapture
+                  label="do responsável"
+                  currentUrl={data.guardianPhotoUrl}
+                  value={guardianPhoto}
+                  allowRemove={false}
+                  disabled={pending}
+                  onChange={(file) => setGuardianPhoto(file)}
+                  onError={(message) => toast.error(message)}
+                />
+              )}
+            </div>
             <div className="space-y-2 rounded-lg border border-border/60 p-3">
               <p className="text-sm font-medium">Saúde essencial</p>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -793,16 +883,16 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
               <Button type="button" onClick={() => void submitChild()} disabled={pending || childForm.fullName.trim().length < 2}>
                 {childForm.kidId ? "Salvar alterações" : "Cadastrar"}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setChildForm(null)}>Cancelar</Button>
+              <Button type="button" variant="outline" onClick={() => { setChildPhoto(null); setChildPhotoRemoved(false); setChildForm(null) }}>Cancelar</Button>
             </div>
           </CardContent>
         </Card>
       ) : data.children.length === 0 ? (
-        <Button type="button" className="w-full" onClick={() => setChildForm({ ...emptyChildForm })}>
+        <Button type="button" className="w-full" onClick={() => { setChildPhoto(null); setChildPhotoRemoved(false); setChildForm({ ...emptyChildForm }) }}>
           <Plus className="mr-2 h-4 w-4" />Cadastrar criança
         </Button>
       ) : (
-        <Button type="button" variant="outline" className="w-full" onClick={() => setChildForm({ ...emptyChildForm })}>
+        <Button type="button" variant="outline" className="w-full" onClick={() => { setChildPhoto(null); setChildPhotoRemoved(false); setChildForm({ ...emptyChildForm }) }}>
           <UserPlus className="mr-2 h-4 w-4" />Cadastrar outra criança
         </Button>
       )}
@@ -982,6 +1072,13 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
           </Card>
         </div>
       )}
+      <PhotoLightbox
+        isOpen={Boolean(lightboxPhoto)}
+        photoUrl={lightboxPhoto?.url ?? ""}
+        title={lightboxPhoto?.title ?? ""}
+        subtitle={lightboxPhoto?.subtitle}
+        onClose={() => setLightboxPhoto(null)}
+      />
     {confirmDelete.dialog()}
     </main>
   )

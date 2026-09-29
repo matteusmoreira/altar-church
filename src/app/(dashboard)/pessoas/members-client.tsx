@@ -99,7 +99,8 @@ import { ActivityMembersSheet } from "@/components/people/activity-members-sheet
 import { JourneyBuilderSheet } from "@/components/people/journey-builder-sheet"
 import { TriggerConfigDialog, triggerLabels } from "@/components/people/trigger-config-dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -378,6 +379,7 @@ function DuplicatePersonPanel({
     <div className="rounded-lg border border-border/40 p-4">
       <div className="flex items-start gap-3">
         <Avatar className="h-10 w-10 shrink-0">
+          {person.photoUrl && <AvatarImage src={person.photoUrl} alt={person.fullName} />}
           <AvatarFallback className="gradient-primary text-xs text-white">
             {initials(person.fullName)}
           </AvatarFallback>
@@ -431,6 +433,7 @@ export function MembersClient({
   const [deletingPerson, setDeletingPerson] = useState<PersonListItem | null>(null)
   const [selectedPersonIds, setSelectedPersonIds] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState<PersonFormState>(emptyForm)
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; subtitle?: string } | null>(null)
 
   // Birthday state
   const [birthdayMonth, setBirthdayMonth] = useState<number>(new Date().getMonth() + 1)
@@ -1397,7 +1400,17 @@ export function MembersClient({
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <Avatar className="h-9 w-9 border border-border/40">
+                              <Avatar
+                                className={`h-9 w-9 border border-border/40 ${person.photoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/40 transition-all" : ""}`}
+                                onClick={(e) => {
+                                  if (person.photoUrl) {
+                                    e.stopPropagation()
+                                    setPreviewPhoto({ url: person.photoUrl, title: person.fullName, subtitle: person.email ?? person.phone })
+                                  }
+                                }}
+                                title={person.photoUrl ? "Clique para ver foto em tela inteira" : undefined}
+                              >
+                                {person.photoUrl && <AvatarImage src={person.photoUrl} alt={person.fullName} />}
                                 <AvatarFallback className="gradient-primary text-xs font-semibold text-white">
                                   {initials(person.fullName)}
                                 </AvatarFallback>
@@ -1514,7 +1527,17 @@ export function MembersClient({
                           onChange={() => togglePersonSelection(person.id)}
                           className="mt-3 h-4 w-4 shrink-0 accent-primary"
                         />
-                        <Avatar className="h-10 w-10 shrink-0">
+                        <Avatar
+                          className={`h-10 w-10 shrink-0 ${person.photoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/40 transition-all" : ""}`}
+                          onClick={(e) => {
+                            if (person.photoUrl) {
+                              e.stopPropagation()
+                              setPreviewPhoto({ url: person.photoUrl, title: person.fullName, subtitle: person.email ?? person.phone })
+                            }
+                          }}
+                          title={person.photoUrl ? "Clique para ver foto em tela inteira" : undefined}
+                        >
+                          {person.photoUrl && <AvatarImage src={person.photoUrl} alt={person.fullName} />}
                           <AvatarFallback className="gradient-primary text-xs text-white">
                             {initials(person.fullName)}
                           </AvatarFallback>
@@ -3061,6 +3084,15 @@ export function MembersClient({
         onSaved={() => {
           router.refresh()
         }}
+      />
+
+      {/* Lightbox para foto em tela inteira */}
+      <PhotoLightbox
+        open={previewPhoto !== null}
+        url={previewPhoto?.url ?? null}
+        title={previewPhoto?.title ?? ""}
+        subtitle={previewPhoto?.subtitle}
+        onClose={() => setPreviewPhoto(null)}
       />
     </div>
   )

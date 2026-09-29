@@ -41,10 +41,13 @@ import {
   togglePersonActivityAssignment,
   toggleStepProgress,
   unenrollPersonFromJourney,
+  savePersonPhoto,
 } from "../actions"
 import { FollowUpPanel } from "./follow-up-panel"
 import type { PersonAccessRole, PersonDetail, PersonStatus, PersonType } from "@/lib/people/types"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
+import { PhotoCapture } from "@/components/kids/photo-capture"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -194,6 +197,57 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
     notes: string
   } | null>(null)
   const [isSavingStep, setIsSavingStep] = useState(false)
+
+  // Photo management & lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false)
+
+  const handleSavePhoto = async () => {
+    if (!photoFile) return
+    setIsSavingPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.set("personId", person.id)
+      fd.set("file", photoFile)
+      const res = await savePersonPhoto(fd)
+      if (res.ok) {
+        toast.success("Foto atualizada com sucesso!")
+        setPhotoDialogOpen(false)
+        setPhotoFile(null)
+        router.refresh()
+      } else {
+        toast.error(res.error || "Erro ao salvar foto")
+      }
+    } catch {
+      toast.error("Erro inesperado ao salvar foto")
+    } finally {
+      setIsSavingPhoto(false)
+    }
+  }
+
+  const handleRemovePhoto = async () => {
+    setIsSavingPhoto(true)
+    try {
+      const fd = new FormData()
+      fd.set("personId", person.id)
+      fd.set("remove", "true")
+      const res = await savePersonPhoto(fd)
+      if (res.ok) {
+        toast.success("Foto removida com sucesso!")
+        setPhotoDialogOpen(false)
+        setPhotoFile(null)
+        router.refresh()
+      } else {
+        toast.error(res.error || "Erro ao remover foto")
+      }
+    } catch {
+      toast.error("Erro inesperado ao remover foto")
+    } finally {
+      setIsSavingPhoto(false)
+    }
+  }
 
   const handleInvite = async () => {
     if (!person.email?.trim()) {
@@ -400,11 +454,29 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
           </Button>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <Avatar className="h-16 w-16">
-              <AvatarFallback className="gradient-primary text-lg text-white">
-                {initials(person.fullName)}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative group shrink-0">
+              <Avatar
+                className={`h-16 w-16 border-2 border-border/60 ${person.photoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}`}
+                onClick={() => {
+                  if (person.photoUrl) setLightboxOpen(true)
+                }}
+                title={person.photoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+              >
+                {person.photoUrl && <AvatarImage src={person.photoUrl} alt={person.fullName} />}
+                <AvatarFallback className="gradient-primary text-lg text-white">
+                  {initials(person.fullName)}
+                </AvatarFallback>
+              </Avatar>
+              <button
+                type="button"
+                className="absolute -bottom-1 -right-1 rounded-full bg-primary p-1 text-primary-foreground shadow hover:bg-primary/90 transition-all cursor-pointer"
+                onClick={() => setPhotoDialogOpen(true)}
+                title="Alterar ou gerenciar foto"
+                aria-label="Alterar foto"
+              >
+                <Edit3 className="h-3 w-3" />
+              </button>
+            </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="break-words text-2xl font-bold tracking-tight md:text-3xl">
@@ -1187,6 +1259,52 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog para alterar/gerenciar foto da pessoa */}
+      <Dialog open={photoDialogOpen} onOpenChange={setPhotoDialogOpen}>
+        <DialogContent className="glass-strong sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Foto de {person.fullName}</DialogTitle>
+            <DialogDescription>
+              Tire ou escolha uma foto e ajuste o enquadramento na bolinha.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <PhotoCapture
+              label={person.firstName}
+              currentUrl={person.photoUrl}
+              value={photoFile}
+              disabled={isSavingPhoto}
+              onChange={(file, removed) => {
+                setPhotoFile(file)
+                if (removed) {
+                  void handleRemovePhoto()
+                }
+              }}
+              onError={(err) => toast.error(err)}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPhotoDialogOpen(false)} disabled={isSavingPhoto}>
+              Fechar
+            </Button>
+            {photoFile && (
+              <Button onClick={() => void handleSavePhoto()} disabled={isSavingPhoto} className="gradient-primary">
+                {isSavingPhoto ? "Salvando..." : "Salvar foto"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox para foto em tela inteira */}
+      <PhotoLightbox
+        open={lightboxOpen}
+        url={person.photoUrl}
+        title={person.fullName}
+        subtitle={person.email ?? person.phone}
+        onClose={() => setLightboxOpen(false)}
+      />
     </div>
   )
 }

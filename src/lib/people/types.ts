@@ -69,6 +69,7 @@ export interface PersonListItem {
   createdAt: string
   updatedAt: string
   kidsRoles: PersonKidsRole[]
+  photoUrl: string | null
 }
 
 export interface PersonCustomFieldValue {
@@ -192,6 +193,7 @@ export interface DuplicatePersonSummary {
   phone: string
   congregationName: string | null
   birthDate: string | null
+  photoUrl?: string | null
 }
 
 export interface DuplicateCandidateItem {

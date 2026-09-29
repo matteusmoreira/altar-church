@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { usePermission } from "@/lib/permissions"
 import { maskPhone } from "@/lib/kids/security"
 import { callKidGuardian, resolveKidIncident, saveKidIncident, saveKidLessonReport } from "@/lib/kids/actions"
@@ -49,6 +50,7 @@ const SEVERITY_VARIANTS: Record<KidIncidentSeverity, "secondary" | "outline" | "
 export function SalaClient({ data }: { data: KidRoomPanelData }) {
   const router = useRouter()
   const canManageSessions = usePermission("kids.sessions.manage")
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title: string; subtitle?: string } | null>(null)
   const [callReason, setCallReason] = useState<Record<string, string>>({})
   const [incidentForm, setIncidentForm] = useState<{ kidId: string; severity: KidIncidentSeverity; title: string; description: string }>({
     kidId: "",
@@ -137,7 +139,20 @@ export function SalaClient({ data }: { data: KidRoomPanelData }) {
               <CardContent className="space-y-3 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <Avatar size="lg">
+                    <Avatar
+                      size="lg"
+                      className={attendance.childPhotoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                      onClick={() => {
+                        if (attendance.childPhotoUrl) {
+                          setLightboxPhoto({
+                            url: attendance.childPhotoUrl,
+                            title: `Criança: ${attendance.childName}`,
+                            subtitle: `Entrada: ${formatTime(attendance.checkedInAt)} · Responsável: ${attendance.primaryGuardianName ?? "—"}`,
+                          })
+                        }
+                      }}
+                      title={attendance.childPhotoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                    >
                       {attendance.childPhotoUrl && <AvatarImage src={attendance.childPhotoUrl} alt={attendance.childName} />}
                       <AvatarFallback>{attendance.childName.slice(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
@@ -158,7 +173,19 @@ export function SalaClient({ data }: { data: KidRoomPanelData }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Avatar>
+                  <Avatar
+                    className={attendance.primaryGuardianPhotoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                    onClick={() => {
+                      if (attendance.primaryGuardianPhotoUrl) {
+                        setLightboxPhoto({
+                          url: attendance.primaryGuardianPhotoUrl,
+                          title: `Responsável: ${attendance.primaryGuardianName ?? "Responsável"}`,
+                          subtitle: `Criança: ${attendance.childName}`,
+                        })
+                      }
+                    }}
+                    title={attendance.primaryGuardianPhotoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                  >
                     {attendance.primaryGuardianPhotoUrl && <AvatarImage src={attendance.primaryGuardianPhotoUrl} alt={attendance.primaryGuardianName ?? "Responsável"} />}
                     <AvatarFallback>{(attendance.primaryGuardianName ?? "RP").slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
@@ -329,6 +356,15 @@ export function SalaClient({ data }: { data: KidRoomPanelData }) {
           )}
         </div>
       </div>
+
+      {/* Lightbox para foto em tela inteira */}
+      <PhotoLightbox
+        open={lightboxPhoto !== null}
+        url={lightboxPhoto?.url ?? null}
+        title={lightboxPhoto?.title ?? ""}
+        subtitle={lightboxPhoto?.subtitle}
+        onClose={() => setLightboxPhoto(null)}
+      />
     </div>
   )
 }

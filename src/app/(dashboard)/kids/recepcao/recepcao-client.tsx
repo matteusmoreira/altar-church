@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { EmptyState, PageHeader } from "@/components/shared"
 import { usePermission } from "@/lib/permissions"
 import {
@@ -137,6 +138,7 @@ export function RecepcaoClient({
   const canManageSessions = usePermission("kids.sessions.manage")
 
   const [query, setQuery] = useState("")
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title: string; subtitle?: string } | null>(null)
   const [candidates, setCandidates] = useState<KidCheckinCandidate[]>([])
   const [roomPick, setRoomPick] = useState<Record<string, string>>({})
   const [overrideReason, setOverrideReason] = useState<Record<string, string>>({})
@@ -353,7 +355,20 @@ export function RecepcaoClient({
                     <div key={candidate.kidId} className="space-y-2 rounded-lg border border-border/60 p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="flex items-center gap-3">
-                          <Avatar size="lg">
+                          <Avatar
+                            size="lg"
+                            className={candidate.photoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                            onClick={() => {
+                              if (candidate.photoUrl) {
+                                setLightboxPhoto({
+                                  url: candidate.photoUrl,
+                                  title: `Criança: ${candidate.fullName}`,
+                                  subtitle: candidate.guardiansSummary ?? "",
+                                })
+                              }
+                            }}
+                            title={candidate.photoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                          >
                             {candidate.photoUrl && <AvatarImage src={candidate.photoUrl} alt={candidate.fullName} />}
                             <AvatarFallback>{candidate.fullName.slice(0, 2).toUpperCase()}</AvatarFallback>
                           </Avatar>
@@ -534,11 +549,37 @@ export function RecepcaoClient({
                   <div key={attendance.id} className="space-y-2 rounded-lg border border-border/60 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="flex items-center gap-3">
-                        <Avatar size="lg">
+                        <Avatar
+                          size="lg"
+                          className={attendance.childPhotoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                          onClick={() => {
+                            if (attendance.childPhotoUrl) {
+                              setLightboxPhoto({
+                                url: attendance.childPhotoUrl,
+                                title: `Criança: ${attendance.childName}`,
+                                subtitle: `${attendance.classroomName} · Entrada: ${formatTime(attendance.checkedInAt)}`,
+                              })
+                            }
+                          }}
+                          title={attendance.childPhotoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                        >
                           {attendance.childPhotoUrl && <AvatarImage src={attendance.childPhotoUrl} alt={attendance.childName} />}
                           <AvatarFallback>{attendance.childName.slice(0, 2).toUpperCase()}</AvatarFallback>
                         </Avatar>
-                        <Avatar size="lg">
+                        <Avatar
+                          size="lg"
+                          className={attendance.primaryGuardianPhotoUrl ? "cursor-zoom-in hover:ring-2 hover:ring-primary/50 transition-all" : ""}
+                          onClick={() => {
+                            if (attendance.primaryGuardianPhotoUrl) {
+                              setLightboxPhoto({
+                                url: attendance.primaryGuardianPhotoUrl,
+                                title: `Responsável: ${attendance.primaryGuardianName ?? "Responsável"}`,
+                                subtitle: `Criança: ${attendance.childName} (${attendance.classroomName})`,
+                              })
+                            }
+                          }}
+                          title={attendance.primaryGuardianPhotoUrl ? "Clique para ver a foto em tela inteira" : undefined}
+                        >
                           {attendance.primaryGuardianPhotoUrl && <AvatarImage src={attendance.primaryGuardianPhotoUrl} alt={attendance.primaryGuardianName ?? "Responsável"} />}
                           <AvatarFallback>{(attendance.primaryGuardianName ?? "RP").slice(0, 2).toUpperCase()}</AvatarFallback>
                         </Avatar>
@@ -610,6 +651,15 @@ export function RecepcaoClient({
           {printableLabels.length ? <PrintableLabels labels={printableLabels} print /> : <div className="kids-label-print"><LabelPreview label={label} showQr={settings?.labelShowQr ?? true} /></div>}
         </div>
       )}
+
+      {/* Lightbox para foto em tela inteira */}
+      <PhotoLightbox
+        open={lightboxPhoto !== null}
+        url={lightboxPhoto?.url ?? null}
+        title={lightboxPhoto?.title ?? ""}
+        subtitle={lightboxPhoto?.subtitle}
+        onClose={() => setLightboxPhoto(null)}
+      />
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { listPersonFollowUpTasks, listPersonTimeline } from "./follow-up"
 import type {
   BirthdayPerson,
@@ -28,6 +29,7 @@ interface PersonRow {
   company_id: string
   congregation_id: string | null
   congregation_name: string | null
+  photo_path?: string | null
   first_name: string
   last_name: string
   full_name: string
@@ -163,12 +165,14 @@ interface DuplicateCandidateRow {
   primary_phone: string
   primary_congregation_name: string | null
   primary_birth_date: Date | string | null
+  primary_photo_path?: string | null
   duplicate_person_id: string
   duplicate_full_name: string
   duplicate_email: string | null
   duplicate_phone: string
   duplicate_congregation_name: string | null
   duplicate_birth_date: Date | string | null
+  duplicate_photo_path?: string | null
   reason: string
   similarity_score: string | number
   status: DuplicateCandidateStatus
@@ -260,7 +264,7 @@ function toJourneyStep(row: PersonJourneyStepRow) {
   }
 }
 
-function toPerson(row: PersonRow): PersonListItem {
+function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
   return {
     id: row.id,
     companyId: row.company_id,
@@ -298,10 +302,11 @@ function toPerson(row: PersonRow): PersonListItem {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
     kidsRoles: (row.kids_roles ?? []).filter((role): role is "child" | "guardian" => role === "child" || role === "guardian"),
+    photoUrl: photoUrl ?? null,
   }
 }
 
-function toDuplicatePerson(row: DuplicatePersonRow) {
+function toDuplicatePerson(row: DuplicatePersonRow, photoUrl?: string | null) {
   return {
     id: row.id,
     fullName: row.full_name,
@@ -309,10 +314,11 @@ function toDuplicatePerson(row: DuplicatePersonRow) {
     phone: row.phone,
     congregationName: row.congregation_name,
     birthDate: toIsoDate(row.birth_date),
+    photoUrl: photoUrl ?? null,
   }
 }
 
-function toDuplicateCandidate(row: DuplicateCandidateRow): DuplicateCandidateItem {
+function toDuplicateCandidate(row: DuplicateCandidateRow, urls?: Map<string, string>): DuplicateCandidateItem {
   return {
     id: row.id,
     companyId: row.company_id,
@@ -323,7 +329,7 @@ function toDuplicateCandidate(row: DuplicateCandidateRow): DuplicateCandidateIte
       phone: row.primary_phone,
       congregation_name: row.primary_congregation_name,
       birth_date: row.primary_birth_date,
-    }),
+    }, row.primary_photo_path && urls ? urls.get(row.primary_photo_path) ?? null : null),
     duplicatePerson: toDuplicatePerson({
       id: row.duplicate_person_id,
       full_name: row.duplicate_full_name,
@@ -331,7 +337,7 @@ function toDuplicateCandidate(row: DuplicateCandidateRow): DuplicateCandidateIte
       phone: row.duplicate_phone,
       congregation_name: row.duplicate_congregation_name,
       birth_date: row.duplicate_birth_date,
-    }),
+    }, row.duplicate_photo_path && urls ? urls.get(row.duplicate_photo_path) ?? null : null),
     reason: row.reason,
     similarityScore: toNumber(row.similarity_score),
     status: row.status,
@@ -383,6 +389,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        person_photo.storage_path as photo_path,
         coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = p.id and cell.is_active = true and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
         p.internal_notes,
         p.status,
@@ -401,6 +408,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
+      left join public.app_files person_photo on person_photo.id = p.photo_file_id and person_photo.is_active = true and person_photo.deleted_at is null
       where p.id = ${personId}
         and p.company_id = ${companyId}
         and p.deleted_at is null
@@ -562,8 +570,14 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     })
   }
 
+  let photoUrl: string | null = null
+  if (personRow.photo_path) {
+    const urls = await createSignedUrlsByStoragePath([personRow.photo_path])
+    photoUrl = urls.get(personRow.photo_path) ?? null
+  }
+
   return {
-    ...toPerson(personRow),
+    ...toPerson(personRow, photoUrl),
     internalNotes: personRow.internal_notes,
     customFields: customFieldRows.map(toCustomField),
     activities: activityRows.map(toActivity),
@@ -599,12 +613,14 @@ export async function listDuplicateCandidates(companyIdInput?: string | null): P
       primary_person.phone as primary_phone,
       primary_congregation.name as primary_congregation_name,
       primary_person.birth_date as primary_birth_date,
+      primary_photo.storage_path as primary_photo_path,
       duplicate_person.id as duplicate_person_id,
       duplicate_person.full_name as duplicate_full_name,
       duplicate_person.email as duplicate_email,
       duplicate_person.phone as duplicate_phone,
       duplicate_congregation.name as duplicate_congregation_name,
       duplicate_person.birth_date as duplicate_birth_date,
+      duplicate_photo.storage_path as duplicate_photo_path,
       dc.reason,
       dc.similarity_score,
       dc.status,
@@ -614,6 +630,8 @@ export async function listDuplicateCandidates(companyIdInput?: string | null): P
     inner join public.people duplicate_person on duplicate_person.id = dc.duplicate_person_id
     left join public.congregations primary_congregation on primary_congregation.id = primary_person.congregation_id
     left join public.congregations duplicate_congregation on duplicate_congregation.id = duplicate_person.congregation_id
+    left join public.app_files primary_photo on primary_photo.id = primary_person.photo_file_id and primary_photo.is_active = true and primary_photo.deleted_at is null
+    left join public.app_files duplicate_photo on duplicate_photo.id = duplicate_person.photo_file_id and duplicate_photo.is_active = true and duplicate_photo.deleted_at is null
     where dc.company_id = ${companyId}
       and dc.status = 'open'
       and primary_person.deleted_at is null
@@ -622,7 +640,10 @@ export async function listDuplicateCandidates(companyIdInput?: string | null): P
     limit 50
   `
 
-  return rows.map(toDuplicateCandidate)
+  const paths = rows.flatMap((r) => [r.primary_photo_path, r.duplicate_photo_path]).filter((p): p is string => Boolean(p))
+  const photoUrls = await createSignedUrlsByStoragePath(paths)
+
+  return rows.map((row) => toDuplicateCandidate(row, photoUrls))
 }
 
 export async function listPeople(filters: PeopleListFilters = {}): Promise<PeopleListResult> {
@@ -673,6 +694,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        person_photo.storage_path as photo_path,
         coalesce((
           select array_agg(distinct cell.id)
           from public.groups cell
@@ -705,6 +727,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
+      left join public.app_files person_photo on person_photo.id = p.photo_file_id and person_photo.is_active = true and person_photo.deleted_at is null
       where p.company_id = ${companyId}
         and p.deleted_at is null
         and (${search} = '' or p.full_name ilike ${searchPattern} or coalesce(p.email, '') ilike ${searchPattern} or p.phone ilike ${searchPattern})
@@ -780,8 +803,11 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
   ])
 
   const total = toNumber(countRows[0]?.total)
+  const photoPaths = peopleRows.map((r) => r.photo_path).filter((p): p is string => Boolean(p))
+  const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
+
   return {
-    people: peopleRows.map(toPerson),
+    people: peopleRows.map((row) => toPerson(row, row.photo_path ? photoUrls.get(row.photo_path) ?? null : null)),
     total,
     page,
     pageSize,
