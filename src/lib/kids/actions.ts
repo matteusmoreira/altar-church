@@ -2677,14 +2677,35 @@ export async function sendKidInternalMessage(input: unknown): Promise<KidsAction
       if (!allowed[0]) throw new Error("Conversa não encontrada")
       guardianPersonId = allowed[0].guardian_person_id
     } else {
-      if (senderKind !== "staff" || !guardianPersonId) throw new Error("Responsável obrigatório")
-      const link = await sql<{ person_id: string }[]>`
-        select person_id from public.kid_guardians
-        where company_id = ${companyId} and person_id = ${guardianPersonId} and deleted_at is null
-          and (${parsed.kidId}::uuid is null or kid_id = ${parsed.kidId})
-        limit 1
-      `
-      if (!link[0]) throw new Error("Responsável não encontrado")
+      if (senderKind === "guardian") {
+        const guardianLink = await sql<{ person_id: string; kid_id: string }[]>`
+          select link.person_id, link.kid_id
+          from public.kid_guardians link
+          where link.profile_id = ${user.id} and link.company_id = ${companyId} and link.deleted_at is null
+          limit 1
+        `
+        const personRow = guardianLink[0]
+          ? guardianLink
+          : await sql<{ person_id: string; kid_id: string | null }[]>`
+              select person.id as person_id, null as kid_id from public.people person
+              where person.profile_id = ${user.id} and person.company_id = ${companyId} and person.deleted_at is null
+              limit 1
+            `
+        if (!personRow[0]) throw new Error("Cadastro de responsável não encontrado")
+        guardianPersonId = personRow[0].person_id
+        if (!parsed.kidId && personRow[0].kid_id) {
+          parsed.kidId = personRow[0].kid_id
+        }
+      } else {
+        if (!guardianPersonId) throw new Error("Responsável obrigatório")
+        const link = await sql<{ person_id: string }[]>`
+          select person_id from public.kid_guardians
+          where company_id = ${companyId} and person_id = ${guardianPersonId} and deleted_at is null
+            and (${parsed.kidId}::uuid is null or kid_id = ${parsed.kidId})
+          limit 1
+        `
+        if (!link[0]) throw new Error("Responsável não encontrado")
+      }
       const existing = await sql<{ id: string }[]>`
         select id from public.kid_conversations
         where company_id = ${companyId} and guardian_person_id = ${guardianPersonId} and deleted_at is null

@@ -167,6 +167,14 @@ export interface CellPortalMeeting {
   photos: CellPhoto[]
 }
 
+export interface CellMemberCheckin {
+  id: string
+  cellName: string
+  meetingTitle: string
+  checkedInAt: string
+  source: CellCheckinSource
+}
+
 export interface CellFeaturesData {
   mode: "manager" | "leader" | "portal"
   canPublishToAll: boolean
@@ -181,6 +189,7 @@ export interface CellFeaturesData {
   attendance: CellAttendance[]
   prayers: CellPrayerRequest[]
   notices: CellNotice[]
+  myCheckins?: CellMemberCheckin[]
   leaderWorkspace: CellLeaderWorkspaceData | null
 }
 

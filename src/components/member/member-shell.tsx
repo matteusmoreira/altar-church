@@ -2,13 +2,15 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Baby, CalendarCheck2, CalendarDays, Church, HeartHandshake, Home, LogOut, Network, Settings2 } from "lucide-react"
+import { Baby, CalendarCheck2, CalendarDays, HeartHandshake, Home, LogOut, Network, Settings2 } from "lucide-react"
 import { signOutMember } from "@/lib/member/actions"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { PwaInstallBanner, PwaInstallButton } from "@/components/pwa-install"
 import { Button } from "@/components/ui/button"
 import { WhatsappPendingBanner } from "@/components/auth/whatsapp-pending-banner"
+import { ChurchLogo } from "@/components/layout/church-logo"
+import { KidsAlertListener } from "@/components/kids/kids-alert-listener"
 
 const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
@@ -22,12 +24,14 @@ export function MemberShell({
   children,
   memberName,
   churchName,
+  churchLogoUrl,
   hasVolunteerPortal,
   whatsappPending,
 }: {
   children: React.ReactNode
   memberName: string
   churchName: string
+  churchLogoUrl?: string | null
   hasVolunteerPortal: boolean
   whatsappPending: boolean
 }) {
@@ -48,9 +52,12 @@ export function MemberShell({
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-0 h-72 bg-[radial-gradient(circle_at_18%_0%,oklch(0.65_0.18_250/0.18),transparent_48%),radial-gradient(circle_at_88%_12%,oklch(0.7_0.13_205/0.12),transparent_42%)]" />
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl gradient-primary shadow-glow-sm">
-            <Church className="h-5 w-5 text-white" />
-          </div>
+          <ChurchLogo
+            logoUrl={churchLogoUrl}
+            churchName={churchName}
+            className="h-10 w-10 rounded-2xl"
+            iconClassName="h-5 w-5 text-white"
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold">{churchName}</p>
             <p className="truncate text-xs text-muted-foreground">Portal do Membro · {memberName}</p>
@@ -67,6 +74,7 @@ export function MemberShell({
       </header>
 
       <main className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:pb-10 lg:pt-8">
+        <KidsAlertListener />
         <PwaInstallBanner className="mb-5" />
         <WhatsappPendingBanner pending={whatsappPending} />
         {children}

@@ -1,10 +1,28 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { QRCodeSVG } from "qrcode.react"
-import { Baby, Church, LogOut, MessageSquare, Pencil, Plus, QrCode, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react"
+import {
+  Baby,
+  BellRing,
+  ChevronDown,
+  ChevronUp,
+  Church,
+  LogOut,
+  MapPin,
+  MessageSquare,
+  Pencil,
+  Plus,
+  QrCode,
+  Send,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Volume2,
+} from "lucide-react"
+import { requestNotificationPermission, triggerKidsAlert } from "@/lib/kids/notifications"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -154,20 +172,68 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   const [childPhoto, setChildPhoto] = useState<File | null>(null)
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
   const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
+  const hasGuardianAddress = Boolean(
+    guardianAddress.street?.trim() ||
+    guardianAddress.postalCode?.trim() ||
+    guardianAddress.city?.trim()
+  )
+  const [isAddressExpanded, setIsAddressExpanded] = useState(!hasGuardianAddress)
   const [guardianCustomValues, setGuardianCustomValues] = useState(data.guardianCustomValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("guardian"))))
   const [chatReplies, setChatReplies] = useState<Record<string, string>>({})
+  const [newChatBody, setNewChatBody] = useState("")
+  const [newChatKidId, setNewChatKidId] = useState(data.children[0]?.kidId ?? "")
+  const [recentAlert, setRecentAlert] = useState<{ body: string; receivedAt: string } | null>(null)
+  const chatBottomRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel("family-kids-chat")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "kid_conversation_messages" }, () => router.refresh())
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "kid_conversation_messages" },
+        (payload) => {
+          const newMsg = payload.new as {
+            id?: string
+            sender_kind?: string
+            body?: string
+            conversation_id?: string
+          } | null
+
+          if (newMsg && newMsg.sender_kind === "staff") {
+            // Dispara som audível no culto e vibração no celular
+            triggerKidsAlert(newMsg.body ?? "Mensagem da equipe do Kids")
+
+            setRecentAlert({
+              body: newMsg.body ?? "Nova mensagem da equipe",
+              receivedAt: new Date().toISOString(),
+            })
+
+            toast.warning("🚨 Mensagem do Ministério Kids!", {
+              description: newMsg.body ?? "A equipe enviou uma mensagem para você.",
+              duration: 12000,
+              action: {
+                label: "Ver no Chat",
+                onClick: () => {
+                  document.getElementById("chat-kids-section")?.scrollIntoView({ behavior: "smooth" })
+                },
+              },
+            })
+          }
+          router.refresh()
+        },
+      )
       .subscribe()
+
     for (const conversation of data.conversations) {
       if (conversation.unreadCount > 0) void markKidConversationRead(conversation.id)
     }
     return () => { void supabase.removeChannel(channel) }
   }, [data.conversations, router])
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [data.conversations])
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -293,6 +359,43 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
     router.refresh()
   }
 
+  async function handleSaveGuardianAddress() {
+    await run(
+      () => saveGuardianKidsProfile({ address: guardianAddress, customValues: guardianCustomValues }),
+      "Dados atualizados com sucesso",
+      () => {
+        setIsAddressExpanded(false)
+      },
+    )
+  }
+
+  async function testAlertFeedback() {
+    await requestNotificationPermission()
+    triggerKidsAlert(
+      "Alerta de teste: seu celular tocará e vibrará assim durante o culto quando a equipe do Kids mandar uma mensagem!",
+      "Teste de Alerta Kids",
+    )
+    toast.success("Alerta testado com sucesso!", {
+      description: "Som e vibração acionados no seu aparelho. O volume e vibracall estão funcionando.",
+    })
+  }
+
+  async function sendFirstChatMessage() {
+    const body = newChatBody.trim()
+    if (!body) return
+    await run(
+      () =>
+        sendKidInternalMessage({
+          conversationId: null,
+          guardianPersonId: null,
+          kidId: newChatKidId || data.children[0]?.kidId || null,
+          body,
+        }),
+      "Mensagem enviada para a equipe",
+      () => setNewChatBody(""),
+    )
+  }
+
   async function sendChatReply(conversationId: string) {
     const body = chatReplies[conversationId]?.trim()
     if (!body) return
@@ -325,59 +428,117 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
 
       {!embedded && <PwaInstallBanner />}
 
-      <Card className="glass">
-        <CardHeader><CardTitle className="text-base">Meu endereço e dados adicionais</CardTitle><CardDescription>Endereço familiar opcional, compartilhado pelos cadastros vinculados.</CardDescription></CardHeader>
-        <CardContent className="space-y-4">
-          <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
-          <CustomFieldInputs definitions={data.customFields} target="guardian" surface="portal" values={guardianCustomValues} onChange={setGuardianCustomValues} disabled={pending} />
-          <Button type="button" disabled={pending} onClick={() => void run(() => saveGuardianKidsProfile({ address: guardianAddress, customValues: guardianCustomValues }), "Dados atualizados")}>Salvar meus dados</Button>
-        </CardContent>
-      </Card>
+      {recentAlert && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-destructive flex items-center justify-between gap-3 shadow-md animate-pulse">
+          <div className="flex items-center gap-3 min-w-0">
+            <BellRing className="h-5 w-5 text-destructive shrink-0 animate-bounce" />
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-wider">Aviso da Equipe do Kids</p>
+              <p className="text-sm font-semibold truncate">{recentAlert.body}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                document.getElementById("chat-kids-section")?.scrollIntoView({ behavior: "smooth" })
+              }}
+            >
+              Ver chat
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-destructive hover:bg-destructive/20"
+              onClick={() => setRecentAlert(null)}
+            >
+              ✕
+            </Button>
+          </div>
+        </div>
+      )}
 
-      <Card className="glass">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4" />Chat com o Kids</CardTitle>
-          <CardDescription>Conversa direta com a equipe. Não envia WhatsApp ou e-mail.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {data.conversations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">A equipe ainda não iniciou uma conversa.</p>
-          ) : data.conversations.map((conversation) => (
-            <div key={conversation.id} className="space-y-3 rounded-lg border border-border/60 p-3">
-              <div className="max-h-72 space-y-2 overflow-y-auto">
-                {conversation.messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.senderKind === "guardian" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.senderKind === "guardian" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                      <p>{message.body}</p>
-                      <p className="mt-1 text-[10px] opacity-70">{formatTime(message.createdAt)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Textarea
-                  rows={2}
-                  placeholder="Digite sua mensagem"
-                  value={chatReplies[conversation.id] ?? ""}
-                  disabled={pending}
-                  onChange={(event) => setChatReplies((current) => ({ ...current, [conversation.id]: event.target.value }))}
-                />
-                <Button type="button" size="icon" disabled={pending || !(chatReplies[conversation.id]?.trim())} onClick={() => void sendChatReply(conversation.id)} title="Enviar">
-                  <Send className="h-4 w-4" />
+      <Card className="glass overflow-hidden transition-all">
+        <button
+          type="button"
+          onClick={() => setIsAddressExpanded((prev) => !prev)}
+          className="w-full p-4 sm:p-6 text-left flex items-start justify-between gap-4 hover:bg-muted/20 transition-colors"
+          aria-expanded={isAddressExpanded}
+        >
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <MapPin className="h-4 w-4 text-primary shrink-0" />
+              <CardTitle className="text-base">Meu endereço e dados adicionais</CardTitle>
+              {hasGuardianAddress && (
+                <Badge variant="outline" className="text-[10px] font-normal border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
+                  Preenchido
+                </Badge>
+              )}
+            </div>
+            <CardDescription className="text-xs text-muted-foreground">
+              {hasGuardianAddress ? (
+                <span>
+                  {[
+                    guardianAddress.street ? `${guardianAddress.street}${guardianAddress.number ? `, ${guardianAddress.number}` : ""}` : "",
+                    guardianAddress.complement,
+                    guardianAddress.neighborhood,
+                    guardianAddress.city ? (guardianAddress.state ? `${guardianAddress.city} - ${guardianAddress.state}` : guardianAddress.city) : "",
+                    guardianAddress.postalCode ? `CEP ${guardianAddress.postalCode}` : "",
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              ) : (
+                "Endereço familiar opcional, compartilhado pelos cadastros vinculados."
+              )}
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 pt-0.5">
+            <span className="text-xs font-medium text-muted-foreground hidden sm:inline">
+              {isAddressExpanded ? "Recolher" : "Editar"}
+            </span>
+            <div className="h-8 w-8 rounded-full flex items-center justify-center bg-muted/60 text-muted-foreground hover:text-foreground">
+              {isAddressExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </div>
+        </button>
+
+        {isAddressExpanded && (
+          <CardContent className="space-y-4 pt-0 border-t border-border/40 mt-1">
+            <div className="pt-4 space-y-4">
+              <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />
+              <CustomFieldInputs
+                definitions={data.customFields}
+                target="guardian"
+                surface="portal"
+                values={guardianCustomValues}
+                onChange={setGuardianCustomValues}
+                disabled={pending}
+              />
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <Button type="button" disabled={pending} onClick={() => void handleSaveGuardianAddress()}>
+                  Salvar meus dados
                 </Button>
+                {hasGuardianAddress && (
+                  <Button type="button" variant="outline" disabled={pending} onClick={() => setIsAddressExpanded(false)}>
+                    Recolher
+                  </Button>
+                )}
               </div>
             </div>
-          ))}
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {data.children.length === 0 && !childForm && (
         <Card className="glass">
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <Baby className="h-10 w-10 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground max-w-sm">
               Nenhuma criança vinculada à sua conta ainda. Cadastre abaixo ou fale com a recepção do Kids.
             </p>
+            <Button type="button" onClick={() => setChildForm({ ...emptyChildForm })}>
+              <Plus className="mr-2 h-4 w-4" />Cadastrar primeira criança
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -636,11 +797,168 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
             </div>
           </CardContent>
         </Card>
+      ) : data.children.length === 0 ? (
+        <Button type="button" className="w-full" onClick={() => setChildForm({ ...emptyChildForm })}>
+          <Plus className="mr-2 h-4 w-4" />Cadastrar criança
+        </Button>
       ) : (
         <Button type="button" variant="outline" className="w-full" onClick={() => setChildForm({ ...emptyChildForm })}>
           <UserPlus className="mr-2 h-4 w-4" />Cadastrar outra criança
         </Button>
       )}
+
+      <Card id="chat-kids-section" className="glass scroll-mt-20">
+        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4 text-primary" />
+              Chat com o Kids
+            </CardTitle>
+            <CardDescription>
+              Canal direto com os voluntários e liderança das salas durante o culto.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-xs h-8 gap-1.5 shrink-0"
+            onClick={() => void testAlertFeedback()}
+            title="Testar alerta de som e vibração no celular"
+          >
+            <Volume2 className="h-3.5 w-3.5 text-primary" />
+            <span className="hidden sm:inline">Testar som e vibração</span>
+            <span className="sm:hidden">Testar som</span>
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg bg-primary/5 border border-primary/20 p-2.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <BellRing className="h-3.5 w-3.5 text-primary shrink-0" />
+              Alerta sonoro e vibração ativos no celular se a equipe chamar você no culto.
+            </span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="text-xs h-auto p-0 text-primary font-medium"
+              onClick={() => void testAlertFeedback()}
+            >
+              Testar
+            </Button>
+          </div>
+
+          {data.conversations.length === 0 ? (
+            <div className="rounded-lg border border-border/60 p-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Nenhuma mensagem aberta no momento. Se precisar falar com os voluntários da sala do seu filho durante o culto, envie uma mensagem abaixo:
+              </p>
+              <div className="space-y-2">
+                {data.children.length > 1 && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Mensagem referente a:</Label>
+                    <select
+                      className="h-9 w-full rounded-md border bg-background px-3 text-xs"
+                      value={newChatKidId}
+                      onChange={(event) => setNewChatKidId(event.target.value)}
+                    >
+                      <option value="">Geral / Todas as crianças</option>
+                      {data.children.map((child) => (
+                        <option key={child.kidId} value={child.kidId}>
+                          {child.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <Textarea
+                  rows={2}
+                  placeholder="Ex: Deixei uma blusa de frio na mochila do meu filho..."
+                  value={newChatBody}
+                  disabled={pending}
+                  onChange={(event) => setNewChatBody(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={pending || !newChatBody.trim()}
+                  onClick={() => void sendFirstChatMessage()}
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                  Enviar mensagem para o Kids
+                </Button>
+              </div>
+            </div>
+          ) : (
+            data.conversations.map((conversation) => (
+              <div key={conversation.id} className="space-y-3 rounded-lg border border-border/60 p-3">
+                {conversation.childName && (
+                  <p className="text-xs font-semibold text-primary">
+                    Conversa sobre: {conversation.childName}
+                  </p>
+                )}
+                <div className="max-h-72 space-y-2 overflow-y-auto">
+                  {conversation.messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.senderKind === "guardian" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                          message.senderKind === "guardian"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted border border-border/40"
+                        }`}
+                      >
+                        {message.senderKind !== "guardian" && message.senderName && (
+                          <p className="text-[11px] font-semibold text-primary mb-0.5">
+                            {message.senderName} (Equipe Kids)
+                          </p>
+                        )}
+                        <p className="whitespace-pre-wrap">{message.body}</p>
+                        <p className="mt-1 text-[10px] opacity-70 text-right">
+                          {formatTime(message.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={chatBottomRef} />
+                </div>
+                <div className="flex gap-2">
+                  <Textarea
+                    rows={2}
+                    placeholder="Digite sua resposta..."
+                    value={chatReplies[conversation.id] ?? ""}
+                    disabled={pending}
+                    onChange={(event) =>
+                      setChatReplies((current) => ({
+                        ...current,
+                        [conversation.id]: event.target.value,
+                      }))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault()
+                        void sendChatReply(conversation.id)
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    className="h-auto"
+                    disabled={pending || !chatReplies[conversation.id]?.trim()}
+                    onClick={() => void sendChatReply(conversation.id)}
+                    title="Enviar mensagem"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       {pickupCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setPickupCode(null)}>

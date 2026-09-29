@@ -303,6 +303,10 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
       [target === "church-logo" ? "logo" : "cover"]: localUrl,
     }))
 
+    if (target === "church-logo" && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("church-logo-updated", { detail: { logoUrl: localUrl } }))
+    }
+
     setUploadingAsset(target)
     const payload = new FormData()
     payload.set("target", target)

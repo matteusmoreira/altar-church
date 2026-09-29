@@ -80,18 +80,18 @@ test("cell database optimization keeps tenant scope and targeted indexes", () =>
   assert.match(migration, /profile\.company_id = study\.company_id/)
 })
 
-test("cell check-in keeps exact timestamp and appears in member dashboard", () => {
+test("cell check-in keeps exact timestamp and appears in member cells hub", () => {
   const migration = read("supabase/migrations/20260730210000_cell_checkin_timestamps.sql")
   const actions = read("src/lib/cells/actions.ts")
   const memberData = read("src/lib/member/data.ts")
-  const memberDashboard = read("src/components/member/member-dashboard.tsx")
+  const cellClient = read("src/app/(dashboard)/celulas/cell-features-client.tsx")
   assert.match(migration, /add column if not exists checkin_at timestamptz/)
   assert.match(actions, /checkin_source, checkin_session_id, checkin_at/)
   assert.match(actions, /checkin_at = now\(\)/)
   assert.match(memberData, /recentCellCheckins/)
   assert.match(memberData, /attendance\.checkin_at/)
-  assert.match(memberDashboard, /Check-ins nas células/)
-  assert.match(memberDashboard, /Check-in realizado/)
+  assert.match(cellClient, /Check-ins nas células/)
+  assert.match(cellClient, /Check-in realizado/)
 })
 
 test("admin has a dedicated cell summary option", () => {

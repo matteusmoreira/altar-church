@@ -190,17 +190,200 @@ export function CellFeaturesClient({ data }: { data: CellFeaturesData }) {
             </Button>
           )}
         </div>
-        {data.cells.length === 0 ? <Card><CardContent className="py-10 text-center text-muted-foreground">Seu cadastro ainda não está vinculado a uma célula.</CardContent></Card> : (
-          <Tabs defaultValue="encontros">
-            <TabsList className="flex h-auto flex-wrap"><TabsTrigger value="encontros"><BookOpen />Encontros</TabsTrigger><TabsTrigger value="avisos"><Megaphone />Avisos</TabsTrigger><TabsTrigger value="mural"><ImageIcon />Mural</TabsTrigger><TabsTrigger value="oracao"><Heart />Oração</TabsTrigger></TabsList>
-            <TabsContent value="encontros" className="grid gap-4 md:grid-cols-2">
-              {data.meetings.length === 0 ? <Card className="md:col-span-2"><CardContent className="py-10 text-center text-muted-foreground">Nenhum encontro publicado ainda.</CardContent></Card> : data.meetings.map((meeting) => <Card key={meeting.id}><CardHeader><CardTitle>{meeting.title}</CardTitle><CardDescription>{meeting.groupName} · {dateTime(meeting.startsAt)}</CardDescription></CardHeader><CardContent>{meeting.study ? <div className="space-y-2"><p className="font-medium">{meeting.study.title}</p><p className="text-sm text-muted-foreground">{meeting.study.description}</p>{meeting.study.scriptureRef && <Badge variant="outline">{meeting.study.scriptureRef}</Badge>}<Button render={<a href={meeting.study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline"><Download />Baixar estudo</Button></div> : <p className="text-sm text-muted-foreground">Estudo ainda não publicado.</p>}</CardContent></Card>)}
-            </TabsContent>
-            <TabsContent value="avisos" className="grid gap-4 md:grid-cols-2">{data.notices.map((notice) => <Card key={notice.id}><CardHeader><CardTitle>{notice.title}</CardTitle><CardDescription>{notice.authorName} · {dateTime(notice.publishedAt)}</CardDescription></CardHeader><CardContent><NoticeText notice={notice} /></CardContent></Card>)}</TabsContent>
-            <TabsContent value="mural" className="space-y-6">{data.meetings.filter((meeting) => meeting.photos.length > 0).map((meeting) => <section key={meeting.id}><h3 className="mb-3 font-semibold">{meeting.groupName} · {dateTime(meeting.startsAt)}</h3><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{meeting.photos.map((photo) => <a key={photo.id} href={photo.url} target="_blank" rel="noopener noreferrer" className="relative aspect-square overflow-hidden rounded-xl border"><Image src={photo.url} alt={photo.fileName} fill unoptimized className="object-cover" /></a>)}</div></section>)}</TabsContent>
-            <TabsContent value="oracao" className="grid gap-4 lg:grid-cols-2"><Card><CardHeader><CardTitle>Novo pedido</CardTitle><CardDescription>Visível somente para você e liderança da célula.</CardDescription></CardHeader><CardContent><form onSubmit={(event) => submitForm(event, saveCellPrayer, "Pedido enviado")} className="space-y-3"><Select name="groupId" defaultValue={data.cells[0]?.id}><SelectTrigger><SelectValue placeholder="Célula" /></SelectTrigger><SelectContent>{data.cells.map((cell) => <SelectItem key={cell.id} value={cell.id}>{cell.name}</SelectItem>)}</SelectContent></Select><Textarea name="message" maxLength={5000} required rows={5} placeholder="Escreva seu pedido de oração" /><Button type="submit" disabled={pending}><Heart />Enviar pedido</Button></form></CardContent></Card><div className="space-y-3">{data.prayers.map((prayer) => <Card key={prayer.id}><CardContent className="space-y-2 pt-5"><div className="flex justify-between gap-3"><strong>{prayer.groupName}</strong><Badge>{prayerLabels[prayer.status]}</Badge></div><p className="whitespace-pre-wrap text-sm">{prayer.message}</p><p className="text-xs text-muted-foreground">{dateTime(prayer.createdAt)}</p></CardContent></Card>)}</div></TabsContent>
-          </Tabs>
-        )}
+        <Tabs defaultValue="encontros">
+          <TabsList className="flex h-auto flex-wrap gap-1 rounded-2xl bg-muted/60 p-1 sm:gap-1.5">
+            <TabsTrigger value="encontros" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">
+              <BookOpen className="mr-1.5 h-4 w-4" />Encontros
+            </TabsTrigger>
+            <TabsTrigger value="checkins" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">
+              <CheckCircle2 className="mr-1.5 h-4 w-4 text-emerald-500" />
+              Check-ins
+              {(data.myCheckins?.length ?? 0) > 0 && (
+                <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                  {data.myCheckins?.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="avisos" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">
+              <Megaphone className="mr-1.5 h-4 w-4" />Avisos
+            </TabsTrigger>
+            <TabsTrigger value="mural" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">
+              <ImageIcon className="mr-1.5 h-4 w-4" />Mural
+            </TabsTrigger>
+            <TabsTrigger value="oracao" className="rounded-xl px-3 py-2 text-xs font-semibold sm:text-sm touch-manipulation">
+              <Heart className="mr-1.5 h-4 w-4" />Oração
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="encontros" className="grid gap-4 md:grid-cols-2">
+            {data.cells.length === 0 ? (
+              <Card className="md:col-span-2">
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  Seu cadastro ainda não está vinculado a uma célula ativa.
+                </CardContent>
+              </Card>
+            ) : data.meetings.length === 0 ? (
+              <Card className="md:col-span-2">
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  Nenhum encontro publicado ainda.
+                </CardContent>
+              </Card>
+            ) : (
+              data.meetings.map((meeting) => (
+                <Card key={meeting.id}>
+                  <CardHeader>
+                    <CardTitle>{meeting.title}</CardTitle>
+                    <CardDescription>{meeting.groupName} · {dateTime(meeting.startsAt)}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {meeting.study ? (
+                      <div className="space-y-2">
+                        <p className="font-medium">{meeting.study.title}</p>
+                        <p className="text-sm text-muted-foreground">{meeting.study.description}</p>
+                        {meeting.study.scriptureRef && <Badge variant="outline">{meeting.study.scriptureRef}</Badge>}
+                        <Button render={<a href={meeting.study.fileUrl} target="_blank" rel="noopener noreferrer" />} variant="outline">
+                          <Download className="mr-1.5 h-4 w-4" />Baixar estudo
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Estudo ainda não publicado.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </TabsContent>
+          <TabsContent value="checkins" className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-bold">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  Check-ins nas células
+                </h2>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  Histórico de presença e participações confirmadas nos encontros.
+                </p>
+              </div>
+              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
+                {data.myCheckins?.length ?? 0} {(data.myCheckins?.length ?? 0) === 1 ? "registrado" : "registrados"}
+              </Badge>
+            </div>
+
+            {(data.myCheckins?.length ?? 0) > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {data.myCheckins!.map((checkin) => (
+                  <Card key={checkin.id} className="border-emerald-500/20 py-0 shadow-xs hover:border-emerald-500/40 transition-all">
+                    <CardContent className="flex items-center gap-3.5 p-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/20">
+                        <CheckCircle2 className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate font-semibold text-sm sm:text-base">{checkin.cellName}</p>
+                          <Badge variant="outline" className="text-[10px] shrink-0 font-medium">
+                            {checkin.source === "qr" ? "QR Code" : "Manual"}
+                          </Badge>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">{checkin.meetingTitle}</p>
+                        <p className="mt-1 text-xs font-medium capitalize text-emerald-600 dark:text-emerald-400">
+                          Check-in realizado · {dateTime(checkin.checkedInAt)}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="border-dashed py-8">
+                <CardContent className="flex flex-col items-center justify-center text-center p-6 space-y-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-base">Seus próximos check-ins aparecerão aqui depois da primeira presença.</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground max-w-md">
+                      Faça check-in via QR Code nos encontros da sua célula ou solicite o registro ao seu líder.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+          <TabsContent value="avisos" className="grid gap-4 md:grid-cols-2">
+            {data.notices.length === 0 ? (
+              <Card className="md:col-span-2">
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  Nenhum aviso no momento.
+                </CardContent>
+              </Card>
+            ) : (
+              data.notices.map((notice) => (
+                <Card key={notice.id}>
+                  <CardHeader>
+                    <CardTitle>{notice.title}</CardTitle>
+                    <CardDescription>{notice.authorName} · {dateTime(notice.publishedAt)}</CardDescription>
+                  </CardHeader>
+                  <CardContent><NoticeText notice={notice} /></CardContent>
+                </Card>
+              ))
+            )}
+          </TabsContent>
+          <TabsContent value="mural" className="space-y-6">
+            {data.meetings.filter((meeting) => meeting.photos.length > 0).length === 0 ? (
+              <Card>
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  Nenhuma foto publicada ainda no mural das células.
+                </CardContent>
+              </Card>
+            ) : (
+              data.meetings.filter((meeting) => meeting.photos.length > 0).map((meeting) => (
+                <section key={meeting.id}>
+                  <h3 className="mb-3 font-semibold">{meeting.groupName} · {dateTime(meeting.startsAt)}</h3>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {meeting.photos.map((photo) => (
+                      <a key={photo.id} href={photo.url} target="_blank" rel="noopener noreferrer" className="relative aspect-square overflow-hidden rounded-xl border">
+                        <Image src={photo.url} alt={photo.fileName} fill unoptimized className="object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
+          </TabsContent>
+          <TabsContent value="oracao" className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Novo pedido</CardTitle>
+                <CardDescription>Visível somente para você e liderança da célula.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={(event) => submitForm(event, saveCellPrayer, "Pedido enviado")} className="space-y-3">
+                  <Select name="groupId" defaultValue={data.cells[0]?.id}>
+                    <SelectTrigger><SelectValue placeholder="Selecione a célula" /></SelectTrigger>
+                    <SelectContent>
+                      {data.cells.map((cell) => <SelectItem key={cell.id} value={cell.id}>{cell.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Textarea name="message" maxLength={5000} required rows={5} placeholder="Escreva seu pedido de oração" />
+                  <Button type="submit" disabled={pending || data.cells.length === 0}><Heart className="mr-1.5 h-4 w-4" />Enviar pedido</Button>
+                </form>
+              </CardContent>
+            </Card>
+            <div className="space-y-3">
+              {data.prayers.map((prayer) => (
+                <Card key={prayer.id}>
+                  <CardContent className="space-y-2 pt-5">
+                    <div className="flex justify-between gap-3">
+                      <strong>{prayer.groupName}</strong>
+                      <Badge>{prayerLabels[prayer.status]}</Badge>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm">{prayer.message}</p>
+                    <p className="text-xs text-muted-foreground">{dateTime(prayer.createdAt)}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     )
   }

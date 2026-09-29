@@ -41,6 +41,7 @@ import { useAuth } from "@/lib/auth/context"
 import { dashboardRoutes, isDashboardRouteActive, type DashboardRouteId } from "@/lib/navigation/routes"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { ChurchLogo } from "@/components/layout/church-logo"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -166,6 +167,7 @@ function SidebarContent({
   enabledModuleIds,
   churchName,
   churchSlug,
+  churchLogoUrl,
 }: {
   onNavClick?: () => void
   collapsed?: boolean
@@ -173,6 +175,7 @@ function SidebarContent({
   enabledModuleIds: string[] | null
   churchName: string
   churchSlug?: string
+  churchLogoUrl?: string | null
 }) {
   const pathname = usePathname()
   const { logout, hasRole, user } = useAuth()
@@ -186,9 +189,12 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       <div className={cn("flex items-center gap-3 px-4 py-5", collapsed && "justify-center px-2")}>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-panel gradient-primary shadow-glow-sm">
-          <Church className="h-5 w-5 text-white" />
-        </div>
+        <ChurchLogo
+          logoUrl={churchLogoUrl}
+          churchName={churchName}
+          className="h-10 w-10 rounded-panel"
+          iconClassName="h-5 w-5 text-white"
+        />
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold tracking-tight">Altar Church</p>
@@ -310,13 +316,27 @@ function SidebarContent({
   )
 }
 
-function Topbar({ churchName, pageLabel }: { churchName: string; pageLabel?: string }) {
+function Topbar({
+  churchName,
+  churchLogoUrl,
+  pageLabel,
+}: {
+  churchName: string
+  churchLogoUrl?: string | null
+  pageLabel?: string
+}) {
   const { user } = useAuth()
 
   return (
     <div className="hidden h-14 items-center justify-between gap-4 border-b border-border/50 px-6 glass lg:flex">
       <div className="flex min-w-0 items-center gap-1.5 text-sm">
-        <Church className="h-4 w-4 shrink-0 text-primary" />
+        <ChurchLogo
+          logoUrl={churchLogoUrl}
+          churchName={churchName}
+          className="h-5 w-5 rounded"
+          iconClassName="h-4 w-4 shrink-0 text-primary"
+          fallbackVariant="ghost"
+        />
         <span className="truncate font-medium text-muted-foreground">{churchName}</span>
         {pageLabel && (
           <>
@@ -361,12 +381,14 @@ export function DashboardLayout({
   initialEnabledModuleIds,
   churchName = "Altar Church",
   churchSlug = "",
+  churchLogoUrl,
   whatsappPending = false,
 }: {
   children: React.ReactNode
   initialEnabledModuleIds: string[] | null
   churchName?: string
   churchSlug?: string
+  churchLogoUrl?: string | null
   whatsappPending?: boolean
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -438,6 +460,7 @@ export function DashboardLayout({
           enabledModuleIds={enabledModuleIds}
           churchName={churchName}
           churchSlug={churchSlug}
+          churchLogoUrl={churchLogoUrl}
           onToggle={() => setCollapsed(!collapsed)}
         />
       </aside>
@@ -455,14 +478,18 @@ export function DashboardLayout({
                 enabledModuleIds={enabledModuleIds}
                 churchName={churchName}
                 churchSlug={churchSlug}
+                churchLogoUrl={churchLogoUrl}
                 onNavClick={() => setSheetOpen(false)}
               />
             </SheetContent>
           </Sheet>
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control gradient-primary">
-              <Church className="h-4 w-4 text-white" />
-            </div>
+            <ChurchLogo
+              logoUrl={churchLogoUrl}
+              churchName={churchName}
+              className="h-8 w-8 rounded-control"
+              iconClassName="h-4 w-4 text-white"
+            />
             <span className="truncate text-sm font-semibold">{churchName}</span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -470,7 +497,7 @@ export function DashboardLayout({
           </div>
         </header>
 
-        <Topbar churchName={churchName} pageLabel={currentItem?.label} />
+        <Topbar churchName={churchName} churchLogoUrl={churchLogoUrl} pageLabel={currentItem?.label} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           <div className="mx-auto max-w-7xl p-4 pb-[calc(5rem+env(safe-area-inset-bottom))] md:px-6 md:pt-6 lg:p-8">

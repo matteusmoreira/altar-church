@@ -13,8 +13,15 @@ export async function getMemberShellData() {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
   const [companyRows, capabilityRows, profileRows] = await Promise.all([
-    sql<{ name: string }[]>`
-      select name from public.companies where id = ${companyId} and active = true limit 1
+    sql<{ name: string; logo_storage_path: string | null }[]>`
+      select
+        coalesce(nullif(cp.public_name, ''), c.name) as name,
+        logo.storage_path as logo_storage_path
+      from public.companies c
+      left join public.church_profiles cp on cp.company_id = c.id
+      left join public.app_files logo on logo.id = cp.logo_file_id
+      where c.id = ${companyId} and c.active = true
+      limit 1
     `,
     sql<{ has_volunteer_portal: boolean }[]>`
       select exists(
@@ -38,12 +45,26 @@ export async function getMemberShellData() {
       limit 1
     `,
   ])
+
+  let churchLogoUrl: string | null = null
+  const logoStoragePath = companyRows[0]?.logo_storage_path
+  if (logoStoragePath) {
+    try {
+      const { createSignedUrlsByStoragePath } = await import("@/lib/files/server")
+      const signedUrls = await createSignedUrlsByStoragePath([logoStoragePath], 60 * 60 * 24 * 7)
+      churchLogoUrl = signedUrls.get(logoStoragePath) ?? null
+    } catch {
+      // Ignora erro
+    }
+  }
+
   const capabilities: MemberPortalCapabilities = {
     hasVolunteerPortal: capabilityRows[0]?.has_volunteer_portal ?? false,
   }
   return {
     user,
     churchName: companyRows[0]?.name ?? "Altar Church",
+    churchLogoUrl,
     capabilities,
     whatsappPending: !profileRows[0]?.login_phone,
   }
@@ -53,7 +74,13 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
   const [companyRows, cellCountRows, cellCheckinCountRows, ministryCountRows, childrenCountRows, meetingRows, noticeRows, cellCheckinRows] = await Promise.all([
-    sql<{ name: string }[]>`select name from public.companies where id = ${companyId} limit 1`,
+    sql<{ name: string }[]>`
+      select coalesce(nullif(cp.public_name, ''), c.name) as name
+      from public.companies c
+      left join public.church_profiles cp on cp.company_id = c.id
+      where c.id = ${companyId}
+      limit 1
+    `,
     sql<{ total: number }[]>`
       select count(*)::integer as total
       from public.group_members member
@@ -204,10 +231,10 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
         where membership.company_id = ${companyId} and membership.ministry_id = event.ministry_id
           and membership.person_id = ${personId} and membership.status = 'active' and membership.left_at is null
       ))
-      and event.starts_at >= now() - interval '1 day'
+      and event.starts_at >= now() - interval '60 days'
     group by event.id, ministry.name, own.status
     order by event.starts_at
-    limit 100
+    limit 300
   `
   return rows.map((row) => ({
     id: row.id,

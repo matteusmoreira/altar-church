@@ -21,13 +21,13 @@ const targetConfig = {
     entityTable: "church_profiles",
     purpose: "logo",
     permission: "settings.edit" as const,
-    paths: ["/informacoes", "/dashboard"],
+    paths: ["/informacoes", "/dashboard", "/membro"],
   },
   "church-cover": {
     entityTable: "church_profiles",
     purpose: "cover",
     permission: "settings.edit" as const,
-    paths: ["/informacoes", "/dashboard"],
+    paths: ["/informacoes", "/dashboard", "/membro"],
   },
   "content-cover": {
     entityTable: "content_posts",
@@ -125,6 +125,7 @@ function revalidate(paths: string[]) {
   for (const path of paths) {
     revalidatePath(path)
   }
+  revalidatePath("/", "layout")
 }
 
 export async function uploadEntityAsset(formData: FormData): Promise<FileActionResult> {

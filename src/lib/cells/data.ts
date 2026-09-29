@@ -84,6 +84,23 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     : []
 
   if (cellIds.length === 0) {
+    const myCheckinRows = context.personId
+      ? await sql<{ id: string; cell_name: string; meeting_title: string; checkin_at: DateValue; checkin_source: "qr" | "manual" }[]>`
+          select attendance.id, cell.name as cell_name,
+            coalesce(nullif(meeting.title, ''), cell.name) as meeting_title,
+            coalesce(attendance.checkin_at, attendance.created_at) as checkin_at,
+            coalesce(attendance.checkin_source, 'manual') as checkin_source
+          from public.attendance_records attendance
+          join public.group_meetings meeting on meeting.id = attendance.event_ref_id
+          join public.groups cell on cell.id = meeting.group_id
+          where attendance.company_id = ${context.companyId} and attendance.person_id = ${context.personId}
+            and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null
+            and meeting.deleted_at is null and cell.type = 'cell' and cell.deleted_at is null
+          order by coalesce(attendance.checkin_at, attendance.created_at) desc
+          limit 50
+        `
+      : []
+
     return {
       mode: leader ? "leader" : manager ? "manager" : "portal",
       canPublishToAll,
@@ -91,11 +108,18 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
       personId: context.personId,
       churchSlug,
       cells: [], people: [], meetings: [], studies: [], sessions: [], attendance: [], prayers: [], notices: [],
+      myCheckins: myCheckinRows.map((checkin) => ({
+        id: checkin.id,
+        cellName: checkin.cell_name,
+        meetingTitle: checkin.meeting_title,
+        checkedInAt: iso(checkin.checkin_at) ?? "",
+        source: checkin.checkin_source,
+      })),
       leaderWorkspace: leader ? await getCellLeaderWorkspaceData(context.companyId, context.personId) : null,
     }
   }
 
-  const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows] = await Promise.all([
+  const [studyRows, meetingRows, photoRows, sessionRows, attendanceRows, prayerRows, noticeRows, myCheckinRows] = await Promise.all([
     sql<{ id: string; title: string; description: string; scripture_ref: string; audience: "all" | "selected"; original_name: string; storage_path: string; created_at: DateValue; group_ids: string[] }[]>`
       select study.id, study.title, study.description, study.scripture_ref, study.audience,
         file.original_name, file.storage_path, study.created_at,
@@ -162,6 +186,20 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
         and (notice.audience = 'all' or target.group_id = any(${cellIds}))
       group by notice.id, profile.name order by notice.published_at desc
     `,
+    context.personId ? sql<{ id: string; cell_name: string; meeting_title: string; checkin_at: DateValue; checkin_source: "qr" | "manual" }[]>`
+      select attendance.id, cell.name as cell_name,
+        coalesce(nullif(meeting.title, ''), cell.name) as meeting_title,
+        coalesce(attendance.checkin_at, attendance.created_at) as checkin_at,
+        coalesce(attendance.checkin_source, 'manual') as checkin_source
+      from public.attendance_records attendance
+      join public.group_meetings meeting on meeting.id = attendance.event_ref_id
+      join public.groups cell on cell.id = meeting.group_id
+      where attendance.company_id = ${context.companyId} and attendance.person_id = ${context.personId}
+        and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null
+        and meeting.deleted_at is null and cell.type = 'cell' and cell.deleted_at is null
+      order by coalesce(attendance.checkin_at, attendance.created_at) desc
+      limit 50
+    ` : Promise.resolve([]),
   ])
 
   const urls = await createSignedUrlsByStoragePath([...studyRows.map((row) => row.storage_path), ...photoRows.map((row) => row.storage_path)], 3600)
@@ -206,6 +244,13 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     churchSlug, cells: cellRows,
     people: people.map((person) => ({ id: person.id, name: person.full_name, phone: person.phone, visitor: person.status === "visitor" })),
     meetings, studies, sessions, attendance, prayers, notices,
+    myCheckins: myCheckinRows.map((checkin) => ({
+      id: checkin.id,
+      cellName: checkin.cell_name,
+      meetingTitle: checkin.meeting_title,
+      checkedInAt: iso(checkin.checkin_at) ?? "",
+      source: checkin.checkin_source,
+    })),
     leaderWorkspace,
   }
 }

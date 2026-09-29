@@ -59,6 +59,8 @@ function refreshChurchInfoPaths() {
   revalidatePath("/informacoes")
   revalidatePath("/church/[slug]", "page")
   revalidatePath("/dashboard")
+  revalidatePath("/membro")
+  revalidatePath("/", "layout")
 }
 
 export async function saveChurchInfo(input: SaveChurchInfoInput): Promise<ChurchInfoActionResult> {
