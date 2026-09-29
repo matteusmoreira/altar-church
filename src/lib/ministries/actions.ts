@@ -616,15 +616,38 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
     order by person.full_name
   `
   const candidates: SchedulerCandidateInput[] = []
+  // Batch: 3 queries com IN (...) em vez de 3 por pessoa em loop (N+1 — auditoria 29/09/2026).
+  const volunteerIds = people.map((person) => person.volunteer_id).filter((id): id is string => Boolean(id))
+  const [allRules, allExceptions, allHistory] = volunteerIds.length
+    ? await Promise.all([
+        sql<Record<string, unknown>[]>`select volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = any(${sql.array(volunteerIds)}::uuid[])`,
+        sql<Record<string, unknown>[]>`select volunteer_id, starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = any(${sql.array(volunteerIds)}::uuid[])`,
+        sql<Record<string, unknown>[]>`select assignment.volunteer_id, other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = any(${sql.array(volunteerIds)}::uuid[]) and assignment.company_id = ${access.companyId}`,
+      ])
+    : [[], [], []]
+  const rulesByVolunteer = new Map<string, Record<string, unknown>[]>()
+  const exceptionsByVolunteer = new Map<string, Record<string, unknown>[]>()
+  const historyByVolunteer = new Map<string, Record<string, unknown>[]>()
+  for (const row of allRules) {
+    const key = String(row.volunteer_id)
+    if (!rulesByVolunteer.has(key)) rulesByVolunteer.set(key, [])
+    rulesByVolunteer.get(key)?.push(row)
+  }
+  for (const row of allExceptions) {
+    const key = String(row.volunteer_id)
+    if (!exceptionsByVolunteer.has(key)) exceptionsByVolunteer.set(key, [])
+    exceptionsByVolunteer.get(key)?.push(row)
+  }
+  for (const row of allHistory) {
+    const key = String(row.volunteer_id)
+    if (!historyByVolunteer.has(key)) historyByVolunteer.set(key, [])
+    historyByVolunteer.get(key)?.push(row)
+  }
   for (const person of people) {
     const volunteerId = person.volunteer_id ? String(person.volunteer_id) : null
-    const [rules, exceptions, history] = volunteerId
-      ? await Promise.all([
-          sql<Record<string, unknown>[]>`select weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = ${volunteerId}`,
-          sql<Record<string, unknown>[]>`select starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId}`,
-          sql<Record<string, unknown>[]>`select other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = ${volunteerId} and assignment.company_id = ${access.companyId}`,
-        ])
-      : [[], [], []]
+    const rules = volunteerId ? rulesByVolunteer.get(volunteerId) ?? [] : []
+    const exceptions = volunteerId ? exceptionsByVolunteer.get(volunteerId) ?? [] : []
+    const history = volunteerId ? historyByVolunteer.get(volunteerId) ?? [] : []
     candidates.push({
       id: volunteerId ?? person.person_id,
       name: person.person_name,

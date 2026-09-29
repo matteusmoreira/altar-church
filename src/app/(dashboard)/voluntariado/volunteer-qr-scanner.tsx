@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser"
+import type { IScannerControls } from "@zxing/browser"
 import { Button } from "@/components/ui/button"
 
 export function VolunteerQrScanner({ onRead }: { onRead: (token: string) => void }) {
@@ -14,6 +14,8 @@ export function VolunteerQrScanner({ onRead }: { onRead: (token: string) => void
     if (active) { controls.current?.stop(); controls.current = null; setActive(false); return }
     setError("")
     try {
+      // @zxing/browser so carrega ao abrir a camera (auditoria 29/09/2026).
+      const { BrowserQRCodeReader } = await import("@zxing/browser")
       const reader = new BrowserQRCodeReader()
       controls.current = await reader.decodeFromConstraints({ video: { facingMode: "environment" } }, videoRef.current!, (result) => {
         if (!result) return

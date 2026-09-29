@@ -823,6 +823,8 @@ export async function listEvents(
   const normalizedFilters = normalizeEventFilters(filters)
 
   const sql = getSql()
+  // Agregacoes via LEFT JOIN + GROUP BY em vez de 7 subselects correlacionados
+  // por linha (auditoria 29/09/2026: 6 subselects x 500 eventos).
   const rows = await sql<EventRow[]>`
     select event.*,
            programming.recurrence_frequency,
@@ -833,26 +835,40 @@ export async function listEvents(
            registration_form.title as registration_form_title,
            ministry.name as ministry_name,
            volunteer_template.name as volunteer_template_name,
-           (select count(*)::integer from public.member_event_rsvps rsvp
-             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
-           + (select count(*)::integer from public.event_guest_registrations guest
-             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'going') as going_count,
-           (select count(*)::integer from public.member_event_rsvps rsvp
-             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'waitlisted')
-           + (select count(*)::integer from public.event_guest_registrations guest
-             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'waitlisted') as waitlisted_count,
-           (select count(*)::integer from public.member_event_rsvps rsvp
-             where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'canceled')
-           + (select count(*)::integer from public.event_guest_registrations guest
-             where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'canceled') as cancelled_count
-           ,(select count(*)::integer from public.attendance_records attendance
-             where attendance.company_id = event.company_id and attendance.event_ref_id = event.id
-               and attendance.event_type in ('event', 'service') and attendance.status = 'present' and attendance.deleted_at is null) as present_count
+           coalesce(member_counts.going, 0) + coalesce(guest_counts.going, 0) as going_count,
+           coalesce(member_counts.waitlisted, 0) + coalesce(guest_counts.waitlisted, 0) as waitlisted_count,
+           coalesce(member_counts.canceled, 0) + coalesce(guest_counts.canceled, 0) as cancelled_count,
+           coalesce(present_counts.present, 0) as present_count
     from public.events event
     left join public.programmings programming on programming.id = event.programming_id and programming.company_id = event.company_id and programming.deleted_at is null
     left join public.ministries ministry on ministry.id = event.ministry_id and ministry.company_id = event.company_id
     left join public.volunteer_schedule_templates volunteer_template on volunteer_template.id = event.volunteer_template_id
     left join public.forms registration_form on registration_form.id = event.registration_form_id and registration_form.company_id = event.company_id and registration_form.deleted_at is null
+    left join (
+      select event_id,
+             count(*) filter (where status = 'going')::integer as going,
+             count(*) filter (where status = 'waitlisted')::integer as waitlisted,
+             count(*) filter (where status = 'canceled')::integer as canceled
+      from public.member_event_rsvps
+      where company_id = ${companyId}
+      group by event_id
+    ) member_counts on member_counts.event_id = event.id
+    left join (
+      select event_id,
+             count(*) filter (where status = 'going')::integer as going,
+             count(*) filter (where status = 'waitlisted')::integer as waitlisted,
+             count(*) filter (where status = 'canceled')::integer as canceled
+      from public.event_guest_registrations
+      where company_id = ${companyId}
+      group by event_id
+    ) guest_counts on guest_counts.event_id = event.id
+    left join (
+      select event_ref_id as event_id, count(*)::integer as present
+      from public.attendance_records
+      where company_id = ${companyId}
+        and event_type in ('event', 'service') and status = 'present' and deleted_at is null
+      group by event_ref_id
+    ) present_counts on present_counts.event_id = event.id
     where event.company_id = ${companyId}
       and event.deleted_at is null
       and (${normalizedFilters.query} = '' or event.title ilike ${`%${normalizedFilters.query}%`} or event.description ilike ${`%${normalizedFilters.query}%`})
@@ -1303,9 +1319,12 @@ export async function getFinanceData(companyIdInput?: string | null): Promise<Fi
   await requirePermission("finance.view", companyId)
 
   const sql = getSql()
+  // Colunas explicitas (sem select *): menos bytes por linha nas 1.6k+ linhas do financeiro.
   const [revenues, expenses, categories, costCenters, bankAccounts, suppliers] = await Promise.all([
     sql<RevenueRow[]>`
-      select *
+      select id, company_id, amount, category, subcategory, received_from, received_from_name,
+        description, cost_center, bank_account, payment_method, due_date, payment_date,
+        received, notes, receipt_file_id, created_at
       from public.revenues
       where company_id = ${companyId}
         and deleted_at is null
@@ -1313,7 +1332,9 @@ export async function getFinanceData(companyIdInput?: string | null): Promise<Fi
       limit 300
     `,
     sql<ExpenseRow[]>`
-      select *
+      select id, company_id, amount, category, subcategory, paid_to, paid_to_name,
+        description, cost_center, bank_account, payment_method, due_date, payment_date,
+        paid, notes, receipt_file_id, created_at
       from public.expenses
       where company_id = ${companyId}
         and deleted_at is null
@@ -1329,7 +1350,8 @@ export async function getFinanceData(companyIdInput?: string | null): Promise<Fi
       limit 300
     `,
     sql<CostCenterRow[]>`
-      select *
+      select id, company_id, title, description, responsible, is_active,
+        created_by, updated_by, created_at, updated_at, deleted_at
       from public.cost_centers
       where company_id = ${companyId}
         and deleted_at is null
@@ -1337,7 +1359,9 @@ export async function getFinanceData(companyIdInput?: string | null): Promise<Fi
       limit 200
     `,
     sql<BankAccountRow[]>`
-      select *
+      select id, company_id, description, bank, account_type, initial_balance,
+        agency, account, digit, is_active,
+        created_by, updated_by, created_at, updated_at, deleted_at
       from public.bank_accounts
       where company_id = ${companyId}
         and deleted_at is null

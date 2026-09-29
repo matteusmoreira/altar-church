@@ -61,7 +61,13 @@ import type {
 import { KidsSessionsTab } from "./kids-sessions-tab"
 import { KidsCommunicationTab } from "./kids-communication-tab"
 import { KidsReportsTab } from "./kids-reports-tab"
-import { KidsLabelBuilder } from "./kids-label-builder"
+import dynamic from "next/dynamic"
+
+// fabric (editor de etiquetas) so carrega ao abrir a aba de configuracoes (auditoria 29/09/2026).
+const KidsLabelBuilder = dynamic(
+  () => import("./kids-label-builder").then((mod) => mod.KidsLabelBuilder),
+  { loading: () => <p className="text-sm text-muted-foreground">Carregando editor de etiquetas…</p> },
+)
 
 const CONSENT_LABELS: Record<KidConsentType, string> = {
   data_processing: "Tratamento de dados",
