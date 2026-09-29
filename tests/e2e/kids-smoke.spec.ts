@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs"
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
-import { expectNoDevError, loginAs } from "./helpers/auth"
+import { expectNoDevError, gotoAuthenticated } from "./helpers/auth"
 import { readE2EAccounts } from "./helpers/accounts"
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 function loadLocalEnv() {
   if (process.env.POSTGRES_URL || !existsSync(".env.local")) return
@@ -51,7 +52,7 @@ test.afterAll(async () => {
 })
 
 test("admin abre hub e recepção Kids sem erro ou overflow", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
 
   await page.goto("/kids", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)

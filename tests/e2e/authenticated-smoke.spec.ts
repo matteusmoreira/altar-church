@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
-import { loginAs, expectNoDevError, resetSession } from "./helpers/auth"
+import { gotoAuthenticated, expectNoDevError, resetSession } from "./helpers/auth"
 import { e2eRunPrefix, readE2EAccounts, type E2ERole } from "./helpers/accounts"
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 const e2e = readE2EAccounts()
 const runPrefix = e2eRunPrefix("authenticated")
@@ -9,7 +10,7 @@ const roles: E2ERole[] = ["superadmin", "admin", "member"]
 
 for (const role of roles) {
   test(`${role} faz login no Chrome e abre dashboard`, async ({ page }) => {
-    await loginAs(page, e2e.accounts[role])
+    await gotoAuthenticated(page, e2e.accounts[role], role === "member" ? "/membro" : "/dashboard")
     await expectNoDevError(page)
     await expect(page.getByRole("heading", { name: role === "member" ? /Olá|Portal do Membro/i : /Dashboard|Visao geral|Visão geral/i })).toBeVisible()
   })
@@ -17,21 +18,21 @@ for (const role of roles) {
 
 test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
   test.setTimeout(90_000)
-  await loginAs(page, e2e.accounts.superadmin)
+  await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
   await page.goto("/admin", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page).toHaveURL(/\/admin/)
   await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
 
   await resetSession(page)
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/admin", { waitUntil: "domcontentloaded" })
   await expect(page).toHaveURL(/\/dashboard/)
 })
 
 test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao", async ({ page }) => {
   test.setTimeout(180_000)
-  await loginAs(page, e2e.accounts.superadmin)
+  await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
 
   const modules = [
     { path: "/informacoes", heading: /Informa/i },
@@ -52,7 +53,7 @@ test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao
 })
 
 test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Pessoas" })).toBeVisible()
@@ -65,7 +66,7 @@ test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
 })
 
 test("admin logado revisa duplicidades em Pessoas", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/pessoas")
   await expectNoDevError(page)
   await page.getByRole("tab", { name: "Duplicidades" }).click()
@@ -84,7 +85,7 @@ test("admin logado cria edita e exclui congregacao real", async ({ page }) => {
   const name = `Congregacao E2E ${stamp}`
   const updatedResponsible = `Responsavel E2E ${stamp}`
 
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/congregacoes")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Congregações" })).toBeVisible()
@@ -114,7 +115,7 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
   const website = `https://igreja-e2e-${stamp}.test`
   const instagram = `https://instagram.com/e2e_${stamp}`
 
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/informacoes")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Informações da Igreja" })).toBeVisible()
@@ -145,7 +146,7 @@ test("admin logado salva informacoes reais da igreja", async ({ page }) => {
 })
 
 test("admin logado abre Conteúdo real e modal de publicação", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/conteudo")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Conteúdo" })).toBeVisible()
@@ -176,7 +177,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   const description = `Grupo E2E criado pelo fluxo autenticado ${stamp}`
   const updatedDescription = `Grupo E2E atualizado pelo fluxo autenticado ${stamp}`
 
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/celulas")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Células" })).toBeVisible()
@@ -241,7 +242,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
 
 test("admin logado faz smoke dos modulos P4", async ({ page }) => {
   test.setTimeout(150_000)
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
 
   const modules = [
     { path: "/eventos", heading: /Eventos/i },
@@ -267,7 +268,7 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
 })
 
 test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   const hrefs = await page.locator('a[href^="/pessoas/"]').evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""))
@@ -282,7 +283,7 @@ test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ pag
 })
 
 test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   for (const exportPath of ["/api/reports/export", "/api/finance/export", "/api/donations/export"]) {
     const response = await page.request.get(exportPath)
     expect(response.ok()).toBeTruthy()

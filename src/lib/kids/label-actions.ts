@@ -81,7 +81,7 @@ async function ensureDefaultTemplate(companyId: string, userId: string, congrega
       insert into public.kid_label_template_revisions (company_id, template_id, version, status, width_mm, height_mm, dpi, design, created_by, published_by, published_at)
       values (${companyId}, ${templateId}, 1, 'published', 62, 40, 203, ${tx.json(JSON.parse(JSON.stringify(design)))}, ${userId}, ${userId}, now()) returning id
     `
-    await tx`update public.kid_label_templates set draft_revision_id = ${revision[0].id}, published_revision_id = ${revision[0].id} where id = ${templateId}`
+    await tx`update public.kid_label_templates set draft_revision_id = ${revision[0].id}, published_revision_id = ${revision[0].id} where id = ${templateId} and company_id = ${companyId}`
     return templateId
   })
 }
@@ -151,7 +151,7 @@ export async function saveKidLabelDraft(input: unknown): Promise<LabelResult> {
         values (${companyId}, ${parsed.templateId}, ${(versions[0]?.version ?? 0) + 1}, 'draft', ${parsed.widthMm}, ${parsed.heightMm}, ${parsed.dpi},
           ${tx.json(JSON.parse(JSON.stringify(storedDesign)))}, ${labelContainsSensitiveFields(storedDesign)}, ${user.id}) returning *
       `
-      await tx`update public.kid_label_templates set name = ${parsed.name}, draft_revision_id = ${rows[0].id}, updated_by = ${user.id} where id = ${parsed.templateId}`
+      await tx`update public.kid_label_templates set name = ${parsed.name}, draft_revision_id = ${rows[0].id}, updated_by = ${user.id} where id = ${parsed.templateId} and company_id = ${companyId}`
       return rows[0]
     })
     await writeAuditLog({ action: "kids.label.draft_saved", entityTable: "kid_label_templates", entityId: parsed.templateId, companyId, metadata: { revisionId: revision.id } })
@@ -182,8 +182,8 @@ export async function publishKidLabelRevision(input: unknown): Promise<LabelResu
     await sql.begin(async (tx) => {
       await tx`update public.kid_label_templates set is_active = false where company_id = ${companyId} and congregation_id is not distinct from ${row.congregation_id} and kind = ${row.kind} and id <> ${parsed.templateId} and deleted_at is null`
       await tx`update public.kid_label_template_revisions set status = 'superseded' where template_id = ${parsed.templateId} and status = 'published' and id <> ${parsed.revisionId}`
-      await tx`update public.kid_label_template_revisions set status = 'published', published_by = ${user.id}, published_at = now() where id = ${parsed.revisionId}`
-      await tx`update public.kid_label_templates set is_active = true, published_revision_id = ${parsed.revisionId}, draft_revision_id = ${parsed.revisionId}, updated_by = ${user.id} where id = ${parsed.templateId}`
+      await tx`update public.kid_label_template_revisions set status = 'published', published_by = ${user.id}, published_at = now() where id = ${parsed.revisionId} and company_id = ${companyId}`
+      await tx`update public.kid_label_templates set is_active = true, published_revision_id = ${parsed.revisionId}, draft_revision_id = ${parsed.revisionId}, updated_by = ${user.id} where id = ${parsed.templateId} and company_id = ${companyId}`
     })
     await writeAuditLog({ action: row.contains_sensitive_fields ? "kids.label.sensitive_published" : "kids.label.published", entityTable: "kid_label_templates", entityId: parsed.templateId, companyId, metadata: { revisionId: parsed.revisionId } })
     revalidatePath("/kids"); revalidatePath("/kids/recepcao")
@@ -219,7 +219,7 @@ export async function duplicateKidLabelTemplate(input: unknown): Promise<LabelRe
     const created = await sql.begin(async (tx) => {
       const templates = await tx<{ id: string }[]>`insert into public.kid_label_templates (company_id, congregation_id, kind, name, is_active, created_by, updated_by) values (${companyId}, ${source[0].congregation_id}, ${source[0].kind}, ${`${source[0].name} — cópia`}, false, ${user.id}, ${user.id}) returning id`
       const revision = await tx<{ id: string }[]>`insert into public.kid_label_template_revisions (company_id, template_id, version, status, schema_version, width_mm, height_mm, dpi, design, contains_sensitive_fields, created_by) values (${companyId}, ${templates[0].id}, 1, 'draft', ${source[0].schema_version}, ${source[0].width_mm}, ${source[0].height_mm}, ${source[0].dpi}, ${tx.json(JSON.parse(JSON.stringify(parseJsonbObject(source[0].design))))}, ${source[0].contains_sensitive_fields}, ${user.id}) returning id`
-      await tx`update public.kid_label_templates set draft_revision_id = ${revision[0].id} where id = ${templates[0].id}`
+      await tx`update public.kid_label_templates set draft_revision_id = ${revision[0].id} where id = ${templates[0].id} and company_id = ${companyId}`
       return templates[0].id
     })
     await writeAuditLog({ action: "kids.label.duplicated", entityTable: "kid_label_templates", entityId: created, companyId, metadata: { sourceTemplateId: templateId } })

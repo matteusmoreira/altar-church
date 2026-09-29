@@ -1,6 +1,11 @@
+import { consumeGlobalRateLimit } from "@/lib/security/public-rate-limit"
+
 export async function GET(_request: Request, { params }: { params: Promise<{ cep: string }> }) {
   const digits = (await params).cep.replace(/\D/g, "")
   if (!/^\d{8}$/.test(digits)) return Response.json({ error: "CEP inválido" }, { status: 400 })
+
+  const allowed = await consumeGlobalRateLimit("cep", 60)
+  if (!allowed) return Response.json({ error: "Muitas consultas. Aguarde uma hora e tente novamente." }, { status: 429 })
 
   try {
     const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`, {

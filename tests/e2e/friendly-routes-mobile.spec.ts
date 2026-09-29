@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
-import { expectNoDevError, loginAs } from "./helpers/auth"
+import { expectNoDevError, gotoAuthenticated } from "./helpers/auth"
 import { readE2EAccounts } from "./helpers/accounts"
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 const e2e = readE2EAccounts()
 
@@ -51,7 +52,7 @@ const legacyRoutes = [
 ]
 
 test("rota antiga redireciona para slug amigavel e preserva caminho aninhado", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
 
   await page.goto("/church-info?origem=e2e", { waitUntil: "domcontentloaded" })
   await expect(page).toHaveURL(/\/informacoes\?origem=e2e$/)
@@ -67,7 +68,7 @@ test("rota antiga redireciona para slug amigavel e preserva caminho aninhado", a
 })
 
 test("menus e atalhos publicam somente slugs amigaveis", async ({ page }, testInfo) => {
-  await loginAs(page, e2e.accounts.superadmin)
+  await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page.locator('a[href="/pessoas"]:visible').first()).toBeVisible()
@@ -86,7 +87,7 @@ test("menus e atalhos publicam somente slugs amigaveis", async ({ page }, testIn
 })
 
 test("select compartilhado abre alinhado, legivel e dentro da viewport", async ({ page }, testInfo) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/celulas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
 
@@ -114,7 +115,7 @@ test("select compartilhado abre alinhado, legivel e dentro da viewport", async (
 test("dashboard inteiro nao cria overflow horizontal no Chrome mobile", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chrome-mobile", "auditoria exclusiva do viewport mobile")
   test.setTimeout(240_000)
-  await loginAs(page, e2e.accounts.superadmin)
+  await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
 
   for (const route of friendlyRoutes) {
     await page.goto(route, { waitUntil: "domcontentloaded" })

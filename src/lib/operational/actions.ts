@@ -503,9 +503,9 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           programmingId = createdProgramming[0]?.id ?? null
           if (!programmingId) throw new Error("Nova série não foi criada")
           await tx`update public.events set programming_id = ${programmingId}, recurring = true, updated_by = ${user.id}, updated_at = now() where id = ${savedId} and company_id = ${companyId}`
-          await tx`delete from public.events where programming_id = ${oldProgrammingId} and starts_at >= ${startsAt} and id <> ${savedId} and volunteer_schedule_published_at is null and deleted_at is null`
+          await tx`delete from public.events where programming_id = ${oldProgrammingId} and company_id = ${companyId} and starts_at >= ${startsAt} and id <> ${savedId} and volunteer_schedule_published_at is null and deleted_at is null`
         } else if (programmingId) {
-          await tx`delete from public.events where programming_id = ${programmingId} and id <> ${savedId} and starts_at >= ${startsAt} and volunteer_schedule_published_at is null and deleted_at is null`
+          await tx`delete from public.events where programming_id = ${programmingId} and company_id = ${companyId} and id <> ${savedId} and starts_at >= ${startsAt} and volunteer_schedule_published_at is null and deleted_at is null`
           await tx`
             update public.programmings set title = ${title}, description = ${text(formData, "description")}, starts_at = ${startsAt}, duration_minutes = ${durationMinutes}, kind = ${programmingKind}, location = ${text(formData, "location")}, timezone = 'America/Sao_Paulo', recurrence_frequency = ${recurrenceFrequency}, recurrence_weekdays = ${recurrenceWeekdays}::smallint[], recurrence_until = ${recurrenceUntil}::date, recurrence_needs_review = false, is_recurring = true, recurrence_rule = ${recurrenceFrequency}, is_active = true, volunteer_template_id = ${volunteerTemplateId}, updated_by = ${user.id}, updated_at = now()
             where id = ${programmingId} and company_id = ${companyId} and deleted_at is null

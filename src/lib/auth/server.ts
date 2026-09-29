@@ -1,7 +1,7 @@
 import { cache } from "react"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
+import { AUTH_USER_EMAIL_CONFIRMED_HEADER, AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
 import { getSql } from "@/lib/db/client"
 import type { User, UserRole } from "@/lib/types"
 import { createClient } from "@/lib/supabase/server"
@@ -30,7 +30,7 @@ function toUser(profile: ProfileRow): User {
   }
 }
 
-async function getProfileForAuthUser(authUserId: string, email?: string | null) {
+async function getProfileForAuthUser(authUserId: string, email?: string | null, emailConfirmed = false) {
   const sql = getSql()
   const rows = await sql<ProfileRow[]>`
     select
@@ -58,7 +58,10 @@ async function getProfileForAuthUser(authUserId: string, email?: string | null) 
     where p.active = true
       and (
         p.auth_user_id = ${authUserId}
+        -- Auto-vinculo por e-mail SOMENTE com posse provada (e-mail confirmado no provedor).
+        -- Sem isso, qualquer conta criada com o e-mail de um membro assumiria o perfil dele.
         or (${email ?? ""} <> ''
+          and ${emailConfirmed} = true
           and lower(p.email) = lower(${email ?? ""})
           and p.auth_user_id is null
           and p.role in ('member', 'visitor', 'attendee'))
@@ -95,7 +98,11 @@ export const getCurrentUser = cache(async function getCurrentUser() {
   const proxiedAuthUserId = headerStore.get(AUTH_USER_ID_HEADER)
 
   if (proxiedAuthUserId) {
-    const profile = await getProfileForAuthUser(proxiedAuthUserId, headerStore.get(AUTH_USER_EMAIL_HEADER))
+    const profile = await getProfileForAuthUser(
+      proxiedAuthUserId,
+      headerStore.get(AUTH_USER_EMAIL_HEADER),
+      headerStore.get(AUTH_USER_EMAIL_CONFIRMED_HEADER) === "1",
+    )
     return profile ? toUser(profile) : null
   }
 
@@ -107,7 +114,7 @@ export const getCurrentUser = cache(async function getCurrentUser() {
 
   if (error || !authUser) return null
 
-  const profile = await getProfileForAuthUser(authUser.id, authUser.email)
+  const profile = await getProfileForAuthUser(authUser.id, authUser.email, Boolean(authUser.email_confirmed_at))
   if (!profile) return null
 
   return toUser(profile)

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
-import { loginAs } from "./helpers/auth"
+import { gotoAuthenticated } from "./helpers/auth"
 import { e2eRunPrefix, readE2EAccounts } from "./helpers/accounts"
 
 const e2e = readE2EAccounts()
@@ -17,8 +17,8 @@ test("chat avisa ADM e voluntário sem precisar abrir a conversa", async ({ brow
   let eventId = ""
   let scheduleId = ""
   let departmentId = ""
-  const adminContext = await browser.newContext()
-  const volunteerContext = await browser.newContext()
+  const adminContext = await browser.newContext({ storageState: "playwright/.auth/admin.json" })
+  const volunteerContext = await browser.newContext({ storageState: "playwright/.auth/volunteer.json" })
   try {
     const [admin] = await sql<{ id: string; company_id: string }[]>`
       select id, company_id from public.profiles where lower(email) = lower(${e2e.accounts.admin.email}) limit 1
@@ -80,7 +80,7 @@ test("chat avisa ADM e voluntário sem precisar abrir a conversa", async ({ brow
     `
 
     const adminPage = await adminContext.newPage()
-    await loginAs(adminPage, e2e.accounts.admin)
+    await gotoAuthenticated(adminPage, e2e.accounts.admin, "/voluntariado")
     await adminPage.goto("/voluntariado")
     const adminShift = adminPage.locator("div.rounded-lg.border.p-3").filter({ hasText: title }).first()
     await expect(adminShift).toBeVisible()
@@ -91,7 +91,7 @@ test("chat avisa ADM e voluntário sem precisar abrir a conversa", async ({ brow
     await adminShift.getByRole("button", { name: "Chat" }).click()
 
     const volunteerPage = await volunteerContext.newPage()
-    await loginAs(volunteerPage, volunteerAccount!)
+    await gotoAuthenticated(volunteerPage, volunteerAccount!, "/membro/voluntariado")
     await volunteerPage.goto("/membro/voluntariado")
     const volunteerCard = volunteerPage.locator('[data-slot="card"]').filter({ hasText: title }).first()
     await expect(volunteerCard.getByLabel("1 mensagens não lidas")).toBeVisible()

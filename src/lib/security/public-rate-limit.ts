@@ -34,11 +34,12 @@ export async function getPublicRequestAddress(): Promise<string | null> {
           )
   const normalized = normalizeAddress(address)
   if (normalized) return normalized
-  // Fallback quando não há header de proxy ou provedor não configurado, evitando bloquear formulários legítimos
-  if (!provider || process.env.PUBLIC_RATE_LIMIT_FAIL_OPEN === "1") {
-    return "unknown"
+  // Sem endereco identificavel nao ha como limitar: falha fechado em producao.
+  // Fora de producao, "unknown" agrupa tudo num unico balde (ainda limitado).
+  if (!isProduction() || !provider) {
+    return provider ? null : "unknown"
   }
-  return process.env.NODE_ENV === "production" ? null : "unknown"
+  return null
 }
 
 export function hashPublicRateLimitKey(scope: string, resourceId: string, address: string) {
@@ -47,8 +48,13 @@ export function hashPublicRateLimitKey(scope: string, resourceId: string, addres
     .digest("hex")
 }
 
+function isProduction() {
+  return process.env.NODE_ENV === "production"
+}
+
 export async function consumePublicRateLimit(input: PublicRateLimitInput) {
-  if (process.env.PUBLIC_RATE_LIMIT_DISABLED === "1") {
+  // Fail-closed em producao: DISABLED e FAIL_OPEN sao saidas de emergencia local/dev.
+  if (process.env.PUBLIC_RATE_LIMIT_DISABLED === "1" && !isProduction()) {
     return true
   }
   const limit = Math.max(1, Math.floor(input.limit))
@@ -72,7 +78,38 @@ export async function consumePublicRateLimit(input: PublicRateLimitInput) {
     return Number(rows[0]?.submission_count ?? 1) <= limit
   } catch (error) {
     console.error("[public-rate-limit] erro ao registrar rate limit", error)
-    return true // fail-open para não travar formulários legítimos em caso de indisponibilidade momentânea
+    // Fail-closed em producao; fail-open fora dela para nao travar dev/E2E local.
+    return !isProduction() || process.env.PUBLIC_RATE_LIMIT_FAIL_OPEN === "1"
+  }
+}
+
+/**
+ * Rate limit global para rotas utilitarias sem tenant (/api/geocode, /api/cep).
+ * Usa public.global_rate_limits; mesmo fail-closed de producao do consumePublicRateLimit.
+ */
+export async function consumeGlobalRateLimit(scope: string, limit: number) {
+  if (process.env.PUBLIC_RATE_LIMIT_DISABLED === "1" && !isProduction()) {
+    return true
+  }
+  const safeLimit = Math.max(1, Math.floor(limit))
+  const address = await getPublicRequestAddress()
+  if (!address) return false
+  const ipHash = hashPublicRateLimitKey(scope, "global", address)
+  try {
+    const rows = await getSql()<
+      { submission_count: number }[]
+    >`
+      insert into public.global_rate_limits (ip_hash, scope, window_start, submission_count)
+      values (${ipHash}, ${scope}, date_trunc('hour', now()), 1)
+      on conflict (ip_hash, scope, window_start)
+      do update set submission_count = public.global_rate_limits.submission_count + 1,
+                    updated_at = now()
+      returning submission_count
+    `
+    return Number(rows[0]?.submission_count ?? 1) <= safeLimit
+  } catch (error) {
+    console.error("[global-rate-limit] erro ao registrar rate limit", error)
+    return !isProduction() || process.env.PUBLIC_RATE_LIMIT_FAIL_OPEN === "1"
   }
 }
 

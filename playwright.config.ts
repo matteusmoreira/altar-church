@@ -31,17 +31,25 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: "chrome-desktop",
+      dependencies: ["setup"],
       use: {
         ...devices["Desktop Chrome"],
         channel: "chrome",
+        storageState: "playwright/.auth/admin.json",
       },
     },
     {
       name: "chrome-mobile",
+      dependencies: ["setup"],
       use: {
         ...devices["Pixel 5"],
         channel: "chrome",
+        storageState: "playwright/.auth/admin.json",
       },
     },
   ],

@@ -1,6 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
-import { AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
+import { AUTH_USER_EMAIL_CONFIRMED_HEADER, AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
 import { protectedDashboardPrefixes } from "@/lib/navigation/routes"
 import { getSupabasePublishableKey, getSupabaseUrl } from "./env"
 
@@ -42,20 +42,28 @@ export async function updateSession(request: NextRequest) {
   })
 
   const { data: claimsData } = await supabase.auth.getClaims()
-  const claims = claimsData?.claims
+  const claims = claimsData?.claims as Record<string, unknown> | null | undefined
   const user = typeof claims?.sub === "string"
-    ? { id: claims.sub, email: typeof claims.email === "string" ? claims.email : null }
+    ? {
+        id: claims.sub,
+        email: typeof claims.email === "string" ? claims.email : null,
+        emailConfirmed: claims.email_confirmed_at != null || claims.email_verified === true,
+      }
     : null
 
   const pathname = request.nextUrl.pathname
   const requestHeaders = new Headers(request.headers)
   requestHeaders.delete(AUTH_USER_ID_HEADER)
   requestHeaders.delete(AUTH_USER_EMAIL_HEADER)
+  requestHeaders.delete(AUTH_USER_EMAIL_CONFIRMED_HEADER)
 
   if (user) {
     requestHeaders.set(AUTH_USER_ID_HEADER, user.id)
     if (user.email) {
       requestHeaders.set(AUTH_USER_EMAIL_HEADER, user.email)
+    }
+    if (user.emailConfirmed) {
+      requestHeaders.set(AUTH_USER_EMAIL_CONFIRMED_HEADER, "1")
     }
   }
 

@@ -26,6 +26,10 @@ export function getSql() {
       idle_timeout: integerEnv("POSTGRES_IDLE_TIMEOUT_SECONDS", 30, 10, 1_800),
       connect_timeout: 10,
       prepare: false,
+      // Uma query lenta nao pode travar metade do pool de 2 (achado Fase 2 da auditoria).
+      connection: {
+        statement_timeout: integerEnv("POSTGRES_STATEMENT_TIMEOUT_MS", 15_000, 1_000, 300_000),
+      },
     })
   }
 

@@ -178,10 +178,10 @@ export async function cancelGuestEventRegistration(tokenInput: string) {
         const guestGoingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.event_guest_registrations where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'going'`
         if (Number(goingRows[0]?.count ?? 0) + Number(guestGoingRows[0]?.count ?? 0) < capacity) {
           const promotedMember = await tx<{ id: string }[]>`select id from public.member_event_rsvps where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'waitlisted' order by created_at, id limit 1 for update skip locked`
-          if (promotedMember[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promotedMember[0].id}`
+          if (promotedMember[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promotedMember[0].id} and company_id = ${rows[0].company_id}`
           else {
             const promotedGuest = await tx<{ id: string }[]>`select id from public.event_guest_registrations where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'waitlisted' order by created_at, id limit 1 for update skip locked`
-            if (promotedGuest[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${promotedGuest[0].id}`
+            if (promotedGuest[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${promotedGuest[0].id} and company_id = ${rows[0].company_id}`
           }
         }
       }
@@ -360,9 +360,9 @@ export async function checkInEventAttendee(tokenInput: string) {
           returning id
         `
         attendanceId = saved[0]?.id
-        await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${row.guest_registration_id}`
+        await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${row.guest_registration_id} and company_id = ${row.company_id}`
       }
-      await tx`update public.event_attendee_tokens set last_used_at = now() where token = ${row.token}`
+      await tx`update public.event_attendee_tokens set last_used_at = now() where token = ${row.token} and company_id = ${row.company_id}`
       return { id: attendanceId, name: personName, eventTitle: row.event_title, companyId: row.company_id }
     })
     await publicAudit(resultRow.companyId, "event.checkin.qr", resultRow.id ?? token, { eventTitle: resultRow.eventTitle })
@@ -439,7 +439,7 @@ export async function checkInEventSession(input: { sessionToken: string; fullNam
         do update set status = 'present', person_name = excluded.person_name, occurred_on = current_date, occurred_time = localtime, registered_by_name = 'QR do evento', checkin_source = 'qr', event_checkin_session_token = excluded.event_checkin_session_token, checkin_at = now(), updated_at = now()
         returning id
       `
-      await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${guest.id}`
+      await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${guest.id} and company_id = ${session.company_id}`
       return { companyId: session.company_id, eventId: session.event_id, eventTitle: session.event_title, name: guest.full_name, id: saved[0]?.id }
     })
     await publicAudit(resultRow.companyId, "event.checkin.event_qr", resultRow.id ?? parsed.sessionToken, { eventId: resultRow.eventId, name: resultRow.name })
@@ -770,9 +770,9 @@ export async function scheduleEventCommunication(input: {
         `
         deliveryCount = memberDeliveries.length + guestDeliveries.length
       }
-      await tx`update public.notifications set snapshot_count = ${deliveryCount}, snapshot_at = now() where id = ${notificationId}`
+      await tx`update public.notifications set snapshot_count = ${deliveryCount}, snapshot_at = now() where id = ${notificationId} and company_id = ${companyId}`
       if (deliveryCount === 0) {
-        await tx`delete from public.notifications where id = ${notificationId}`
+        await tx`delete from public.notifications where id = ${notificationId} and company_id = ${companyId}`
       }
       return { notificationId, deliveryCount }
     })

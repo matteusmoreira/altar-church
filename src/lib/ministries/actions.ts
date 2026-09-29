@@ -993,7 +993,7 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       const campaign = campaigns[0]
       if (!campaign) throw new Error("Campanha não foi criada")
       const snapshot = await createNotificationCampaignDeliveries(tx, { notificationId: campaign.id, companyId: access.companyId, channel: parsed.method, audience, audienceRefId, personIds, nextAttemptAt: scheduledAt })
-      await tx`update public.notifications set audience_person_ids = ${tx.json(snapshot.personIds)}, snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now() where id = ${campaign.id}`
+      await tx`update public.notifications set audience_person_ids = ${tx.json(snapshot.personIds)}, snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now() where id = ${campaign.id} and company_id = ${access.companyId}`
       return campaign.id
     })
     await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })

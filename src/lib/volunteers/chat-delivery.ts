@@ -3,6 +3,7 @@ import { getSql } from "@/lib/db/client"
 
 interface ChatDelivery {
   id: string
+  company_id: string
   target_profile_id: string
   subject: string
   content: string
@@ -37,7 +38,7 @@ export async function processVolunteerChatPushOutbox(limit = 25, messageId?: str
     update public.volunteer_delivery_outbox delivery
     set status = 'processing', attempts = delivery.attempts + 1, locked_at = now(), updated_at = now()
     from candidates where delivery.id = candidates.id
-    returning delivery.id, delivery.target_profile_id, delivery.subject, delivery.content, delivery.payload, delivery.attempts
+    returning delivery.id, delivery.company_id, delivery.target_profile_id, delivery.subject, delivery.content, delivery.payload, delivery.attempts
   `
   let sent = 0
   let failed = 0
@@ -45,7 +46,7 @@ export async function processVolunteerChatPushOutbox(limit = 25, messageId?: str
     try {
       const subscriptions = await sql<{ id: string; endpoint: string; p256dh: string; auth_key: string }[]>`
         select id, endpoint, p256dh, auth_key from public.volunteer_push_subscriptions
-        where profile_id = ${delivery.target_profile_id} and is_active
+        where profile_id = ${delivery.target_profile_id} and company_id = ${delivery.company_id} and is_active
       `
       if (subscriptions.length === 0) throw new Error("Sem dispositivo push ativo")
       let delivered = 0
@@ -64,21 +65,21 @@ export async function processVolunteerChatPushOutbox(limit = 25, messageId?: str
         } catch (error) {
           const statusCode = (error as { statusCode?: number }).statusCode
           if (statusCode === 404 || statusCode === 410) {
-            await sql`update public.volunteer_push_subscriptions set is_active = false, updated_at = now() where id = ${subscription.id}`
+            await sql`update public.volunteer_push_subscriptions set is_active = false, updated_at = now() where id = ${subscription.id} and company_id = ${delivery.company_id}`
           }
         }
       }
       if (delivered === 0) throw new Error("Push não entregue")
       await sql`
         update public.volunteer_delivery_outbox set status = 'sent', provider_id = ${`web-push:${delivered}`},
-          sent_at = now(), locked_at = null, last_error = null, updated_at = now() where id = ${delivery.id}
+          sent_at = now(), locked_at = null, last_error = null, updated_at = now() where id = ${delivery.id} and company_id = ${delivery.company_id}
       `
       sent += 1
     } catch (error) {
       await sql`
         update public.volunteer_delivery_outbox set status = 'failed', locked_at = null,
           next_attempt_at = ${retryAt(delivery.attempts)}, last_error = ${error instanceof Error ? error.message.slice(0, 500) : "Falha de entrega"},
-          updated_at = now() where id = ${delivery.id}
+          updated_at = now() where id = ${delivery.id} and company_id = ${delivery.company_id}
       `
       failed += 1
     }

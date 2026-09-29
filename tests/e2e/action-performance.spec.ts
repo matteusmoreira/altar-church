@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
-import { loginAs } from "./helpers/auth"
+import { gotoAuthenticated } from "./helpers/auth"
 import { e2eRunPrefix, readE2EAccounts } from "./helpers/accounts"
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 const e2e = readE2EAccounts()
 const samples = 5
@@ -13,7 +14,7 @@ function p95(values: number[]) {
 
 test("mutacoes comuns ficam abaixo da meta em producao", async ({ page }, testInfo) => {
   test.setTimeout(120_000)
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
 
   const departmentsResponse = await page.request.get("/api/v1/volunteers/departments")
   expect(departmentsResponse.ok()).toBeTruthy()

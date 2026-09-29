@@ -72,3 +72,52 @@ test("fluxos corrigidos mantêm invariantes de tenant e rate limit público", ()
   assert.match(publicRateLimit, /PUBLIC_RATE_LIMIT_DISABLED/)
 })
 
+test("auto-vínculo de perfil exige e-mail confirmado (regressão auditoria 29/09/2026)", () => {
+  const authServer = readFileSync("src/lib/auth/server.ts", "utf8")
+  // O OR por e-mail precisa condicionar a e-mail confirmado; sem isso, criar conta
+  // com o e-mail de um membro assumiria o perfil dele sem prova de posse.
+  assert.match(authServer, /emailConfirmed/)
+  assert.match(authServer, /email_confirmed_at/)
+  assert.match(authServer, /AUTH_USER_EMAIL_CONFIRMED_HEADER/)
+})
+
+test("rate limit público falha fechado em produção (regressão auditoria 29/09/2026)", () => {
+  const publicRateLimit = readFileSync("src/lib/security/public-rate-limit.ts", "utf8")
+  assert.match(publicRateLimit, /consumeGlobalRateLimit/)
+  assert.match(publicRateLimit, /global_rate_limits/)
+  // DISABLED so vale fora de producao; em producao o erro bloqueia (fail-closed).
+  assert.match(publicRateLimit, /PUBLIC_RATE_LIMIT_DISABLED === "1" && !isProduction\(\)/)
+  assert.match(publicRateLimit, /!isProduction\(\) \|\| process\.env\.PUBLIC_RATE_LIMIT_FAIL_OPEN/)
+  const cep = readFileSync("src/app/api/cep/[cep]/route.ts", "utf8")
+  const geocode = readFileSync("src/app/api/geocode/route.ts", "utf8")
+  const acquisition = readFileSync("src/app/api/public/acquisition/route.ts", "utf8")
+  assert.match(cep, /consumeGlobalRateLimit/)
+  assert.match(geocode, /consumeGlobalRateLimit/)
+  assert.match(acquisition, /consumePublicRateLimit/)
+  assert.match(acquisition, /status: 429/)
+})
+
+test("writes finais repetem o filtro company_id (regressão auditoria 29/09/2026)", () => {
+  // sem RLS no caminho do app, o filtro só no SELECT prévio não impede escrita cross-tenant.
+  const files = [
+    "src/lib/cells/actions.ts",
+    "src/lib/events/actions.ts",
+    "src/lib/member/portal-actions.ts",
+    "src/lib/ministries/actions.ts",
+    "src/lib/volunteers/chat-delivery.ts",
+    "src/lib/kids/label-actions.ts",
+    "src/lib/kids/portal-actions.ts",
+    "src/lib/operational/actions.ts",
+  ]
+  for (const file of files) {
+    const source = readFileSync(file, "utf8")
+    for (const line of source.split("\n")) {
+      if (!/^\s*(await (sql|tx)`|await sql\.begin)/.test(line) && !line.includes("update public.") && !line.includes("delete from public.")) continue
+      if (!line.includes("update public.") && !line.includes("delete from public.")) continue
+      if (/where id = /.test(line)) {
+        assert.match(line, /company_id/, `${file}: escrita por id sem company_id → ${line.trim().slice(0, 120)}`)
+      }
+    }
+  }
+})
+

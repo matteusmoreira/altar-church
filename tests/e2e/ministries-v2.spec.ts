@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
-import { expectNoDevError, loginAs } from "./helpers/auth"
+import { expectNoDevError, gotoAuthenticated } from "./helpers/auth"
 import { readE2EAccounts } from "./helpers/accounts"
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 const e2e = readE2EAccounts()
 
 test("admin abre workspace de ministério e vê operação principal", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/ministerios", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   const workspaceLink = page.getByRole("link", { name: "Abrir gestão" }).first()
@@ -25,7 +26,7 @@ test("admin abre workspace de ministério e vê operação principal", async ({ 
 })
 
 test("workspace de ministério permanece utilizável em viewport mobile", async ({ page }) => {
-  await loginAs(page, e2e.accounts.admin)
+  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/ministerios", { waitUntil: "domcontentloaded" })
   const workspaceLink = page.getByRole("link", { name: "Abrir gestão" }).first()
   if (await workspaceLink.count() === 0) test.skip()

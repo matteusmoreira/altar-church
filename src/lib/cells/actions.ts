@@ -226,13 +226,13 @@ export async function openCellCheckin(meetingIdInput: string): Promise<CellActio
     if (meeting.report_status === "cancelled") throw new Error("Encontro cancelado")
     if (new Date(meeting.expires_at).getTime() <= Date.now()) throw new Error("Janela deste encontro já terminou")
 
-    await sql`update public.cell_checkin_sessions set closed_at = now() where meeting_id = ${meetingId} and closed_at is null`
+    await sql`update public.cell_checkin_sessions set closed_at = now() where meeting_id = ${meetingId} and company_id = ${context.companyId} and closed_at is null`
     const rows = await sql<{ id: string; token: string }[]>`
       insert into public.cell_checkin_sessions (company_id, group_id, meeting_id, expires_at, created_by)
       values (${context.companyId}, ${meeting.group_id}, ${meetingId}, ${meeting.expires_at}, ${context.user.id})
       returning id, token
     `
-    await sql`update public.group_meetings set checkin_opened_at = now(), checkin_closed_at = null, updated_by = ${context.user.id} where id = ${meetingId}`
+    await sql`update public.group_meetings set checkin_opened_at = now(), checkin_closed_at = null, updated_by = ${context.user.id} where id = ${meetingId} and company_id = ${context.companyId}`
     if (!rows[0]) throw new Error("QR não foi gerado")
     await audit("cell.checkin.open", "cell_checkin_sessions", rows[0].id, context.companyId, { meetingId })
     refresh()
@@ -251,7 +251,7 @@ export async function closeCellCheckin(meetingIdInput: string): Promise<CellActi
     if (!meetings[0]) throw new Error("Encontro não encontrado")
     await requireManagedCell(context, meetings[0].group_id)
     await sql.begin(async (tx) => {
-      await tx`update public.cell_checkin_sessions set closed_at = coalesce(closed_at, now()) where meeting_id = ${meetingId}`
+      await tx`update public.cell_checkin_sessions set closed_at = coalesce(closed_at, now()) where meeting_id = ${meetingId} and company_id = ${context.companyId}`
       await tx`
         update public.group_meetings meeting set
           checkin_closed_at = now(),
@@ -259,7 +259,7 @@ export async function closeCellCheckin(meetingIdInput: string): Promise<CellActi
           present_count = (select count(*)::integer from public.attendance_records attendance where attendance.event_ref_id = meeting.id and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null),
           visitor_count = (select count(*)::integer from public.attendance_records attendance join public.people person on person.id = attendance.person_id where attendance.event_ref_id = meeting.id and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null and person.status = 'visitor'),
           updated_by = ${context.user.id}, updated_at = now()
-        where meeting.id = ${meetingId}
+        where meeting.id = ${meetingId} and meeting.company_id = ${context.companyId}
       `
     })
     await audit("cell.checkin.close", "group_meetings", meetingId, context.companyId)
@@ -411,7 +411,7 @@ export async function deleteCellPhoto(photoIdInput: string): Promise<CellActionR
     `
     if (!rows[0]) throw new Error("Foto não encontrada")
     await requireManagedCell(context, rows[0].group_id)
-    await sql`update public.app_files set is_active = false, deleted_at = now(), updated_at = now() where id = ${photoId}`
+    await sql`update public.app_files set is_active = false, deleted_at = now(), updated_at = now() where id = ${photoId} and company_id = ${context.companyId}`
     const storage = createSupabaseAdminClient()
     if (storage) await storage.storage.from("church-assets").remove([rows[0].storage_path])
     await audit("cell.photo.delete", "app_files", photoId, context.companyId)
@@ -450,7 +450,7 @@ export async function updateCellPrayerStatus(idInput: string, statusInput: strin
     const prayers = await sql<{ group_id: string }[]>`select group_id from public.cell_prayer_requests where id = ${id} and company_id = ${context.companyId} and deleted_at is null`
     if (!prayers[0]) throw new Error("Pedido não encontrado")
     await requireManagedCell(context, prayers[0].group_id)
-    await sql`update public.cell_prayer_requests set status = ${status}, updated_at = now() where id = ${id}`
+    await sql`update public.cell_prayer_requests set status = ${status}, updated_at = now() where id = ${id} and company_id = ${context.companyId}`
     await audit("cell.prayer.status", "cell_prayer_requests", id, context.companyId, { status })
     refresh()
     return { ok: true, id }

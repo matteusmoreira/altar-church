@@ -43,10 +43,7 @@ jobs:
         run: npm run lint
 
       - name: Node tests
-        run: node --test tests/*.test.mjs
-
-      - name: Security hardening tests
-        run: npm run test:security
+        run: npm test
 
       - name: Build
         run: npm run build
@@ -91,3 +88,13 @@ jobs:
 
       - name: E2E Chrome
         run: npm run test:e2e
+
+      - name: Upload E2E artifacts (screenshots, traces, vídeos)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

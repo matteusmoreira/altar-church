@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { consumeGlobalRateLimit } from "@/lib/security/public-rate-limit"
 
 interface GeocodeResult {
   latitude: number
@@ -8,6 +9,10 @@ interface GeocodeResult {
 }
 
 export async function GET(request: Request) {
+  const allowed = await consumeGlobalRateLimit("geocode", 60)
+  if (!allowed) {
+    return NextResponse.json({ error: "Muitas consultas. Aguarde uma hora e tente novamente." }, { status: 429 })
+  }
   const { searchParams } = new URL(request.url)
   const q = searchParams.get("q")?.trim()
   const street = searchParams.get("street")?.trim()

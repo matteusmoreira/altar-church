@@ -465,9 +465,34 @@ async function tenantUsage(sql: Queryable, companyId: string | null) {
   }))
 }
 
-function backupCheck(): HealthCheck {
-  const lastRun = env("BACKUP_LAST_RUN_AT")
+async function backupCheck(): Promise<HealthCheck> {
   const provider = env("BACKUP_PROVIDER") || "provedor não informado"
+  // Fonte auditavel: ultimo heartbeat gravado em public.backup_runs (migration 20260929120000).
+  // BACKUP_LAST_RUN_AT segue como override manual para ambientes sem acesso ao banco no check.
+  try {
+    const sql = getSql()
+    const rows = await sql<{ created_at: string; provider: string; status: string }[]>`
+      select created_at, provider, status
+      from public.backup_runs
+      order by created_at desc
+      limit 1
+    `
+    const last = rows[0]
+    if (last) {
+      const maxAgeHours = Number(env("BACKUP_MAX_AGE_HOURS") || 36)
+      const ageHours = (Date.now() - Date.parse(last.created_at)) / 3_600_000
+      const ok = last.status === "ok" && ageHours <= maxAgeHours
+      return {
+        key: "backup",
+        label: "Backup",
+        status: ok ? "healthy" : "degraded",
+        detail: `${last.provider}; última execução ${last.created_at}${last.status === "ok" ? "" : ` (status=${last.status})`}`,
+      }
+    }
+  } catch {
+    // Sem acesso ao banco neste contexto: cai para o override por env abaixo.
+  }
+  const lastRun = env("BACKUP_LAST_RUN_AT")
   if (!lastRun) {
     return { key: "backup", label: "Backup", status: "unknown", detail: "Última execução não informada" }
   }
@@ -495,7 +520,7 @@ export async function getOperationalHealthData(companyId: string | null = null):
     cronSummaries(sql),
     tenantUsage(sql, companyId),
   ])
-  const backup = backupCheck()
+  const backup = await backupCheck()
   const checks = [...infrastructure, ...providers, backup]
   const migrationCheck: HealthCheck = {
     key: "migrations",

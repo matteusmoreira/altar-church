@@ -28,3 +28,18 @@ export async function expectNoDevError(page: Page) {
   await expect(page.getByText("Build Error", { exact: false })).toHaveCount(0)
   await expect(page.getByText("Unhandled Runtime Error", { exact: false })).toHaveCount(0)
 }
+
+/**
+ * Vai direto ao destino assumindo storageState do setup (tests/e2e/auth.setup.ts).
+ * Cai para loginAs quando a sessao expirou (ex. roda local sem setup previo).
+ */
+export async function gotoAuthenticated(page: Page, account: E2EAccount, path: string) {
+  await page.goto(path, { waitUntil: "domcontentloaded" })
+  const url = page.url()
+  if (url.includes("/login")) {
+    await loginAs(page, account)
+    if (!page.url().includes(path)) {
+      await page.goto(path, { waitUntil: "domcontentloaded" })
+    }
+  }
+}

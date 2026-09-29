@@ -98,14 +98,14 @@ export async function cancelMemberEventRsvp(formData: FormData) {
             where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
             order by created_at, id limit 1 for update skip locked
           `
-          if (promoted[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promoted[0].id}`
+          if (promoted[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promoted[0].id} and company_id = ${companyId}`
           else {
             const guestPromoted = await tx<{ id: string }[]>`
               select id from public.event_guest_registrations
               where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
               order by created_at, id limit 1 for update skip locked
             `
-            if (guestPromoted[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${guestPromoted[0].id}`
+            if (guestPromoted[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${guestPromoted[0].id} and company_id = ${companyId}`
           }
         }
       }

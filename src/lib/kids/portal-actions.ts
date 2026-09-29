@@ -925,7 +925,7 @@ export async function registerVisitorKid(input: z.input<typeof visitorSchema>): 
         `
         if (current[0]?.version === KIDS_CONSENT_VERSION) continue
         if (current[0]) {
-          await tx`update public.kid_consents set status = 'revoked', revoked_at = now() where id = ${current[0].id}`
+          await tx`update public.kid_consents set status = 'revoked', revoked_at = now() where id = ${current[0].id} and company_id = ${company.id}`
         }
         await tx`
           insert into public.kid_consents (company_id, kid_id, consent_type, version, status, source)
