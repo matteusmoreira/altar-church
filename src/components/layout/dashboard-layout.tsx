@@ -393,7 +393,7 @@ export function DashboardLayout({
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [enabledModuleIds] = useState<string[] | null>(initialEnabledModuleIds)
+  const enabledModuleIds = initialEnabledModuleIds
   const pathname = usePathname()
   const { user, hasRole, isLoading } = useAuth()
   const isSuperAdmin = hasRole(["superadmin"])

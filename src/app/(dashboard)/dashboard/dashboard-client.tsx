@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   Bar,
   BarChart,
@@ -10,6 +12,7 @@ import {
   YAxis,
 } from "recharts"
 import {
+  Baby,
   BarChart3,
   Bell,
   BookOpen,
@@ -24,6 +27,7 @@ import {
   Users,
   UsersRound,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MetricCard, MetricGrid, PageHeader, ShortcutCard } from "@/components/shared"
 import type { GroupDashboardData } from "@/lib/groups/types"
@@ -66,6 +70,7 @@ const shortcuts: ShortcutItem[] = [
   { href: "/ministerios", icon: Church, title: "Ministérios", description: "Gerencie ministérios persistidos" },
   { href: "/eventos", icon: CalendarDays, title: "Eventos", description: "Agenda e inscrições persistidas" },
   { href: "/financeiro", icon: DollarSign, title: "Financeiro", description: "Receitas, despesas e comprovantes" },
+  { href: "/kids", icon: Baby, title: "Kids", description: "Check-in infantil, salas e segurança" },
   { href: "/doacao", icon: HandHeart, title: "Doações", description: "Doações manuais e recorrências" },
   { href: "/comunicacao", icon: Bell, title: "Comunicação", description: "Notificações e avisos persistidos" },
   { href: "/intercessao", icon: Heart, title: "Intercessão", description: "Pedidos de oração persistidos" },
@@ -79,6 +84,17 @@ export function DashboardClient({
   data: DashboardClientData
   churchSlug?: string | null
 }) {
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const access = searchParams?.get("access")
+    if (access === "module-inactive") {
+      toast.error("Este módulo está desativado para a sua igreja. Contate o administrador do sistema.")
+    } else if (access === "denied") {
+      toast.error("Você não tem permissão para acessar esta área.")
+    }
+  }, [searchParams])
+
   const activeRate = data.people.total > 0 ? Math.round((data.people.active / data.people.total) * 100) : 0
 
   const allShortcuts = [

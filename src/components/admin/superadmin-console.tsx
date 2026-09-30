@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Activity,
@@ -28,7 +28,9 @@ import {
   saveProfile,
   setModuleActive,
   setProfilePassword,
+  toggleCompanyModule,
 } from "@/lib/admin/actions"
+import { cn } from "@/lib/utils"
 import type {
   AdminCompany,
   AdminCellOption,
@@ -311,14 +313,30 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
     password: "",
   })
 
-  const activeCompanies = data.companies.filter((company) => company.active).length
-  const totalMembers = data.companies.reduce((sum, company) => sum + company.memberCount, 0)
-  const monthlyRevenue = data.companies.reduce((sum, company) => {
+  const [companies, setCompanies] = useState<AdminCompany[]>(initialData.companies)
+  const [selectedCompanyIdForModules, setSelectedCompanyIdForModules] = useState<string>(
+    () => initialData.companies[0]?.id ?? ""
+  )
+
+  useEffect(() => {
+    setCompanies(initialData.companies)
+  }, [initialData.companies])
+
+  const modulesByGroup = useMemo(() => {
+    return data.modules.reduce<Record<string, AdminModule[]>>((acc, module) => {
+      acc[module.menuGroup] = [...(acc[module.menuGroup] ?? []), module]
+      return acc
+    }, {})
+  }, [data.modules])
+
+  const activeCompanies = companies.filter((company) => company.active).length
+  const totalMembers = companies.reduce((sum, company) => sum + company.memberCount, 0)
+  const monthlyRevenue = companies.reduce((sum, company) => {
     const plan = data.plans.find((item) => item.id === company.planId)
     return sum + (company.active ? plan?.price ?? 0 : 0)
   }, 0)
 
-  const filteredCompanies = data.companies.filter((company) => {
+  const filteredCompanies = companies.filter((company) => {
     const term = search.toLowerCase()
     return company.name.toLowerCase().includes(term) || company.city.toLowerCase().includes(term)
   })
@@ -505,7 +523,35 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
         toast.error(result.error)
         return
       }
-      toast.success(active ? "Módulo ativado" : "Módulo inativado")
+      toast.success(active ? "Módulo ativado no sistema" : "Módulo inativado no sistema")
+      refresh()
+    })
+  }
+
+  const handleToggleCompanyModule = (companyId: string, module: AdminModule, enabled: boolean) => {
+    setCompanies((prev) =>
+      prev.map((c) => {
+        if (c.id !== companyId) return c
+        const nextModules = enabled
+          ? [...c.moduleIds.filter((id) => id !== module.id), module.id]
+          : c.moduleIds.filter((id) => id !== module.id)
+        return { ...c, moduleIds: nextModules }
+      })
+    )
+
+    startTransition(async () => {
+      const result = await toggleCompanyModule(companyId, module.id, enabled)
+      if (!result.ok) {
+        toast.error(result.error ?? "Erro ao alterar módulo da empresa")
+        refresh()
+        return
+      }
+      const targetCompany = companies.find((c) => c.id === companyId)
+      toast.success(
+        enabled
+          ? `Módulo "${module.label}" ativado para ${targetCompany?.name ?? "a empresa"}!`
+          : `Módulo "${module.label}" desativado para ${targetCompany?.name ?? "a empresa"}.`
+      )
       refresh()
     })
   }
@@ -626,7 +672,20 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                       <TableCell>
                         <Badge variant="outline">{company.planCode ? planLabels[company.planCode] ?? company.planName : "Sem plano"}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{company.moduleIds.length} ativos</TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCompanyIdForModules(company.id)
+                            setActiveTab("modules")
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                          title="Clique para gerenciar módulos desta empresa"
+                        >
+                          <Layers3 className="h-3.5 w-3.5" />
+                          {company.moduleIds.length} ativos
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={company.active ? "default" : "secondary"}>{statusLabels[company.status]}</Badge>
                       </TableCell>
@@ -636,6 +695,15 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                             <MoreVertical className="h-4 w-4" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedCompanyIdForModules(company.id)
+                                setActiveTab("modules")
+                              }}
+                            >
+                              <Layers3 className="mr-2 h-4 w-4" />
+                              Módulos
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openCompany(company)}>
                               <Edit className="mr-2 h-4 w-4" />
                               Editar
@@ -666,12 +734,34 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
                         <Badge variant="outline">
                           {company.planCode ? planLabels[company.planCode] ?? company.planName : "Sem plano"}
                         </Badge>
-                        <span className="text-muted-foreground">{company.moduleIds.length} módulos</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCompanyIdForModules(company.id)
+                            setActiveTab("modules")
+                          }}
+                          className="text-xs font-medium text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          <Layers3 className="h-3 w-3" />
+                          {company.moduleIds.length} módulos
+                        </button>
                       </div>
                       <p className="mt-3 text-sm text-muted-foreground">
                         {company.city || "Cidade não informada"}{company.state ? `, ${company.state}` : ""}
                       </p>
                       <div className="mt-4 flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-primary"
+                          title="Gerenciar módulos da empresa"
+                          onClick={() => {
+                            setSelectedCompanyIdForModules(company.id)
+                            setActiveTab("modules")
+                          }}
+                        >
+                          <Layers3 className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar empresa" onClick={() => openCompany(company)}>
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -872,10 +962,161 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
         </TabsContent>
 
         <TabsContent value="modules" className="mt-0 space-y-6">
+          {/* Card 1: Gestão de Módulos por Empresa */}
           <Card className="glass">
             <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-base">Módulos do sistema</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    Módulos por Igreja / Empresa
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ative ou desative módulos individualmente para a igreja selecionada com efeito imediato no painel.
+                  </p>
+                </div>
+                <div className="w-full sm:w-72">
+                  <Select
+                    value={selectedCompanyIdForModules}
+                    onValueChange={(value) => {
+                      if (value) setSelectedCompanyIdForModules(value)
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Selecione uma empresa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companies.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} ({c.moduleIds.length} ativos)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const targetCompany = companies.find((c) => c.id === selectedCompanyIdForModules) ?? companies[0]
+                if (!targetCompany) {
+                  return (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      Nenhuma empresa cadastrada.
+                    </p>
+                  )
+                }
+
+                return (
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-lg bg-muted/40 border border-border/50">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
+                          {targetCompany.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm">{targetCompany.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Plano: <span className="font-medium text-foreground">{targetCompany.planName ?? "Sem plano"}</span>
+                            {targetCompany.city ? ` · ${targetCompany.city}, ${targetCompany.state}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {targetCompany.moduleIds.length} de {data.modules.length} módulos ativos
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openCompany(targetCompany)}
+                          className="h-8 text-xs"
+                        >
+                          <Edit className="mr-1.5 h-3.5 w-3.5" />
+                          Editar Dados
+                        </Button>
+                      </div>
+                    </div>
+
+                    {Object.entries(modulesByGroup).map(([group, groupModules]) => (
+                      <div key={group} className="space-y-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80 px-1">
+                          {group}
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {groupModules.map((module) => {
+                            const isEnabled = targetCompany.moduleIds.includes(module.id)
+                            const isGlobalActive = module.active
+
+                            return (
+                              <div
+                                key={module.id}
+                                className={cn(
+                                  "surface flex items-center justify-between gap-3 p-3.5 rounded-lg border transition-all",
+                                  isEnabled
+                                    ? "border-primary/40 bg-primary/5"
+                                    : "border-border/60 opacity-80 hover:opacity-100",
+                                  !isGlobalActive && "opacity-40 bg-muted/30"
+                                )}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium text-sm truncate">{module.label}</p>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                      {module.route}
+                                    </Badge>
+                                  </div>
+                                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                    {module.description}
+                                  </p>
+                                  {!isGlobalActive && (
+                                    <p className="mt-1 text-[11px] text-amber-500 font-medium">
+                                      ⚠️ Inativo globalmente no sistema
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="shrink-0 flex flex-col items-end gap-1">
+                                  <Switch
+                                    checked={isEnabled}
+                                    disabled={isPending || !isGlobalActive}
+                                    onCheckedChange={(checked) =>
+                                      handleToggleCompanyModule(targetCompany.id, module, checked)
+                                    }
+                                  />
+                                  <span
+                                    className={cn(
+                                      "text-[10px] font-medium",
+                                      isEnabled ? "text-primary" : "text-muted-foreground"
+                                    )}
+                                  >
+                                    {isEnabled ? "Ativo" : "Inativo"}
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Card 2: Disponibilidade Global do Sistema */}
+          <Card className="glass">
+            <CardHeader>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-warning" />
+                    Disponibilidade Global do Sistema (Plataforma)
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Interruptores mestres: desative aqui apenas se quiser bloquear o módulo para toda a plataforma SaaS (ex: manutenção ou descontinuação).
+                  </p>
+                </div>
                 <ViewModeToggle value={moduleView} onChange={setModuleView} />
               </div>
             </CardHeader>

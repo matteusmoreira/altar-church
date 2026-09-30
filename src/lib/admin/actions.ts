@@ -127,6 +127,9 @@ async function refreshAdminPaths() {
   revalidatePath("/admin")
   revalidatePath("/admin/churches")
   revalidatePath("/admin/users")
+  revalidatePath("/dashboard")
+  revalidatePath("/kids")
+  revalidatePath("/", "layout")
 }
 
 async function findAuthUserIdByEmail(email: string) {
@@ -989,3 +992,75 @@ export async function setModuleActive(moduleId: string, active: boolean): Promis
     return toErrorResult(error)
   }
 }
+
+export async function toggleCompanyModule(
+  companyId: string,
+  moduleId: string,
+  enabled: boolean
+): Promise<ActionResult> {
+  try {
+    await assertSuperadmin()
+    const parsedCompanyId = companyIdSchema.parse(companyId)
+    const parsedModuleId = z.string().regex(/^[a-z0-9_-]+$/).parse(moduleId)
+    const sql = getSql()
+
+    await sql`
+      insert into public.company_modules (company_id, module_id, enabled)
+      values (${parsedCompanyId}, ${parsedModuleId}, ${enabled})
+      on conflict (company_id, module_id)
+      do update set enabled = ${enabled}, updated_at = now()
+    `
+
+    await writeAuditLog({
+      action: "company.module_toggle",
+      entityTable: "company_modules",
+      entityId: `${parsedCompanyId}:${parsedModuleId}`,
+      companyId: parsedCompanyId,
+      metadata: { moduleId: parsedModuleId, enabled },
+    })
+
+    await refreshAdminPaths()
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
+export async function setCompanyModules(
+  companyId: string,
+  moduleIds: string[]
+): Promise<ActionResult> {
+  try {
+    await assertSuperadmin()
+    const parsedCompanyId = companyIdSchema.parse(companyId)
+    const parsedModuleIds = moduleIdsSchema.parse(moduleIds)
+    const sql = getSql()
+
+    await sql.begin(async (tx) => {
+      await tx`delete from public.company_modules where company_id = ${parsedCompanyId}`
+      const modules = await tx<{ id: string }[]>`select id from public.system_modules`
+      const enabledSet = new Set(parsedModuleIds)
+
+      for (const systemModule of modules) {
+        await tx`
+          insert into public.company_modules (company_id, module_id, enabled)
+          values (${parsedCompanyId}, ${systemModule.id}, ${enabledSet.has(systemModule.id)})
+        `
+      }
+    })
+
+    await writeAuditLog({
+      action: "company.modules_update",
+      entityTable: "company_modules",
+      entityId: parsedCompanyId,
+      companyId: parsedCompanyId,
+      metadata: { moduleCount: parsedModuleIds.length, moduleIds: parsedModuleIds },
+    })
+
+    await refreshAdminPaths()
+    return { ok: true }
+  } catch (error) {
+    return toErrorResult(error)
+  }
+}
+
