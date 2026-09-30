@@ -6,7 +6,7 @@ import { Canvas, type FabricObject } from "fabric"
 import { toast } from "sonner"
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowUp, Circle, Copy, Eye, EyeOff, Grid3X3,
-  Image as ImageIcon, Layers3, Lock, LockOpen, Minus, QrCode, Redo2, RotateCcw, Save, Shapes,
+  Image as ImageIcon, Layers3, Lock, LockOpen, Minus, QrCode, Redo2, Save, Shapes,
   Square, Tag, TextCursorInput, Trash2, Undo2, Upload, ZoomIn, ZoomOut,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
-  archiveKidLabelTemplate, duplicateKidLabelTemplate, loadKidLabelRealPreview, loadKidLabelTemplates, publishKidLabelRevision, restoreKidLabelRevision, saveKidLabelDraft, uploadKidLabelAsset,
+  archiveKidLabelTemplate, duplicateKidLabelTemplate, loadKidLabelRealPreview, loadKidLabelTemplates, publishKidLabelRevision, saveKidLabelDraft, uploadKidLabelAsset,
 } from "@/lib/kids/label-actions"
 import { createDefaultLabelDesign, KID_LABEL_FIELDS, KID_LABEL_FONTS, labelContainsSensitiveFields, SAMPLE_LABEL_CONTEXT } from "@/lib/kids/label-design"
 import { EDITOR_PX_PER_MM, populateLabelCanvas, renderLabelToPng } from "@/lib/kids/label-renderer"
@@ -68,7 +68,6 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
   const [previewKidId, setPreviewKidId] = useState("")
   const [previewLabel, setPreviewLabel] = useState("Dados fictícios")
   const confirmSensitive = useConfirmAction()
-  const confirmRestore = useConfirmAction()
   const confirmArchive = useConfirmAction()
   const selected = design.elements.find((item) => item.id === selectedIds[0]) ?? null
   useEffect(() => { designRef.current = design }, [design])
@@ -243,11 +242,6 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
     setPending(true)
     try { const result = await publishKidLabelRevision({ templateId, revisionId, sensitiveConfirmed: true }); if (!result.ok) return toast.error(result.error ?? "Falha ao publicar"); toast.success("Modelo publicado"); await load(scope, kind) } finally { setPending(false) }
   }
-  async function restore(revisionId: string) {
-    if (!template) return
-    const target = template
-    confirmRestore.confirm({ title: "Restaurar revisão", message: "Restaurar esta revisão como nova versão publicada?", confirmLabel: "Restaurar", action: () => void (async () => { const result = await restoreKidLabelRevision({ templateId: target.id, revisionId, sensitiveConfirmed: canViewHealth }); if (!result.ok) toast.error(result.error ?? "Falha ao restaurar"); else { toast.success("Revisão restaurada"); await load(scope, kind) } })() })
-  }
   async function duplicateTemplate() { if (!template) return; const result = await duplicateKidLabelTemplate(template.id); if (!result.ok || !result.id) return toast.error(result.error ?? "Falha ao duplicar"); toast.success("Modelo duplicado"); await load(scope, kind, result.id) }
   async function archiveTemplate() {
     if (!template) return
@@ -341,12 +335,10 @@ export function KidsLabelBuilder({ congregations, customFields, availableChildre
             </> : <p className="text-sm text-muted-foreground">Selecione elemento para editar.</p>}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2"><Button onClick={() => void saveDraft()} disabled={pending}><Save className="mr-1 h-4 w-4" />Salvar rascunho</Button><Button variant="secondary" onClick={() => void publish()} disabled={pending}>Publicar</Button><Button variant="outline" onClick={() => void preview()} disabled={pending}><Eye className="mr-1 h-4 w-4" />Preview fictício</Button><select className="h-9 min-w-56 rounded-md border bg-background px-2 text-sm" value={previewKidId} onChange={(event) => setPreviewKidId(event.target.value)}><option value="">Presença real…</option>{availableChildren.map((child) => <option key={child.id} value={child.id}>{child.fullName}</option>)}</select><Button variant="outline" onClick={() => void preview(true)} disabled={pending || !previewKidId}>Testar presença</Button>{template?.publishedRevisionId && <Badge>Publicado v{template.revisions.find((item) => item.id === template.publishedRevisionId)?.version}</Badge>}</div>
+        <div className="flex flex-wrap items-center gap-2"><Button onClick={() => void saveDraft()} disabled={pending}><Save className="mr-1 h-4 w-4" />Salvar rascunho</Button><Button variant="secondary" onClick={() => void publish()} disabled={pending}>Publicar</Button><Button variant="outline" onClick={() => void preview()} disabled={pending}><Eye className="mr-1 h-4 w-4" />Preview fictício</Button><select className="h-9 min-w-56 rounded-md border bg-background px-2 text-sm" value={previewKidId} onChange={(event) => setPreviewKidId(event.target.value)}><option value="">Presença real…</option>{availableChildren.map((child) => <option key={child.id} value={child.id}>{child.fullName}</option>)}</select><Button variant="outline" onClick={() => void preview(true)} disabled={pending || !previewKidId}>Testar presença</Button>{template?.publishedRevisionId ? <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 font-medium">Publicado</Badge> : <Badge variant="outline" className="text-amber-600 border-amber-300">Rascunho não publicado</Badge>}</div>
         {previewUrl && <div className="rounded-lg border bg-muted p-4"><p className="mb-2 text-center text-xs text-muted-foreground">{previewLabel}</p><img src={previewUrl} alt="Preview da etiqueta" className="mx-auto max-h-96 max-w-full bg-white shadow" /></div>}
         {confirmSensitive.dialog()}
-        {confirmRestore.dialog()}
         {confirmArchive.dialog()}
-        {template && <div className="space-y-2"><Label>Histórico imutável</Label><div className="flex flex-wrap gap-2">{template.revisions.map((revision) => <Button key={revision.id} size="sm" variant={revision.id === template.publishedRevisionId ? "secondary" : "outline"} onClick={() => revision.id !== template.publishedRevisionId && void restore(revision.id)}><RotateCcw className="mr-1 h-3.5 w-3.5" />v{revision.version} · {revision.status}</Button>)}</div></div>}
       </CardContent>
     </Card>
   )

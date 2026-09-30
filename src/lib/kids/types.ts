@@ -435,7 +435,7 @@ export interface KidsSessionsData {
   classrooms: KidClassroomItem[]
   congregations: { id: string; name: string }[]
   staffOptions: { id: string; name: string; role: string }[]
-  eventOptions: { id: string; title: string; startsAt: string }[]
+  eventOptions: { id: string; title: string; startsAt: string; endsAt: string | null }[]
 }
 
 export interface KidCheckinCandidate {
@@ -589,7 +589,7 @@ export interface KidMessageItem {
 
 export interface KidsCommunicationData {
   messages: KidMessageItem[]
-  classrooms: { id: string; name: string }[]
+  classrooms: { id: string; name: string; minAgeMonths?: number; maxAgeMonths?: number; congregationName?: string | null }[]
   congregations: { id: string; name: string }[]
   children: { id: string; fullName: string }[]
   guardians: { personId: string; fullName: string; children: string[]; portalActive: boolean }[]

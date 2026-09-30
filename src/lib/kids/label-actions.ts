@@ -142,9 +142,30 @@ export async function saveKidLabelDraft(input: unknown): Promise<LabelResult> {
     const storedDesign = { ...parsed.design, backgroundAssetUrl: undefined, elements: parsed.design.elements.map((item) => ({ ...item, assetUrl: undefined })) }
     const { user, companyId } = await context()
     const sql = getSql()
-    const template = await sql<{ id: string }[]>`select id from public.kid_label_templates where id = ${parsed.templateId} and company_id = ${companyId} and deleted_at is null`
+    const template = await sql<{ id: string; draft_revision_id: string | null; published_revision_id: string | null }[]>`
+      select id, draft_revision_id, published_revision_id from public.kid_label_templates where id = ${parsed.templateId} and company_id = ${companyId} and deleted_at is null
+    `
     if (!template[0]) throw new Error("Modelo não encontrado")
+    const { draft_revision_id: currentDraftId, published_revision_id: publishedId } = template[0]
     const revision = await sql.begin(async (tx) => {
+      if (currentDraftId && currentDraftId !== publishedId) {
+        const existingDraft = await tx<RevisionRow[]>`
+          select * from public.kid_label_template_revisions
+          where id = ${currentDraftId} and template_id = ${parsed.templateId} and company_id = ${companyId} and status = 'draft'
+        `
+        if (existingDraft[0]) {
+          const rows = await tx<RevisionRow[]>`
+            update public.kid_label_template_revisions
+            set width_mm = ${parsed.widthMm}, height_mm = ${parsed.heightMm}, dpi = ${parsed.dpi},
+                design = ${tx.json(JSON.parse(JSON.stringify(storedDesign)))}, contains_sensitive_fields = ${labelContainsSensitiveFields(storedDesign)},
+                created_by = ${user.id}
+            where id = ${currentDraftId} and company_id = ${companyId}
+            returning *
+          `
+          await tx`update public.kid_label_templates set name = ${parsed.name}, updated_by = ${user.id}, updated_at = now() where id = ${parsed.templateId} and company_id = ${companyId}`
+          return rows[0]
+        }
+      }
       const versions = await tx<{ version: number }[]>`select coalesce(max(version), 0)::int as version from public.kid_label_template_revisions where template_id = ${parsed.templateId}`
       const rows = await tx<RevisionRow[]>`
         insert into public.kid_label_template_revisions (company_id, template_id, version, status, width_mm, height_mm, dpi, design, contains_sensitive_fields, created_by)
@@ -184,6 +205,17 @@ export async function publishKidLabelRevision(input: unknown): Promise<LabelResu
       await tx`update public.kid_label_template_revisions set status = 'superseded' where template_id = ${parsed.templateId} and status = 'published' and id <> ${parsed.revisionId}`
       await tx`update public.kid_label_template_revisions set status = 'published', published_by = ${user.id}, published_at = now() where id = ${parsed.revisionId} and company_id = ${companyId}`
       await tx`update public.kid_label_templates set is_active = true, published_revision_id = ${parsed.revisionId}, draft_revision_id = ${parsed.revisionId}, updated_by = ${user.id} where id = ${parsed.templateId} and company_id = ${companyId}`
+      await tx`
+        delete from public.kid_label_template_revisions
+        where template_id = ${parsed.templateId}
+          and status = 'draft'
+          and id <> ${parsed.revisionId}
+          and id not in (
+            select child_label_revision_id from public.kid_attendances where child_label_revision_id is not null
+            union
+            select guardian_label_revision_id from public.kid_attendances where guardian_label_revision_id is not null
+          )
+      `
     })
     await writeAuditLog({ action: row.contains_sensitive_fields ? "kids.label.sensitive_published" : "kids.label.published", entityTable: "kid_label_templates", entityId: parsed.templateId, companyId, metadata: { revisionId: parsed.revisionId } })
     revalidatePath("/kids"); revalidatePath("/kids/recepcao")

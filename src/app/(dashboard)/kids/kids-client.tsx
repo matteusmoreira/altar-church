@@ -317,6 +317,7 @@ export function KidsClient({
   const [childSuggestions, setChildSuggestions] = useState<KidPersonSuggestion[]>([])
   const [guardianSuggestions, setGuardianSuggestions] = useState<KidPersonSuggestion[]>([])
   const [activeGuardianIndex, setActiveGuardianIndex] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState("visao-geral")
   const [sessionsData, setSessionsData] = useState<KidsSessionsData | null>(null)
   const [communicationData, setCommunicationData] = useState<KidsCommunicationData | null>(null)
   const [reportsData, setReportsData] = useState<KidsReportsData | null>(null)
@@ -324,6 +325,17 @@ export function KidsClient({
   const [familyPageData, setFamilyPageData] = useState<{ children: KidListItem[]; page: number } | null>(null)
   const children = familyPageData?.children ?? data.children
   const familyPage = familyPageData?.page ?? data.familyPage
+
+  async function refreshSessionsData() {
+    setLoadingTab("sessoes")
+    try {
+      const result = await loadKidsSessionsData()
+      if (result.ok && result.data) setSessionsData(result.data)
+      else toast.error(result.error ?? "Não foi possível carregar sessões")
+    } finally {
+      setLoadingTab(null)
+    }
+  }
 
   async function changeFamilyPage(nextPage: number) {
     setPending(true)
@@ -336,10 +348,14 @@ export function KidsClient({
     }
   }
 
-  async function loadTab(value: string) {
-    if ((value === "sessoes" && sessionsData) || (value === "comunicacao" && communicationData) || (value === "relatorios" && reportsData)) return
+  async function loadTab(value: string, force = false) {
+    if (!force) {
+      if ((value === "sessoes" && sessionsData) || (value === "relatorios" && reportsData)) return
+    }
     if (!(["sessoes", "comunicacao", "relatorios"] as string[]).includes(value)) return
-    setLoadingTab(value)
+    if (value !== "comunicacao" || !communicationData) {
+      setLoadingTab(value)
+    }
     try {
       if (value === "sessoes") {
         const result = await loadKidsSessionsData()
@@ -348,7 +364,7 @@ export function KidsClient({
       } else if (value === "comunicacao") {
         const result = await loadKidsCommunicationData()
         if (result.ok && result.data) setCommunicationData(result.data)
-        else toast.error(result.error ?? "Não foi possível carregar comunicação")
+        else if (!communicationData) toast.error(result.error ?? "Não foi possível carregar comunicação")
       } else {
         const result = await loadKidsReportsData()
         if (result.ok && result.data) setReportsData(result.data)
@@ -395,6 +411,9 @@ export function KidsClient({
         toast.success(success)
         after?.()
         setFamilyPageData(null)
+        setCommunicationData(null)
+        setSessionsData(null)
+        setReportsData(null)
         router.refresh()
       }
     } finally {
@@ -556,7 +575,10 @@ export function KidsClient({
           isActive: classroomForm.isActive,
         }),
       "Sala salva",
-      () => setClassroomForm(emptyClassroomForm),
+      () => {
+        setClassroomForm(emptyClassroomForm)
+        setSessionsData(null)
+      },
     )
   }
 
@@ -628,7 +650,7 @@ export function KidsClient({
     <div className="space-y-6">
       <PageHeader title="Kids" description="Cadastro infantil, famílias, salas e configurações do ministério." />
 
-      <Tabs defaultValue="visao-geral" onValueChange={(value) => void loadTab(value)} className="space-y-6">
+      <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); void loadTab(value); }} className="space-y-6">
         <TabsList>
           <TabsTrigger value="visao-geral">Visão geral</TabsTrigger>
           <TabsTrigger value="familias">Famílias</TabsTrigger>
@@ -730,8 +752,8 @@ export function KidsClient({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="kid-full-name">Nome completo *</Label>
-                    <Input id="kid-full-name" value={childForm.fullName} onChange={(event) => { setChildSuggestions([]); setChildForm({ ...childForm, fullName: event.target.value, personId: null, confirmNewPerson: false }) }} />
+                    <Label htmlFor="kid-full-name">Nome completo da criança *</Label>
+                    <Input id="kid-full-name" placeholder="Ex: Pedro Henrique da Silva" value={childForm.fullName} onChange={(event) => { setChildSuggestions([]); setChildForm({ ...childForm, fullName: event.target.value, personId: null, confirmNewPerson: false }) }} />
                     {childSuggestions.length > 0 && (
                       <div className="rounded-md border bg-popover p-1 shadow-md">
                         <p className="px-2 py-1 text-xs text-muted-foreground">Possíveis cadastros existentes</p>
@@ -752,7 +774,7 @@ export function KidsClient({
                     )}
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="kid-birth">Nascimento</Label>
+                    <Label htmlFor="kid-birth">Data de nascimento</Label>
                     <Input id="kid-birth" type="date" value={childForm.birthDate} onChange={(event) => setChildForm({ ...childForm, birthDate: event.target.value })} />
                   </div>
                   <div className="space-y-1">
@@ -782,11 +804,11 @@ export function KidsClient({
                 <CustomFieldInputs definitions={data.customFields} target="child" surface="internal" values={childForm.customValues} onChange={(customValues) => setChildForm({ ...childForm, customValues })} disabled={pending} />
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={childForm.isVisitor} onChange={(event) => setChildForm({ ...childForm, isVisitor: event.target.checked })} />
-                  Criança visitante
+                  Criança visitante (primeira vez no culto)
                 </label>
                 <div className="space-y-1">
                   <Label htmlFor="kid-notes">Observações gerais</Label>
-                  <Textarea id="kid-notes" rows={2} value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
+                  <Textarea id="kid-notes" rows={2} placeholder="Ex: Informações sobre adaptação, quem traz ou busca habitualmente..." value={childForm.notes} onChange={(event) => setChildForm({ ...childForm, notes: event.target.value })} />
                 </div>
 
                 <div className="space-y-2 rounded-lg border border-border/60 p-3">
@@ -810,20 +832,35 @@ export function KidsClient({
                     </label>
                   </div>
                   {(childForm.health.hasAllergy || childForm.health.hasDietaryRestriction || childForm.health.hasMedication || childForm.health.hasSpecialNeeds) && (
-                    <div className="grid gap-2">
+                    <div className="grid gap-3 pt-2">
                       {childForm.health.hasAllergy && (
-                        <Textarea placeholder="Quais alergias?" rows={1} value={childForm.health.allergies} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, allergies: event.target.value } })} />
+                        <div className="space-y-1">
+                          <Label htmlFor="child-health-allergies" className="text-xs">Alergias identificadas</Label>
+                          <Textarea id="child-health-allergies" placeholder="Ex: Amendoim, poeira, frutos do mar, picada de abelha..." rows={1} value={childForm.health.allergies} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, allergies: event.target.value } })} />
+                        </div>
                       )}
                       {childForm.health.hasDietaryRestriction && (
-                        <Textarea placeholder="Quais restrições alimentares?" rows={1} value={childForm.health.dietaryRestrictions} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, dietaryRestrictions: event.target.value } })} />
+                        <div className="space-y-1">
+                          <Label htmlFor="child-health-dietary" className="text-xs">Restrições alimentares</Label>
+                          <Textarea id="child-health-dietary" placeholder="Ex: Intolerância à lactose, glúten, corante artificial..." rows={1} value={childForm.health.dietaryRestrictions} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, dietaryRestrictions: event.target.value } })} />
+                        </div>
                       )}
                       {childForm.health.hasMedication && (
-                        <Textarea placeholder="Medicação e instruções de uso" rows={1} value={childForm.health.medication} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, medication: event.target.value } })} />
+                        <div className="space-y-1">
+                          <Label htmlFor="child-health-medication" className="text-xs">Medicação contínua ou de emergência</Label>
+                          <Textarea id="child-health-medication" placeholder="Ex: Bombinha de asma em caso de crise, horário do antialérgico..." rows={1} value={childForm.health.medication} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, medication: event.target.value } })} />
+                        </div>
                       )}
                       {childForm.health.hasSpecialNeeds && (
-                        <Textarea placeholder="Necessidades específicas" rows={1} value={childForm.health.specialNeeds} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, specialNeeds: event.target.value } })} />
+                        <div className="space-y-1">
+                          <Label htmlFor="child-health-special" className="text-xs">Necessidades específicas / PCD</Label>
+                          <Textarea id="child-health-special" placeholder="Ex: Sensibilidade a barulho/luz, necessidade de monitor de apoio..." rows={1} value={childForm.health.specialNeeds} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, specialNeeds: event.target.value } })} />
+                        </div>
                       )}
-                      <Textarea placeholder="Instruções gerais de cuidado" rows={1} value={childForm.health.instructions} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, instructions: event.target.value } })} />
+                      <div className="space-y-1">
+                        <Label htmlFor="child-health-instructions" className="text-xs">Instruções gerais de cuidado</Label>
+                        <Textarea id="child-health-instructions" placeholder="Orientações adicionais para os líderes e voluntários da sala..." rows={1} value={childForm.health.instructions} onChange={(event) => setChildForm({ ...childForm, health: { ...childForm.health, instructions: event.target.value } })} />
+                      </div>
                       <p className="text-xs text-muted-foreground">Detalhes são cifrados e visíveis apenas para perfis autorizados.</p>
                     </div>
                   )}
@@ -882,7 +919,8 @@ export function KidsClient({
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <div className="space-y-1 sm:col-span-2">
-                          <Input placeholder="Nome completo *" value={guardian.fullName} onFocus={() => setActiveGuardianIndex(index)} onChange={(event) => { setGuardianSuggestions([]); setActiveGuardianIndex(index); setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, fullName: event.target.value, personId: null, confirmNewPerson: false } : g)) }) }} />
+                          <Label htmlFor={`guardian-name-${index}`} className="text-xs">Nome completo do responsável *</Label>
+                          <Input id={`guardian-name-${index}`} placeholder="Ex: Maria de Souza" value={guardian.fullName} onFocus={() => setActiveGuardianIndex(index)} onChange={(event) => { setGuardianSuggestions([]); setActiveGuardianIndex(index); setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, fullName: event.target.value, personId: null, confirmNewPerson: false } : g)) }) }} />
                           {activeGuardianIndex === index && guardianSuggestions.length > 0 && (
                             <div className="rounded-md border bg-popover p-1 shadow-md">
                               {guardianSuggestions.map((person) => (
@@ -902,17 +940,27 @@ export function KidsClient({
                             </div>
                           )}
                         </div>
-                        <Input type="tel" inputMode="tel" maxLength={15} placeholder="Telefone *" value={guardian.phone} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, phone: formatPhoneMask(event.target.value) } : g)) })} />
-                        <Input placeholder="E-mail" value={guardian.email} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, email: event.target.value } : g)) })} />
-                        <select
-                          className="h-9 rounded-md border bg-background px-2 text-sm"
-                          value={guardian.relationship}
-                          onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, relationship: event.target.value as KidRelationship } : g)) })}
-                        >
-                          {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
-                            <option key={value} value={value}>{label}</option>
-                          ))}
-                        </select>
+                        <div className="space-y-1">
+                          <Label htmlFor={`guardian-phone-${index}`} className="text-xs">Telefone / WhatsApp *</Label>
+                          <Input id={`guardian-phone-${index}`} type="tel" inputMode="tel" maxLength={15} placeholder="(11) 99999-9999" value={guardian.phone} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, phone: formatPhoneMask(event.target.value) } : g)) })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`guardian-email-${index}`} className="text-xs">E-mail</Label>
+                          <Input id={`guardian-email-${index}`} type="email" placeholder="responsavel@email.com" value={guardian.email} onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, email: event.target.value } : g)) })} />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor={`guardian-rel-${index}`} className="text-xs">Grau de parentesco</Label>
+                          <select
+                            id={`guardian-rel-${index}`}
+                            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                            value={guardian.relationship}
+                            onChange={(event) => setChildForm({ ...childForm, guardians: childForm.guardians.map((g, i) => (i === index ? { ...g, relationship: event.target.value as KidRelationship } : g)) })}
+                          >
+                            {Object.entries(RELATIONSHIP_LABELS).map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       {canManageGuardians && (
                         <PhotoCapture
@@ -1059,8 +1107,8 @@ export function KidsClient({
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="classroom-name">Nome *</Label>
-                    <Input id="classroom-name" value={classroomForm.name} onChange={(event) => setClassroomForm({ ...classroomForm, name: event.target.value })} />
+                    <Label htmlFor="classroom-name">Nome da sala *</Label>
+                    <Input id="classroom-name" placeholder="Ex: Berçário, Maternal I, Juniores" value={classroomForm.name} onChange={(event) => setClassroomForm({ ...classroomForm, name: event.target.value })} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="classroom-congregation">Congregação</Label>
@@ -1077,8 +1125,8 @@ export function KidsClient({
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-location">Localização</Label>
-                    <Input id="classroom-location" value={classroomForm.location} onChange={(event) => setClassroomForm({ ...classroomForm, location: event.target.value })} />
+                    <Label htmlFor="classroom-location">Localização física</Label>
+                    <Input id="classroom-location" placeholder="Ex: Templo Anexo, 1º Andar - Sala 02" value={classroomForm.location} onChange={(event) => setClassroomForm({ ...classroomForm, location: event.target.value })} />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="classroom-min-age">Idade mínima (anos)</Label>
@@ -1087,6 +1135,7 @@ export function KidsClient({
                       type="number"
                       min={0}
                       max={18}
+                      placeholder="0"
                       value={classroomForm.minAgeYears}
                       onChange={(event) => setClassroomForm({ ...classroomForm, minAgeYears: Math.max(0, Number(event.target.value)) })}
                     />
@@ -1098,13 +1147,14 @@ export function KidsClient({
                       type="number"
                       min={0}
                       max={20}
+                      placeholder="18"
                       value={classroomForm.maxAgeYears}
                       onChange={(event) => setClassroomForm({ ...classroomForm, maxAgeYears: Math.max(0, Number(event.target.value)) })}
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="classroom-capacity">Capacidade</Label>
-                    <Input id="classroom-capacity" type="number" min={1} value={classroomForm.capacity} onChange={(event) => setClassroomForm({ ...classroomForm, capacity: Number(event.target.value) })} />
+                    <Label htmlFor="classroom-capacity">Capacidade máxima (crianças)</Label>
+                    <Input id="classroom-capacity" type="number" min={1} placeholder="Ex: 20" value={classroomForm.capacity} onChange={(event) => setClassroomForm({ ...classroomForm, capacity: Number(event.target.value) })} />
                   </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm">
@@ -1178,47 +1228,73 @@ export function KidsClient({
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">Regras de sugestão ({classroom.rules.length})</p>
-                    {canManageClasses && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setRuleForm({
-                            id: null,
-                            classroomId: classroom.id,
-                            congregationId: "",
-                            weekday: "",
-                            startTime: "",
-                            endTime: "",
-                            minAgeYears: Math.floor(classroom.minAgeMonths / 12),
-                            maxAgeYears: Math.floor(classroom.maxAgeMonths / 12),
-                            priority: 100,
-                            isActive: true,
-                          })
-                        }
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />Regra
-                      </Button>
-                    )}
+                  <div className="space-y-1 pt-1 border-t">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">Regras de sugestão automática ({classroom.rules.length})</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Critérios para o sistema indicar esta sala no check-in por congregação, dia, horário ou idade.
+                        </p>
+                      </div>
+                      {canManageClasses && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setRuleForm({
+                              id: null,
+                              classroomId: classroom.id,
+                              congregationId: classroom.congregationId ?? "",
+                              weekday: "",
+                              startTime: "",
+                              endTime: "",
+                              minAgeYears: Math.floor(classroom.minAgeMonths / 12),
+                              maxAgeYears: Math.floor(classroom.maxAgeMonths / 12),
+                              priority: 100,
+                              isActive: true,
+                            })
+                          }
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />Nova regra
+                        </Button>
+                      )}
+                    </div>
                   </div>
+                  {classroom.rules.length === 0 && !ruleForm && (
+                    <p className="text-xs text-muted-foreground italic py-1">
+                      Nenhuma regra específica cadastrada. O check-in usará a faixa etária geral da sala ({formatClassroomAge(classroom.minAgeMonths, classroom.maxAgeMonths)}).
+                    </p>
+                  )}
                   {classroom.rules.map((rule) => (
-                    <div key={rule.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/40 p-2 text-xs">
-                      <span>
-                        {rule.congregationName ?? "Todas"} · {rule.weekday == null ? "todos os dias" : WEEKDAY_LABELS[rule.weekday]}
-                        {rule.startTime ? ` · ${rule.startTime}` : ""}{rule.endTime ? `–${rule.endTime}` : ""}
-                        {` · ${formatClassroomAge(rule.minAgeMonths, rule.maxAgeMonths)} · prioridade ${rule.priority}`}
-                        {!rule.isActive ? " · inativa" : ""}
-                      </span>
+                    <div key={rule.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 p-2.5 text-xs">
+                      <div className="space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                          <span className="text-foreground">{rule.congregationName ? `Congregação: ${rule.congregationName}` : "Todas as congregações"}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-foreground">{rule.weekday == null ? "Todos os dias" : WEEKDAY_LABELS[rule.weekday]}</span>
+                          {(rule.startTime || rule.endTime) && (
+                            <span className="text-muted-foreground font-normal">
+                              ({rule.startTime ?? "00:00"} às {rule.endTime ?? "23:59"})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-[11px]">
+                          <span>Faixa etária: {formatClassroomAge(rule.minAgeMonths, rule.maxAgeMonths)}</span>
+                          <span>·</span>
+                          <span>Prioridade: {rule.priority}</span>
+                          {!rule.isActive && <Badge variant="secondary" className="text-[10px] py-0 px-1">Inativa</Badge>}
+                        </div>
+                      </div>
                       {canManageClasses && (
                         <div className="flex gap-1">
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6"
+                            className="h-7 w-7"
+                            title="Editar regra"
+                            aria-label="Editar regra"
                             onClick={() =>
                               setRuleForm({
                                 id: rule.id,
@@ -1234,50 +1310,157 @@ export function KidsClient({
                               })
                             }
                           >
-                            <Pencil className="h-3 w-3" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-6 w-6"
+                            className="h-7 w-7 text-destructive"
+                            title="Excluir regra"
+                            aria-label="Excluir regra"
                             onClick={() => void run(() => deleteKidClassroomRule(rule.id), "Regra removida")}
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       )}
                     </div>
                   ))}
                   {ruleForm && ruleForm.classroomId === classroom.id && (
-                    <div className="space-y-2 rounded-md border border-primary/30 p-3">
-                      <p className="text-xs font-medium">{ruleForm.id ? "Editar regra" : "Nova regra"}</p>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <select className="h-8 rounded-md border bg-background px-2 text-xs" value={ruleForm.congregationId} onChange={(event) => setRuleForm({ ...ruleForm, congregationId: event.target.value })}>
-                          <option value="">Todas as congregações</option>
-                          {data.congregations.map((congregation) => (
-                            <option key={congregation.id} value={congregation.id}>{congregation.name}</option>
-                          ))}
-                        </select>
-                        <select className="h-8 rounded-md border bg-background px-2 text-xs" value={ruleForm.weekday} onChange={(event) => setRuleForm({ ...ruleForm, weekday: event.target.value })}>
-                          <option value="">Todos os dias</option>
-                          {WEEKDAY_LABELS.map((label, index) => (
-                            <option key={label} value={index}>{label}</option>
-                          ))}
-                        </select>
-                        <Input type="time" className="h-8 text-xs" value={ruleForm.startTime} onChange={(event) => setRuleForm({ ...ruleForm, startTime: event.target.value })} />
-                        <Input type="time" className="h-8 text-xs" value={ruleForm.endTime} onChange={(event) => setRuleForm({ ...ruleForm, endTime: event.target.value })} />
-                        <Input type="number" min={0} max={18} className="h-8 text-xs" placeholder="Idade mín. (anos)" value={ruleForm.minAgeYears} onChange={(event) => setRuleForm({ ...ruleForm, minAgeYears: Number(event.target.value) })} />
-                        <Input type="number" min={0} max={20} className="h-8 text-xs" placeholder="Idade máx. (anos)" value={ruleForm.maxAgeYears} onChange={(event) => setRuleForm({ ...ruleForm, maxAgeYears: Number(event.target.value) })} />
-                        <Input type="number" className="h-8 text-xs" placeholder="Prioridade" value={ruleForm.priority} onChange={(event) => setRuleForm({ ...ruleForm, priority: Number(event.target.value) })} />
-                        <label className="flex items-center gap-2 text-xs">
-                          <input type="checkbox" checked={ruleForm.isActive} onChange={(event) => setRuleForm({ ...ruleForm, isActive: event.target.checked })} />
-                          Ativa
-                        </label>
+                    <div className="space-y-3 rounded-lg border-2 border-primary/40 bg-card p-3.5 shadow-sm">
+                      <div className="border-b pb-2">
+                        <p className="text-xs font-semibold text-foreground">
+                          {ruleForm.id ? "Editar regra de sugestão" : "Nova regra de sugestão automática"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Preencha os critérios abaixo. Crianças que atenderem a esses requisitos serão sugeridas para esta sala no check-in.
+                        </p>
                       </div>
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" onClick={submitRule} disabled={pending}>Salvar regra</Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => setRuleForm(null)}>Cancelar</Button>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-congregation" className="text-xs font-medium">Congregação</Label>
+                          <select
+                            id="rule-congregation"
+                            className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                            value={ruleForm.congregationId}
+                            onChange={(event) => setRuleForm({ ...ruleForm, congregationId: event.target.value })}
+                          >
+                            <option value="">Todas as congregações (sede e anexos)</option>
+                            {data.congregations.map((congregation) => (
+                              <option key={congregation.id} value={congregation.id}>{congregation.name}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-muted-foreground">Onde esta regra é válida.</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-weekday" className="text-xs font-medium">Dia do culto</Label>
+                          <select
+                            id="rule-weekday"
+                            className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                            value={ruleForm.weekday}
+                            onChange={(event) => setRuleForm({ ...ruleForm, weekday: event.target.value })}
+                          >
+                            <option value="">Todos os dias da semana</option>
+                            {WEEKDAY_LABELS.map((label, index) => (
+                              <option key={label} value={index}>{label}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-muted-foreground">Dia da semana em que este culto acontece.</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-start-time" className="text-xs font-medium">Horário de início do culto</Label>
+                          <Input
+                            id="rule-start-time"
+                            type="time"
+                            className="h-8 text-xs"
+                            value={ruleForm.startTime}
+                            onChange={(event) => setRuleForm({ ...ruleForm, startTime: event.target.value })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">Início da janela de check-in (ex: 18:00).</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-end-time" className="text-xs font-medium">Horário de término do culto</Label>
+                          <Input
+                            id="rule-end-time"
+                            type="time"
+                            className="h-8 text-xs"
+                            value={ruleForm.endTime}
+                            onChange={(event) => setRuleForm({ ...ruleForm, endTime: event.target.value })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">Término da janela do culto (ex: 19:30).</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-min-age" className="text-xs font-medium">Idade mínima (anos)</Label>
+                          <Input
+                            id="rule-min-age"
+                            type="number"
+                            min={0}
+                            max={18}
+                            className="h-8 text-xs"
+                            placeholder="0"
+                            value={ruleForm.minAgeYears}
+                            onChange={(event) => setRuleForm({ ...ruleForm, minAgeYears: Number(event.target.value) })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">Idade inicial aceita por esta regra.</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label htmlFor="rule-max-age" className="text-xs font-medium">Idade máxima (anos)</Label>
+                          <Input
+                            id="rule-max-age"
+                            type="number"
+                            min={0}
+                            max={20}
+                            className="h-8 text-xs"
+                            placeholder="18"
+                            value={ruleForm.maxAgeYears}
+                            onChange={(event) => setRuleForm({ ...ruleForm, maxAgeYears: Number(event.target.value) })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">Idade final aceita por esta regra.</p>
+                        </div>
+
+                        <div className="space-y-1 sm:col-span-2">
+                          <Label htmlFor="rule-priority" className="text-xs font-medium">Prioridade de desempate</Label>
+                          <Input
+                            id="rule-priority"
+                            type="number"
+                            className="h-8 text-xs max-w-xs"
+                            placeholder="100"
+                            value={ruleForm.priority}
+                            onChange={(event) => setRuleForm({ ...ruleForm, priority: Number(event.target.value) })}
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Padrão: 100. Se mais de uma sala for compatível, <strong>menor número tem maior preferência</strong> (ex: prioridade 1 ganha de prioridade 100).
+                          </p>
+                        </div>
+
+                        <div className="sm:col-span-2 pt-1">
+                          <label htmlFor="rule-is-active" className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                            <input
+                              id="rule-is-active"
+                              type="checkbox"
+                              className="rounded border-border text-primary focus:ring-primary"
+                              checked={ruleForm.isActive}
+                              onChange={(event) => setRuleForm({ ...ruleForm, isActive: event.target.checked })}
+                            />
+                            Regra ativa (aplicar sugestão no check-in)
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t">
+                        <Button type="button" size="sm" onClick={submitRule} disabled={pending}>
+                          {ruleForm.id ? "Atualizar regra" : "Salvar regra"}
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setRuleForm(null)}>
+                          Cancelar
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -1289,7 +1472,15 @@ export function KidsClient({
 
         <TabsContent value="sessoes" className="mt-0 space-y-6">
           {sessionsData ? (
-            <KidsSessionsTab data={sessionsData} />
+            <KidsSessionsTab
+              data={sessionsData}
+              allClassrooms={data.classrooms}
+              onReload={refreshSessionsData}
+              onNavigateToClassrooms={() => {
+                setActiveTab("salas")
+                void loadTab("salas")
+              }}
+            />
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1301,7 +1492,15 @@ export function KidsClient({
         {canCommunicate && (
           <TabsContent value="comunicacao" className="mt-0 space-y-6">
             {communicationData ? (
-              <KidsCommunicationTab data={communicationData} />
+              <KidsCommunicationTab
+                data={communicationData}
+                activeClassrooms={data.classrooms.filter((c) => c.isActive)}
+                congregations={data.congregations}
+                onReload={async () => {
+                  const res = await loadKidsCommunicationData()
+                  if (res.ok && res.data) setCommunicationData(res.data)
+                }}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1392,20 +1591,22 @@ export function KidsClient({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label htmlFor="settings-pin-rotation">Rotação do PIN (minutos)</Label>
+                    <Label htmlFor="settings-pin-rotation">Rotação do PIN de retirada (minutos)</Label>
                     <Input id="settings-pin-rotation" type="number" min={5} max={240} value={settingsForm.pinRotationMinutes} onChange={(event) => setSettingsForm({ ...settingsForm, pinRotationMinutes: Number(event.target.value) })} />
+                    <p className="text-[10px] text-muted-foreground">Tempo de validade do PIN seguro de checkout antes de gerar um novo código.</p>
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="settings-label-paper">Etiqueta</Label>
+                    <Label htmlFor="settings-label-paper">Modelo de etiqueta</Label>
                     <select
                       id="settings-label-paper"
                       className="h-9 w-full rounded-md border bg-background px-2 text-sm"
                       value={settingsForm.labelPaper}
                       onChange={(event) => setSettingsForm({ ...settingsForm, labelPaper: event.target.value as KidLabelPaper })}
                     >
-                      <option value="thermal_62x40">Térmica 62×40 mm</option>
-                      <option value="a4">A4 (fallback)</option>
+                      <option value="thermal_62x40">Térmica 62×40 mm (rolo / adesiva)</option>
+                      <option value="a4">Folha A4 (impressora comum)</option>
                     </select>
+                    <p className="text-[10px] text-muted-foreground">Formato físico configurado na impressora de crachás da recepção.</p>
                   </div>
                 </div>
 
@@ -1630,7 +1831,7 @@ export function KidsClient({
               onClick={() => {
                 const id = deleteClassroomId
                 setDeleteClassroomId(null)
-                if (id) void run(() => deleteKidClassroom(id), "Sala removida")
+                if (id) void run(() => deleteKidClassroom(id), "Sala removida", () => setSessionsData(null))
               }}
             >
               Excluir

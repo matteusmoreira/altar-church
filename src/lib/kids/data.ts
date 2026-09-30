@@ -685,14 +685,14 @@ export async function getKidsSessionsData(companyIdInput?: string | null): Promi
         and role in ('admin', 'pastor', 'ministry_leader', 'volunteer')
       order by name
     `,
-    sql<{ id: string; title: string; starts_at: Date | string }[]>`
-      select id, title, starts_at from public.events
+    sql<{ id: string; title: string; starts_at: Date | string; ends_at: Date | string | null }[]>`
+      select id, title, starts_at, ends_at from public.events
       where company_id = ${resolvedCompanyId}
         and deleted_at is null
         and status = 'published'
-        and starts_at > now() - interval '1 day'
+        and starts_at > now() - interval '2 days'
       order by starts_at
-      limit 20
+      limit 50
     `,
   ])
 
@@ -701,7 +701,12 @@ export async function getKidsSessionsData(companyIdInput?: string | null): Promi
     classrooms: classroomRows.map(toClassroom),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
     staffOptions: staffRows.map((row) => ({ id: row.id, name: row.name, role: row.role })),
-    eventOptions: eventRows.map((row) => ({ id: row.id, title: row.title, startsAt: iso(row.starts_at) ?? "" })),
+    eventOptions: eventRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      startsAt: iso(row.starts_at) ?? "",
+      endsAt: iso(row.ends_at) ?? null,
+    })),
   }
 }
 
@@ -1128,10 +1133,12 @@ export async function getKidsCommunicationData(companyIdInput?: string | null): 
       order by m.created_at desc
       limit 50
     `,
-    sql<{ id: string; name: string }[]>`
-      select id, name from public.kid_classrooms
-      where company_id = ${resolvedCompanyId} and deleted_at is null and is_active = true
-      order by name
+    sql<{ id: string; name: string; min_age_months: number; max_age_months: number; congregation_name: string | null }[]>`
+      select c.id, c.name, c.min_age_months, c.max_age_months, cong.name as congregation_name
+      from public.kid_classrooms c
+      left join public.congregations cong on cong.id = c.congregation_id
+      where c.company_id = ${resolvedCompanyId} and c.deleted_at is null and c.is_active = true
+      order by c.name
     `,
     sql<{ id: string; name: string }[]>`
       select id, name from public.congregations
@@ -1178,7 +1185,13 @@ export async function getKidsCommunicationData(companyIdInput?: string | null): 
       deliveredCount: Number(row.delivered_count ?? 0),
       failedCount: Number(row.failed_count ?? 0),
     })),
-    classrooms: classroomRows.map((row) => ({ id: row.id, name: row.name })),
+    classrooms: classroomRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      minAgeMonths: row.min_age_months,
+      maxAgeMonths: row.max_age_months,
+      congregationName: row.congregation_name,
+    })),
     congregations: congregationRows.map((row) => ({ id: row.id, name: row.name })),
     children: childrenRows.map((row) => ({ id: row.id, fullName: row.full_name })),
     guardians: guardianRows.map((row) => ({ personId: row.person_id, fullName: row.full_name, children: row.child_names ?? [], portalActive: row.portal_active })),

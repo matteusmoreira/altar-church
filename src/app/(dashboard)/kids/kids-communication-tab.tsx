@@ -10,6 +10,7 @@ import {
   Megaphone,
   MessageSquare,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Trash2,
@@ -45,6 +46,18 @@ import { createClient } from "@/lib/supabase/client"
 function showResult(result: { ok: boolean; error?: string }) {
   if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
   return result.ok
+}
+
+function formatClassroomAge(minAgeMonths: number, maxAgeMonths: number) {
+  const minYears = Math.floor(minAgeMonths / 12)
+  const maxYears = Math.floor(maxAgeMonths / 12)
+  if (minAgeMonths % 12 === 0 && maxAgeMonths % 12 === 0) {
+    if (minYears === maxYears) return `${minYears} ${minYears === 1 ? "ano" : "anos"}`
+    return `${minYears} a ${maxYears} anos`
+  }
+  const minLabel = minYears === 0 ? `${minAgeMonths}m` : `${minYears}a`
+  const maxLabel = maxYears === 0 ? `${maxAgeMonths}m` : `${maxYears}a`
+  return `${minLabel}–${maxLabel}`
 }
 
 function formatDateTime(value: string) {
@@ -104,8 +117,21 @@ function getChannelBadge(channel: "whatsapp" | "email" | "internal") {
   }
 }
 
-export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunicationData }) {
+interface KidsCommunicationTabProps {
+  data: KidsCommunicationData
+  activeClassrooms?: import("@/lib/kids/types").KidClassroomItem[]
+  congregations?: Array<{ id: string; name: string }>
+  onReload?: () => Promise<void>
+}
+
+export function KidsCommunicationTab({
+  data: initialData,
+  activeClassrooms,
+  congregations,
+  onReload,
+}: KidsCommunicationTabProps) {
   const [data, setData] = useState(initialData)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isFormOpen, setIsFormOpen] = useState(true)
   const [viewMode, setViewMode] = useState<"list" | "grid">("list")
   const [channelFilter, setChannelFilter] = useState<"all" | "whatsapp" | "email" | "internal">("all")
@@ -128,10 +154,54 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
   const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
+    setData(initialData)
+  }, [initialData])
+
+  async function handleRefresh() {
+    setIsRefreshing(true)
+    try {
+      if (onReload) {
+        await onReload()
+      } else {
+        const refreshed = await loadKidsCommunicationData()
+        if (refreshed.ok && refreshed.data) setData(refreshed.data)
+      }
+      toast.success("Comunicações atualizadas")
+    } catch {
+      toast.error("Erro ao atualizar comunicações")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  // Salas disponíveis: prioriza as salas ativas recebidas em tempo real do dashboard
+  const availableClassrooms =
+    activeClassrooms && activeClassrooms.length > 0
+      ? activeClassrooms.map((c) => ({
+          id: c.id,
+          name: c.name,
+          minAgeMonths: c.minAgeMonths,
+          maxAgeMonths: c.maxAgeMonths,
+          congregationName: c.congregationName,
+        }))
+      : data.classrooms
+
+  // Congregações disponíveis: prioriza congregações do dashboard
+  const availableCongregations =
+    congregations && congregations.length > 0
+      ? congregations
+      : data.congregations
+
+  useEffect(() => {
     const supabase = createClient()
     const subscription = supabase
-      .channel("kids-chat-staff")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "kid_conversation_messages" }, () => {
+      .channel("kids-communication-staff-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "kid_conversation_messages" }, () => {
+        void loadKidsCommunicationData().then((result) => {
+          if (result.ok && result.data) setData(result.data)
+        })
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "kid_messages" }, () => {
         void loadKidsCommunicationData().then((result) => {
           if (result.ok && result.data) setData(result.data)
         })
@@ -175,6 +245,11 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
         toast.success("Campanha enfileirada. Entregas seguem preferências e consentimentos.")
         setBody("")
         setSubject("")
+        setClassroomId("")
+        setCongregationId("")
+        setKidId("")
+        setMinAge("")
+        setMaxAge("")
         const refreshed = await loadKidsCommunicationData()
         if (refreshed.ok && refreshed.data) setData(refreshed.data)
       }
@@ -299,7 +374,7 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
                   >
                     <option value="all">Todos os responsáveis</option>
                     <option value="congregation">Por congregação</option>
-                    <option value="classroom">Por sala (presença recente)</option>
+                    <option value="classroom">Por sala (faixa etária ou presença recente)</option>
                     <option value="age">Por faixa etária</option>
                     <option value="kid">Família específica (uma criança)</option>
                   </select>
@@ -336,7 +411,7 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
                     onChange={(event) => setCongregationId(event.target.value)}
                   >
                     <option value="">Escolha a congregação…</option>
-                    {data.congregations.map((congregation) => (
+                    {availableCongregations.map((congregation) => (
                       <option key={congregation.id} value={congregation.id}>
                         {congregation.name}
                       </option>
@@ -347,19 +422,41 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
 
               {channel !== "internal" && segmentKind === "classroom" && (
                 <div className="space-y-1.5">
-                  <Label>Sala *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Sala *</Label>
+                    {availableClassrooms.length > 0 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {availableClassrooms.length} {availableClassrooms.length === 1 ? "sala disponível" : "salas disponíveis"}
+                      </span>
+                    )}
+                  </div>
                   <select
                     className="h-9 w-full rounded-md border bg-background px-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                     value={classroomId}
                     onChange={(event) => setClassroomId(event.target.value)}
                   >
-                    <option value="">Escolha a sala…</option>
-                    {data.classrooms.map((classroom) => (
-                      <option key={classroom.id} value={classroom.id}>
-                        {classroom.name}
+                    {availableClassrooms.length === 0 ? (
+                      <option value="" disabled>
+                        Nenhuma sala ativa encontrada (crie na aba Salas)
                       </option>
-                    ))}
+                    ) : (
+                      <>
+                        <option value="">Escolha a sala…</option>
+                        {availableClassrooms.map((classroom) => (
+                          <option key={classroom.id} value={classroom.id}>
+                            {classroom.name}
+                            {classroom.minAgeMonths != null && classroom.maxAgeMonths != null
+                              ? ` (${formatClassroomAge(classroom.minAgeMonths, classroom.maxAgeMonths)})`
+                              : ""}
+                            {classroom.congregationName ? ` · ${classroom.congregationName}` : ""}
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Envia aos responsáveis de crianças na faixa etária da sala ou com presença recente (90 dias).
+                  </p>
                 </div>
               )}
 
@@ -473,6 +570,19 @@ export function KidsCommunicationTab({ data: initialData }: { data: KidsCommunic
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 text-xs"
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
+              title="Atualizar lista de comunicações"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+
             {/* Campo de busca */}
             <div className="relative min-w-[200px] flex-1 sm:w-64 sm:flex-initial">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

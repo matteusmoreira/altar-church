@@ -64,3 +64,29 @@ test("Kids communication tab: includes search, channel filter and translated sta
   assert.match(communicationTab, /Falha/)
   assert.match(communicationTab, /Cancelada/)
 })
+
+test("Kids communication tab: syncs active classrooms, displays formatted age and supports manual reload", async () => {
+  // Syncs initialData
+  assert.match(communicationTab, /setData\(initialData\)/)
+  // Uses activeClassrooms from dashboard/props with fallback
+  assert.match(communicationTab, /availableClassrooms =/)
+  // Formats classroom age
+  assert.match(communicationTab, /formatClassroomAge/)
+  // Displays empty state if no rooms exist
+  assert.match(communicationTab, /Nenhuma sala ativa encontrada/)
+  // Manual refresh button
+  assert.match(communicationTab, /handleRefresh/)
+  assert.match(communicationTab, /Atualizar/)
+
+  const kidsClient = await readFile(new URL("../src/app/(dashboard)/kids/kids-client.tsx", import.meta.url), "utf8")
+  // kids-client passes active classrooms to KidsCommunicationTab
+  assert.match(kidsClient, /activeClassrooms=\{data\.classrooms\.filter\(\(c\) => c\.isActive\)\}/)
+  // kids-client invalidates communicationData on mutations
+  assert.match(kidsClient, /setCommunicationData\(null\)/)
+
+  const delivery = await readFile(new URL("../src/lib/kids/delivery.ts", import.meta.url), "utf8")
+  // Delivery matches by classroom age range OR attendance in last 90 days
+  assert.match(delivery, /from public\.kid_classrooms room/)
+  assert.match(delivery, /room\.min_age_months/)
+  assert.match(delivery, /room\.max_age_months/)
+})

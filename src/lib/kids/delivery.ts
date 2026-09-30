@@ -328,6 +328,16 @@ export async function resolveSegmentKidIds(companyId: string, segment: KidCampai
             and sc.classroom_id = ${segment.classroomId ?? null}
             and attendance.checked_in_at > now() - interval '90 days'
         )
+        or exists (
+          select 1 from public.kid_classrooms room
+          where room.id = ${segment.classroomId ?? null}
+            and (room.congregation_id is null or person.congregation_id is null or room.congregation_id = person.congregation_id)
+            and (
+              person.birth_date is not null
+              and person.birth_date <= (current_date - (room.min_age_months || ' months')::interval)::date
+              and person.birth_date >= (current_date - ((room.max_age_months + 1) || ' months')::interval)::date
+            )
+        )
       )
   `
   return rows.map((row) => row.kid_id)
