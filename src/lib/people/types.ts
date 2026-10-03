@@ -181,6 +181,30 @@ export interface PersonLinkedGuardian {
   photoUrl: string | null
 }
 
+export interface PersonMinistryParticipation {
+  id: string
+  name: string
+  role: string
+  status: string
+}
+
+export interface PersonCellParticipation {
+  id: string
+  name: string
+  role: "leader" | "member"
+}
+
+export interface PersonVolunteerParticipation {
+  registrationStatus: string
+  departments: string[]
+}
+
+export interface PersonParticipation {
+  ministries: PersonMinistryParticipation[]
+  cells: PersonCellParticipation[]
+  volunteering: PersonVolunteerParticipation | null
+}
+
 export interface PersonDetail extends PersonListItem {
   internalNotes: string
   customFields: PersonCustomFieldValue[]
@@ -193,6 +217,7 @@ export interface PersonDetail extends PersonListItem {
   followUpTasks: PersonFollowUpTask[]
   linkedChildren?: PersonLinkedChild[]
   linkedGuardians?: PersonLinkedGuardian[]
+  participation: PersonParticipation
 }
 
 export type PersonTimelineKind =

@@ -38,6 +38,7 @@ import {
   UserCheck,
   UserRound,
   Users,
+  UsersRound,
   XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -90,6 +91,19 @@ const statusColors: Record<PersonStatus, string> = {
   active: "bg-success/10 text-success border-success/20",
   inactive: "bg-destructive/10 text-destructive border-destructive/20",
   visitor: "bg-info/10 text-info border-info/20",
+}
+
+const ministryRoleLabels: Record<string, string> = {
+  member: "Membro",
+  leader: "Líder",
+  coordinator: "Coordenador",
+}
+
+const volunteerStatusLabels: Record<string, string> = {
+  pending: "Pendente",
+  active: "Ativo",
+  inactive: "Inativo",
+  suspended: "Suspenso",
 }
 
 const statusLabels: Record<PersonStatus, string> = {
@@ -757,6 +771,91 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                   ) : (
                     <p className="text-sm text-muted-foreground">Nenhum campo personalizado ativo.</p>
                   )}
+                </CardContent>
+              </Card>
+
+              <Card className="glass">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    Participação
+                  </CardTitle>
+                  <CardDescription>Ministérios, células e voluntariado desta pessoa.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-border/40 bg-background/50 p-3.5 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                        <Users className="h-3.5 w-3.5 text-primary" />
+                        Ministérios
+                      </p>
+                      {person.participation.ministries.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Nenhum ministério ativo.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {person.participation.ministries.map((ministry) => (
+                            <div key={ministry.id} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="truncate font-medium" title={ministry.name}>{ministry.name}</span>
+                              <Badge variant="outline" className="text-[10px] py-0 shrink-0">
+                                {ministryRoleLabels[ministry.role] ?? ministry.role}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-border/40 bg-background/50 p-3.5 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                        <UsersRound className="h-3.5 w-3.5 text-primary" />
+                        Células
+                      </p>
+                      {person.participation.cells.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Não participa de células.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {person.participation.cells.map((cell) => (
+                            <div key={cell.id} className="flex items-center justify-between gap-2 text-sm">
+                              <span className="truncate font-medium" title={cell.name}>{cell.name}</span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] py-0 shrink-0 ${cell.role === "leader" ? "border-primary/30 text-primary" : ""}`}
+                              >
+                                {cell.role === "leader" ? "Líder" : "Membro"}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-border/40 bg-background/50 p-3.5 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                        <HeartPulse className="h-3.5 w-3.5 text-primary" />
+                        Voluntariado
+                      </p>
+                      {!person.participation.volunteering ? (
+                        <p className="text-xs text-muted-foreground">Sem perfil de voluntário.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] py-0 ${
+                              person.participation.volunteering.registrationStatus === "active"
+                                ? "border-success/30 text-success"
+                                : "border-muted-foreground/30 text-muted-foreground"
+                            }`}
+                          >
+                            {volunteerStatusLabels[person.participation.volunteering.registrationStatus] ??
+                              person.participation.volunteering.registrationStatus}
+                          </Badge>
+                          {person.participation.volunteering.departments.map((department) => (
+                            <p key={department} className="text-xs text-muted-foreground">{department}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

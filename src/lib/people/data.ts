@@ -72,6 +72,24 @@ interface PeopleCountRow {
   total: string | number
 }
 
+interface PersonMinistryParticipationRow {
+  id: string
+  name: string
+  role: string
+  status: string
+}
+
+interface PersonCellParticipationRow {
+  id: string
+  name: string
+  is_leader: boolean
+}
+
+interface PersonVolunteerParticipationRow {
+  registration_status: string
+  departments: string[] | null
+}
+
 interface PersonDetailRow extends PersonRow {
   internal_notes: string
 }
@@ -370,6 +388,9 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     followUpTasks,
     linkedChildrenRows,
     linkedGuardianRows,
+    ministryParticipationRows,
+    cellParticipationRows,
+    volunteerParticipationRows,
   ] = await Promise.all([
     sql<PersonDetailRow[]>`
       select
@@ -660,6 +681,44 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       and guardian.deleted_at is null
       order by guardian.is_primary desc, gp.full_name
     `,
+    sql<PersonMinistryParticipationRow[]>`
+      select ministry.id, ministry.name, membership.role, membership.status
+      from public.ministry_memberships membership
+      join public.ministries ministry on ministry.id = membership.ministry_id and ministry.deleted_at is null
+      where membership.company_id = ${companyId}
+        and membership.person_id = ${personId}
+        and membership.status = 'active'
+        and membership.left_at is null
+      order by ministry.name
+    `,
+    sql<PersonCellParticipationRow[]>`
+      select cell.id, cell.name,
+        (cell.leader_person_id = ${personId}) as is_leader
+      from public.groups cell
+      left join public.group_members member
+        on member.group_id = cell.id and member.person_id = ${personId} and member.status = 'active'
+      where cell.company_id = ${companyId}
+        and cell.type = 'cell'
+        and cell.is_active = true
+        and cell.deleted_at is null
+        and (cell.leader_person_id = ${personId} or member.id is not null)
+      order by is_leader desc, cell.name
+    `,
+    sql<PersonVolunteerParticipationRow[]>`
+      select
+        profile.registration_status,
+        coalesce(array_agg(distinct department.name || ' · ' || membership.role_name) filter (where department.id is not null), '{}') as departments
+      from public.volunteer_profiles profile
+      left join public.volunteer_department_memberships membership
+        on membership.volunteer_id = profile.id and membership.is_active
+      left join public.volunteer_departments department
+        on department.id = membership.department_id and department.is_active and department.deleted_at is null
+      where profile.company_id = ${companyId}
+        and profile.person_id = ${personId}
+        and profile.deleted_at is null
+      group by profile.registration_status
+      limit 1
+    `,
   ])
 
   const personRow = peopleRows[0]
@@ -841,6 +900,25 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     followUpTasks,
     linkedChildren,
     linkedGuardians,
+    participation: {
+      ministries: ministryParticipationRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        status: row.status,
+      })),
+      cells: cellParticipationRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        role: row.is_leader ? "leader" : "member",
+      })),
+      volunteering: volunteerParticipationRows[0]
+        ? {
+            registrationStatus: volunteerParticipationRows[0].registration_status,
+            departments: volunteerParticipationRows[0].departments ?? [],
+          }
+        : null,
+    },
   }
 }
 
