@@ -279,7 +279,7 @@ test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ pag
   await expect(page.getByRole("heading", { name: /Linha do tempo/i })).toHaveCount(0)
   await page.getByRole("tab", { name: /Linha do tempo/i }).click()
   await expect(page.getByText("Novo follow-up", { exact: true })).toBeVisible()
-  await expect(page.getByText(/Eventos consolidados por fonte/i)).toBeVisible()
+  await expect(page.getByText("Linha do tempo integrada")).toBeVisible()
 })
 
 test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) => {
