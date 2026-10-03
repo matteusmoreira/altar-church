@@ -400,7 +400,7 @@ async function ensurePortalIdentity(sql, { key, account, companyId, profileId })
         company_id, person_id, registration_status, created_by, updated_by
       )
       values (${companyId}, ${person.id}, 'active', ${profileId}, ${profileId})
-      on conflict (person_id) do update
+      on conflict (person_id) where deleted_at is null do update
       set company_id = excluded.company_id,
           registration_status = 'active',
           deleted_at = null,
