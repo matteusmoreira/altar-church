@@ -163,6 +163,7 @@ export interface PersonLinkedChild {
     isEmergencyContact: boolean
   }[]
   createdAt: string
+  createdByName: string | null
 }
 
 export interface PersonLinkedGuardian {

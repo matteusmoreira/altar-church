@@ -27,6 +27,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Pencil,
   Phone,
   Plus,
   Power,
@@ -76,11 +77,13 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { KidEditDialog } from "./kid-edit-dialog"
 
 interface MemberDetailClientProps {
   person: PersonDetail
   cells: { id: string; name: string }[]
   responsibleOptions: { id: string; name: string }[]
+  canManageKids: boolean
 }
 
 const statusColors: Record<PersonStatus, string> = {
@@ -239,7 +242,7 @@ function DetailItem({
   )
 }
 
-export function MemberDetailClient({ person, cells, responsibleOptions }: MemberDetailClientProps) {
+export function MemberDetailClient({ person, cells, responsibleOptions, canManageKids }: MemberDetailClientProps) {
   const router = useRouter()
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
@@ -248,6 +251,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
   const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "member")
   const [cellIds, setCellIds] = useState<string[]>(person.cellIds)
   const [temporaryPassword, setTemporaryPassword] = useState("")
+  const [kidEditChild, setKidEditChild] = useState<PersonLinkedChild | null>(null)
 
   // Activity assignment state
   const [assignActivityOpen, setAssignActivityOpen] = useState(false)
@@ -799,9 +803,10 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                             health.details?.instructions,
                         )
 
-                      const hasPhotoConsent = child.grantedConsents.includes("photo")
-                      const hasMedicalConsent = child.grantedConsents.includes("medical")
-                      const hasOutingConsent = child.grantedConsents.includes("outing")
+                      const hasPhotoConsent = child.grantedConsents.includes("image_use")
+                      const hasMedicalConsent = child.grantedConsents.includes("emergency_care")
+                      const hasDataConsent = child.grantedConsents.includes("data_processing")
+                      const hasCommunicationConsent = child.grantedConsents.includes("communication")
 
                       return (
                         <Card
@@ -863,11 +868,27 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                                         · <Church className="h-3.5 w-3.5 text-muted-foreground" /> {child.congregationName}
                                       </span>
                                     )}
+                                    {child.createdByName && (
+                                      <span title={`Cadastro criado em ${formatDate(child.createdAt)}`}>
+                                        · Cadastrada por {child.createdByName} em {formatDate(child.createdAt)}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
 
                               <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                {canManageKids && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => setKidEditChild(child)}
+                                  >
+                                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                    Editar
+                                  </Button>
+                                )}
                                 <Button
                                   render={<Link href={`/pessoas/${child.personId}`} />}
                                   nativeButton={false}
@@ -947,6 +968,14 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                                 </p>
                                 <div className="space-y-2 text-xs">
                                   <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">Tratamento de dados:</span>
+                                    <span
+                                      className={`font-semibold ${hasDataConsent ? "text-success" : "text-muted-foreground"}`}
+                                    >
+                                      {hasDataConsent ? "Autorizado" : "Não informado"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">Uso de foto / imagem:</span>
                                     <span
                                       className={`font-semibold ${hasPhotoConsent ? "text-success" : "text-muted-foreground"}`}
@@ -955,7 +984,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between">
-                                    <span className="text-muted-foreground">Socorro médico:</span>
+                                    <span className="text-muted-foreground">Atendimento emergencial:</span>
                                     <span
                                       className={`font-semibold ${hasMedicalConsent ? "text-success" : "text-muted-foreground"}`}
                                     >
@@ -963,11 +992,11 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-between">
-                                    <span className="text-muted-foreground">Atividades externas:</span>
+                                    <span className="text-muted-foreground">Comunicação:</span>
                                     <span
-                                      className={`font-semibold ${hasOutingConsent ? "text-success" : "text-muted-foreground"}`}
+                                      className={`font-semibold ${hasCommunicationConsent ? "text-success" : "text-muted-foreground"}`}
                                     >
-                                      {hasOutingConsent ? "Autorizado" : "Não informado"}
+                                      {hasCommunicationConsent ? "Autorizado" : "Não informado"}
                                     </span>
                                   </div>
                                 </div>
@@ -1921,6 +1950,17 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
           title={childLightbox.title}
           subtitle={childLightbox.subtitle}
           onClose={() => setChildLightbox(null)}
+        />
+      )}
+
+      {/* Edição completa da criança (mesmas actions do módulo Kids) */}
+      {kidEditChild && (
+        <KidEditDialog
+          child={kidEditChild}
+          open={Boolean(kidEditChild)}
+          onOpenChange={(open) => {
+            if (!open) setKidEditChild(null)
+          }}
         />
       )}
     </div>

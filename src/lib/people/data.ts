@@ -544,6 +544,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       is_visitor: boolean
       kid_notes: string | null
       kid_created_at: Date | string
+      created_by_name: string | null
       first_name: string
       last_name: string
       full_name: string
@@ -575,6 +576,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         kid.is_visitor,
         kid.notes as kid_notes,
         kid.created_at as kid_created_at,
+        creator.name as created_by_name,
         child_p.first_name,
         child_p.last_name,
         child_p.full_name,
@@ -605,6 +607,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         ), '[]'::jsonb) as other_guardians
       from public.kid_guardians guardian
       join public.kid_profiles kid on kid.id = guardian.kid_id and kid.deleted_at is null
+      left join public.profiles creator on creator.id = kid.created_by
       join public.people child_p on child_p.id = kid.person_id and child_p.deleted_at is null
       left join public.congregations congregation on congregation.id = child_p.congregation_id
       left join public.app_files child_photo on child_photo.id = child_p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
@@ -798,6 +801,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       grantedConsents: row.granted_consents ?? [],
       otherGuardians,
       createdAt: toIso(row.kid_created_at) ?? "",
+      createdByName: row.created_by_name ?? null,
     }
   })
 

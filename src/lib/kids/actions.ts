@@ -61,6 +61,7 @@ import { assertKidsLeaderScope } from "./access"
 import type {
   KidCheckinCandidate,
   KidConsentType,
+  KidEditData,
   KidEffectiveSettings,
   KidHealthDetails,
   KidHealthIndicators,
@@ -946,6 +947,190 @@ export async function fetchKidHealthDetails(input: unknown): Promise<{
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
   }
+}
+
+/** Carrega uma criança com tudo que saveKid precisa — edição a partir da ficha da pessoa. */
+export async function fetchKidForEdit(input: unknown): Promise<{ ok: boolean; kid?: KidEditData; error?: string }> {
+  try {
+    const kidId = z.string().uuid().parse(input)
+    const { companyId } = await context("kids.children.manage")
+    const sql = getSql()
+    const rows = await sql<{
+      kid_id: string
+      person_id: string
+      full_name: string
+      birth_date: Date | string | null
+      congregation_id: string | null
+      is_visitor: boolean
+      notes: string
+      granted_consents: KidConsentType[] | null
+      guardians: unknown
+    }[]>`
+      select
+        kid.id as kid_id,
+        kid.person_id,
+        child_p.full_name,
+        child_p.birth_date,
+        child_p.congregation_id,
+        kid.is_visitor,
+        kid.notes,
+        coalesce((
+          select array_agg(consent.consent_type order by consent.consent_type)
+          from public.kid_consents consent
+          where consent.kid_id = kid.id and consent.status = 'granted'
+        ), '{}') as granted_consents,
+        coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'guardianLinkId', og.id,
+            'personId', og_p.id,
+            'fullName', og_p.full_name,
+            'phone', og_p.phone,
+            'email', og_p.email,
+            'relationship', og.relationship,
+            'isPrimary', og.is_primary,
+            'canCheckin', og.can_checkin,
+            'canCheckout', og.can_checkout,
+            'isEmergencyContact', og.is_emergency_contact,
+            'whatsappEnabled', og.whatsapp_enabled,
+            'emailEnabled', og.email_enabled,
+            'postalCode', coalesce(og_p.postal_code, ''),
+            'street', coalesce(og_p.address, ''),
+            'number', coalesce(og_p.address_number, ''),
+            'complement', coalesce(og_p.address_complement, ''),
+            'neighborhood', coalesce(og_p.neighborhood, ''),
+            'city', coalesce(og_p.city, ''),
+            'state', coalesce(og_p.state, ''),
+            'country', coalesce(og_p.country, '')
+          ) order by og.is_primary desc, og_p.full_name)
+          from public.kid_guardians og
+          join public.people og_p on og_p.id = og.person_id and og_p.deleted_at is null
+          where og.kid_id = kid.id and og.deleted_at is null
+        ), '[]'::jsonb) as guardians
+      from public.kid_profiles kid
+      join public.people child_p on child_p.id = kid.person_id and child_p.deleted_at is null
+      where kid.id = ${kidId} and kid.company_id = ${companyId} and kid.deleted_at is null
+      limit 1
+    `
+    const row = rows[0]
+    if (!row) throw new Error("Criança não encontrada")
+
+    const guardianRows = Array.isArray(row.guardians)
+      ? (row.guardians as {
+          guardianLinkId: string
+          personId: string
+          fullName: string
+          phone: string
+          email: string | null
+          relationship: KidEditData["guardians"][number]["relationship"]
+          isPrimary: boolean
+          canCheckin: boolean
+          canCheckout: boolean
+          isEmergencyContact: boolean
+          whatsappEnabled: boolean
+          emailEnabled: boolean
+          postalCode: string
+          street: string
+          number: string
+          complement: string
+          neighborhood: string
+          city: string
+          state: string
+          country: string
+        }[])
+      : []
+
+    const personIds = [row.person_id, ...guardianRows.map((guardian) => guardian.personId)]
+    const [health, customFields, congregationRows, valueRows] = await Promise.all([
+      getKidHealthDetails(kidId, companyId),
+      listKidCustomFields(companyId, { surface: "internal" }),
+      sql<{ id: string; name: string }[]>`
+        select id, name from public.congregations
+        where company_id = ${companyId} and is_active = true and deleted_at is null
+        order by name
+      `,
+      sql<{ person_id: string; field_id: string; value_text: string | null; value_date: string | null; value_json: unknown }[]>`
+        select v.person_id, v.field_id, v.value_text, v.value_date, v.value_json
+        from public.person_custom_field_values v
+        join public.person_custom_fields f on f.id = v.field_id and f.deleted_at is null and f.source_module = 'kids'
+        where v.company_id = ${companyId}
+          and v.person_id = any(${personIds}::uuid[])
+      `,
+    ])
+
+    const customValuesByPerson = new Map<string, KidEditData["childCustomValues"]>()
+    for (const value of valueRows) {
+      if (value.value_text !== null) {
+        pushCustomValue(customValuesByPerson, value.person_id, value.field_id, value.value_text)
+      } else if (value.value_date !== null) {
+        pushCustomValue(customValuesByPerson, value.person_id, value.field_id, String(value.value_date).slice(0, 10))
+      } else if (typeof value.value_json === "boolean") {
+        pushCustomValue(customValuesByPerson, value.person_id, value.field_id, value.value_json)
+      } else if (Array.isArray(value.value_json)) {
+        pushCustomValue(customValuesByPerson, value.person_id, value.field_id, value.value_json.map(String))
+      }
+    }
+
+    return {
+      ok: true,
+      kid: {
+        kidId: row.kid_id,
+        personId: row.person_id,
+        fullName: row.full_name,
+        birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
+        congregationId: row.congregation_id,
+        isVisitor: row.is_visitor,
+        notes: row.notes ?? "",
+        consents: row.granted_consents ?? [],
+        health,
+        customFields,
+        childCustomValues: customValuesByPerson.get(row.person_id) ?? [],
+        guardians: guardianRows.map((guardian) => ({
+          guardianLinkId: guardian.guardianLinkId,
+          personId: guardian.personId,
+          fullName: guardian.fullName,
+          phone: guardian.phone,
+          email: guardian.email,
+          relationship: guardian.relationship,
+          isPrimary: guardian.isPrimary,
+          canCheckin: guardian.canCheckin,
+          canCheckout: guardian.canCheckout,
+          isEmergencyContact: guardian.isEmergencyContact,
+          whatsappEnabled: guardian.whatsappEnabled,
+          emailEnabled: guardian.emailEnabled,
+          address: {
+            postalCode: guardian.postalCode,
+            street: guardian.street,
+            number: guardian.number,
+            complement: guardian.complement,
+            neighborhood: guardian.neighborhood,
+            city: guardian.city,
+            state: guardian.state,
+            country: guardian.country,
+          },
+        })),
+        guardianCustomValues: Object.fromEntries(
+          guardianRows
+            .map((guardian) => guardian.personId)
+            .filter((personId, index, all) => all.indexOf(personId) === index)
+            .map((personId) => [personId, customValuesByPerson.get(personId) ?? []]),
+        ),
+        congregations: congregationRows,
+      },
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof z.ZodError ? "Criança inválida" : error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+function pushCustomValue(
+  target: Map<string, KidEditData["childCustomValues"]>,
+  personId: string,
+  fieldId: string,
+  value: KidEditData["childCustomValues"][number]["value"],
+) {
+  const list = target.get(personId) ?? []
+  list.push({ fieldId, value })
+  target.set(personId, list)
 }
 
 /** Busca pessoas da empresa para vincular como responsável (picker do formulário). */

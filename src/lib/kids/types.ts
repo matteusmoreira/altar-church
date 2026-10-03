@@ -171,6 +171,41 @@ export interface KidHealthIndicators {
   hasSpecialNeeds: boolean
 }
 
+/** Responsável de uma criança carregada para edição na ficha da pessoa. */
+export interface KidEditGuardian {
+  guardianLinkId: string
+  personId: string
+  fullName: string
+  phone: string
+  email: string | null
+  relationship: KidRelationship
+  isPrimary: boolean
+  canCheckin: boolean
+  canCheckout: boolean
+  isEmergencyContact: boolean
+  whatsappEnabled: boolean
+  emailEnabled: boolean
+  address: KidAddress
+}
+
+/** Tudo que o formulário de edição precisa para chamar saveKid sem perder dados. */
+export interface KidEditData {
+  kidId: string
+  personId: string
+  fullName: string
+  birthDate: string | null
+  congregationId: string | null
+  isVisitor: boolean
+  notes: string
+  consents: KidConsentType[]
+  health: KidHealthDetails & KidHealthIndicators
+  customFields: KidCustomFieldDefinition[]
+  childCustomValues: KidCustomFieldValue[]
+  guardians: KidEditGuardian[]
+  guardianCustomValues: Record<string, KidCustomFieldValue[]>
+  congregations: { id: string; name: string }[]
+}
+
 /** Detalhes clínicos essenciais — trafegam cifrados; nunca vão para logs/webhooks. */
 export interface KidHealthDetails {
   allergies: string
