@@ -9,6 +9,12 @@ import type { User } from "@/lib/types"
 type DateValue = Date | string
 const iso = (value: DateValue | null) => value instanceof Date ? value.toISOString() : value
 
+function toIsoDate(value: Date | string | null): string | null {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return value.slice(0, 10)
+}
+
 export async function getMemberShellData() {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
@@ -271,7 +277,7 @@ export async function getMemberProfile(): Promise<MemberProfile | null> {
   if (!rows[0]) return null
   return {
     ...rows[0],
-    birthDate: rows[0].birthDate ? String(rows[0].birthDate).slice(0, 10) : null,
+    birthDate: toIsoDate(rows[0].birthDate),
     congregationId: rows[0].congregationId ?? null,
     email: rows[0].email ?? null,
     phone: rows[0].phone ?? "",

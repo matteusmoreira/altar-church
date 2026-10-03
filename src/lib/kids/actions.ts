@@ -78,6 +78,12 @@ import type {
 
 const CONSENT_TYPES: KidConsentType[] = ["data_processing", "image_use", "emergency_care", "communication"]
 
+function toIsoDate(value: Date | string | null): string | null {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return value.slice(0, 10)
+}
+
 function failure(error: unknown): KidsActionResult {
   if (error instanceof z.ZodError) {
     return { ok: false, error: error.issues[0]?.message ?? "Dados inválidos" }
@@ -1076,7 +1082,7 @@ export async function fetchKidForEdit(input: unknown): Promise<{ ok: boolean; ki
         kidId: row.kid_id,
         personId: row.person_id,
         fullName: row.full_name,
-        birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
+        birthDate: toIsoDate(row.birth_date),
         congregationId: row.congregation_id,
         isVisitor: row.is_visitor,
         notes: row.notes ?? "",
@@ -1196,7 +1202,7 @@ export async function searchKidsPeople(input: unknown): Promise<{ ok: boolean; p
         fullName: row.full_name,
         phone: row.phone ?? "",
         email: row.email,
-        birthDate: row.birth_date ? String(row.birth_date).slice(0, 10) : null,
+        birthDate: toIsoDate(row.birth_date),
         kidId: row.kid_id,
         linkedChildren: Array.isArray(row.linked_children)
           ? row.linked_children.map((item) => ({ kidId: String((item as Record<string, unknown>).kidId), fullName: String((item as Record<string, unknown>).fullName) }))
@@ -1637,7 +1643,7 @@ export async function searchKidsForCheckin(input: unknown): Promise<{ ok: boolea
         personId: row.person_id,
         fullName: row.full_name,
         labelName: formatChildLabelName(row.full_name),
-        ageMonths: ageMonthsAt(row.birth_date ? String(row.birth_date).slice(0, 10) : null),
+        ageMonths: ageMonthsAt(toIsoDate(row.birth_date)),
         congregationId: row.congregation_id,
         congregationName: row.congregation_name,
         isVisitor: row.is_visitor,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Save, Trash2, UserPlus } from "lucide-react"
@@ -55,6 +55,7 @@ export function KidEditDialog({
   const [guardians, setGuardians] = useState<DialogGuardian[]>([])
   const [search, setSearch] = useState("")
   const [searching, setSearching] = useState(false)
+  const loadedKidRef = useRef<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -78,8 +79,15 @@ export function KidEditDialog({
     }
   }
 
+  // O dialog pode montar já aberto (render condicional na ficha) — carrega no mount.
+  useEffect(() => {
+    if (!open || loadedKidRef.current === child.kidId) return
+    loadedKidRef.current = child.kidId
+    void (async () => { await load() })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, child.kidId])
+
   function handleOpenChange(next: boolean) {
-    if (next && !data) void load()
     if (!next) setData(null)
     onOpenChange(next)
   }

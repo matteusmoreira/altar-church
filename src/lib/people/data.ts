@@ -790,7 +790,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
   }
 
   const linkedChildren: PersonLinkedChild[] = linkedChildrenRows.map((row) => {
-    const bDate = row.birth_date ? String(row.birth_date).slice(0, 10) : null
+    const bDate = toIsoDate(row.birth_date)
     const ageMonths = ageMonthsAt(bDate, new Date())
     const years = ageMonths != null ? Math.floor(ageMonths / 12) : null
     const months = ageMonths != null ? ageMonths % 12 : null
