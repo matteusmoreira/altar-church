@@ -158,3 +158,13 @@ Preservado e verificado depois: os 2 ministérios reais e ativos (`Ministério d
 - **Node 24 portátil não sobrevive à limpeza de temp**: sobrou só `node_modules` nos diretórios antigos. Re-baixar de `nodejs.org/dist` e extrair com `Expand-Archive` (o `tar` do Git Bash não lê zip).
 - **Botão "Sair" do member-shell** não redireciona (`signOutMember` só faz `supabase.auth.signOut()`) e o Playwright do IAB não acha ponto de clique nele (force click falha com "no click point"). Usar `dom_cua.click({ node_id })` a partir de `get_visible_dom()`.
 - **O join direto em `auth.users` funciona** da conexão do app (role postgres): `left join auth.users au on au.id = pr.auth_user_id` expõe `last_sign_in_at` sem service-role, na lista e na ficha. Sonda: `select id from auth.users limit 3`.
+
+## Triagem do primeiro E2E completo em CI — 03/10/2026
+
+Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite inteiro pela primeira vez: **Seed verde**, **Validate verde** (typecheck, lint, testes, build, audit `--omit=dev`), e `E2E Chrome` com 34/36 passes e 70/68 falhas (de um run para o outro, a asserção da linha do tempo corrigida passou a valer: 36 passed / 68 failed). A triagem por logs indicou falhas **pré-existentes e suite-wide**, não regressões da ficha 360:
+
+- **Dados de seed inexistentes**: `authenticated-smoke.spec.ts:60` espera links para `/Joao|João|Maria|Ana/i` em /pessoas; o tenant `e2e` só tem as 6 pessoas do seed (`Admin E2E` etc.). Ou o seed cria essas pessoas, ou o spec passa a usar nomes reais do seed.
+- **Expectativas contraditórias entre specs**: `authenticated-smoke.spec.ts:12` espera que membro caia no `/dashboard` após login; `member-portal.spec.ts:18` espera `/membro`. Só uma pode valer — hoje o app manda membro para o portal (confirmado localmente).
+- **Asserções obsoletas**: "Eventos consolidados por fonte" não existe mais (painel virou "Linha do tempo integrada"); corrigido no spec. Revisar os demais falhantes antes de acusar regressão.
+- **Rate limit do login** continua como causa provável do bloco de falhas uniformes (~24s = loop de login travado; item já documentado acima, em aberto).
+- Módulos intocados pela feature falham igual (superadmin, informações da igreja, conteúdo, portal público, grupos, friendly-routes) — reforça que o suite precisa de uma passada dedicada de estabilização, com artifacts do CI (`upload-artifact` já salva screenshots/traces/vídeos).
