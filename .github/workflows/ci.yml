@@ -49,7 +49,10 @@ jobs:
         run: npm run build
 
       - name: Dependency audit
-        run: npm audit --audit-level=moderate
+        # --omit=dev: advisories ativos sem correção disponível (braces/micromatch via
+        # shadcn/ts-morph, tooling dev) não devem bloquear o gate; o que se audita é o
+        # que vai a produção (0 vulnerabilidades em 03/10/2026).
+        run: npm audit --omit=dev --audit-level=moderate
 
   e2e:
     name: E2E (tenant de teste)
