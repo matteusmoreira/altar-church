@@ -1,9 +1,12 @@
 import { UserRound } from "lucide-react"
 import { MemberProfileForm } from "@/components/member/member-profile-form"
-import { getMemberProfile } from "@/lib/member/data"
+import { getMemberProfile, listMemberCongregationOptions } from "@/lib/member/data"
 
 export default async function MemberProfilePage() {
-  const profile = await getMemberProfile()
+  const [profile, congregationOptions] = await Promise.all([
+    getMemberProfile(),
+    listMemberCongregationOptions(),
+  ])
   return (
     <div className="space-y-6">
       <div>
@@ -13,7 +16,7 @@ export default async function MemberProfilePage() {
         <p className="text-muted-foreground">Atualize seus dados cadastrais, data de nascimento e contato.</p>
       </div>
       {profile ? (
-        <MemberProfileForm profile={profile} />
+        <MemberProfileForm profile={profile} congregationOptions={congregationOptions} />
       ) : (
         <p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
           Sua conta ainda não está vinculada a uma pessoa ativa. Peça ao administrador para corrigir o vínculo.

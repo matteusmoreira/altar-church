@@ -259,6 +259,7 @@ export async function getMemberProfile(): Promise<MemberProfile | null> {
   const { user, companyId, personId } = await requireMemberContext()
   const rows = await getSql()<MemberProfile[]>`
     select id, full_name as "fullName", email, phone, birth_date as "birthDate",
+      congregation_id as "congregationId",
       address, address_number as "addressNumber", address_complement as "addressComplement",
       neighborhood, city, state, postal_code as "postalCode"
     from public.people
@@ -271,6 +272,7 @@ export async function getMemberProfile(): Promise<MemberProfile | null> {
   return {
     ...rows[0],
     birthDate: rows[0].birthDate ? String(rows[0].birthDate).slice(0, 10) : null,
+    congregationId: rows[0].congregationId ?? null,
     email: rows[0].email ?? null,
     phone: rows[0].phone ?? "",
     address: rows[0].address ?? "",
@@ -281,6 +283,16 @@ export async function getMemberProfile(): Promise<MemberProfile | null> {
     state: rows[0].state ?? "",
     postalCode: rows[0].postalCode ?? "",
   }
+}
+
+export async function listMemberCongregationOptions(): Promise<{ id: string; name: string }[]> {
+  const { companyId } = await requireMemberContext()
+  return getSql()<{ id: string; name: string }[]>`
+    select id, name
+    from public.congregations
+    where company_id = ${companyId} and is_active = true and deleted_at is null
+    order by name
+  `
 }
 
 export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {

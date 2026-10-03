@@ -3,7 +3,7 @@
 import { FormEvent, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Calendar, CheckCircle2, Loader2, Mail, MapPin, Phone, User } from "lucide-react"
+import { Calendar, CheckCircle2, Church, Loader2, Mail, MapPin, Phone, User } from "lucide-react"
 import { updateMemberProfile } from "@/lib/member/portal-actions"
 import type { MemberProfile } from "@/lib/member/types"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 
-export function MemberProfileForm({ profile }: { profile: MemberProfile }) {
+export function MemberProfileForm({
+  profile,
+  congregationOptions,
+}: {
+  profile: MemberProfile
+  congregationOptions: { id: string; name: string }[]
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [phoneValue, setPhoneValue] = useState(formatBrazilianWhatsapp(profile.phone))
@@ -100,6 +106,23 @@ export function MemberProfileForm({ profile }: { profile: MemberProfile }) {
                   type="date"
                   defaultValue={profile.birthDate ?? ""}
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="profile-congregation" className="flex items-center gap-1.5">
+                  <Church className="h-3.5 w-3.5 text-primary" /> Congregação
+                </Label>
+                <select
+                  id="profile-congregation"
+                  name="congregationId"
+                  defaultValue={profile.congregationId ?? ""}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Sem congregação</option>
+                  {congregationOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid gap-2">

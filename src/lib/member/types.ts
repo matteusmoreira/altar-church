@@ -72,6 +72,7 @@ export interface MemberProfile {
   email: string | null
   phone: string
   birthDate: string | null
+  congregationId: string | null
   address: string
   addressNumber: string
   addressComplement: string

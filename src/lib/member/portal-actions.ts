@@ -149,6 +149,12 @@ export async function updateMemberProfile(formData: FormData) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDateRaw)) throw new Error("Data de nascimento inválida")
       birthDate = birthDateRaw
     }
+    const congregationIdRaw = value(formData, "congregationId")
+    let congregationId: string | null = null
+    if (congregationIdRaw) {
+      if (!uuid.safeParse(congregationIdRaw).success) throw new Error("Congregação inválida")
+      congregationId = congregationIdRaw
+    }
     const { user, companyId, personId } = await requireMemberContext()
     await getSql().begin(async (tx) => {
       const duplicate = await tx<{ id: string }[]>`
@@ -157,9 +163,25 @@ export async function updateMemberProfile(formData: FormData) {
         limit 1
       `
       if (duplicate[0]) throw new Error("Este WhatsApp já está vinculado a outra conta")
+      if (congregationId) {
+        const validCongregation = await tx<{ id: string }[]>`
+          select id from public.congregations
+          where id = ${congregationId} and company_id = ${companyId} and is_active = true and deleted_at is null
+          limit 1
+        `
+        if (!validCongregation[0]) throw new Error("Congregação não encontrada")
+      }
+      const currentRows = await tx<{ congregation_id: string | null }[]>`
+        select congregation_id from public.people
+        where company_id = ${companyId} and deleted_at is null
+          and (id = ${personId} or profile_id = ${user.id})
+        order by (profile_id = ${user.id}) desc
+        limit 1
+      `
+      const congregationFrom = currentRows[0]?.congregation_id ?? null
       const rows = await tx<{ id: string }[]>`
         update public.people
-        set email = ${email || null}, phone = ${phone}, birth_date = ${birthDate}, address = ${value(formData, "address")},
+        set email = ${email || null}, phone = ${phone}, birth_date = ${birthDate}, congregation_id = ${congregationId}, address = ${value(formData, "address")},
             address_number = ${value(formData, "addressNumber")}, address_complement = ${value(formData, "addressComplement")},
             neighborhood = ${value(formData, "neighborhood")}, city = ${value(formData, "city")}, state = ${value(formData, "state")},
             postal_code = ${value(formData, "postalCode")}, updated_by = ${user.id}, updated_at = now()
@@ -173,6 +195,15 @@ export async function updateMemberProfile(formData: FormData) {
         set login_phone = ${phone}, person_id = ${rows[0].id}, updated_at = now()
         where id = ${user.id} and company_id = ${companyId}
       `
+      if (congregationFrom !== congregationId) {
+        await writeAuditLog({
+          action: "member.profile.congregation_update",
+          entityTable: "people",
+          entityId: rows[0].id,
+          companyId,
+          metadata: { profileId: user.id, from: congregationFrom, to: congregationId },
+        })
+      }
     })
     await writeAuditLog({ action: "member.profile.update", entityTable: "people", entityId: personId, companyId, metadata: { profileId: user.id, fields: ["email", "phone", "birth_date", "address"] } })
     revalidatePath("/membro/perfil")
