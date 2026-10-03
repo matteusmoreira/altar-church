@@ -1538,6 +1538,14 @@ export function MemberDetailClient({ person, cells, responsibleOptions }: Member
                   </Badge>
                 </div>
               ) : null}
+              {person.hasSystemAccess ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">Último login</span>
+                  <span className="text-right font-medium">
+                    {person.lastLoginAt ? formatDateTime(person.lastLoginAt) : "Nunca fez login"}
+                  </span>
+                </div>
+              ) : null}
               {canInviteAccess ? (
                 <Button
                   className="mt-2 w-full"

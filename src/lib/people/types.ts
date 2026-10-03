@@ -57,6 +57,7 @@ export interface PersonListItem {
   profileId: string | null
   accessRole: PersonAccessRole | null
   accessActive: boolean | null
+  lastLoginAt: string | null
   hasSystemAccess: boolean
   cellIds: string[]
   internalNotes?: string

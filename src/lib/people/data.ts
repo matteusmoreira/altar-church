@@ -54,6 +54,7 @@ interface PersonRow {
   profile_id: string | null
   access_role: PersonAccessRole | null
   access_active: boolean | null
+  last_login_at: Date | string | null
   cell_ids: string[] | null
   internal_notes?: string
   status: PersonStatus
@@ -294,6 +295,7 @@ function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
     profileId: row.profile_id,
     accessRole: row.access_role,
     accessActive: row.access_active,
+    lastLoginAt: row.last_login_at ? toIso(row.last_login_at) : null,
     hasSystemAccess: Boolean(row.profile_id),
     cellIds: row.cell_ids ?? [],
     internalNotes: row.internal_notes ?? undefined,
@@ -395,6 +397,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        au.last_sign_in_at as last_login_at,
         person_photo.storage_path as photo_path,
         coalesce((select array_agg(cell.id) from public.groups cell where cell.company_id = p.company_id and cell.type = 'cell' and cell.leader_person_id = p.id and cell.is_active = true and cell.deleted_at is null), '{}')::uuid[] as cell_ids,
         p.internal_notes,
@@ -414,6 +417,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
+      left join auth.users au on au.id = pr.auth_user_id
       left join public.app_files person_photo on person_photo.id = p.photo_file_id and person_photo.is_active = true and person_photo.deleted_at is null
       where p.id = ${personId}
         and p.company_id = ${companyId}
@@ -932,6 +936,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
         p.profile_id,
         pr.role as access_role,
         pr.active as access_active,
+        au.last_sign_in_at as last_login_at,
         person_photo.storage_path as photo_path,
         coalesce((
           select array_agg(distinct cell.id)
@@ -965,6 +970,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
       from public.people p
       left join public.congregations c on c.id = p.congregation_id
       left join public.profiles pr on pr.id = p.profile_id
+      left join auth.users au on au.id = pr.auth_user_id
       left join public.app_files person_photo on person_photo.id = p.photo_file_id and person_photo.is_active = true and person_photo.deleted_at is null
       where p.company_id = ${companyId}
         and p.deleted_at is null

@@ -282,6 +282,11 @@ function formatDate(value: string | null) {
   return format(parseISO(value), "dd/MM/yyyy", { locale: ptBR })
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "-"
+  return format(parseISO(value), "dd/MM/yyyy HH:mm", { locale: ptBR })
+}
+
 function splitFullName(fullName: string) {
   const parts = fullName.trim().split(/\s+/)
   return {
@@ -1381,6 +1386,7 @@ export function MembersClient({
                       <TableHead>Nascimento</TableHead>
                       <TableHead>Contato & WhatsApp</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Último login</TableHead>
                       <TableHead className="w-12 text-right" />
                     </TableRow>
                   </TableHeader>
@@ -1470,6 +1476,13 @@ export function MembersClient({
                             <Badge className={statusColors[person.status]}>
                               {statusLabels[person.status]}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {person.hasSystemAccess
+                              ? person.lastLoginAt
+                                ? formatDateTime(person.lastLoginAt)
+                                : "Nunca fez login"
+                              : "-"}
                           </TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>
