@@ -117,6 +117,68 @@ export interface PersonEnrolledJourney {
   steps: PersonJourneyStepDetail[]
 }
 
+export interface PersonLinkedChild {
+  kidId: string
+  personId: string
+  fullName: string
+  firstName: string
+  lastName: string
+  birthDate: string | null
+  ageMonths: number | null
+  ageLabel: string
+  gender: string | null
+  photoUrl: string | null
+  status: string
+  isVisitor: boolean
+  notes: string | null
+  congregationName: string | null
+  relationship: string
+  relationshipLabel: string
+  isPrimary: boolean
+  canCheckin: boolean
+  canCheckout: boolean
+  isEmergencyContact: boolean
+  whatsappEnabled: boolean
+  emailEnabled: boolean
+  health: {
+    hasAllergy: boolean
+    hasDietaryRestriction: boolean
+    hasMedication: boolean
+    hasSpecialNeeds: boolean
+    details?: {
+      allergies?: string
+      dietaryRestrictions?: string
+      medication?: string
+      specialNeeds?: string
+      instructions?: string
+    } | null
+  }
+  grantedConsents: string[]
+  otherGuardians: {
+    name: string
+    relationship: string
+    relationshipLabel: string
+    phone: string
+    isEmergencyContact: boolean
+  }[]
+  createdAt: string
+}
+
+export interface PersonLinkedGuardian {
+  guardianId: string
+  personId: string
+  fullName: string
+  phone: string
+  email: string | null
+  relationship: string
+  relationshipLabel: string
+  isPrimary: boolean
+  canCheckin: boolean
+  canCheckout: boolean
+  isEmergencyContact: boolean
+  photoUrl: string | null
+}
+
 export interface PersonDetail extends PersonListItem {
   internalNotes: string
   customFields: PersonCustomFieldValue[]
@@ -127,6 +189,8 @@ export interface PersonDetail extends PersonListItem {
   availableActivities: { id: string; description: string; category: string }[]
   timeline: PersonTimelineItem[]
   followUpTasks: PersonFollowUpTask[]
+  linkedChildren?: PersonLinkedChild[]
+  linkedGuardians?: PersonLinkedGuardian[]
 }
 
 export type PersonTimelineKind =

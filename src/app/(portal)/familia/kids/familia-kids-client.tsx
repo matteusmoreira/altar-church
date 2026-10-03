@@ -7,6 +7,7 @@ import { QRCodeSVG } from "qrcode.react"
 import {
   Baby,
   BellRing,
+  Calendar,
   ChevronDown,
   ChevronUp,
   Church,
@@ -177,10 +178,12 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   const [guardianPhoto, setGuardianPhoto] = useState<File | null>(null)
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; title: string; subtitle?: string } | null>(null)
   const [guardianAddress, setGuardianAddress] = useState({ ...data.guardianAddress })
+  const [guardianBirthDate, setGuardianBirthDate] = useState(data.guardianBirthDate ?? "")
   const hasGuardianAddress = Boolean(
     guardianAddress.street?.trim() ||
     guardianAddress.postalCode?.trim() ||
-    guardianAddress.city?.trim()
+    guardianAddress.city?.trim() ||
+    guardianBirthDate?.trim()
   )
   const [isAddressExpanded, setIsAddressExpanded] = useState(!hasGuardianAddress)
   const [guardianCustomValues, setGuardianCustomValues] = useState(data.guardianCustomValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("guardian"))))
@@ -387,7 +390,12 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
 
   async function handleSaveGuardianAddress() {
     await run(
-      () => saveGuardianKidsProfile({ address: guardianAddress, customValues: guardianCustomValues }),
+      () =>
+        saveGuardianKidsProfile({
+          birthDate: guardianBirthDate || null,
+          address: guardianAddress,
+          customValues: guardianCustomValues,
+        }),
       "Dados atualizados com sucesso",
       () => {
         setIsAddressExpanded(false)
@@ -551,6 +559,19 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                   disabled={pending}
                   onChange={(file) => void handleSaveSelfPhoto(file)}
                   onError={(message) => toast.error(message)}
+                />
+              </div>
+              <div className="rounded-lg border border-border/60 p-3 bg-muted/10 space-y-2">
+                <Label htmlFor="guardian-birth" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Calendar className="h-3.5 w-3.5 text-primary" /> Minha data de nascimento
+                </Label>
+                <Input
+                  id="guardian-birth"
+                  type="date"
+                  value={guardianBirthDate}
+                  onChange={(e) => setGuardianBirthDate(e.target.value)}
+                  disabled={pending}
+                  className="max-w-xs"
                 />
               </div>
               <AddressFields value={guardianAddress} onChange={setGuardianAddress} disabled={pending} />

@@ -318,8 +318,8 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       order by report.created_at desc
       limit 5
     `,
-    sql<{ id: string; storage_path: string | null; postal_code: string; address: string; address_number: string; address_complement: string; neighborhood: string; city: string; state: string; country: string }[]>`
-      select person.id, file.storage_path, person.postal_code, person.address, person.address_number,
+    sql<{ id: string; birth_date: Date | string | null; storage_path: string | null; postal_code: string; address: string; address_number: string; address_complement: string; neighborhood: string; city: string; state: string; country: string }[]>`
+      select person.id, person.birth_date, file.storage_path, person.postal_code, person.address, person.address_number,
              person.address_complement, person.neighborhood, person.city, person.state, person.country
       from public.people person
       left join public.app_files file on file.id = person.photo_file_id and file.is_active = true and file.deleted_at is null
@@ -388,6 +388,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
 
   return {
     guardianName: user.name,
+    guardianBirthDate: dateOnly(guardianRows[0]?.birth_date),
     guardianPhotoUrl: guardianRows[0]?.storage_path ? photoUrls.get(guardianRows[0].storage_path) ?? null : null,
     guardianAddress: guardianRows[0] ? {
       postalCode: guardianRows[0].postal_code, street: guardianRows[0].address,

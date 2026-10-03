@@ -2,6 +2,8 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
+import { ageMonthsAt } from "@/lib/kids/suggest"
+import { decryptHealthDetails } from "@/lib/kids/security"
 import { listPersonFollowUpTasks, listPersonTimeline } from "./follow-up"
 import type {
   BirthdayPerson,
@@ -18,6 +20,8 @@ import type {
   PersonFormOptions,
   PersonAccessRole,
   PersonGender,
+  PersonLinkedChild,
+  PersonLinkedGuardian,
   PersonListItem,
   PersonStatus,
   PersonType,
@@ -362,6 +366,8 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     availableActivitiesRows,
     timeline,
     followUpTasks,
+    linkedChildrenRows,
+    linkedGuardianRows,
   ] = await Promise.all([
     sql<PersonDetailRow[]>`
       select
@@ -518,6 +524,135 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     `,
     listPersonTimeline(personId, companyId),
     listPersonFollowUpTasks(personId, companyId),
+    sql<{
+      guardian_link_id: string
+      relationship: string
+      is_primary: boolean
+      can_checkin: boolean
+      can_checkout: boolean
+      is_emergency_contact: boolean
+      whatsapp_enabled: boolean
+      email_enabled: boolean
+      linked_at: Date | string
+      kid_id: string
+      child_person_id: string
+      kid_status: string
+      is_visitor: boolean
+      kid_notes: string | null
+      kid_created_at: Date | string
+      first_name: string
+      last_name: string
+      full_name: string
+      birth_date: Date | string | null
+      gender: string | null
+      photo_path: string | null
+      congregation_name: string | null
+      has_allergy: boolean | null
+      has_dietary_restriction: boolean | null
+      has_medication: boolean | null
+      has_special_needs: boolean | null
+      details_encrypted: string | null
+      granted_consents: string[] | null
+      other_guardians: unknown
+    }[]>`
+      select
+        guardian.id as guardian_link_id,
+        guardian.relationship,
+        guardian.is_primary,
+        guardian.can_checkin,
+        guardian.can_checkout,
+        guardian.is_emergency_contact,
+        guardian.whatsapp_enabled,
+        guardian.email_enabled,
+        guardian.created_at as linked_at,
+        kid.id as kid_id,
+        kid.person_id as child_person_id,
+        kid.status as kid_status,
+        kid.is_visitor,
+        kid.notes as kid_notes,
+        kid.created_at as kid_created_at,
+        child_p.first_name,
+        child_p.last_name,
+        child_p.full_name,
+        child_p.birth_date,
+        child_p.gender,
+        child_photo.storage_path as photo_path,
+        congregation.name as congregation_name,
+        hp.has_allergy,
+        hp.has_dietary_restriction,
+        hp.has_medication,
+        hp.has_special_needs,
+        hp.details_encrypted,
+        coalesce((
+          select array_agg(consent.consent_type)
+          from public.kid_consents consent
+          where consent.kid_id = kid.id and consent.status = 'granted'
+        ), '{}') as granted_consents,
+        coalesce((
+          select jsonb_agg(jsonb_build_object(
+            'name', og_p.full_name,
+            'relationship', og.relationship,
+            'phone', og_p.phone,
+            'isEmergencyContact', og.is_emergency_contact
+          ) order by og.is_primary desc, og_p.full_name)
+          from public.kid_guardians og
+          join public.people og_p on og_p.id = og.person_id and og_p.deleted_at is null
+          where og.kid_id = kid.id and og.deleted_at is null and og.id <> guardian.id
+        ), '[]'::jsonb) as other_guardians
+      from public.kid_guardians guardian
+      join public.kid_profiles kid on kid.id = guardian.kid_id and kid.deleted_at is null
+      join public.people child_p on child_p.id = kid.person_id and child_p.deleted_at is null
+      left join public.congregations congregation on congregation.id = child_p.congregation_id
+      left join public.app_files child_photo on child_photo.id = child_p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
+      left join public.kid_health_profiles hp on hp.kid_id = kid.id and hp.deleted_at is null
+      where guardian.company_id = ${companyId}
+        and guardian.deleted_at is null
+        and (
+          guardian.person_id = ${personId}
+          or exists (
+            select 1 from public.people p0
+            where p0.id = ${personId}
+              and p0.profile_id is not null
+              and guardian.profile_id = p0.profile_id
+          )
+        )
+      order by child_p.full_name
+    `,
+    sql<{
+      guardian_link_id: string
+      relationship: string
+      is_primary: boolean
+      can_checkin: boolean
+      can_checkout: boolean
+      is_emergency_contact: boolean
+      guardian_person_id: string
+      guardian_name: string
+      guardian_phone: string
+      guardian_email: string | null
+      photo_path: string | null
+    }[]>`
+      select
+        guardian.id as guardian_link_id,
+        guardian.relationship,
+        guardian.is_primary,
+        guardian.can_checkin,
+        guardian.can_checkout,
+        guardian.is_emergency_contact,
+        gp.id as guardian_person_id,
+        gp.full_name as guardian_name,
+        gp.phone as guardian_phone,
+        gp.email as guardian_email,
+        gphoto.storage_path as photo_path
+      from public.kid_guardians guardian
+      join public.people gp on gp.id = guardian.person_id and gp.deleted_at is null
+      left join public.app_files gphoto on gphoto.id = gp.photo_file_id and gphoto.is_active = true and gphoto.deleted_at is null
+      where guardian.kid_id = (
+        select k.id from public.kid_profiles k where k.person_id = ${personId} and k.company_id = ${companyId} and k.deleted_at is null limit 1
+      )
+      and guardian.company_id = ${companyId}
+      and guardian.deleted_at is null
+      order by guardian.is_primary desc, gp.full_name
+    `,
   ])
 
   const personRow = peopleRows[0]
@@ -570,11 +705,112 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     })
   }
 
-  let photoUrl: string | null = null
-  if (personRow.photo_path) {
-    const urls = await createSignedUrlsByStoragePath([personRow.photo_path])
-    photoUrl = urls.get(personRow.photo_path) ?? null
+  const allPhotoPaths = [
+    personRow.photo_path,
+    ...linkedChildrenRows.map((r) => r.photo_path),
+    ...linkedGuardianRows.map((r) => r.photo_path),
+  ].filter(Boolean) as string[]
+
+  const photoUrls = allPhotoPaths.length > 0 ? await createSignedUrlsByStoragePath(allPhotoPaths) : new Map<string, string>()
+  const photoUrl = personRow.photo_path ? photoUrls.get(personRow.photo_path) ?? null : null
+
+  const RELATIONSHIP_LABELS: Record<string, string> = {
+    father: "Pai",
+    mother: "Mãe",
+    guardian: "Responsável",
+    grandparent: "Avô/Avó",
+    relative: "Parente",
+    other: "Outro",
   }
+
+  const linkedChildren: PersonLinkedChild[] = linkedChildrenRows.map((row) => {
+    const bDate = row.birth_date ? String(row.birth_date).slice(0, 10) : null
+    const ageMonths = ageMonthsAt(bDate, new Date())
+    const years = ageMonths != null ? Math.floor(ageMonths / 12) : null
+    const months = ageMonths != null ? ageMonths % 12 : null
+    let ageLabel = "—"
+    if (years != null) {
+      if (years === 0) ageLabel = `${months}m`
+      else if (months === 0) ageLabel = `${years} anos`
+      else ageLabel = `${years}a ${months}m`
+    }
+
+    let healthDetails: PersonLinkedChild["health"]["details"] = null
+    if (row.details_encrypted) {
+      try {
+        const decrypted = decryptHealthDetails(row.details_encrypted)
+        if (decrypted) {
+          if (decrypted.trim().startsWith("{")) {
+            healthDetails = JSON.parse(decrypted)
+          } else {
+            healthDetails = { instructions: decrypted }
+          }
+        }
+      } catch {
+        // ignore decryption error
+      }
+    }
+
+    const otherGuardians = Array.isArray(row.other_guardians)
+      ? (row.other_guardians as { name: string; relationship: string; phone: string; isEmergencyContact: boolean }[]).map((og) => ({
+          name: og.name,
+          relationship: og.relationship,
+          relationshipLabel: RELATIONSHIP_LABELS[og.relationship] ?? og.relationship,
+          phone: og.phone,
+          isEmergencyContact: Boolean(og.isEmergencyContact),
+        }))
+      : []
+
+    return {
+      kidId: row.kid_id,
+      personId: row.child_person_id,
+      fullName: row.full_name,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      birthDate: bDate,
+      ageMonths,
+      ageLabel,
+      gender: row.gender,
+      photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
+      status: row.kid_status,
+      isVisitor: row.is_visitor,
+      notes: row.kid_notes,
+      congregationName: row.congregation_name,
+      relationship: row.relationship,
+      relationshipLabel: RELATIONSHIP_LABELS[row.relationship] ?? row.relationship,
+      isPrimary: row.is_primary,
+      canCheckin: row.can_checkin,
+      canCheckout: row.can_checkout,
+      isEmergencyContact: row.is_emergency_contact,
+      whatsappEnabled: row.whatsapp_enabled,
+      emailEnabled: row.email_enabled,
+      health: {
+        hasAllergy: Boolean(row.has_allergy),
+        hasDietaryRestriction: Boolean(row.has_dietary_restriction),
+        hasMedication: Boolean(row.has_medication),
+        hasSpecialNeeds: Boolean(row.has_special_needs),
+        details: healthDetails,
+      },
+      grantedConsents: row.granted_consents ?? [],
+      otherGuardians,
+      createdAt: toIso(row.kid_created_at) ?? "",
+    }
+  })
+
+  const linkedGuardians: PersonLinkedGuardian[] = linkedGuardianRows.map((row) => ({
+    guardianId: row.guardian_link_id,
+    personId: row.guardian_person_id,
+    fullName: row.guardian_name,
+    phone: row.guardian_phone,
+    email: row.guardian_email,
+    relationship: row.relationship,
+    relationshipLabel: RELATIONSHIP_LABELS[row.relationship] ?? row.relationship,
+    isPrimary: row.is_primary,
+    canCheckin: row.can_checkin,
+    canCheckout: row.can_checkout,
+    isEmergencyContact: row.is_emergency_contact,
+    photoUrl: row.photo_path ? photoUrls.get(row.photo_path) ?? null : null,
+  }))
 
   return {
     ...toPerson(personRow, photoUrl),
@@ -595,6 +831,8 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     })),
     timeline,
     followUpTasks,
+    linkedChildren,
+    linkedGuardians,
   }
 }
 

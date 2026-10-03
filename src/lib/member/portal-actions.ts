@@ -143,6 +143,12 @@ export async function updateMemberProfile(formData: FormData) {
     if (email && !z.string().email().safeParse(email).success) throw new Error("E-mail inválido")
     const phone = normalizeBrazilianWhatsapp(value(formData, "phone"))
     if (!phone) throw new Error("Informe um WhatsApp móvel válido com DDD")
+    const birthDateRaw = value(formData, "birthDate")
+    let birthDate: string | null = null
+    if (birthDateRaw) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDateRaw)) throw new Error("Data de nascimento inválida")
+      birthDate = birthDateRaw
+    }
     const { user, companyId, personId } = await requireMemberContext()
     await getSql().begin(async (tx) => {
       const duplicate = await tx<{ id: string }[]>`
@@ -153,7 +159,7 @@ export async function updateMemberProfile(formData: FormData) {
       if (duplicate[0]) throw new Error("Este WhatsApp já está vinculado a outra conta")
       const rows = await tx<{ id: string }[]>`
         update public.people
-        set email = ${email || null}, phone = ${phone}, address = ${value(formData, "address")},
+        set email = ${email || null}, phone = ${phone}, birth_date = ${birthDate}, address = ${value(formData, "address")},
             address_number = ${value(formData, "addressNumber")}, address_complement = ${value(formData, "addressComplement")},
             neighborhood = ${value(formData, "neighborhood")}, city = ${value(formData, "city")}, state = ${value(formData, "state")},
             postal_code = ${value(formData, "postalCode")}, updated_by = ${user.id}, updated_at = now()
@@ -168,9 +174,10 @@ export async function updateMemberProfile(formData: FormData) {
         where id = ${user.id} and company_id = ${companyId}
       `
     })
-    await writeAuditLog({ action: "member.profile.update", entityTable: "people", entityId: personId, companyId, metadata: { profileId: user.id, fields: ["email", "phone", "address"] } })
+    await writeAuditLog({ action: "member.profile.update", entityTable: "people", entityId: personId, companyId, metadata: { profileId: user.id, fields: ["email", "phone", "birth_date", "address"] } })
     revalidatePath("/membro/perfil")
     revalidatePath("/membro")
+    revalidatePath("/pessoas")
     return { ok: true }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Não foi possível atualizar o perfil" }

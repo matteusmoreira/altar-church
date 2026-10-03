@@ -329,6 +329,7 @@ export async function saveGuardianChild(input: z.input<typeof guardianChildSchem
 }
 
 const guardianProfileSchema = z.object({
+  birthDate: z.string().optional().nullable(),
   address: kidAddressSchema,
   customValues: customValuesSchema,
 })
@@ -349,9 +350,11 @@ export async function saveGuardianKidsProfile(input: z.input<typeof guardianProf
     `
     const personId = rows[0]?.id
     if (!personId) throw new Error("Cadastro do responsável não encontrado")
+    const birthDateVal = parsed.birthDate?.trim() || null
     await sql.begin(async (tx) => {
       await tx`
         update public.people set
+          birth_date = coalesce(${birthDateVal}, birth_date),
           postal_code = ${parsed.address.postalCode}, address = ${parsed.address.street},
           address_number = ${parsed.address.number}, address_complement = ${parsed.address.complement},
           neighborhood = ${parsed.address.neighborhood}, city = ${parsed.address.city},

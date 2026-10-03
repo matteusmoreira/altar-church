@@ -535,6 +535,7 @@ export interface GuardianChildItem {
 
 export interface GuardianPortalData {
   guardianName: string
+  guardianBirthDate?: string | null
   guardianPhotoUrl: string | null
   guardianAddress: KidAddress
   guardianCustomValues: KidCustomFieldValue[]
