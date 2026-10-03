@@ -27,6 +27,13 @@ export function PhotoLightbox({
   const activeUrl = url ?? photoUrl ?? null
   const [zoom, setZoom] = useState(1)
 
+  // Reinicia o zoom ao fechar durante a renderização (idioma "adjusting state when a prop changes").
+  const [wasOpen, setWasOpen] = useState(isCurrentlyOpen)
+  if (wasOpen !== isCurrentlyOpen) {
+    setWasOpen(isCurrentlyOpen)
+    if (!isCurrentlyOpen) setZoom(1)
+  }
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -37,10 +44,7 @@ export function PhotoLightbox({
   )
 
   useEffect(() => {
-    if (!isCurrentlyOpen) {
-      setZoom(1)
-      return
-    }
+    if (!isCurrentlyOpen) return
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [isCurrentlyOpen, handleKeyDown])

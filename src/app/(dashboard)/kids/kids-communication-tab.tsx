@@ -153,9 +153,12 @@ export function KidsCommunicationTab({
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; kind: "message" | "conversation"; title: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  useEffect(() => {
+  // Espelha a prop no estado durante a renderização (idioma "adjusting state when a prop changes").
+  const [syncedInitialData, setSyncedInitialData] = useState(initialData)
+  if (syncedInitialData !== initialData) {
+    setSyncedInitialData(initialData)
     setData(initialData)
-  }, [initialData])
+  }
 
   async function handleRefresh() {
     setIsRefreshing(true)

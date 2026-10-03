@@ -38,25 +38,26 @@ export function ImageCropModal({
   const touchDistanceRef = useRef<number | null>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
 
-  // Reset states when a new image is provided
-  useEffect(() => {
+  // Reinicia os controles ao fechar durante a renderização (idioma "adjusting state when a prop changes").
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
     if (!open) {
       setOffset({ x: 0, y: 0 })
       setZoom(1)
       setRotation(0)
-      return
     }
+  }
 
-    if (file) {
-      const url = URL.createObjectURL(file)
-      setSourceUrl(url)
-      return () => URL.revokeObjectURL(url)
-    } else if (imageUrl) {
-      setSourceUrl(imageUrl)
-    } else {
-      setSourceUrl(null)
-    }
-  }, [open, file, imageUrl])
+  // A fonte da imagem é um sistema externo (object URL) — o efeito só cria/revoga;
+  // quando não há arquivo, a fonte é a prop imageUrl direta.
+  const effectiveSourceUrl = file ? sourceUrl : imageUrl ?? null
+  useEffect(() => {
+    if (!open || !file) return
+    const url = URL.createObjectURL(file)
+    void (async () => { setSourceUrl(url) })()
+    return () => URL.revokeObjectURL(url)
+  }, [open, file])
 
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
@@ -144,7 +145,7 @@ export function ImageCropModal({
 
   // Render cropped image to high resolution square JPEG
   const handleConfirm = useCallback(async () => {
-    if (!sourceUrl || !naturalDimensions || !imageRef.current) return
+    if (!effectiveSourceUrl || !naturalDimensions || !imageRef.current) return
     setIsProcessing(true)
 
     try {
@@ -203,7 +204,7 @@ export function ImageCropModal({
     } finally {
       setIsProcessing(false)
     }
-  }, [sourceUrl, naturalDimensions, offset, rotation, effectiveScale, file, onConfirm])
+  }, [effectiveSourceUrl, naturalDimensions, offset, rotation, effectiveScale, file, onConfirm])
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel() }}>
@@ -228,11 +229,11 @@ export function ImageCropModal({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            {sourceUrl && (
+            {effectiveSourceUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 ref={imageRef}
-                src={sourceUrl}
+                src={effectiveSourceUrl}
                 alt="Para enquadrar"
                 onLoad={onImageLoad}
                 draggable={false}

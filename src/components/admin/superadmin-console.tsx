@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Activity,
@@ -318,9 +318,12 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
     () => initialData.companies[0]?.id ?? ""
   )
 
-  useEffect(() => {
+  // Espelha a prop no estado durante a renderização (idioma "adjusting state when a prop changes").
+  const [syncedCompanies, setSyncedCompanies] = useState(initialData.companies)
+  if (syncedCompanies !== initialData.companies) {
+    setSyncedCompanies(initialData.companies)
     setCompanies(initialData.companies)
-  }, [initialData.companies])
+  }
 
   const modulesByGroup = useMemo(() => {
     return data.modules.reduce<Record<string, AdminModule[]>>((acc, module) => {
