@@ -162,7 +162,7 @@ export async function enqueueFormWhatsappDelivery(input: {
 }) {
   const sql = getSql()
   const messageConfig = parseDirectMessageConfig(input.message)
-  if(await automationOwnsDelivery(input.companyId,"form.submitted"))return
+  if(await automationOwnsDelivery(input.companyId,"form.submitted",input.formId))return
   let snapshot: FormDirectMessage | null = null
   let errorMessage: string | null = null
 
@@ -206,7 +206,7 @@ export async function processFormWhatsappOutbox(batchSize = 25) {
 
   for (const delivery of claimed) {
     try {
-      if(await automationOwnsDelivery(delivery.company_id,"form.submitted")){
+      if(await automationOwnsDelivery(delivery.company_id,"form.submitted",delivery.form_id)){
         await sql`update public.form_whatsapp_deliveries set status='dead',last_error='Envio transferido para Automações',locked_at=null,updated_at=now() where id=${delivery.id}`
         dead+=1
         continue

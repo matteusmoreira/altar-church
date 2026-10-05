@@ -45,7 +45,6 @@ import {
   publishAutomation,
   simulateAutomation,
   generateAutomation,
-  startAutomationManually,
 } from "@/lib/automations/actions";
 import {
   KINDS,
@@ -63,6 +62,7 @@ import { newNode } from "@/lib/automations/templates";
 import type { Workspace, FlowItem } from "@/lib/automations/workspace-types";
 import { hasPermission } from "@/lib/types";
 import { MessageEditor } from "./message-editor";
+import { AutomationTestPanel } from "./test-panel";
 
 const portLabels: Record<string, string> = {
   next: "Continuar",
@@ -73,7 +73,7 @@ const portLabels: Record<string, string> = {
   timeout: "Prazo vencido",
   default: "Outra resposta",
 };
-const portLabel=(node:FlowNode|undefined,port:string)=>node?.config.cases?.find(c=>c.port===port)?.value??portLabels[port]??port;
+const portLabel=(node:FlowNode|undefined,port:string)=>node?.kind === "kanban_move" ? (port === "next" ? "Sucesso" : "Erro") : node?.config.cases?.find(c=>c.port===port)?.value??portLabels[port]??port;
 type CanvasNode = Node<{ node: FlowNode; issues: string[] }, "automation">;
 function AutomationNode({ data, selected }: NodeProps<CanvasNode>) {
   const ports = requiredPorts(data.node);
@@ -170,7 +170,7 @@ function Editor({
     [aiPrompt, setAiPrompt] = useState(""),
     [aiOpen, setAiOpen] = useState(false),
     [model, setModel] = useState(workspace.settings?.allowed_models[0] ?? ""),
-    [testPerson, setTestPerson] = useState("");
+    [testOpen, setTestOpen] = useState(false);
   const record = useRef({
       id: flow?.id,
       revision: flow?.revision ?? 0,
@@ -477,15 +477,14 @@ function Editor({
                 preview
                   ? {
                       issues,
+                      audiences: {},
                       total: 2,
-                      included: workspace.people
-                        .slice(0, 2)
-                        .map((p) => ({
-                          id: p.id,
-                          name: p.full_name,
-                          reason: "Pessoa fictícia para prévia",
-                          context: { nome: p.full_name },
-                        })),
+                      included: workspace.people.slice(0, 2).map((p) => ({
+                        id: p.id,
+                        name: p.full_name,
+                        reason: "Pessoa fictícia para prévia",
+                        context: { nome: p.full_name },
+                      })),
                       excluded: [],
                       path: definition.nodes.map((n) => ({
                         id: n.id,
@@ -499,6 +498,14 @@ function Editor({
           }
         >
           Simular e revisar público
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setTestOpen((v) => !v)}
+        >
+          <Play className="h-4 w-4" />
+          Testar automação
         </Button>
         <Button
           size="sm"
@@ -646,7 +653,27 @@ function Editor({
             />
           </div>
           <div className="flex-1 overflow-y-auto space-y-1">
-            {search&&definition.nodes.filter(n=>n.label.toLowerCase().includes(search.toLowerCase())).map(n=><button key={`locate-${n.id}`} className="w-full rounded-md bg-primary/10 p-2 text-left text-xs" onClick={()=>{setSelected(n.id);setMobilePanel("config");void rf.setCenter(n.position.x+115,n.position.y+75,{zoom:0.9,duration:300})}}>Localizar: {n.label}</button>)}
+            {search &&
+              definition.nodes
+                .filter((n) =>
+                  n.label.toLowerCase().includes(search.toLowerCase()),
+                )
+                .map((n) => (
+                  <button
+                    key={`locate-${n.id}`}
+                    className="w-full rounded-md bg-primary/10 p-2 text-left text-xs"
+                    onClick={() => {
+                      setSelected(n.id);
+                      setMobilePanel("config");
+                      void rf.setCenter(n.position.x + 115, n.position.y + 75, {
+                        zoom: 0.9,
+                        duration: 300,
+                      });
+                    }}
+                  >
+                    Localizar: {n.label}
+                  </button>
+                ))}
             {KINDS.filter((k) =>
               LABELS[k].toLowerCase().includes(search.toLowerCase()),
             ).map((kind) => (
@@ -723,7 +750,8 @@ function Editor({
           </ReactFlow>
         </div>
         <aside
-          className={`${mobilePanel === "config" ? "absolute inset-y-0 right-0 z-20 block" : "hidden"} w-[min(320px,88vw)] shrink-0 overflow-y-auto border-l bg-card p-4 xl:relative xl:block`}
+          className={`${mobilePanel === "config" ? "absolute inset-y-0 right-0 z-20 block" : "hidden"} w-[min(320px,88vw)] min-w-0 shrink-0 overflow-y-auto overflow-x-hidden border-l bg-background p-4 xl:relative xl:block`}
+          key={active?.id}
         >
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-semibold">Configuração</p>
@@ -741,7 +769,7 @@ function Editor({
               Selecione um bloco no fluxo para editar seu comportamento.
             </p>
           ) : (
-            <fieldset disabled={!canEdit} className="space-y-4">
+            <fieldset disabled={!canEdit} className="min-w-0 w-full space-y-4">
               <Input
                 aria-label="Nome do bloco"
                 value={active.label}
@@ -812,9 +840,12 @@ function Editor({
                         { id: "automation", name: "Esta automação" },
                       ])}
                       <p className="text-xs text-muted-foreground">
-                        Transfere esta finalidade em toda a igreja. Durante a
-                        pausa do fluxo, o envio existente também permanece
-                        suspenso.
+                        Transfere o envio{" "}
+                        {active.config.event === "form.submitted"
+                          ? "do formulário selecionado"
+                          : "desta finalidade em toda a igreja"}
+                        . Durante a pausa do fluxo, o envio existente também
+                        permanece suspenso.
                       </p>
                     </>
                   )}
@@ -873,6 +904,29 @@ function Editor({
                         "Evento",
                         "event",
                         EVENT_OPTIONS.map(([id, name]) => ({ id, name })),
+                      )}
+                      {active.config.event === "form.submitted" && (
+                        <>
+                          {pick("Formulário", "formId", workspace.forms)}
+                          {active.config.formId &&
+                            !workspace.forms.find(
+                              (f) => f.id === active.config.formId,
+                            )?.creates_person && (
+                              <p
+                                role="alert"
+                                className="text-xs text-amber-600"
+                              >
+                                Este formulário precisa criar ou vincular uma
+                                pessoa.{" "}
+                                <a
+                                  className="underline"
+                                  href={`/formularios/${active.config.formId}`}
+                                >
+                                  Configurar formulário
+                                </a>
+                              </p>
+                            )}
+                        </>
                       )}
                       {["event.upcoming", "volunteer.upcoming"].includes(
                         active.config.event ?? "",
@@ -988,6 +1042,15 @@ function Editor({
                 <>
                   {field("Aguardar minutos", "minutes", "number")}
                   {field("Ou até data e hora", "until", "datetime-local")}
+                </>
+              )}
+              {active.kind === "kanban_move" && (
+                <>
+                  {pick("Coluna do Kanban", "stageId", workspace.stages)}
+                  <p className="text-xs text-muted-foreground">
+                    Move o card desta resposta ou o mais recente da pessoa. Se
+                    não houver card, cria na coluna escolhida.
+                  </p>
                 </>
               )}
               {["response", "task_wait"].includes(active.kind) && (
@@ -1127,6 +1190,14 @@ function Editor({
           </>
         )}
       </div>
+      {testOpen && (
+        <AutomationTestPanel
+          key={JSON.stringify(definition)}
+          definition={definition}
+          workspace={workspace}
+          preview={preview}
+        />
+      )}
       {simulation && (
         <div className="rounded-xl border bg-card p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -1161,41 +1232,6 @@ function Editor({
               ))}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <select
-              className={`${selectClass} max-w-xs`}
-              aria-label="Pessoa de teste"
-              value={testPerson}
-              onChange={(e) => setTestPerson(e.target.value)}
-            >
-              <option value="">Destinatário de teste…</option>
-              {workspace.people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.full_name}
-                </option>
-              ))}
-            </select>
-            <Button
-              variant="outline"
-              disabled={!testPerson || busy || preview || issues.length > 0}
-              onClick={() =>
-                void action(async () => {
-                  const id = await persist();
-                  if (id) {
-                    await startAutomationManually(id, [testPerson], true);
-                    toast.success("Teste agendado no tenant de teste");
-                  }
-                })
-              }
-            >
-              <Play className="h-4 w-4" />
-              Testar com envio real
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Teste real exige tenant de teste e fluxo publicado. Publicar não
-            inicia fluxos manuais.
-          </p>
         </div>
       )}
     </div>

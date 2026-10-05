@@ -37,7 +37,7 @@
     "member:verify": "node --env-file-if-exists=.env.local scripts/verify-member-portal.mjs",
     "kids:configure-pin": "node scripts/configure-kids-pin-pepper.mjs",
     "secrets:check": "node scripts/check-secrets.mjs",
-    "test:automations": "node --experimental-strip-types --test --test-concurrency=1 tests/automations.test.ts tests/automations-database.test.mjs tests/automations-runtime.test.mjs"
+    "test:automations": "node --experimental-strip-types --test --test-concurrency=1 tests/automations.test.ts tests/automations-database.test.mjs tests/automations-runtime.test.mjs tests/automations-improvements.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

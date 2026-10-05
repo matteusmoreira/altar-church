@@ -1020,7 +1020,7 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       return campaign.id
     })
     await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })
-    afterResponse("ministry notification outbox", () => processNotificationOutbox(25))
+    afterResponse("ministry notification outbox", () => processNotificationOutbox(25, saved, access.companyId))
     refresh(parsed.ministryId)
     return { ok: true, id: saved }
   } catch (error) { return result(error) }

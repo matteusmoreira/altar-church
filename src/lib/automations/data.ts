@@ -38,6 +38,7 @@ export function definitionPermissions(
     if (event.startsWith("kids.")) permissions.add("kids.children.manage");
     if (event.startsWith("prayer.")) permissions.add("prayer.view");
     if (event.startsWith("crm.")) permissions.add("crm.view");
+    if (n.kind === "kanban_move") permissions.add("crm.edit");
     if (event.startsWith("content.")) permissions.add("content.view");
     if (c.filter?.absenceDays || event.startsWith("attendance."))
       permissions.add("attendance.view");
@@ -138,6 +139,8 @@ export async function getAutomationWorkspace() {
     congregations,
     ministries,
     activities,
+    forms,
+    stages,
   ] = await Promise.all([
     sql`select id,name,description,draft,revision,status,published_version_id,updated_at from public.automation_flows where company_id=${companyId} and status<>'archived' order by updated_at desc`,
     sql`select r.id,r.flow_id,r.node_id,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} order by r.created_at desc limit 150`,
@@ -157,6 +160,8 @@ export async function getAutomationWorkspace() {
       ? sql`select id,name from public.ministries where company_id=${companyId} and deleted_at is null order by name`
       : [],
     sql`select id,description as name from public.person_activities where company_id=${companyId} and deleted_at is null order by description`,
+    hasPermission(user.role, "forms.view") ? sql`select id,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
+    hasPermission(user.role, "crm.view") ? sql`select id,name from public.crm_stages where company_id=${companyId} and deleted_at is null order by sort_order,created_at` : [],
   ]);
   return JSON.parse(
     JSON.stringify({
@@ -182,6 +187,8 @@ export async function getAutomationWorkspace() {
       congregations,
       ministries,
       activities,
+      forms,
+      stages,
     }),
   );
 }

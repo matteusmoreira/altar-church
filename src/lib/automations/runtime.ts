@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db/client";
+import { moveAutomationKanban } from "./kanban";
 import {
   flowSchema,
   conditionMatches,
@@ -182,6 +183,7 @@ export async function collectAutomationStarts(now = new Date()) {
         const root = flow.definition.nodes.find((n) => n.kind === "trigger")!,
           c = root.config;
         if (c.mode !== "event" || c.event !== event.type) continue;
+        if (event.type === "form.submitted" && c.formId && c.formId !== event.context.form_id) continue;
         let personIds: string[] = [];
         if (String(event.type).startsWith("kids.")) {
           const guardians =
@@ -586,6 +588,15 @@ async function step(run: Run) {
         throw new Error("Interesse exige pessoa identificada");
       await sql`insert into public.automation_interests(company_id,run_id,node_id,person_id,interest) values(${run.company_id},${run.id},${node.id},${run.person_id},${renderText(c.interest!, run.context)}) on conflict(run_id,node_id) do nothing`;
       return finish(run, node, "next");
+    }
+    if (node.kind === "kanban_move") {
+      const cardId = await moveAutomationKanban({
+        companyId: run.company_id, runId: run.id, nodeId: node.id,
+        leaseToken: run.lease_token, personId: run.person_id,
+        stageId: c.stageId!, actorId: version.actor_id,
+        cardId: typeof run.context.crm_card_id === "string" ? run.context.crm_card_id : undefined,
+      });
+      return finish(run, node, "next", "ready", { crm_card_id: cardId });
     }
     if (node.kind === "update") {
       if (!run.person_id) throw new Error("Pessoa não identificada");

@@ -5,7 +5,8 @@ import { z } from "zod"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
-import { retryNotificationDelivery } from "./delivery"
+import { retryNotificationDelivery, processNotificationOutbox } from "./delivery"
+import { afterResponse } from "@/lib/performance/after-response"
 
 const uuidSchema = z.string().uuid()
 
@@ -33,6 +34,7 @@ export async function retryNotificationDeliveryAction(formData: FormData) {
       metadata: { notificationId, profileId: user.id },
     })
     revalidatePath(`/notificacao/${notificationId}`)
+    afterResponse("notification retry", () => processNotificationOutbox(25, notificationId, companyId))
   }
   revalidatePath("/notificacao")
   return { ok: true, id }

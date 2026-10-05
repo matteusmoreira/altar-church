@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageHeader } from "@/components/shared"
 import { getMyNotificationPreferences, saveMyNotificationPreference } from "@/lib/notifications/preferences"
+import { PushActivation } from "@/components/notifications/push-activation"
 
 const channels = [
   { key: "push", label: "Notificações push", description: "Avisos no navegador ou celular.", icon: Bell },
@@ -15,6 +16,7 @@ export default async function MemberNotificationPreferencesPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Preferências de comunicação" description="Escolha em quais canais pode receber avisos da igreja. Alteração tem efeito nas próximas campanhas." />
+      <PushActivation />
       <Card className="glass">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Smartphone className="h-4 w-4 text-primary" /> Seus canais</CardTitle></CardHeader>
         <CardContent className="space-y-3">

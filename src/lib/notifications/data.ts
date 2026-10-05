@@ -30,6 +30,24 @@ function iso(value: Date | string | null) {
   return value ? new Date(value).toISOString() : null
 }
 
+export async function getNotificationPushSummary() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Acesso negado")
+  const companyId = requireUserCompanyId(user)
+  await requirePermission("notification.view", companyId)
+  const rows = await getSql()<{ devices: number; people: number }[]>`
+    select count(*)::int as devices, count(distinct subscription.person_id)::int as people
+    from public.notification_push_subscriptions subscription
+    join public.people person on person.id = subscription.person_id and person.company_id = subscription.company_id
+    where subscription.company_id = ${companyId} and subscription.is_active = true
+      and person.deleted_at is null and person.is_active = true and person.status <> 'inactive'
+      and not exists (select 1 from public.notification_channel_preferences preference
+        where preference.company_id = subscription.company_id and preference.person_id = subscription.person_id
+          and preference.channel = 'push' and preference.opted_out = true)
+  `
+  return { devices: Number(rows[0]?.devices ?? 0), people: Number(rows[0]?.people ?? 0), configured: Boolean(process.env.VAPID_SUBJECT && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) }
+}
+
 export async function getNotificationDetails(notificationId: string, companyIdInput?: string | null): Promise<NotificationDetails> {
   const user = await getCurrentUser()
   if (!user) throw new Error("Acesso negado")

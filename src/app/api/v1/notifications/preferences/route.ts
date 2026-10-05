@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireApiAuth } from "@/lib/api/auth"
-import { getMyNotificationPreferences, saveMyNotificationPreference, saveMyNotificationPushSubscription } from "@/lib/notifications/preferences"
+import { getMyNotificationPreferences, getMyNotificationPushConfig, saveMyNotificationPreference, saveMyNotificationPushSubscription } from "@/lib/notifications/preferences"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +11,8 @@ async function requireSession(request: Request) {
 export async function GET(request: Request) {
   try {
     await requireSession(request)
-    return NextResponse.json({ data: await getMyNotificationPreferences() })
+    const [data, push] = await Promise.all([getMyNotificationPreferences(), getMyNotificationPushConfig()])
+    return NextResponse.json({ data, push })
   } catch (error) {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: error instanceof Error ? error.message : "Acesso negado" } }, { status: 403 })
   }

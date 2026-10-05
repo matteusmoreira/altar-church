@@ -117,7 +117,7 @@ async function sendPush(delivery: DeliveryRow, title: string, content: string): 
   await webpush.sendNotification(
     { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth_key } },
     JSON.stringify({ title, body: content, url: "/membro" }),
-    { TTL: 300, urgency: "normal" },
+    { TTL: 86400, urgency: "normal", timeout: FETCH_TIMEOUT_MS },
   )
   return { providerId: `webpush:${delivery.recipient}`, responseStatus: 201 }
 }
@@ -139,7 +139,8 @@ async function sendDelivery(delivery: DeliveryRow, title: string, content: strin
 async function markFailure(delivery: DeliveryRow, error: unknown) {
   const sql = getSql()
   const message = error instanceof Error ? error.message : "Falha no envio"
-  const invalidPushEndpoint = delivery.channel === "push" && /404|410|inativo|removido/i.test(message)
+  const statusCode = error && typeof error === "object" && "statusCode" in error ? Number(error.statusCode) : null
+  const invalidPushEndpoint = delivery.channel === "push" && (statusCode === 404 || statusCode === 410 || /\b404\b|\b410\b|inativo|removido/i.test(message))
   if (invalidPushEndpoint) {
     await sql`
       update public.notification_push_subscriptions
@@ -196,10 +197,10 @@ async function refreshCampaignStatus(notificationId: string) {
   `
 }
 
-export async function processNotificationOutbox(batchSize = 25) {
+export async function processNotificationOutbox(batchSize = 25, notificationId: string | null = null, companyId: string | null = null) {
   const sql = getSql()
   const claimed = await sql<DeliveryRow[]>`
-    select * from public.claim_notification_delivery_batch(${batchSize})
+    select * from public.claim_notification_delivery_batch(${batchSize}, ${notificationId}::uuid, ${companyId}::uuid)
   `
   let sent = 0
   let failed = 0
@@ -208,11 +209,20 @@ export async function processNotificationOutbox(batchSize = 25) {
   for (const delivery of claimed) {
     try {
       const activeRows = await sql<{ id: string }[]>`
-        select id from public.notification_deliveries
-        where id = ${delivery.id} and status = 'processing'
+        select delivery.id from public.notification_deliveries delivery
+        join public.notifications campaign on campaign.id = delivery.notification_id and campaign.company_id = delivery.company_id
+        where delivery.id = ${delivery.id} and delivery.status = 'processing'
+          and campaign.deleted_at is null and campaign.status not in ('canceled', 'draft')
+          and not exists (
+            select 1 from public.notification_channel_preferences preference
+            where preference.company_id = delivery.company_id and preference.person_id = delivery.person_id
+              and preference.channel = delivery.channel and preference.opted_out = true
+          )
         limit 1
       `
       if (!activeRows[0]) {
+        await sql`update public.notification_deliveries set status = 'canceled', locked_at = null, updated_at = now()
+          where id = ${delivery.id} and status = 'processing'`
         await refreshCampaignStatus(delivery.notification_id)
         continue
       }
@@ -239,10 +249,12 @@ export async function processNotificationOutbox(batchSize = 25) {
 export async function retryNotificationDelivery(deliveryId: string, companyId: string) {
   const rows = await getSql()<{ id: string; notification_id: string }[]>`
     update public.notification_deliveries
-    set status = 'pending', next_attempt_at = now(), last_error = null, locked_at = null, updated_at = now()
+    set status = 'pending', attempts = 0, next_attempt_at = now(), last_error = null, locked_at = null, updated_at = now()
     where id = ${deliveryId}
       and company_id = ${companyId}
       and status in ('failed', 'dead')
+      and exists (select 1 from public.notifications campaign where campaign.id = notification_deliveries.notification_id
+        and campaign.company_id = ${companyId} and campaign.deleted_at is null and campaign.status not in ('canceled', 'draft'))
     returning id, notification_id
   `
   return rows[0] ?? null

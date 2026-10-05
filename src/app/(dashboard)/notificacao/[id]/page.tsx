@@ -1,7 +1,8 @@
 import Link from "next/link"
-import { ArrowLeft, RefreshCw, Send, TriangleAlert } from "lucide-react"
+import { ArrowLeft, Send, TriangleAlert } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { NotificationActionForm } from "@/components/notifications/action-form"
+import { QueueRefresh } from "@/components/notifications/queue-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { getNotificationDetails } from "@/lib/notifications/data"
@@ -9,6 +10,7 @@ import { retryNotificationDeliveryAction } from "@/lib/notifications/actions"
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", processing: "Processando", sent: "Enviado", failed: "Falhou", canceled: "Cancelado", dead: "Falha permanente",
+  queued: "Na fila", scheduled: "Agendado", completed: "Concluído", draft: "Rascunho",
 }
 
 function maskRecipient(value: string, channel: string) {
@@ -22,7 +24,7 @@ function maskRecipient(value: string, channel: string) {
 
 async function retryDeliveryForm(formData: FormData) {
   "use server"
-  await retryNotificationDeliveryAction(formData)
+  return retryNotificationDeliveryAction(formData)
 }
 
 export default async function NotificationDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +34,7 @@ export default async function NotificationDetailsPage({ params }: { params: Prom
   const failed = data.deliveries.filter((delivery) => delivery.status === "failed" || delivery.status === "dead").length
   return (
     <div className="space-y-6">
+      <QueueRefresh enabled={['queued', 'processing', 'scheduled'].includes(data.status)} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link href="/notificacao" className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-3.5 w-3.5" /> Notificações</Link>
@@ -43,7 +46,7 @@ export default async function NotificationDetailsPage({ params }: { params: Prom
       <Card className="glass"><CardContent className="space-y-3 p-5"><p className="whitespace-pre-wrap">{data.content}</p><div className="flex flex-wrap gap-3 text-sm text-muted-foreground"><span>Canal: {data.method}</span><span>Público: {data.audienceKind}</span><span>Snapshot: {data.snapshotCount}</span><span>Enviados: {sent}</span><span>Falhas/dead: {failed}</span></div></CardContent></Card>
       <Card className="glass overflow-hidden"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><TriangleAlert className="h-4 w-4 text-primary" /> Entregas</CardTitle></CardHeader>
         <Table><TableHeader><TableRow><TableHead>Destinatário</TableHead><TableHead>Canal</TableHead><TableHead>Status</TableHead><TableHead>Tentativas</TableHead><TableHead>Erro</TableHead><TableHead>Ação</TableHead></TableRow></TableHeader><TableBody>
-          {data.deliveries.map((delivery) => <TableRow key={delivery.id}><TableCell><span className="font-medium">{delivery.recipientName}</span><span className="block text-xs text-muted-foreground">{maskRecipient(delivery.recipient, delivery.channel)}</span></TableCell><TableCell>{delivery.channel}</TableCell><TableCell><Badge variant={delivery.status === "sent" ? "default" : delivery.status === "dead" || delivery.status === "failed" ? "destructive" : "secondary"}>{statusLabels[delivery.status]}</Badge></TableCell><TableCell>{delivery.attempts}</TableCell><TableCell className="max-w-sm truncate text-xs text-muted-foreground">{delivery.lastError ?? "-"}</TableCell><TableCell>{(delivery.status === "failed" || delivery.status === "dead") && <form action={retryDeliveryForm}><input type="hidden" name="deliveryId" value={delivery.id} /><Button type="submit" size="sm" variant="outline"><RefreshCw className="h-3.5 w-3.5" /> Reenviar</Button></form>}</TableCell></TableRow>)}
+          {data.deliveries.map((delivery) => <TableRow key={delivery.id}><TableCell><span className="font-medium">{delivery.recipientName}</span><span className="block text-xs text-muted-foreground">{maskRecipient(delivery.recipient, delivery.channel)}</span></TableCell><TableCell>{delivery.channel}</TableCell><TableCell><Badge variant={delivery.status === "sent" ? "default" : delivery.status === "dead" || delivery.status === "failed" ? "destructive" : "secondary"}>{statusLabels[delivery.status]}</Badge></TableCell><TableCell>{delivery.attempts}</TableCell><TableCell className="max-w-sm truncate text-xs text-muted-foreground">{delivery.lastError ?? "-"}</TableCell><TableCell>{(delivery.status === "failed" || delivery.status === "dead") && <NotificationActionForm action={retryDeliveryForm} submitLabel="Reenviar"><input type="hidden" name="deliveryId" value={delivery.id} /></NotificationActionForm>}</TableCell></TableRow>)}
         </TableBody></Table>
         {data.deliveries.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">Nenhuma entrega criada.</p>}
       </Card>

@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
 import { writeAuditLog } from "@/lib/auth/permissions";
-import { flowSchema, parseStoredFlowDefinition, validateFlow, type FlowDefinition } from "./contract";
+import {
+  flowSchema,
+  parseStoredFlowDefinition,
+  validateFlow,
+  type FlowDefinition,
+} from "./contract";
 import {
   automationAccess,
   assertDefinitionPermissions,
@@ -12,12 +17,111 @@ import {
   personContext,
 } from "./data";
 import { callAutomationAI, openRouterModels } from "./ai";
-import { uploadManagedFile, getOptionalFile } from "@/lib/files/server";
+import {
+  uploadManagedFile,
+  getOptionalFile,
+  createSignedUrlsByStoragePath,
+} from "@/lib/files/server";
 import { randomBytes, createHash } from "node:crypto";
 import { enqueueAutomationRun } from "./runtime";
 import { SHARED_DELIVERY_EVENTS } from "./ownership";
+import { sendAutomationTestMessage } from "./delivery";
 
 const uuid = z.string().uuid();
+export async function automationMediaPreview(id: string) {
+  const { companyId } = await automationAccess();
+  const [file] =
+    await getSql()`select storage_path from public.app_files where id=${uuid.parse(id)} and company_id=${companyId} and is_active and deleted_at is null and mime_type like 'image/%'`;
+  if (!file) return "";
+  return (
+    (await createSignedUrlsByStoragePath([String(file.storage_path)], 600)).get(
+      String(file.storage_path),
+    ) ?? ""
+  );
+}
+export async function sendAutomationDraftTest(input: {
+  definition: FlowDefinition;
+  nodeId: string;
+  requestId: string;
+  instanceId: string;
+  phone: string;
+  personId: string;
+  context: Record<string, string>;
+}) {
+  const { user, companyId } = await automationAccess("automations.operate");
+  await automationAccess("communication.send");
+  const definition = flowSchema.parse(input.definition);
+  assertDefinitionPermissions(user.role, definition);
+  const node = definition.nodes.find(
+    (n) => n.id === input.nodeId && n.kind === "whatsapp",
+  );
+  if (!node?.config.message) throw new Error("Selecione um bloco de mensagem");
+  const [person] = await selectAudience(
+    companyId,
+    undefined,
+    uuid.parse(input.personId),
+  );
+  if (!person) throw new Error("Pessoa não disponível nesta igreja");
+  const context = z
+    .record(z.string().max(80), z.string().max(4096))
+    .parse(input.context);
+  if (Object.keys(context).length > 40)
+    throw new Error("Contexto de teste inválido");
+  const testNode = {
+    ...node,
+    id: "message",
+    config: {
+      ...node.config,
+      instanceId: uuid.parse(input.instanceId),
+      destination: "person" as const,
+    },
+  };
+  const messageIssues = validateFlow({
+    schemaVersion: 1,
+    nodes: [
+      {
+        id: "start",
+        kind: "trigger",
+        label: "Início",
+        position: { x: 0, y: 0 },
+        config: { mode: "manual" },
+      },
+      testNode,
+      {
+        id: "end",
+        kind: "end",
+        label: "Fim",
+        position: { x: 0, y: 0 },
+        config: {},
+      },
+    ],
+    edges: [
+      { id: "a", source: "start", target: "message", port: "next" },
+      { id: "b", source: "message", target: "end", port: "next" },
+      { id: "c", source: "message", target: "end", port: "error" },
+    ],
+  });
+  if (messageIssues.length)
+    throw new Error(messageIssues.map((i) => i.message).join("; "));
+  const result = await sendAutomationTestMessage({
+    companyId,
+    actorId: user.id,
+    requestId: uuid.parse(input.requestId),
+    nodeId: node.id,
+    instanceId: testNode.config.instanceId,
+    phone: z.string().min(10).max(30).parse(input.phone),
+    message: node.config.message,
+    context: { ...personContext(person), ...context },
+  });
+  await writeAuditLog({
+    action: "automation.message_test",
+    entityTable: "automation_test_deliveries",
+    entityId: input.requestId,
+    companyId,
+    metadata: { status: result.status },
+  });
+  return result;
+}
 export async function saveAutomation(input: {
   id?: string;
   name: string;
@@ -84,8 +188,11 @@ export async function publishAutomation(id: string, revision: number) {
       ) &&
       root.config.deliveryOwner === "automation"
     ) {
+      const purpose = root.config.event === "form.submitted" && root.config.formId ? `form.submitted:${root.config.formId}` : root.config.event!;
+      if (root.config.event === "form.submitted" && (await tx`select flow_id from public.automation_source_owners where company_id=${companyId} and purpose='form.submitted'`)[0])
+        throw new Error("Um fluxo anterior controla todos os formulários. Arquive-o antes de transferir o envio deste formulário.");
       const owners =
-        await tx`insert into public.automation_source_owners(company_id,purpose,flow_id) values(${companyId},${root.config.event!},${id}) on conflict(company_id,purpose) do update set flow_id=excluded.flow_id where automation_source_owners.flow_id=excluded.flow_id returning flow_id`;
+        await tx`insert into public.automation_source_owners(company_id,purpose,flow_id) values(${companyId},${purpose},${id}) on conflict(company_id,purpose) do update set flow_id=excluded.flow_id where automation_source_owners.flow_id=excluded.flow_id returning flow_id`;
       if (!owners[0])
         throw new Error(
           "Outro fluxo já é responsável por esta finalidade. Arquive-o antes de transferir.",
@@ -95,6 +202,12 @@ export async function publishAutomation(id: string, revision: number) {
       await tx`select allowed_models,monthly_budget_usd from public.automation_settings where company_id=${companyId}`;
     for (const node of definition.nodes) {
       const c = node.config;
+      if (node.kind === "trigger" && c.mode === "event" && c.event === "form.submitted") {
+        const [form] = await tx`select id from public.forms where id=${c.formId!} and company_id=${companyId} and deleted_at is null and (create_person or create_account_after_submit)`;
+        if (!form) throw new Error("Escolha um formulário desta igreja que crie ou vincule a pessoa");
+      }
+      if (node.kind === "kanban_move" && !(await tx`select id from public.crm_stages where id=${c.stageId!} and company_id=${companyId} and deleted_at is null`)[0])
+        throw new Error("Coluna do Kanban não disponível nesta igreja");
       if (
         node.kind === "ai" &&
         (!settings?.allowed_models.includes(c.model) ||
@@ -184,8 +297,13 @@ export async function simulateAutomation(definition: FlowDefinition) {
   const people = await selectAudience(companyId, filter),
     all = await selectAudience(companyId);
   const ids = new Set(people.map((p) => p.id));
+  const audienceNodes = parsed.nodes.filter(n => n.kind === "audience");
+  const audiences: Record<string, string[]> = Object.fromEntries(await Promise.all(audienceNodes.map(async n => [n.id, (await selectAudience(companyId, n.config.filter)).map(p => p.id)] as const)));
+  const root = parsed.nodes.find(n => n.kind === "trigger");
+  if (root) audiences[root.id] = people.map(p => p.id);
   return {
     issues: validateFlow(parsed),
+    audiences,
     total: people.length,
     included: people.map((p) => ({
       id: p.id,
@@ -195,11 +313,11 @@ export async function simulateAutomation(definition: FlowDefinition) {
     })),
     excluded: all
       .filter((p) => !ids.has(p.id))
-      .slice(0, 100)
       .map((p) => ({
         id: p.id,
         name: p.full_name,
         reason: "Não atende aos filtros configurados",
+        context: personContext(p),
       })),
     path: parsed.nodes.map((n) => ({ id: n.id, label: n.label, kind: n.kind })),
   };

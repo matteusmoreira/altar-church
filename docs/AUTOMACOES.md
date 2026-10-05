@@ -68,3 +68,22 @@ O redeploy de produção `dpl_jajDQggyGDicJrzKvfjcVJYw39mb`, vinculado ao commit
 O plugin confirmou o projeto `zsldqioutjxchgmmwtfi` (Altar Church, `ACTIVE_HEALTHY`). A Edge Function `automation-worker`, versão 1, foi publicada com autenticação pelo segredo dedicado. Seus dois segredos foram configurados no painel autenticado, sem registrar os valores em arquivos ou saídas. O segredo foi transferido do Vault em memória, preservando o mesmo valor da aplicação.
 
 A função rejeitou chamadas sem segredo ou com segredo incorreto (401) e aceitou a chamada correta (200, `processed: 0`). A invocação pelo PostgreSQL/`pg_net` também retornou 200, sem timeout ou erro, com zero etapas. O job `automation-worker-minute` foi reativado para `* * * * *`; a execução agendada às 16:54 UTC foi confirmada como `succeeded`, com respostas HTTP 200. Nenhum fluxo está ativo e a contagem de entregas permanece zero; essa configuração não comprova envio real pela Uazapi nem consumo OpenRouter.
+
+
+## Formulários, Kanban e teste de rascunhos — 05/10/2026
+
+- Em **Início → Evento do sistema → Formulário enviado**, selecione o formulário. Ele precisa criar/vincular pessoa (`create_person`) ou criar conta após o envio. A publicação valida essa configuração. O gatilho reage somente à inserção da resposta, leva os IDs do formulário/resposta/card ao fluxo e não repete ao editar a resposta.
+- Novos fluxos e republicações exigem um formulário específico. Versões antigas continuam interpretadas como antes. A responsabilidade pelo envio direto é transferida somente para o formulário selecionado; um fluxo legado que controla todos precisa ser arquivado antes dessa transferência.
+- **Mover no Kanban** usa o card daquela resposta; sem esse contexto, usa o card ativo mais recente da pessoa. Sem card, cria um. Colunas e cards são validados na mesma igreja; o registro por execução/bloco impede repetir a operação e o marcador transacional impede eventos recursivos.
+- **Enviar WhatsApp** permite configurar botões, rodapé, seções/itens da lista e cartões antes de enviar imagens. Botões, itens, seções e cartões podem ser ordenados; imagens dos cartões podem ser substituídas. Os limites são três botões, dez itens no total da lista e dez cartões.
+- **Testar automação** funciona no rascunho: selecione uma pessoa para contexto e avance pelos blocos. Respostas, conclusão/expiração de tarefas, esperas e resultados de IA são informados/simulados sem alterar cadastros ou chamar IA paga.
+- Cada mensagem visitada oferece **Enviar ao WhatsApp de teste**. Informe o número e selecione a instância conectada. Mesmo mensagens destinadas a grupos usam somente esse número privado. É necessário possuir `automations.operate`, `communication.send` e as permissões dos módulos do fluxo.
+- Os envios reais de teste são registrados em `automation_test_deliveries`, separados das execuções de produção. O mesmo identificador de solicitação não envia duas vezes. Retornos incertos ficam registrados, sem repetição automática. Aceite pelo provedor não comprova recebimento no celular.
+
+Migration incremental: `20261005184126_automation_form_kanban_testing.sql`. Nesta entrega ela foi validada apenas em PostgreSQL isolado (PGlite), com HTTP simulado. A aplicação remota e a publicação estão fora do escopo. A prévia `/dev/automacoes` continua fictícia e bloqueia uploads/envios reais.
+
+### Aplicação da migration — 05/10/2026
+
+Após autorização, `20261005184126_automation_form_kanban_testing.sql` foi aplicada em transação no Supabase Altar Church (`zsldqioutjxchgmmwtfi`), com trava consultiva e registro no histórico. SHA-256 confirmado: `db2cd77c40bbd7996dce066425b151159d9785d885b1ac517ce3ef652e9e113e`.
+
+A verificação remota confirmou as duas tabelas com RLS, leitura autenticada condicionada à igreja e sem escrita para usuários autenticados ou acesso anônimo. Foram conferidos a unicidade por execução/bloco, as referências do Kanban e a captura de formulário somente na inserção, com contexto e proteção contra recursão. As tabelas novas permanecem vazias. Esta aplicação não inclui publicação da aplicação nem envio real de WhatsApp.

@@ -1,6 +1,22 @@
 # Desafios conhecidos
 
+## Notificações e push — 05/10/2026
+
+- O cron genérico de integrações via Edge Function não consome `notification_deliveries`. O backend publicado de notificações respondeu HTTP 500 por segredo ausente; a publicação está bloqueada por token Vercel 403 e conector sem reautenticação. `scripts/setup-notification-cron.mjs` instala o cron dedicado somente após provar `dryRun` e `pushConfigured`; relatório em `docs/incidents/2026-10-05-notifications-push.md`.
+- Push de campanhas e voluntariado tinham cadastros separados. Ativação e sincronização agora contemplam campanhas para pessoas ativas; não reutilizar inscrições de pessoas excluídas. Não regenerar VAPID durante reparos. Recebimento físico exige permissão no aparelho.
+- A mensagem antiga de WhatsApp foi processada com autorização expressa, mas não enviada: a igreja está sem instância Uazapi ativa/conectada. Manter o erro visível e não reativar instâncias antigas automaticamente.
+- Supabase pode conceder `EXECUTE` diretamente a `anon`/`authenticated` por default privileges. Para claims `SECURITY DEFINER`, revogar desses papéis além de `PUBLIC` e verificar com `has_function_privilege`.
+
+## Gestão de acessos — 05/10/2026
+
+- `20261005184836_church_access_crud.sql` aplicada em produção em 05/10/2026 antes do CRUD: coluna e constraint verificadas, preservando os 15 perfis ativos. Commit `0a81de1` publicado no deployment Vercel `dpl_AMuy5BP7xXn8NQc6FBx5K8LBUDEm` READY, com alias `altarchurch.com.br`. Exclusão arquiva o perfil e remove o login, preservando referências históricas; desassociar a pessoa permite recriar o acesso sem duplicá-la.
+- A página `/configuracoes` foi verificada por HTTP autenticado com administrador de igreja `status='test'` (200, dados reais renderizados), sem criar/excluir usuários reais. `/api/ready` retornou 503 por duas migrations de notificações (`20261005185046`, `20261005185525`) aplicadas por trabalho paralelo, ainda ausentes deste commit; não publicar alterações alheias somente para alinhar esse indicador.
+- Não adotar contas Auth existentes somente pelo e-mail nem redefinir suas senhas durante um cadastro: a igreja deve editar apenas a identidade já vinculada ao seu perfil. Os testes `settings-access.test.mjs` usam PostgreSQL PGlite isolado e Auth simulado; não comprovam login real no provedor.
+
 ## Automações — 05/10/2026
+
+- Gatilhos por formulário precisam escopar também `automation_source_owners`: transferir somente o filtro do gatilho sem escopar o dono desliga o envio direto de outros formulários. Versões publicadas sem `formId` continuam legadas; o novo contrato exige seleção na republicação.
+- Upload de carrossel não deve criar o cartão: crie o cartão editável antes do upload e ignore respostas de upload após trocar de bloco. Os testes de rascunho usam entrega separada por identificador de solicitação e jamais entram no worker de produção.
 
 - Nós controlados do React Flow precisam preservar `measured` e `dragging`; descartar esses campos ao reconstruir os nós provoca ocultação e remedição durante o arraste. O editor preserva esses campos e adia o autosave até soltar o bloco; há regressão E2E para arraste contínuo e desfazer.
 - `EMAXCONNSESSION` reapareceu com o pool compartilhado em modo sessão (15 conexões). O cliente da aplicação na Vercel agora usa a porta 6543 do mesmo pooler em modo transação, com `prepare: false` e `max_pipeline: 0`; conexões locais e diretas preservam sua configuração. No Postgres.js, o limite exclui a consulta atual: `1` ainda permite duas consultas em trânsito e pode travar no pool transacional; usar `0` para desativar pipelining.

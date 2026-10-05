@@ -88,4 +88,6 @@ export type Workspace = {
   congregations: Option[];
   ministries: Option[];
   activities: Option[];
+  forms: (Option & { creates_person: boolean })[];
+  stages: Option[];
 };

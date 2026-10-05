@@ -19,6 +19,7 @@ import { requireVolunteerSelfContext } from "./access";
 import { afterResponse } from "@/lib/performance/after-response";
 import { processVolunteerChatPushOutbox } from "./chat-delivery";
 import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
+import { saveMyNotificationPushSubscription } from "@/lib/notifications/preferences";
 
 const uuid = z.string().uuid();
 const optionalUuid = z
@@ -1316,7 +1317,7 @@ export async function saveProfilePushSubscription(
     const rows = await getSql()<{ id: string }[]>`
       insert into public.volunteer_push_subscriptions(company_id, volunteer_id, profile_id, endpoint, p256dh, auth_key, user_agent)
       values (${companyId}, ${volunteerId}, ${user.id}, ${parsed.endpoint}, ${parsed.p256dh}, ${parsed.auth}, ${parsed.userAgent})
-      on conflict (endpoint) do update set volunteer_id = excluded.volunteer_id, profile_id = excluded.profile_id, p256dh = excluded.p256dh,
+      on conflict (endpoint) do update set company_id = excluded.company_id, volunteer_id = excluded.volunteer_id, profile_id = excluded.profile_id, p256dh = excluded.p256dh,
         auth_key = excluded.auth_key, user_agent = excluded.user_agent, is_active = true, updated_at = now() returning id
     `;
     if (volunteerId)
@@ -1325,6 +1326,7 @@ export async function saveProfilePushSubscription(
         values (${volunteerId}, ${companyId}, true)
         on conflict (volunteer_id) do update set push_enabled = true, updated_at = now()
       `;
+    await saveMyNotificationPushSubscription(parsed, false);
     return { ok: true, id: rows[0]?.id };
   } catch (error) {
     return resultError(error);

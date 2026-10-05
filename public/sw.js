@@ -121,12 +121,14 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  const data = event.data?.json?.() || {};
+  let data = {};
+  try { data = event.data?.json() || {}; }
+  catch { data = { body: event.data?.text() || "Nova atualização" }; }
   event.waitUntil(
     self.registration.showNotification(data.title || "Altar Church", {
       body: data.body || "Nova atualização",
-      icon: "/icons/logo.png",
-      badge: "/icons/logo.png",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
       data: { url: data.url || "/voluntariado" },
       tag: data.assignmentId ? `assignment-${data.assignmentId}` : undefined,
     }),

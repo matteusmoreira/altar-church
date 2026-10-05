@@ -11,6 +11,7 @@ import { getSql } from "@/lib/db/client"
 import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
 import { parseMoney } from "./money"
 import { createNotificationCampaignDeliveries } from "@/lib/notifications/campaign"
+import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import type { Permission } from "@/lib/types"
 
 type ActionResult = {
@@ -1072,7 +1073,15 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
     const personIds = list(formData, "audiencePersonIds")
     const scheduledAtInput = optionalText(formData, "scheduledAt")
     if (scheduledAtInput && Number.isNaN(Date.parse(scheduledAtInput))) throw new Error("Data de agendamento inválida")
-    const scheduledAt = scheduledAtInput ? new Date(scheduledAtInput).toISOString() : null
+    let scheduledAt = scheduledAtInput ? new Date(scheduledAtInput).toISOString() : null
+    if (scheduledAtInput && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(scheduledAtInput)) {
+      const dates = await getSql()<{ scheduled_at: Date }[]>`
+        select ${scheduledAtInput}::timestamp at time zone coalesce(
+          (select timezone from public.church_profiles where company_id = ${companyId}), 'America/Sao_Paulo'
+        ) as scheduled_at
+      `
+      scheduledAt = dates[0].scheduled_at.toISOString()
+    }
     if (scheduledAt && Date.parse(scheduledAt) <= Date.now()) throw new Error("Agendamento deve estar no futuro")
     const scheduled = Boolean(scheduledAt)
     const sendDate = scheduledAt ? scheduledAt.slice(0, 10) : optionalText(formData, "sendDate")
@@ -1109,6 +1118,7 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
       return { id: campaign.id, snapshot }
     })
     await audit("notification.create", "notifications", rows.id, companyId)
+    if (!scheduled) afterResponse("notification campaign", () => processNotificationOutbox(25, rows.id, companyId))
     refresh(["/notificacao", "/dashboard"])
     return { ok: true, id: rows.id }
   } catch (error) {

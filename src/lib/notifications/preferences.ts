@@ -21,6 +21,7 @@ async function ownPerson() {
   const rows = await getSql()<{ id: string }[]>`
     select people.id from public.people
     where people.company_id = ${companyId}
+      and people.deleted_at is null and people.is_active = true and people.status <> 'inactive'
       and (people.profile_id = ${user.id} or people.id = (select profile.person_id from public.profiles profile where profile.id = ${user.id} and profile.company_id = ${companyId}))
     order by (people.deleted_at is null) desc, (people.profile_id = ${user.id}) desc
     limit 1
@@ -40,6 +41,12 @@ export async function getMyNotificationPreferences() {
     channel,
     rows.find((row) => row.channel === channel)?.opted_out ?? false,
   ])) as Record<NotificationChannel, boolean>
+}
+
+export async function getMyNotificationPushConfig() {
+  const { personId } = await ownPerson()
+  const configured = Boolean(process.env.VAPID_SUBJECT && process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
+  return { publicKey: configured ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY : null, canSubscribe: Boolean(personId) }
 }
 
 export async function saveMyNotificationPreference(channelInput: string, optedOut: boolean) {
@@ -63,10 +70,13 @@ export async function saveMyNotificationPreference(channelInput: string, optedOu
   return { ok: true }
 }
 
-export async function saveMyNotificationPushSubscription(input: unknown) {
+export async function saveMyNotificationPushSubscription(input: unknown, requirePerson = true) {
   const parsed = subscriptionSchema.parse(input)
   const { user, companyId, personId } = await ownPerson()
-  if (!personId) throw new Error("Conta sem pessoa vinculada")
+  if (!personId) {
+    if (requirePerson) throw new Error("Conta sem pessoa ativa vinculada. Atualize o vínculo em Pessoas antes de ativar o push.")
+    return { ok: false }
+  }
   await getSql()`
     insert into public.notification_push_subscriptions (
       company_id, person_id, endpoint, p256dh, auth_key, user_agent, is_active

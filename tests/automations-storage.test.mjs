@@ -37,6 +37,7 @@ test("saved and previously double-encoded drafts load with their original blocks
     "@/lib/files/server": {},
     "./ai": {},
     "./runtime": {},
+    "./delivery": {},
   };
   const cache = new Map();
   function load(path) {

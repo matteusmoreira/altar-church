@@ -211,6 +211,8 @@ export async function createNotificationCampaignDeliveries(tx: TransactionSql, i
     inserted = rows.length
   }
 
-  if (inserted === 0) throw new Error("Nenhum destinatário possui contato ou consentimento para este canal")
+  if (inserted === 0) throw new Error(input.channel === "push"
+    ? "Nenhum dispositivo push ativo neste público. Peça aos destinatários para ativar as notificações em Preferências de comunicação."
+    : "Nenhum destinatário possui contato ou consentimento para este canal")
   return { recipientCount: people.length, deliveryCount: inserted, personIds }
 }

@@ -44,6 +44,7 @@ export const KINDS = [
   "response",
   "task_wait",
   "whatsapp",
+  "kanban_move",
   "ai",
   "interest",
   "update",
@@ -64,6 +65,7 @@ export const LABELS: Record<NodeKind, string> = {
   response: "Aguardar resposta",
   task_wait: "Aguardar tarefa",
   whatsapp: "Enviar WhatsApp",
+  kanban_move: "Mover no Kanban",
   ai: "Inteligência artificial",
   interest: "Registrar interesse",
   update: "Atualizar pessoa",
@@ -178,6 +180,8 @@ const configSchema = z
     deliveryOwner: z.enum(["existing", "automation"]).optional(),
     mode: z.string().max(80).optional(),
     event: z.string().max(100).optional(),
+    formId: uuid.optional(),
+    stageId: uuid.optional(),
     schedule: z.enum(["once", "daily", "weekly", "monthly"]).optional(),
     at: z.string().max(60).optional(),
     time: z
@@ -279,6 +283,7 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
         "update",
         "interest",
         "audience",
+        "kanban_move",
       ].includes(n.kind),
     )
   )
@@ -346,6 +351,8 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
         add(node.id, "Escolha o gatilho");
       if (c.mode === "event" && !EVENT_OPTIONS.some(([key]) => key === c.event))
         add(node.id, "Escolha um evento disponível");
+      if (c.mode === "event" && c.event === "form.submitted" && !c.formId)
+        add(node.id, "Escolha o formulário que inicia esta automação");
       if (
         c.mode === "event" &&
         [
@@ -376,6 +383,8 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
     }
     if (node.kind === "whatsapp" && (!c.message || !c.instanceId))
       add(node.id, "Configure a mensagem e a instância");
+    if (node.kind === "kanban_move" && !c.stageId)
+      add(node.id, "Escolha a coluna do Kanban");
     if (c.message) {
       const m = c.message;
       if (
@@ -481,6 +490,7 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
 
 export function requiredPorts(node: FlowNode): string[] {
   if (node.kind === "end") return [];
+  if (node.kind === "kanban_move") return ["next", "error"];
   if (node.kind === "condition" || node.kind === "audience")
     return ["yes", "no"];
   if (node.kind === "switch")

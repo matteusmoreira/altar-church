@@ -8,8 +8,9 @@ export const SHARED_DELIVERY_EVENTS = [
 export async function automationOwnsDelivery(
   companyId: string,
   purpose: string,
+  sourceId?: string,
 ) {
   const [row] =
-    await getSql()`select flow_id from public.automation_source_owners o join public.automation_flows f on f.id=o.flow_id and f.company_id=o.company_id where o.company_id=${companyId} and o.purpose=${purpose} and f.status in ('active','paused')`;
+    await getSql()`select flow_id from public.automation_source_owners o join public.automation_flows f on f.id=o.flow_id and f.company_id=o.company_id where o.company_id=${companyId} and (o.purpose=${purpose} or o.purpose=${sourceId ? `${purpose}:${sourceId}` : purpose}) and f.status in ('active','paused')`;
   return Boolean(row);
 }

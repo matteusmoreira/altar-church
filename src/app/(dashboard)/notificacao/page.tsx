@@ -1,26 +1,31 @@
 import { Bell, Cake, ListChecks, Send, Users } from "lucide-react"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { NotificationActionForm } from "@/components/notifications/action-form"
+import { PushActivation } from "@/components/notifications/push-activation"
+import { QueueRefresh } from "@/components/notifications/queue-refresh"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { EmptyState, PageHeader } from "@/components/shared"
 import { saveNotification, saveNotificationGroup } from "@/lib/operational/actions"
 import { listNotificationAudienceOptions, listNotificationGroups, listNotifications } from "@/lib/operational/data"
 import type { Notification } from "@/lib/types"
+import { getNotificationPushSummary } from "@/lib/notifications/data"
 
 async function saveNotificationForm(formData: FormData) {
   "use server"
-  await saveNotification(formData)
+  const result = await saveNotification(formData)
+  if (result.ok && result.id) redirect(`/notificacao/${result.id}`)
+  return result
 }
 
 async function saveNotificationGroupForm(formData: FormData) {
   "use server"
-  await saveNotificationGroup(formData)
+  return saveNotificationGroup(formData)
 }
 
 const statusLabels: Record<Notification["status"], string> = {
@@ -51,15 +56,23 @@ function formatDate(value: string) {
 }
 
 export default async function NotificationsPage() {
-  const [notifications, groups, audiences] = await Promise.all([
+  const [notifications, groups, audiences, push] = await Promise.all([
     listNotifications(),
     listNotificationGroups(),
     listNotificationAudienceOptions(),
+    getNotificationPushSummary(),
   ])
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Notificação" description="Notificações push e grupos de envio persistidos." />
+      <QueueRefresh enabled={notifications.some((item) => ['queued', 'processing', 'scheduled'].includes(item.status))} />
+      <PageHeader title="Notificação" description="Envie avisos por push, e-mail ou WhatsApp e acompanhe cada entrega." />
+      <PushActivation />
+      <p className="rounded-lg border p-4 text-sm" role="status">
+        {!push.configured ? "Push indisponível: a configuração de envio está incompleta."
+          : push.devices === 0 ? "Nenhuma pessoa está habilitada para receber campanhas push. Os destinatários precisam ativar os avisos em Preferências de comunicação."
+          : `Push disponível para ${push.people} pessoa(s) em ${push.devices} dispositivo(s) ativo(s).`}
+      </p>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="glass">
@@ -70,30 +83,23 @@ export default async function NotificationsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={saveNotificationForm} className="grid gap-4" data-testid="notification-campaign-form">
+            <NotificationActionForm action={saveNotificationForm} submitLabel="Criar campanha" testId="notification-campaign-form">
               <div className="grid gap-2">
                 <Label htmlFor="title">Título *</Label>
                 <Input id="title" name="title" required />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="notificationMethod">Canal *</Label>
-                <Select name="method" defaultValue="push">
-                  <SelectTrigger id="notificationMethod"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="push">Push</SelectItem>
-                    <SelectItem value="email">E-mail</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select id="notificationMethod" name="method" defaultValue="push" className="h-10 rounded-md border bg-background px-3 text-sm">
+                  <option value="push">Push</option><option value="email">E-mail</option><option value="whatsapp">WhatsApp</option>
+                </select>
+                <p className="text-xs text-muted-foreground">Push exige que cada destinatário ative os avisos no próprio dispositivo, em Preferências de comunicação.</p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="notificationAudience">Público *</Label>
-                <Select name="audience" defaultValue="all">
-                  <SelectTrigger id="notificationAudience"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(audienceLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <select id="notificationAudience" name="audience" defaultValue="all" className="h-10 rounded-md border bg-background px-3 text-sm">
+                  {Object.entries(audienceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="audienceRefId">Célula/ministério (quando aplicável)</Label>
@@ -122,12 +128,9 @@ export default async function NotificationsPage() {
                   <Label htmlFor="scheduledAt">Agendar envio (opcional)</Label>
                   <Input id="scheduledAt" name="scheduledAt" type="datetime-local" />
                 </div>
-                <p className="self-end text-xs text-muted-foreground">Sem data, campanha entra na fila agora. Preferências opt-out são respeitadas.</p>
+                <p className="self-end text-xs text-muted-foreground">Horário da igreja. Sem data, o envio começa agora. Preferências de bloqueio são respeitadas.</p>
               </div>
-              <Button type="submit" variant="brand">
-                Criar campanha
-              </Button>
-            </form>
+            </NotificationActionForm>
           </CardContent>
         </Card>
 
@@ -139,16 +142,13 @@ export default async function NotificationsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form action={saveNotificationGroupForm} className="grid gap-4">
+            <NotificationActionForm action={saveNotificationGroupForm} submitLabel="Criar Grupo">
               <div className="grid gap-2">
                 <Label htmlFor="groupName">Nome *</Label>
                 <Input id="groupName" name="name" required />
               </div>
               <input type="hidden" name="active" value="true" />
-              <Button type="submit" variant="brand">
-                Criar Grupo
-              </Button>
-            </form>
+            </NotificationActionForm>
           </CardContent>
         </Card>
       </div>

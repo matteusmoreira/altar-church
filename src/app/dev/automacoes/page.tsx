@@ -72,6 +72,8 @@ export default function AutomationsPreview() {
     congregations: [],
     ministries: [],
     activities: [],
+    forms: [{ id: "60000000-0000-4000-8000-000000000001", name: "Novos visitantes", creates_person: true }],
+    stages: [{ id: "70000000-0000-4000-8000-000000000001", name: "Primeiro contato" }],
   };
   return (
     <main className="mx-auto w-full max-w-[1600px] p-4 md:p-8">
