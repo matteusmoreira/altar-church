@@ -8,6 +8,8 @@
 - A Uazapi publica recibos em `event.MessageIDs` e recibos de participantes em `GroupReceipts`; não tratar um recibo individual como leitura de todo o grupo. Campos interativos vazios também não devem ocultar texto livre.
 - A migration de automações arquiva e desativa regras antigas em todas as igrejas do banco alvo. Aplicar primeiro em homologação com backup/revisão do arquivo; novos fluxos começam como rascunhos e exigem publicação explícita. Consultar `docs/AUTOMACOES.md` para configuração e pendências externas.
 - O carimbo de migrations usa somente os primeiros 14 caracteres. Duas migrations com o mesmo horário fazem a segunda ser pulada; o instalador agora recusa identificadores duplicados. Automações recebeu `20261005140000`, preservando o carimbo já aplicado de Voluntariado.
+- Configuração de worker: os tokens locais Vercel e Supabase retornaram 403, enquanto o banco continuou acessível. O conector Vercel exige reautenticação e o Supabase conectado aponta para outro projeto; conferir o ref antes de publicar funções. Vault preparado, cron pausado até sincronizar o segredo com os dois backends e provar a execução. Não regenerar o segredo a cada tentativa.
+- O novo token Vercel permitiu configurar a produção e validar o backend (401 sem segredo, 200 autenticado, zero envios). Instalar o plugin Supabase não conclui OAuth: `USER_NOT_LOGGED_IN` exige conectar a conta. Service Role e senha PostgreSQL não publicam Edge Functions nem configuram Edge Function Secrets na Management API.
 
 - A validacao SQL local depende dos containers do Supabase; sem o container `supabase_db_altar-church`, `supabase status` nao consegue validar a migration. Manter a prova local de codigo separada da aplicacao da migration em staging/producao.
 
