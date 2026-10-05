@@ -532,11 +532,16 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       order by pje.started_at desc
     `,
     sql<{ id: string; name: string; description: string }[]>`
-      select id, name, coalesce(description, '') as description
-      from public.member_journeys
+      select journey.id, journey.name, coalesce(journey.description, '') as description
+      from public.member_journeys journey
       where company_id = ${companyId}
         and deleted_at is null
         and is_active = true
+        and exists (
+          select 1 from public.member_journey_steps step
+          where step.journey_id = journey.id and step.company_id = ${companyId}
+            and step.deleted_at is null and step.is_active = true
+        )
       order by sort_order, name
     `,
     sql<{ id: string; description: string; category: string }[]>`
@@ -745,10 +750,12 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     }
   })
 
-  // If no explicit enrollments exist yet, group active journey steps as legacy fallback
+  // Only journeys with actual progress can imply a legacy enrollment.
   if (enrolledJourneys.length === 0 && stepsList.length > 0) {
+    const legacyJourneyIds = new Set(stepsList.filter((step) => step.completedAt).map((step) => step.journeyId))
     const grouped = new Map<string, typeof stepsList>()
     for (const st of stepsList) {
+      if (!legacyJourneyIds.has(st.journeyId)) continue
       const list = grouped.get(st.journeyId) ?? []
       list.push(st)
       grouped.set(st.journeyId, list)
@@ -973,7 +980,12 @@ export async function listDuplicateCandidates(companyIdInput?: string | null): P
 export async function listPeople(filters: PeopleListFilters = {}): Promise<PeopleListResult> {
   const companyId = await resolveCompanyId(filters.companyId)
   await requirePermission("members.view", companyId)
+  return listPeopleForCompany(companyId, filters)
+}
 
+/** Called after session permission or API-key scope authorization. */
+export async function listPeopleForCompany(companyId: string, filters: PeopleListFilters = {}): Promise<PeopleListResult> {
+  if (!isUuid(companyId)) throw new Error("Igreja inválida")
   const sql = getSql()
   const page = clampPage(filters.page, 1, 1, 100000)
   const pageSize = clampPage(filters.pageSize, 20, 1, 100)
@@ -986,6 +998,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
   const journeyStatus = filters.journeyStatus && filters.journeyStatus !== "all" ? filters.journeyStatus : null
   const accessProfile = filters.accessProfile && filters.accessProfile !== "all" ? filters.accessProfile : null
   const cellId = filters.cellId && filters.cellId !== "all" ? filters.cellId : null
+  const specificCellId = cellId === "none" ? null : cellId
   const baptized = filters.baptized ?? null
   const emailValidated = filters.emailValidated ?? null
   const isActive = filters.isActive ?? null
@@ -1071,7 +1084,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
           ))
           or (${cellId} <> 'none' and exists (
             select 1 from public.group_members gm
-            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${cellId}::uuid
+            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${specificCellId}::uuid
           ))
         )
         and (${baptized}::boolean is null or p.baptized = ${baptized})
@@ -1110,7 +1123,7 @@ export async function listPeople(filters: PeopleListFilters = {}): Promise<Peopl
           ))
           or (${cellId} <> 'none' and exists (
             select 1 from public.group_members gm
-            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${cellId}::uuid
+            where gm.person_id = p.id and gm.status = 'active' and gm.group_id = ${specificCellId}::uuid
           ))
         )
         and (${baptized}::boolean is null or p.baptized = ${baptized})

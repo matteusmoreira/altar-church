@@ -290,7 +290,8 @@ export async function getPublicChurchData(slug: string): Promise<PublicChurchDat
     left join public.church_profiles cp on cp.company_id = c.id
     where c.slug = ${slug}
       and c.active = true
-      and c.status = 'active'
+      -- tenants de teste (E2E) também servem o portal público: é read-only e por slug.
+      and c.status in ('active', 'test')
     limit 1
   `
 

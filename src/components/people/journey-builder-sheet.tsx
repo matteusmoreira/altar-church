@@ -4,8 +4,6 @@ import { useState, useTransition } from "react"
 import {
   ArrowDown,
   ArrowUp,
-  CalendarDays,
-  CheckCircle2,
   Clock,
   Edit2,
   Loader2,
@@ -13,7 +11,6 @@ import {
   Route,
   Sparkles,
   Trash2,
-  Users,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -37,6 +34,7 @@ import {
 } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { useConfirmAction } from "@/components/shared/use-confirm-action"
 
 interface JourneyBuilderSheetProps {
   journey: MemberJourneyWithSteps | null
@@ -52,6 +50,7 @@ export function JourneyBuilderSheet({
   onJourneyChanged,
 }: JourneyBuilderSheetProps) {
   const [pending, startTransition] = useTransition()
+  const confirmDelete = useConfirmAction()
 
   // Journey settings form
   const [name, setName] = useState("")
@@ -74,14 +73,17 @@ export function JourneyBuilderSheet({
     open: false,
   })
   if (journey && (journey !== synced.journey || open !== synced.open)) {
+    const initialize = journey.id !== synced.journey?.id || (open && !synced.open)
     setSynced({ journey, open })
-    setName(journey.name)
-    setDescription(journey.description)
-    setIsAutoEnroll(journey.isAutoEnroll)
-    setAutoEnrollType(journey.autoEnrollType ?? "visitor")
     setSteps(journey.steps)
-    setEditingStepId(null)
-    setShowAddStepForm(false)
+    if (initialize) {
+      setName(journey.name)
+      setDescription(journey.description)
+      setIsAutoEnroll(journey.isAutoEnroll)
+      setAutoEnrollType(journey.autoEnrollType ?? "visitor")
+      setEditingStepId(null)
+      setShowAddStepForm(false)
+    }
   }
 
   const handleSaveJourneySettings = () => {
@@ -119,7 +121,11 @@ export function JourneyBuilderSheet({
     const currentEditingId = editingStepId
     const currentName = stepName.trim()
     const currentDesc = stepDesc.trim()
-    const currentDays = Number(stepDays) || 7
+    const currentDays = Number(stepDays)
+    if (!Number.isInteger(currentDays) || currentDays < 1 || currentDays > 365) {
+      toast.error("Informe um prazo inteiro entre 1 e 365 dias")
+      return
+    }
 
     startTransition(async () => {
       const res = await saveJourneyStep({
@@ -174,15 +180,21 @@ export function JourneyBuilderSheet({
   }
 
   const handleDeleteStep = (stepId: string, stepName: string) => {
-    setSteps((prev) => prev.filter((s) => s.id !== stepId))
-    startTransition(async () => {
-      const res = await deleteJourneyStep(stepId)
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao excluir etapa")
-        return
-      }
-      toast.success(`Etapa "${stepName}" removida`)
-      onJourneyChanged?.()
+    confirmDelete.confirm({
+      title: "Excluir etapa?",
+      message: `A etapa “${stepName}” deixará de aparecer para as pessoas desta trilha.`,
+      action: () => {
+        startTransition(async () => {
+          const res = await deleteJourneyStep(stepId)
+          if (!res.ok) {
+            toast.error(res.error ?? "Erro ao excluir etapa")
+            return
+          }
+          setSteps((prev) => prev.filter((s) => s.id !== stepId))
+          toast.success(`Etapa "${stepName}" removida`)
+          onJourneyChanged?.()
+        })
+      },
     })
   }
 
@@ -195,7 +207,6 @@ export function JourneyBuilderSheet({
     const temp = newSteps[index]
     newSteps[index] = newSteps[targetIndex]
     newSteps[targetIndex] = temp
-    setSteps(newSteps)
 
     startTransition(async () => {
       const ids = newSteps.map((s) => s.id)
@@ -204,12 +215,13 @@ export function JourneyBuilderSheet({
         toast.error("Erro ao reordenar etapas")
         return
       }
+      setSteps(newSteps)
       onJourneyChanged?.()
     })
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <><Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg w-full flex flex-col p-6 overflow-y-auto">
         <SheetHeader className="space-y-1 pb-4 border-b border-border/40">
           <div className="flex items-center gap-2">
@@ -217,7 +229,7 @@ export function JourneyBuilderSheet({
             <SheetTitle className="text-lg font-bold">Construtor de Trilha</SheetTitle>
           </div>
           <SheetDescription className="text-xs">
-            Configure etapas ordenadas, prazos sugeridos e auto-inscrição para novos membros.
+            Adicione as etapas na ordem de acompanhamento. Depois, abra a ficha da pessoa → Jornada → Iniciar nova trilha.
           </SheetDescription>
         </SheetHeader>
 
@@ -250,7 +262,7 @@ export function JourneyBuilderSheet({
                   <Sparkles className="h-3.5 w-3.5 text-primary" /> Inscrição Automática
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  Matricular automaticamente pessoas recém-cadastradas nesta trilha.
+                  Após cadastrar as etapas, inscreve novos cadastros feitos em Pessoas. Pessoas já cadastradas precisam de inscrição pela ficha.
                 </p>
               </div>
               <Switch checked={isAutoEnroll} onCheckedChange={setIsAutoEnroll} />
@@ -279,7 +291,7 @@ export function JourneyBuilderSheet({
             variant="outline"
             className="w-full text-xs h-8"
           >
-            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Salvar Dados da Jornada"}
+            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Salvar configurações da trilha"}
           </Button>
         </div>
 
@@ -348,6 +360,7 @@ export function JourneyBuilderSheet({
                   <Label className="text-xs flex items-center gap-1">
                     <Clock className="h-3 w-3 text-muted-foreground" /> Prazo Sugerido (dias)
                   </Label>
+                  <p className="text-xs text-muted-foreground">Referência para a equipe. Este prazo não gera tarefas nem lembretes automáticos.</p>
                   <Input
                     type="number"
                     min={1}
@@ -446,6 +459,7 @@ export function JourneyBuilderSheet({
                       variant="ghost"
                       className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                       onClick={() => handleEditStep(step)}
+                      disabled={pending}
                       title="Editar etapa"
                     >
                       <Edit2 className="h-3 w-3" />
@@ -467,6 +481,6 @@ export function JourneyBuilderSheet({
           )}
         </div>
       </SheetContent>
-    </Sheet>
+    </Sheet>{confirmDelete.dialog()}</>
   )
 }

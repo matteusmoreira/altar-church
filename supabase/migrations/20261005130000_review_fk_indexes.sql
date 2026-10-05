@@ -1,0 +1,9 @@
+create index if not exists cell_visit_requests_crm_card_fk_idx on public.cell_visit_requests(crm_card_id);
+create index if not exists cell_visit_requests_follow_up_task_fk_idx on public.cell_visit_requests(follow_up_task_id);
+create index if not exists cell_visit_requests_group_fk_idx on public.cell_visit_requests(group_id);
+create index if not exists cell_whatsapp_deliveries_group_fk_idx on public.cell_whatsapp_deliveries(group_id);
+create index if not exists cell_whatsapp_deliveries_request_fk_idx on public.cell_whatsapp_deliveries(request_id);
+create index if not exists cell_whatsapp_deliveries_instance_fk_idx on public.cell_whatsapp_deliveries(uazapi_instance_id);
+create index if not exists cell_whatsapp_settings_instance_fk_idx on public.cell_whatsapp_settings(whatsapp_instance_id);
+create index if not exists person_journey_enrollments_creator_fk_idx on public.person_journey_enrollments(created_by);
+create index if not exists person_journey_enrollments_journey_fk_idx on public.person_journey_enrollments(journey_id);

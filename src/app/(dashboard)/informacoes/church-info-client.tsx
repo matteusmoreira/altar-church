@@ -16,7 +16,6 @@ import {
   Globe,
   Heart,
   Image as ImageIcon,
-  Mail,
   MapPin,
   Phone,
   Plus,
@@ -547,17 +546,13 @@ export function ChurchInfoClient({ churchInfoData }: ChurchInfoClientProps) {
                       <span>Ficha Cadastral (PDF/Imprimir)</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                        window.location.href = `/api/church-info/export?format=xlsx&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`
-                      }}
+                      render={<a href={`/api/church-info/export?format=xlsx&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`} />}
                     >
                       <FileSpreadsheet className="mr-2 h-4 w-4 text-success" />
                       <span>Planilha Excel (.xls)</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => {
-                        window.location.href = `/api/church-info/export?format=csv&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`
-                      }}
+                      render={<a href={`/api/church-info/export?format=csv&companyId=${encodeURIComponent(churchInfoData.profile.companyId)}`} />}
                     >
                       <Download className="mr-2 h-4 w-4 text-muted-foreground" />
                       <span>Planilha CSV (.csv)</span>

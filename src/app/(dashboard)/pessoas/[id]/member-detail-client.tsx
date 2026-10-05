@@ -32,10 +32,8 @@ import {
   Plus,
   Power,
   Route,
-  ShieldAlert,
   ShieldCheck,
   Trash2,
-  UserCheck,
   UserRound,
   Users,
   UsersRound,
@@ -60,7 +58,6 @@ import type {
   PersonAccessRole,
   PersonDetail,
   PersonLinkedChild,
-  PersonLinkedGuardian,
   PersonStatus,
   PersonType,
 } from "@/lib/people/types"
@@ -535,7 +532,6 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
     (j) => !person.enrolledJourneys?.some((ej) => ej.journeyId === j.id),
   )
 
-  const legacyJourneySteps = person.journeySteps ?? []
 
   return (
     <div className="space-y-6">
@@ -1447,7 +1443,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                   <CardContent className="py-10 text-center space-y-3">
                     <Route className="mx-auto h-8 w-8 text-muted-foreground/60" />
                     <p className="text-sm text-muted-foreground">
-                      Esta pessoa ainda não foi inscrita em nenhuma trilha de integração.
+                      {enrollableJourneys.length > 0 ? "Escolha uma trilha para começar a acompanhar as etapas desta pessoa." : "Não há trilhas disponíveis para iniciar. Configure uma trilha com etapas e depois volte aqui para inscrever esta pessoa."}
                     </p>
                     {enrollableJourneys.length > 0 ? (
                       <Button
@@ -1463,11 +1459,11 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                     ) : (
                       <Button
                         size="sm"
-                        render={<Link href="/pessoas" />}
+                        render={<Link href="/pessoas?tab=config#trilhas" />}
                         nativeButton={false}
                         variant="outline"
                       >
-                        Configurar trilhas em Parâmetros
+                        Configurar trilhas e etapas
                       </Button>
                     )}
                   </CardContent>
@@ -1495,7 +1491,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                                   </Badge>
                                 ) : journey.status === "dropped" ? (
                                   <Badge variant="outline" className="text-muted-foreground text-xs">
-                                    Pausada
+                                    Encerrada
                                   </Badge>
                                 ) : (
                                   <Badge className="bg-info/15 text-info border-info/30 text-xs">
@@ -1512,7 +1508,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                               <span className="text-xs font-semibold text-muted-foreground">
                                 {completedStepsCount} de {totalStepsCount} etapas ({progress}%)
                               </span>
-                              {!journey.enrollmentId.startsWith("legacy-") && (
+                              {journey.status !== "dropped" && !journey.enrollmentId.startsWith("legacy-") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1546,6 +1542,7 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                                   <div className="flex items-start gap-3 min-w-0 flex-1">
                                     <button
                                       type="button"
+                                      disabled={journey.status === "dropped"}
                                       onClick={() => handleOpenStepModal(journey.journeyId, journey.journeyName, step)}
                                       className="mt-0.5 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
                                       title={done ? "Clique para gerenciar conclusão" : "Clique para concluir esta etapa"}
@@ -1594,7 +1591,8 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
                                     variant="ghost"
                                     size="sm"
                                     className="h-8 text-xs shrink-0 text-muted-foreground hover:text-foreground"
-                                    onClick={() => handleOpenStepModal(journey.journeyId, journey.journeyName, step)}
+                                    disabled={journey.status === "dropped"}
+                                      onClick={() => handleOpenStepModal(journey.journeyId, journey.journeyName, step)}
                                   >
                                     <Edit3 className="mr-1 h-3.5 w-3.5" />
                                     {done ? "Editar conclusão" : "Concluir etapa"}

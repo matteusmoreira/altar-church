@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { User, UserRole } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 
@@ -36,6 +37,7 @@ export function AuthProvider({
   children: React.ReactNode;
   initialUser?: User | null;
 }) {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<User | null>(initialUser ?? null);
   const [isLoading, setIsLoading] = useState(initialUser === undefined);
@@ -123,8 +125,9 @@ export function AuthProvider({
       type: "CLEAR_USER_DATA",
     });
     setUser(null);
-    window.location.href = "/login";
-  }, [supabase]);
+    router.replace("/login");
+    router.refresh();
+  }, [supabase, router]);
 
   const hasRole = useCallback(
     (roles: UserRole[]) => {

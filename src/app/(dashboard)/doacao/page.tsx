@@ -11,16 +11,7 @@ import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { saveDonation, saveDonationRecurrence } from "@/lib/operational/actions"
 import { getDonationData } from "@/lib/operational/data"
 import type { Donation, DonationRecurrence } from "@/lib/types"
-
-async function saveDonationForm(formData: FormData) {
-  "use server"
-  await saveDonation(formData)
-}
-
-async function saveDonationRecurrenceForm(formData: FormData) {
-  "use server"
-  await saveDonationRecurrence(formData)
-}
+import { DonationForm } from "./donation-form"
 
 const statusLabels: Record<Donation["status"], string> = {
   confirmed: "Confirmado",
@@ -138,7 +129,7 @@ export default async function DonationsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <form action={saveDonationForm} className="grid gap-4 lg:grid-cols-6">
+              <DonationForm action={saveDonation}>
                 <div className="grid gap-2 lg:col-span-2">
                   <Label htmlFor="donorName">Doador</Label>
                   <Input id="donorName" name="donorName" placeholder="Nome do doador" />
@@ -194,7 +185,7 @@ export default async function DonationsPage() {
                     Registrar
                   </Button>
                 </div>
-              </form>
+              </DonationForm>
             </CardContent>
           </Card>
         </TabsContent>
@@ -208,7 +199,7 @@ export default async function DonationsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <form action={saveDonationRecurrenceForm} className="grid gap-4 lg:grid-cols-6">
+              <DonationForm action={saveDonationRecurrence}>
                 <div className="grid gap-2 lg:col-span-2">
                   <Label htmlFor="userName">Usuário *</Label>
                   <Input id="userName" name="userName" required />
@@ -242,7 +233,7 @@ export default async function DonationsPage() {
                     Criar
                   </Button>
                 </div>
-              </form>
+              </DonationForm>
             </CardContent>
           </Card>
 

@@ -61,7 +61,6 @@ test("database query resolves ministry by both UUID and friendly slug", async (t
   const sql = postgres(process.env.POSTGRES_URL)
 
   try {
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     const targetUuid = "232f976e-c0e0-4788-9060-d721181d824a"
     const targetSlug = "homens"
 

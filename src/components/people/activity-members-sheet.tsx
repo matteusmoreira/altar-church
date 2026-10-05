@@ -1,15 +1,12 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useState, useTransition } from "react"
 import {
   Activity,
   CheckCircle2,
   Loader2,
   Plus,
   Trash2,
-  UserCheck,
-  UserMinus,
-  UserRound,
   Users,
   XCircle,
 } from "lucide-react"
@@ -89,25 +86,26 @@ export function ActivityMembersSheet({
     }
   }
 
-  const fetchMembers = async () => {
-    if (!activity) return
+  const activityId = activity?.id
+  const fetchMembers = useCallback(async () => {
+    if (!activityId) return
     setLoading(true)
     try {
-      const data = await loadActivityMembers(activity.id)
+      const data = await loadActivityMembers(activityId)
       setMembers(data)
-    } catch (err) {
+    } catch {
       toast.error("Erro ao carregar membros da atividade")
     } finally {
       setLoading(false)
     }
-  }
+  }, [activityId])
 
   useEffect(() => {
-    if (!open || !activity) return
+    if (!open || !activityId) return
     void (async () => {
       await fetchMembers()
     })()
-  }, [open, activity?.id])
+  }, [open, activityId, fetchMembers])
 
   const handleAssignPerson = () => {
     if (!activity || !selectedPersonId) {

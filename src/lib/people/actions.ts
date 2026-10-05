@@ -567,6 +567,11 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             and deleted_at is null
             and is_active = true
             and is_auto_enroll = true
+            and exists (
+              select 1 from public.member_journey_steps step
+              where step.journey_id = member_journeys.id and step.company_id = ${companyId}
+                and step.deleted_at is null and step.is_active = true
+            )
             and (
               auto_enroll_type = 'all'
               or (auto_enroll_type = 'visitor' and (${parsed.status} = 'visitor' or ${parsed.personType} = 'visitor'))
@@ -1036,21 +1041,26 @@ export async function saveJourneyStep(input: SaveJourneyStepInput): Promise<Peop
     if (!name) {
       return { ok: false, error: "Nome da etapa é obrigatório" }
     }
+    if (input.estimatedDays !== undefined && (!Number.isInteger(input.estimatedDays) || input.estimatedDays < 1 || input.estimatedDays > 365)) {
+      return { ok: false, error: "Informe um prazo inteiro entre 1 e 365 dias" }
+    }
     const { user, companyId } = await resolveActionCompanyId(input.companyId)
     await requirePermission("members.edit", companyId)
 
     const sql = getSql()
+    const journey = await sql`select id from public.member_journeys where id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null`
+    if (!journey[0]) return { ok: false, error: "Trilha não encontrada" }
     if (input.id) {
       const rows = await sql<{ id: string }[]>`
         update public.member_journey_steps
         set name = ${name},
             description = ${input.description?.trim() || ""},
-            sort_order = ${typeof input.sortOrder === "number" ? input.sortOrder : 0},
+            sort_order = coalesce(${typeof input.sortOrder === "number" ? input.sortOrder : null}::integer, sort_order),
             estimated_days = ${typeof input.estimatedDays === "number" && input.estimatedDays > 0 ? input.estimatedDays : 7},
             is_active = ${input.isActive !== undefined ? input.isActive : true},
             updated_by = ${user.id},
             updated_at = now()
-        where id = ${input.id} and company_id = ${companyId} and deleted_at is null
+        where id = ${input.id} and journey_id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null
         returning id
       `
       if (!rows[0]) return { ok: false, error: "Etapa não encontrada" }
@@ -1155,6 +1165,18 @@ export async function enrollPersonInJourney(input: {
     await requirePermission("members.edit", companyId)
 
     const sql = getSql()
+    const eligible = await sql`
+      select journey.id from public.member_journeys journey
+      inner join public.people person on person.id = ${input.personId} and person.company_id = journey.company_id and person.deleted_at is null
+      where journey.id = ${input.journeyId} and journey.company_id = ${companyId}
+        and journey.deleted_at is null and journey.is_active = true
+        and exists (
+          select 1 from public.member_journey_steps step
+          where step.journey_id = journey.id and step.company_id = ${companyId}
+            and step.deleted_at is null and step.is_active = true
+        )
+    `
+    if (!eligible[0]) return { ok: false, error: "A trilha precisa estar ativa e ter pelo menos uma etapa para receber inscrições." }
     const rows = await sql<{ id: string }[]>`
       insert into public.person_journey_enrollments (
         company_id, person_id, journey_id, status, started_at, created_by
@@ -1183,7 +1205,8 @@ export async function unenrollPersonFromJourney(
 
     const sql = getSql()
     const rows = await sql<{ person_id: string }[]>`
-      delete from public.person_journey_enrollments
+      update public.person_journey_enrollments
+      set status = 'dropped', completed_at = null, updated_at = now()
       where id = ${enrollmentId} and company_id = ${companyId}
       returning person_id
     `
@@ -1211,6 +1234,14 @@ export async function toggleStepProgress(input: {
     await requirePermission("members.edit", companyId)
 
     const sql = getSql()
+    const eligible = await sql`
+      select step.id from public.member_journey_steps step
+      inner join public.member_journeys journey on journey.id = step.journey_id and journey.company_id = step.company_id
+      inner join public.people person on person.id = ${input.personId} and person.company_id = journey.company_id and person.deleted_at is null
+      where step.id = ${input.stepId} and step.journey_id = ${input.journeyId} and step.company_id = ${companyId}
+        and step.deleted_at is null and step.is_active = true and journey.deleted_at is null
+    `
+    if (!eligible[0]) return { ok: false, error: "Etapa não encontrada nesta trilha" }
     if (input.completed) {
       const completedAt = input.completedAt ? new Date(input.completedAt).toISOString() : new Date().toISOString()
       await sql`

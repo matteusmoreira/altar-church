@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useSyncExternalStore, useTransition } from "react"
+import { useCallback, useMemo, useState, useSyncExternalStore, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowDownRight,
@@ -253,20 +253,20 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
   }, [period])
 
   // Filter helper for transactions
-  const isDateInPeriod = (dateStr?: string | null) => {
+  const isDateInPeriod = useCallback((dateStr?: string | null) => {
     if (!dateRange || !dateStr) return true
     const itemDate = new Date(`${dateStr.slice(0, 10)}T12:00:00`)
     return itemDate >= dateRange.start && itemDate <= dateRange.end
-  }
+  }, [dateRange])
 
   // Filtered lists
   const periodRevenues = useMemo(() => {
     return initialData.revenues.filter((r: Revenue) => isDateInPeriod(r.paymentDate || r.dueDate))
-  }, [initialData.revenues, dateRange])
+  }, [initialData.revenues, isDateInPeriod])
 
   const periodExpenses = useMemo(() => {
     return initialData.expenses.filter((e: Expense) => isDateInPeriod(e.paymentDate || e.dueDate))
-  }, [initialData.expenses, dateRange])
+  }, [initialData.expenses, isDateInPeriod])
 
   // KPI calculations
   const totalRevenues = useMemo(
@@ -486,6 +486,8 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
     e.preventDefault()
     const form = e.currentTarget
     const fd = new FormData(form)
+    form.dataset.requestId ??= crypto.randomUUID()
+    fd.set("requestId", form.dataset.requestId)
 
     startTransition(async () => {
       const res = await saveRevenue(fd)
@@ -493,6 +495,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         toast.success("Receita registrada com sucesso!")
         setIsRevenueSheetOpen(false)
         setRevenueReceivedNow(true)
+        delete form.dataset.requestId
         form.reset()
         router.refresh()
       } else {
@@ -505,6 +508,8 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
     e.preventDefault()
     const form = e.currentTarget
     const fd = new FormData(form)
+    form.dataset.requestId ??= crypto.randomUUID()
+    fd.set("requestId", form.dataset.requestId)
 
     startTransition(async () => {
       const res = await saveExpense(fd)
@@ -512,6 +517,7 @@ export function FinanceClient({ initialData }: { initialData: FinanceData }) {
         toast.success("Despesa registrada com sucesso!")
         setIsExpenseSheetOpen(false)
         setExpensePaidNow(true)
+        delete form.dataset.requestId
         form.reset()
         router.refresh()
       } else {

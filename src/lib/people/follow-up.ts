@@ -82,14 +82,17 @@ export async function listPersonTimeline(personId: string, companyIdInput?: stri
         coalesce(ar.checkin_at, ar.created_at, ar.occurred_on::timestamptz), 'attendance'
       from public.attendance_records ar
       where ar.person_id = ${personId} and ar.company_id = ${companyId} and ar.deleted_at is null
+        and ar.event_type is distinct from 'cell'
 
       union all
-      select gm.id::text, 'cell', 'Participação em célula',
-        coalesce(nullif(gm.title, ''), 'Reunião de célula'), gm.starts_at, 'group_meetings'
+      select attendance.id::text, 'cell', 'Participação em célula',
+        coalesce(nullif(gm.title, ''), 'Reunião de célula'),
+        coalesce(attendance.checkin_at, attendance.created_at, gm.starts_at), 'group_meetings'
       from public.group_meetings gm
-      inner join public.group_members member on member.group_id = gm.group_id and member.person_id = ${personId}
-        and member.company_id = ${companyId} and member.status = 'active'
-      where gm.company_id = ${companyId} and gm.deleted_at is null
+      inner join public.attendance_records attendance on attendance.event_ref_id = gm.id
+        and attendance.person_id = ${personId} and attendance.company_id = ${companyId}
+        and attendance.event_type = 'cell' and attendance.status = 'present' and attendance.deleted_at is null
+      where gm.company_id = ${companyId} and gm.deleted_at is null and gm.starts_at <= now()
 
       union all
       select membership.id::text, 'ministry', 'Vínculo com ministério',
@@ -283,7 +286,13 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
             from public.people
             where company_id = ${company.company_id} and deleted_at is null and is_active = true and status = 'visitor'
               and created_at >= now() - (${days} || ' days')::interval
-            order by created_at desc limit ${limit}
+            and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = people.company_id and existing_task.person_id = people.id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || people.id::text
+                    )
+                    order by created_at desc limit ${limit}
           `
         : trigger.trigger_kind === "visitor_without_contact"
           ? await sql<{ person_id: string; source_key: string }[]>`
@@ -292,7 +301,13 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
               where company_id = ${company.company_id} and deleted_at is null and is_active = true and status = 'visitor'
                 and nullif(btrim(coalesce(email, '')), '') is null and nullif(btrim(coalesce(phone, '')), '') is null
                 and created_at >= now() - (${days} || ' days')::interval
-              order by created_at desc limit ${limit}
+              and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = people.company_id and existing_task.person_id = people.id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || people.id::text
+                    )
+                    order by created_at desc limit ${limit}
             `
           : trigger.trigger_kind === "without_cell"
             ? await sql<{ person_id: string; source_key: string }[]>`
@@ -301,20 +316,34 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
                 where person.company_id = ${company.company_id} and person.deleted_at is null and person.is_active = true
                   and not exists (
                     select 1 from public.group_members membership
-                    inner join public.groups cell on cell.id = membership.group_id and cell.type = 'cell' and cell.deleted_at is null
+                    inner join public.groups cell on cell.id = membership.group_id and cell.type = 'cell' and cell.deleted_at is null and cell.is_active = true
                     where membership.company_id = person.company_id and membership.person_id = person.id and membership.status = 'active'
                   )
-                order by person.created_at desc limit ${limit}
+                and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = person.company_id and existing_task.person_id = person.id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || person.id::text
+                    )
+                    order by person.created_at desc limit ${limit}
               `
             : trigger.trigger_kind === "without_portal_access"
               ? await sql<{ person_id: string; source_key: string }[]>`
                   select person.id, ${trigger.trigger_kind} || ':' || person.id::text
                   from public.people person
                   where person.company_id = ${company.company_id} and person.deleted_at is null and person.is_active = true
+                    and person.person_type in ('member', 'leader', 'volunteer')
                     and (person.profile_id is null or not exists (
-                      select 1 from public.profiles profile where profile.id = person.profile_id and profile.active = true
+                      select 1 from public.profiles profile where profile.id = person.profile_id and profile.company_id = person.company_id
+                        and profile.active = true and profile.deleted_at is null and profile.auth_user_id is not null
                     ))
-                  order by person.created_at desc limit ${limit}
+                  and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = person.company_id and existing_task.person_id = person.id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || person.id::text
+                    )
+                    order by person.created_at desc limit ${limit}
                 `
               : trigger.trigger_kind === "new_prayer_request"
                 ? await sql<{ person_id: string; source_key: string }[]>`
@@ -324,6 +353,12 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
                       and profile.company_id = ${company.company_id} and profile.person_id is not null
                     where request.company_id = ${company.company_id} and request.deleted_at is null
                       and request.created_at >= now() - (${days} || ' days')::interval
+                    and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = request.company_id and existing_task.person_id = profile.person_id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || request.id::text
+                    )
                     order by request.created_at desc limit ${limit}
                   `
                 : await sql<{ person_id: string; source_key: string }[]>`
@@ -340,6 +375,12 @@ export async function processFollowUpTriggers(companyIdInput?: string | null, li
                         where recent_attendance.company_id = person.company_id and recent_attendance.person_id = person.id
                           and recent_attendance.deleted_at is null and recent_attendance.occurred_on >= current_date - (${days} || ' days')::interval
                       )
+                    and not exists (
+                      select 1 from public.person_follow_up_tasks existing_task
+                      where existing_task.company_id = person.company_id and existing_task.person_id = person.id
+                        and existing_task.deleted_at is null
+                        and existing_task.source_key = ${trigger.trigger_kind} || ':' || person.id::text || ':' || to_char(current_date, 'YYYY-MM')
+                    )
                     order by person.created_at desc limit ${limit}
                   `
       for (const candidate of candidates) {

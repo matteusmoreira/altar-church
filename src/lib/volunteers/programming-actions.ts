@@ -7,6 +7,7 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
 import type { Permission } from "@/lib/types";
 import type { VolunteerActionResult } from "./types";
+import { changeProgrammingOptions } from "./programming-options";
 import {
   generateVolunteerScheduleForEvent,
   publishVolunteerEventSchedule,
@@ -27,7 +28,7 @@ const programmingSchema = z
     editScope: z.enum(["series", "occurrence"]).default("series"),
     title: z.string().trim().min(2, "Informe o título").max(160),
     description: z.string().trim().max(5000).default(""),
-    kind: z.enum(["service", "cleaning", "rehearsal", "meeting", "outreach", "other"]),
+    kind: z.string().trim().min(1, "Escolha um tipo").max(100),
     startsAt: z.string().datetime({ offset: true }),
     durationMinutes: z.number().int().min(1).max(1440),
     location: z.string().trim().max(240).default(""),
@@ -87,6 +88,40 @@ async function context(permission: Permission, departmentId?: string) {
   `;
   if (!rows[0]?.allowed) throw new Error("Acesso negado para esta equipe");
   return { user, companyId };
+}
+
+export async function changeVolunteerProgrammingOption(input: unknown): Promise<VolunteerActionResult> {
+  try {
+    const parsed = z.object({
+      field: z.enum(["kind", "location"]),
+      operation: z.enum(["add", "delete"]),
+      value: z.string().trim().min(1).max(240),
+    }).parse(input);
+    const { companyId } = await context("schedules.create");
+    const sql = getSql();
+    const options = await sql.begin(async (tx) => {
+      await tx`insert into public.volunteer_module_settings(company_id) values (${companyId}) on conflict (company_id) do nothing`;
+      const [settings] = await tx<{ programming_kinds: string[]; programming_locations: string[] }[]>`
+        select programming_kinds, programming_locations from public.volunteer_module_settings
+        where company_id = ${companyId} for update
+      `;
+      const updated = changeProgrammingOptions(
+        parsed.field === "kind" ? settings.programming_kinds : settings.programming_locations,
+        parsed.field, parsed.operation, parsed.value,
+      );
+      if (parsed.field === "kind") {
+        await tx`update public.volunteer_module_settings set programming_kinds = ${updated}::text[], updated_at = now() where company_id = ${companyId}`;
+      } else {
+        await tx`update public.volunteer_module_settings set programming_locations = ${updated}::text[], updated_at = now() where company_id = ${companyId}`;
+      }
+      return updated;
+    });
+    await writeAuditLog({ action: `volunteer_programming.option_${parsed.operation}`, entityTable: "volunteer_module_settings", entityId: companyId, companyId, metadata: parsed });
+    refresh();
+    return { ok: true, data: options };
+  } catch (error) {
+    return failure(error);
+  }
 }
 
 async function loadRoles(

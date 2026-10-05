@@ -1,12 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { AUTH_USER_EMAIL_CONFIRMED_HEADER, AUTH_USER_EMAIL_HEADER, AUTH_USER_ID_HEADER } from "@/lib/auth/proxy-headers"
-import { protectedDashboardPrefixes } from "@/lib/navigation/routes"
+import { isProtectedDashboardPath } from "@/lib/navigation/routes"
 import { getSupabasePublishableKey, getSupabaseUrl } from "./env"
-
-function isProtectedPath(pathname: string) {
-  return protectedDashboardPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-}
 
 interface CookieToSet {
   name: string
@@ -67,7 +63,7 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  if (!user && isProtectedPath(pathname)) {
+  if (!user && isProtectedDashboardPath(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     url.searchParams.set("next", pathname)

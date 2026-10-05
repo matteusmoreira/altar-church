@@ -116,7 +116,7 @@ export async function getVolunteerV2DashboardExtras(
   ] = await Promise.all([
     sql<
       Record<string, unknown>[]
-    >`select v2_enabled, timezone, require_swap_approval, reminder_hours from public.volunteer_module_settings where company_id = ${companyId}`,
+    >`select v2_enabled, timezone, require_swap_approval, reminder_hours, programming_kinds, programming_locations from public.volunteer_module_settings where company_id = ${companyId}`,
     sql<Record<string, unknown>[]>`
       select swap.*, replacement_person.full_name as replacement_name
       from public.volunteer_swap_requests swap
@@ -225,6 +225,8 @@ export async function getVolunteerV2DashboardExtras(
   return {
     v2Enabled: Boolean(settings.v2_enabled),
     settings: {
+      programmingKinds: Array.isArray(settings.programming_kinds) ? settings.programming_kinds.map(String) : undefined,
+      programmingLocations: Array.isArray(settings.programming_locations) ? settings.programming_locations.map(String) : undefined,
       v2Enabled: Boolean(settings.v2_enabled),
       timezone: String(settings.timezone ?? "America/Sao_Paulo"),
       requireSwapApproval:

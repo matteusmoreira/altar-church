@@ -394,27 +394,23 @@ async function queueSummaries(sql: Queryable, companyId: string | null): Promise
 }
 
 async function cronSummaries(sql: Queryable): Promise<CronSummary[]> {
-  const jobs = await safeQuery(sql, [] as { jobid: number; jobname: string; schedule: string; active: boolean }[], (db) => db<{ jobid: number; jobname: string; schedule: string; active: boolean }[]>`
-    select jobid, jobname, schedule, active from cron.job order by jobname
+  type CronRow = { jobname: string; schedule: string; active: boolean; last_run_at: Date | string | null; last_status: string | null }
+  const jobs = await safeQuery(sql, [] as CronRow[], (db) => db<CronRow[]>`
+    select job.jobname, job.schedule, job.active, last.start_time as last_run_at, last.status as last_status
+    from cron.job job
+    left join (
+      select distinct on (jobid) jobid, start_time, status
+      from cron.job_run_details order by jobid, start_time desc nulls last
+    ) last on last.jobid = job.jobid
+    order by job.jobname
   `)
-  const result: CronSummary[] = []
-  for (const job of jobs) {
-    const last = await safeQuery(sql, [] as { last_run_at: Date | string | null; last_status: string | null }[], (db) => db<{ last_run_at: Date | string | null; last_status: string | null }[]>`
-      select start_time as last_run_at, status as last_status
-      from cron.job_run_details
-      where jobid = ${job.jobid}
-      order by start_time desc nulls last
-      limit 1
-    `)
-    result.push({
+  return jobs.map((job) => ({
       jobName: job.jobname,
       schedule: job.schedule,
       active: Boolean(job.active),
-      lastRunAt: iso(last[0]?.last_run_at),
-      lastStatus: last[0]?.last_status ?? null,
-    })
-  }
-  return result
+      lastRunAt: iso(job.last_run_at),
+      lastStatus: job.last_status ?? null,
+    }))
 }
 
 async function tenantUsage(sql: Queryable, companyId: string | null) {
@@ -426,32 +422,15 @@ async function tenantUsage(sql: Queryable, companyId: string | null) {
     groups: number
     deliveries: number
   }
-  const rows = await safeQuery(sql, [] as TenantUsageRow[], (db) => companyId
-    ? db<TenantUsageRow[]>`
+  const rows = await safeQuery(sql, [] as TenantUsageRow[], (db) => db<TenantUsageRow[]>`
         select c.id as company_id, c.name as company_name,
-               count(distinct p.id)::int as people,
-               count(distinct p.id) filter (where p.is_active)::int as active_people,
-               count(distinct g.id)::int as groups,
-               count(distinct d.id)::int as deliveries
+               (select count(*)::int from public.people p where p.company_id = c.id and p.deleted_at is null) as people,
+               (select count(*)::int from public.people p where p.company_id = c.id and p.deleted_at is null and p.is_active) as active_people,
+               (select count(*)::int from public.groups g where g.company_id = c.id and g.deleted_at is null) as groups,
+               (select count(*)::int from public.integration_delivery_outbox d where d.company_id = c.id) as deliveries
         from public.companies c
-        left join public.people p on p.company_id = c.id and p.deleted_at is null
-        left join public.groups g on g.company_id = c.id and g.deleted_at is null
-        left join public.integration_delivery_outbox d on d.company_id = c.id
-        where c.id = ${companyId}
-        group by c.id, c.name
-      `
-    : db<TenantUsageRow[]>`
-        select c.id as company_id, c.name as company_name,
-               count(distinct p.id)::int as people,
-               count(distinct p.id) filter (where p.is_active)::int as active_people,
-               count(distinct g.id)::int as groups,
-               count(distinct d.id)::int as deliveries
-        from public.companies c
-        left join public.people p on p.company_id = c.id and p.deleted_at is null
-        left join public.groups g on g.company_id = c.id and g.deleted_at is null
-        left join public.integration_delivery_outbox d on d.company_id = c.id
-        where c.active = true
-        group by c.id, c.name
+        where (${companyId}::uuid is not null and c.id = ${companyId}::uuid)
+          or (${companyId}::uuid is null and c.active = true)
         order by people desc, c.name
         limit 20
       `)

@@ -32,7 +32,7 @@ test("friendly dashboard routes use one typed registry and real route folders", 
   const nextConfig = read("next.config.ts")
 
   assert.match(layout, /dashboardRoutes/)
-  assert.match(proxy, /protectedDashboardPrefixes/)
+  assert.match(proxy, /isProtectedDashboardPath/)
   assert.match(nextConfig, /legacyDashboardRedirects/)
 
   for (const [moduleId, slug] of Object.entries(friendlyRoutes)) {

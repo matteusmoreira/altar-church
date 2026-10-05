@@ -88,6 +88,7 @@ export default async function MembersPage({
 
   return (
     <MembersClient
+      initialTab={firstParam(params.tab) === "config" ? "config" : "lista"}
       crmStages={crmStages}
       dashboard={dashboard}
       duplicateCandidates={[]}

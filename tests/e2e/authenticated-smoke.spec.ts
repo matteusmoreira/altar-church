@@ -9,27 +9,39 @@ const runPrefix = e2eRunPrefix("authenticated")
 const roles: E2ERole[] = ["superadmin", "admin", "member"]
 
 for (const role of roles) {
-  test(`${role} faz login no Chrome e abre dashboard`, async ({ page }) => {
-    await gotoAuthenticated(page, e2e.accounts[role], role === "member" ? "/membro" : "/dashboard")
-    await expectNoDevError(page)
-    await expect(page.getByRole("heading", { name: role === "member" ? /Olá|Portal do Membro/i : /Dashboard|Visao geral|Visão geral/i })).toBeVisible()
+  test.describe(`${role} session`, () => {
+    // Cada papel precisa da propria sessao: com o storageState do admin,
+    // /membro e /admin redirecionam para /dashboard antes de qualquer assert.
+    test.use({ storageState: `playwright/.auth/${role}.json` })
+
+    test(`${role} faz login no Chrome e abre dashboard`, async ({ page }) => {
+      await gotoAuthenticated(page, e2e.accounts[role], role === "member" ? "/membro" : "/dashboard")
+      await expectNoDevError(page)
+      await expect(page.getByRole("heading", { name: role === "member" ? /Olá|Portal do Membro/i : /Dashboard|Visao geral|Visão geral/i })).toBeVisible()
+    })
   })
 }
 
-test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
-  test.setTimeout(90_000)
-  await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
-  await page.goto("/admin", { waitUntil: "domcontentloaded" })
-  await expectNoDevError(page)
-  await expect(page).toHaveURL(/\/admin/)
-  await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
+test.describe("superadmin console", () => {
+  test.use({ storageState: "playwright/.auth/superadmin.json" })
 
-  await resetSession(page)
-  await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
-  await page.goto("/admin", { waitUntil: "domcontentloaded" })
-  await expect(page).toHaveURL(/\/dashboard/)
+  test("superadmin acessa console administrativo e admin comum nao acessa", async ({ page }) => {
+    test.setTimeout(90_000)
+    await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
+    await page.goto("/admin", { waitUntil: "domcontentloaded" })
+    await expectNoDevError(page)
+    await expect(page).toHaveURL(/\/admin/)
+    await expect(page.getByRole("heading", { name: "SuperAdmin" })).toBeVisible()
+
+    await resetSession(page)
+    await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
+    await page.goto("/admin", { waitUntil: "domcontentloaded" })
+    await expect(page).toHaveURL(/\/dashboard/)
+  })
 })
 
+test.describe("superadmin operational modules", () => {
+test.use({ storageState: "playwright/.auth/superadmin.json" })
 test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao", async ({ page }) => {
   test.setTimeout(180_000)
   await gotoAuthenticated(page, e2e.accounts.superadmin, "/dashboard")
@@ -51,18 +63,19 @@ test("superadmin sem igreja atribuida abre modulos operacionais na igreja padrao
     await expect(page.getByRole("heading", { name: entry.heading }).first()).toBeVisible({ timeout: 30_000 })
   }
 })
+})
 
 test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
   await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Pessoas" })).toBeVisible()
-  await page.getByRole("link", { name: /Joao|João|Maria|Ana/i }).first().click()
+  await page.getByRole("link", { name: /E2E/i }).filter({ hasText: /E2E/i }).first().click()
   await expect(page).toHaveURL(/\/pessoas\/[0-9a-f-]+/, { timeout: 20_000 })
   await expectNoDevError(page)
   await expect(page.getByText("Histórico pastoral")).toBeVisible()
   await page.getByRole("tab", { name: "Jornada" }).click()
-  await expect(page.getByText("Jornada de integração")).toBeVisible()
+  await expect(page.getByText("Trilhas de Integração")).toBeVisible()
 })
 
 test("admin logado revisa duplicidades em Pessoas", async ({ page }) => {
@@ -149,9 +162,9 @@ test("admin logado abre Conteúdo real e modal de publicação", async ({ page }
   await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/conteudo")
   await expectNoDevError(page)
-  await expect(page.getByRole("heading", { name: "Conteúdo" })).toBeVisible()
-  await expect(page.getByText("Culto de Celebração neste domingo")).toBeVisible()
-  await expect(page.getByText("Bem-vindo ao Altar Church")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Conteúdo", exact: true })).toBeVisible()
+  await expect(page.getByText("Culto de Celebração neste domingo").first()).toBeVisible()
+  await expect(page.getByRole("main").getByText("Bem-vindo ao Altar Church")).toBeVisible()
 
   await page.getByRole("button", { name: "Novo conteúdo" }).click()
   await expect(page.getByRole("dialog", { name: "Novo conteúdo" })).toBeVisible()
@@ -161,10 +174,10 @@ test("admin logado abre Conteúdo real e modal de publicação", async ({ page }
 })
 
 test("portal público da igreja consome conteúdo real publicado", async ({ page }) => {
-  await page.goto("/church/batista-central")
+  await page.goto(`/church/${process.env.E2E_COMPANY_SLUG ?? "e2e-test"}`)
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: /Igreja E2E|Batista/i })).toBeVisible()
-  await expect(page.getByRole("heading", { name: "Conteúdos recentes" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Conteúdos & Mensagens" })).toBeVisible()
   await expect(page.getByText("Perseverança em tempos difíceis")).toBeVisible()
   await expect(page.getByText("Culto de Celebração neste domingo")).toBeVisible()
   await expect(page.getByRole("heading", { name: "Congregações" })).toBeVisible()
@@ -181,6 +194,8 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await page.goto("/celulas")
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: "Células" })).toBeVisible()
+  // O modo padrão é grade (cards, sem rows de tabela); alternar para lista.
+  await page.getByRole("button", { name: "Lista", exact: true }).click()
   await expect(page.getByRole("row").filter({ hasText: "GCEU Família Restaurada" })).toBeVisible()
   await expect(page.getByRole("row").filter({ hasText: "GCEU Jovens em Ação" })).toBeVisible()
 
@@ -188,8 +203,6 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Nova célula" })).toBeVisible()
   await page.getByTestId("group-name-input").fill(name)
   await page.getByTestId("group-description-input").fill(description)
-  await page.getByTestId("group-category-select").click()
-  await page.getByRole("option", { name: "Família" }).click()
   await page.getByTestId("group-day-select").click()
   await page.getByRole("option", { name: "Quarta" }).click()
   await page.getByTestId("group-time-input").fill("20:15")
@@ -202,19 +215,20 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   const groupActionsButton = page.getByRole("button", { name: `Ações de ${name}` })
   await expect(groupRow).toBeVisible()
 
+  await page.getByRole("tab", { name: "Participantes", exact: true }).click()
   await page.getByTestId("group-ops-group-select").click()
   await page.getByRole("option", { name }).click()
   await page.getByTestId("group-member-person-select").click()
   await page.getByRole("option", { name: "Ana Costa" }).filter({ visible: true }).first().click()
   await page.getByTestId("group-member-role-select").click()
-  await page.getByRole("option", { name: "Visitante" }).filter({ visible: true }).first().click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Enter")
+  await expect(page.getByTestId("group-member-role-select")).toContainText("Visitante")
   await page.getByTestId("group-member-save-button").click()
   await expect(page.getByRole("row").filter({ hasText: "Ana Costa" })).toBeVisible()
 
   const meetingTitle = `Relatório E2E ${stamp}`
   await page.getByRole("tab", { name: "Reuniões" }).click()
-  await page.getByTestId("group-meeting-study-select").click()
-  await page.getByRole("option").filter({ visible: true }).first().click()
   await page.getByTestId("group-meeting-title-input").fill(meetingTitle)
   await page.getByTestId("group-meeting-location-input").fill("Sala E2E")
   await page.getByTestId("group-meeting-present-input").fill("3")
@@ -225,6 +239,7 @@ test("admin logado cria edita e exclui grupo real", async ({ page }) => {
   await expect(meetingsPanel.getByText(meetingTitle).first()).toBeVisible()
   await expect(meetingsPanel.getByText("3 presentes · 1 visitantes").first()).toBeVisible()
 
+  await page.getByRole("tab", { name: "Células", exact: true }).click()
   await expect(groupActionsButton).toBeEnabled()
   await groupActionsButton.click()
   await page.getByRole("menuitem", { name: "Editar" }).click()
@@ -252,7 +267,7 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
     { path: "/comunicacao", heading: /Comunica/i },
     { path: "/notificacao", heading: /Notifica/i },
     { path: "/pessoas/follow-up", heading: /Follow-up/i },
-    { path: "/configuracoes/follow-up", heading: /Gatilhos/i },
+    { path: "/configuracoes/follow-up", heading: /Regras de follow-up/i },
     { path: "/crm", heading: /CRM/i },
     { path: "/celulas/saude", heading: /Saúde das células/i },
     { path: "/financeiro", heading: /Financeiro/i },

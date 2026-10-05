@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { CalendarClock, Loader2, Settings2, ShieldCheck, UserCheck } from "lucide-react"
+import { useId, useState, useTransition } from "react"
+import { Loader2, Settings2 } from "lucide-react"
 import { toast } from "sonner"
 import { saveFollowUpTrigger } from "@/app/(dashboard)/pessoas/actions"
+import { parseFollowUpConfig } from "@/lib/people/follow-up-config"
 import { isFollowUpPriority, type PersonFollowUpPriority, type PersonFollowUpTrigger } from "@/lib/people/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,17 +29,17 @@ export const triggerLabels: Record<string, { label: string; description: string;
   },
   visitor_without_contact: {
     label: "Visitante sem contato",
-    description: "Alerta quando um visitante não possui e-mail ou telefone informados.",
+    description: "Cria tarefa para completar o cadastro de visitantes sem telefone e sem e-mail.",
     defaultDays: 7,
   },
   recurring_absence: {
     label: "Ausência recorrente em cultos",
-    description: "Gera tarefa quando uma pessoa frequente deixa de comparecer por período prolongado.",
+    description: "Cria tarefa para quem teve presença nos últimos 90 dias, mas está há vários dias sem presença registrada. Pode gerar uma nova tarefa por mês.",
     defaultDays: 30,
   },
   without_cell: {
     label: "Pessoa sem célula ativa",
-    description: "Notifica a liderança sobre pessoas que ainda não participam de um pequeno grupo.",
+    description: "Cria tarefa para pessoas ativas que não participam de uma célula ativa.",
     defaultDays: 14,
   },
   new_prayer_request: {
@@ -71,6 +72,7 @@ export function TriggerConfigDialog({
   onSaved,
 }: TriggerConfigDialogProps) {
   const [pending, startTransition] = useTransition()
+  const fieldId = useId()
 
   const kind = trigger?.triggerKind ?? triggerKind ?? "new_visitor"
   const meta = triggerLabels[kind] ?? {
@@ -122,39 +124,45 @@ export function TriggerConfigDialog({
       return
     }
 
+    let config
+    try {
+      config = parseFollowUpConfig({ daysThreshold, dueDays, priority, responsibleProfileId: responsibleId || null, notes: notes.trim() })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Revise a configuração")
+      return
+    }
+
     startTransition(async () => {
-      const res = await saveFollowUpTrigger({
-        id: trigger?.id ?? null,
-        triggerKind: kind,
-        name: name.trim(),
-        isActive,
-        config: {
-          daysThreshold: Number(daysThreshold) || meta.defaultDays,
-          dueDays: Number(dueDays) || 2,
-          priority,
-          responsibleProfileId: responsibleId || null,
-          notes: notes.trim(),
-        },
-      })
+      try {
+        const res = await saveFollowUpTrigger({
+          id: trigger?.id ?? null,
+          triggerKind: kind,
+          name: name.trim(),
+          isActive,
+          config,
+        })
 
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao salvar gatilho")
-        return
+        if (!res.ok) {
+          toast.error(res.error ?? "Erro ao salvar gatilho")
+          return
+        }
+
+        toast.success("Gatilho de follow-up salvo com sucesso!")
+        onOpenChange(false)
+        onSaved?.()
+      } catch {
+        toast.error("Não foi possível salvar a regra. Tente novamente.")
       }
-
-      toast.success("Gatilho de follow-up salvo com sucesso!")
-      onOpenChange(false)
-      onSaved?.()
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-strong sm:max-w-lg">
+      <DialogContent className="glass-strong sm:max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader className="space-y-1 pb-3 border-b border-border/40">
           <div className="flex items-center gap-2">
             <Settings2 className="h-5 w-5 text-primary" />
-            <DialogTitle className="text-base">Calibrar Gatilho: {meta.label}</DialogTitle>
+            <DialogTitle className="text-base">Configurar regra: {meta.label}</DialogTitle>
           </div>
           <DialogDescription className="text-xs">
             {meta.description}
@@ -165,7 +173,7 @@ export function TriggerConfigDialog({
           {/* Status Ativo/Pausado */}
           <div className="flex items-center justify-between rounded-lg border border-border/40 p-3 bg-muted/20">
             <div>
-              <Label className="text-xs font-semibold">Gatilho em Operação</Label>
+              <Label htmlFor={`${fieldId}-active`} className="text-xs font-semibold">Gatilho em Operação</Label>
               <p className="text-[11px] text-muted-foreground">
                 Gatilhos pausados não geram novas tarefas durante as varreduras automáticas.
               </p>
@@ -174,14 +182,15 @@ export function TriggerConfigDialog({
               <Badge variant={isActive ? "default" : "secondary"} className="text-[10px]">
                 {isActive ? "Ativo" : "Pausado"}
               </Badge>
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
+              <Switch id={`${fieldId}-active`} checked={isActive} onCheckedChange={setIsActive} />
             </div>
           </div>
 
           {/* Nome da Tarefa */}
           <div className="grid gap-2">
-            <Label className="text-xs font-medium">Nome da Tarefa Gerada *</Label>
+            <Label htmlFor={`${fieldId}-name`} className="text-xs font-medium">Nome da Tarefa Gerada *</Label>
             <Input
+              id={`${fieldId}-name`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex.: Primeiro contato telefônico com visitante"
@@ -191,33 +200,35 @@ export function TriggerConfigDialog({
 
           {/* Tolerância & Prazo */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label className="text-xs font-medium">Tolerância / Janela (dias)</Label>
+            {kind !== "without_cell" && kind !== "without_portal_access" && <div className="grid gap-1.5">
+              <Label htmlFor={`${fieldId}-daysThreshold`} className="text-xs font-medium">{kind === "recurring_absence" ? "Dias sem presença registrada" : "Considerar registros dos últimos (dias)"}</Label>
               <Input
                 type="number"
                 min={1}
                 max={180}
-                value={daysThreshold}
+                id={`${fieldId}-daysThreshold`}
+              value={daysThreshold}
                 onChange={(e) => setDaysThreshold(Number(e.target.value))}
                 className="h-8 text-xs"
               />
               <span className="text-[10px] text-muted-foreground">
-                Critério de disparo após evento/ausência.
+                {kind === "recurring_absence" ? "Ex.: 30 gera tarefa após 30 dias sem presença registrada." : "Ex.: 7 considera os cadastros ou pedidos recebidos nos últimos 7 dias."}
               </span>
-            </div>
+            </div>}
 
             <div className="grid gap-1.5">
-              <Label className="text-xs font-medium">Prazo para Execução (dias)</Label>
+              <Label htmlFor={`${fieldId}-dueDays`} className="text-xs font-medium">Prazo para Execução (dias)</Label>
               <Input
                 type="number"
-                min={1}
+                min={0}
                 max={60}
-                value={dueDays}
+                id={`${fieldId}-dueDays`}
+              value={dueDays}
                 onChange={(e) => setDueDays(Number(e.target.value))}
                 className="h-8 text-xs"
               />
               <span className="text-[10px] text-muted-foreground">
-                Tempo até a tarefa constar como atrasada.
+                Contado a partir da criação da tarefa. Zero significa prazo para hoje.
               </span>
             </div>
           </div>
@@ -225,9 +236,10 @@ export function TriggerConfigDialog({
           {/* Prioridade & Responsável Padrão */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label className="text-xs font-medium">Prioridade da Tarefa</Label>
+              <Label htmlFor={`${fieldId}-priority`} className="text-xs font-medium">Prioridade da Tarefa</Label>
               <select
-                value={priority}
+                id={`${fieldId}-priority`}
+              value={priority}
                 onChange={(e) => setPriority(e.target.value as PersonFollowUpPriority)}
                 className="h-8 rounded-md border bg-background px-2 text-xs"
               >
@@ -239,9 +251,10 @@ export function TriggerConfigDialog({
             </div>
 
             <div className="grid gap-1.5">
-              <Label className="text-xs font-medium">Responsável Padrão</Label>
+              <Label htmlFor={`${fieldId}-responsibleId`} className="text-xs font-medium">Responsável Padrão</Label>
               <select
-                value={responsibleId}
+                id={`${fieldId}-responsibleId`}
+              value={responsibleId}
                 onChange={(e) => setResponsibleId(e.target.value)}
                 className="h-8 rounded-md border bg-background px-2 text-xs"
               >
@@ -257,8 +270,9 @@ export function TriggerConfigDialog({
 
           {/* Orientações Pastorais */}
           <div className="grid gap-1.5">
-            <Label className="text-xs font-medium">Orientações / Observação Padrão</Label>
+            <Label htmlFor={`${fieldId}-notes`} className="text-xs font-medium">Orientações / Observação Padrão</Label>
             <Textarea
+              id={`${fieldId}-notes`}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Instruções para o líder ou obreiro que assumir a tarefa..."

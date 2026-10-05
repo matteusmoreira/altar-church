@@ -79,14 +79,12 @@ export function BalloonPopCelebration() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    let width = (canvas.width = window.innerWidth)
-    let height = (canvas.height = window.innerHeight)
     const dpr = window.devicePixelRatio || 1
 
     function resize() {
       if (!canvas) return
-      width = canvas.width = window.innerWidth * dpr
-      height = canvas.height = window.innerHeight * dpr
+      canvas.width = window.innerWidth * dpr
+      canvas.height = window.innerHeight * dpr
       canvas.style.width = `${window.innerWidth}px`
       canvas.style.height = `${window.innerHeight}px`
       ctx?.scale(dpr, dpr)

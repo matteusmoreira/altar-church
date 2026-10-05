@@ -50,16 +50,11 @@ import type {
   VolunteerRecurrenceFrequency,
 } from "@/lib/volunteers/types";
 import { EscalaCultoDrawer } from "./components/escala-culto-drawer";
+import { ProgrammingOptionSelect } from "./components/programming-option-select";
+import { DEFAULT_PROGRAMMING_KINDS, programmingOptionLabel } from "@/lib/volunteers/programming-options";
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const KIND_LABELS: Record<VolunteerProgrammingKind, string> = {
-  service: "Culto",
-  cleaning: "Faxina",
-  rehearsal: "Ensaio",
-  meeting: "Reunião",
-  outreach: "Ação",
-  other: "Outro",
-};
+
 type PositionForm = {
   departmentId: string;
   roleId: string;
@@ -181,7 +176,7 @@ function Wizard({
 }) {
   const router = useRouter();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState(initial);
+  const [form, setForm] = useState(() => ({ ...initial, kind: initial.id ? initial.kind : (data.settings.programmingKinds ?? DEFAULT_PROGRAMMING_KINDS)[0] ?? "" }));
   const [templateId, setTemplateId] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -229,8 +224,8 @@ function Wizard({
   }
 
   function next() {
-    if (step === 1 && (!form.title.trim() || !form.startsAt))
-      return toast.error("Informe título, data e horário");
+    if (step === 1 && (!form.title.trim() || !form.startsAt || !form.kind))
+      return toast.error("Informe título, tipo, data e horário");
     if (
       step === 1 &&
       form.recurrenceFrequency === "weekly" &&
@@ -318,26 +313,12 @@ function Wizard({
                 placeholder="Ex.: Culto domingo 18h"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="activity-kind">Tipo</Label>
-              <select
-                id="activity-kind"
-                className="h-10 w-full rounded-md border bg-background px-3"
-                value={form.kind}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    kind: event.target.value as VolunteerProgrammingKind,
-                  })
-                }
-              >
-                {Object.entries(KIND_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <ProgrammingOptionSelect
+              field="kind"
+              value={form.kind}
+              options={data.settings.programmingKinds ?? DEFAULT_PROGRAMMING_KINDS}
+              onChange={(kind) => setForm((current) => ({ ...current, kind }))}
+            />
             <div className="space-y-2">
               <Label htmlFor="activity-date">Data e horário *</Label>
               <Input
@@ -365,17 +346,12 @@ function Wizard({
                 }
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="activity-location">Local</Label>
-              <Input
-                id="activity-location"
-                value={form.location}
-                onChange={(event) =>
-                  setForm({ ...form, location: event.target.value })
-                }
-                placeholder="Templo principal"
-              />
-            </div>
+            <ProgrammingOptionSelect
+              field="location"
+              value={form.location}
+              options={data.settings.programmingLocations ?? []}
+              onChange={(location) => setForm((current) => ({ ...current, location }))}
+            />
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="activity-description">Descrição</Label>
               <Textarea
@@ -777,7 +753,7 @@ function Wizard({
               <CardContent className="space-y-2 text-sm">
                 <p className="font-medium">{form.title}</p>
                 <p>
-                  {KIND_LABELS[form.kind]} ·{" "}
+                  {programmingOptionLabel(form.kind, "kind")} ·{" "}
                   {formatDate(new Date(form.startsAt).toISOString())}
                 </p>
                 <p>

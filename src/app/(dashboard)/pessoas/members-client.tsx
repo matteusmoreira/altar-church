@@ -19,8 +19,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  FileSpreadsheet,
-  FileText,
   Filter,
   Kanban,
   List,
@@ -114,6 +112,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface MembersClientProps {
+  initialTab?: "lista" | "config"
   crmStages: CRMStage[]
   dashboard: PeopleDashboardData
   duplicateCandidates: DuplicateCandidateItem[]
@@ -410,6 +409,7 @@ function DuplicatePersonPanel({
 }
 
 export function MembersClient({
+  initialTab = "lista",
   crmStages,
   dashboard,
   duplicateCandidates,
@@ -425,7 +425,12 @@ export function MembersClient({
   const pathname = usePathname()
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
-  const [activeTab, setActiveTab] = useState("lista")
+  const [activeTab, setActiveTab] = useState<string>(initialTab)
+  const [syncedTab, setSyncedTab] = useState(initialTab)
+  if (initialTab !== syncedTab) {
+    setSyncedTab(initialTab)
+    setActiveTab(initialTab)
+  }
   const [duplicates, setDuplicates] = useState(duplicateCandidates)
   const [duplicatesLoaded, setDuplicatesLoaded] = useState(duplicateCandidates.length > 0)
   const [duplicatesLoading, setDuplicatesLoading] = useState(false)
@@ -716,7 +721,16 @@ export function MembersClient({
           toast.error(res.error ?? "Erro ao cadastrar jornada")
           return
         }
-        toast.success("Jornada cadastrada com sucesso!")
+        if (!res.id) throw new Error("A trilha não foi criada")
+        toast.success("Trilha criada! Agora adicione as etapas.")
+        setSelectedJourneyForBuilder({
+          id: res.id, companyId: "", name: newJourneyForm.name.trim(),
+          description: newJourneyForm.description.trim(), sortOrder: journeysList.length + 1,
+          isActive: true, isAutoEnroll: newJourneyForm.isAutoEnroll,
+          autoEnrollType: newJourneyForm.isAutoEnroll ? newJourneyForm.autoEnrollType : null,
+          steps: [], enrolledCount: 0,
+        })
+        setJourneyBuilderOpen(true)
         setJourneysList((current) => [
           ...current,
           {
@@ -2214,7 +2228,7 @@ export function MembersClient({
           </Card>
 
           {/* Member Journeys Management */}
-          <Card className="glass">
+          <Card id="trilhas" className="glass scroll-mt-6">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -2222,7 +2236,7 @@ export function MembersClient({
                   Trilhas de Crescimento & Integração
                 </CardTitle>
                 <CardDescription>
-                  Jornadas estruturadas de passos espirituais, discipulado e formação com etapas e SLAs.
+                  Crie a trilha, adicione as etapas e inscreva a pessoa pela aba Jornada da ficha. Ex.: acolhimento → discipulado → batismo.
                 </CardDescription>
               </div>
               <Button
@@ -2242,7 +2256,8 @@ export function MembersClient({
                 <Plus className="mr-2 h-4 w-4" /> Nova trilha
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <p className="rounded-lg bg-muted/30 p-3 text-sm text-muted-foreground">Uma trilha precisa de ao menos uma etapa para receber inscrições. Os prazos são orientações; concluir uma etapa registra o progresso, sem criar uma tarefa de follow-up ou enviar mensagens. A inscrição automática vale para novos cadastros feitos em Pessoas, após configurar as etapas.</p>
               {journeysList.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
                   Nenhuma trilha de integração cadastrada ainda.
@@ -2260,6 +2275,7 @@ export function MembersClient({
                             <Badge variant="secondary" className="text-xs">
                               {j.steps?.length ?? 0} {(j.steps?.length ?? 0) === 1 ? "etapa" : "etapas"}
                             </Badge>
+                            {j.steps.length === 0 && <Badge variant="outline">Falta adicionar etapas</Badge>}
                             {j.isAutoEnroll ? (
                               <Badge className="bg-primary/15 text-primary border-primary/20 text-xs">
                                 Auto: {j.autoEnrollType === "visitor" ? "Visitantes" : j.autoEnrollType === "member" ? "Membros" : "Todos"}
@@ -2322,7 +2338,7 @@ export function MembersClient({
                             setJourneyBuilderOpen(true)
                           }}
                         >
-                          <Route className="mr-1.5 h-3.5 w-3.5" /> Gerenciar trilha & etapas
+                          <Route className="mr-1.5 h-3.5 w-3.5" /> {j.steps.length === 0 ? "Adicionar primeiras etapas" : "Editar trilha e etapas"}
                         </Button>
                       </div>
                     </div>
@@ -2936,7 +2952,7 @@ export function MembersClient({
               {editingJourney ? "Editar Trilha de Integração" : "Nova Trilha de Integração"}
             </DialogTitle>
             <DialogDescription>
-              Crie uma trilha de passos espirituais, batismo ou discipulado da igreja.
+              Primeiro defina o nome e o objetivo. Ao criar a trilha, você seguirá para adicionar as etapas.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-3">
@@ -3012,7 +3028,7 @@ export function MembersClient({
               disabled={isCreatingJourney}
               variant="brand"
             >
-              {isCreatingJourney ? "Salvando..." : editingJourney ? "Salvar alterações" : "Cadastrar Trilha"}
+              {isCreatingJourney ? "Salvando..." : editingJourney ? "Salvar alterações" : "Criar e adicionar etapas"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3081,7 +3097,7 @@ export function MembersClient({
       <JourneyBuilderSheet
         open={journeyBuilderOpen}
         onOpenChange={setJourneyBuilderOpen}
-        journey={selectedJourneyForBuilder}
+        journey={journeysList.find((journey) => journey.id === selectedJourneyForBuilder?.id) ?? selectedJourneyForBuilder}
         onJourneyChanged={() => {
           router.refresh()
         }}

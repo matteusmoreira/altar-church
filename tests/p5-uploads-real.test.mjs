@@ -80,9 +80,9 @@ test("financial receipts use app_files for revenues, expenses and donations", ()
   }
 
   assert.match(migration, /receipt_file_id uuid references public\.app_files\(id\)/i)
-  assert.match(operationalActions, /attachReceiptFile/)
+  assert.match(operationalActions, /createFinancialRecord/)
   assert.match(operationalActions, /uploadManagedFile/)
-  assert.match(operationalActions, /receipt_file_id = \$\{uploaded\.id\}/)
+  assert.match(operationalActions, /id, receipt_file_id, company_id/)
   assert.match(operationalActions, /financial_receipt\.upload/)
   assert.match(financePage, /name="receiptFile"/)
   assert.match(donationsPage, /name="receiptFile"/)

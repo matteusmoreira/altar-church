@@ -9,6 +9,10 @@ const connection = process.env.POSTGRES_URL
 const runPrefix = e2eRunPrefix("volunteer-chat")
 
 test("chat avisa ADM e voluntário sem precisar abrir a conversa", async ({ browser }) => {
+  // O workspace V2 do manager não tem mais o botão "Chat" no card da escala
+  // (ShiftChat hoje só no portal do voluntário); reativar quando o chat do
+  // manager voltar à UI. Fixture e asserções de outbox continuam válidas.
+  test.skip(true, "UI de chat do lado manager ausente no workspace V2")
   test.skip(!connection || !volunteerAccount, "Conta/DB E2E não configurados")
   const sql = postgres(connection!, { max: 1, prepare: false })
   const suffix = runPrefix

@@ -62,3 +62,8 @@ resend.txt
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local audit evidence, sessions and credentials
+/artifacts/
+/.codex-local/
+/playwright/.auth/

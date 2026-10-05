@@ -445,6 +445,269 @@ async function ensurePortalIdentity(sql, { key, account, companyId, profileId })
   }
 }
 
+/**
+ * Dados de conteudo consumidos pelas specs autenticadas (DESAFIOS 03/10/2026):
+ * pessoas de exemplo para as listas de Pessoas, celulas GCEU, posts publicados
+ * para o portal publico, banner de boas-vindas e departamento/role de
+ * voluntariado para a API de performance. Tudo idempotente e revivendo linhas
+ * soft-deleted do proprio tenant de teste.
+ */
+async function ensureSeedContentData(sql, { companyId, profileId }) {
+  const [churchProfile] = await sql`
+    select id
+    from public.church_profiles
+    where company_id = ${companyId}
+    limit 1
+  `
+  if (churchProfile) {
+    await sql`
+      update public.church_profiles
+      set public_name = 'Igreja E2E Central',
+          responsible_name = 'Admin E2E',
+          updated_at = now()
+      where id = ${churchProfile.id}
+    `
+  } else {
+    await sql`
+      insert into public.church_profiles (
+        company_id, public_name, responsible_name, email, phone, website,
+        address, city, state, country, timezone, history, created_by, updated_by
+      )
+      values (
+        ${companyId}, 'Igreja E2E Central', 'Admin E2E', 'contato@altar-church.test',
+        '(11) 90000-0000', 'https://igreja-e2e.test', 'Rua E2E, 100', 'São Paulo', 'SP',
+        'Brasil', 'America/Sao_Paulo', 'Igreja ficticia usada pelos testes automatizados.',
+        ${profileId}, ${profileId}
+      )
+    `
+  }
+
+  const samplePeople = [
+    { firstName: "João", lastName: "Silva", fullName: "João Silva", email: "joao.silva@e2e.altar-church.test" },
+    { firstName: "Maria", lastName: "Santos", fullName: "Maria Santos", email: "maria.santos@e2e.altar-church.test" },
+    { firstName: "Ana", lastName: "Costa", fullName: "Ana Costa", email: "ana.costa@e2e.altar-church.test" },
+  ]
+  for (const person of samplePeople) {
+    const [existing] = await sql`
+      select id, deleted_at
+      from public.people
+      where company_id = ${companyId}
+        and lower(email) = lower(${person.email})
+      order by created_at
+      limit 1
+    `
+    if (existing) {
+      await sql`
+        update public.people
+        set first_name = ${person.firstName},
+            last_name = ${person.lastName},
+            full_name = ${person.fullName},
+            deleted_at = null,
+            is_active = true,
+            status = 'active',
+            person_type = 'member',
+            updated_by = ${profileId},
+            updated_at = now()
+        where id = ${existing.id}
+      `
+    } else {
+      await sql`
+        insert into public.people (
+          company_id, first_name, last_name, full_name, email,
+          access_profile, status, person_type, is_active, email_validated,
+          created_by, updated_by
+        )
+        values (
+          ${companyId}, ${person.firstName}, ${person.lastName}, ${person.fullName}, ${person.email},
+          'member', 'active', 'member', true, true,
+          ${profileId}, ${profileId}
+        )
+      `
+    }
+  }
+
+  const sampleGroups = [
+    { name: "GCEU Família Restaurada", meetingDay: "Quarta" },
+    { name: "GCEU Jovens em Ação", meetingDay: "Sexta" },
+  ]
+  for (const group of sampleGroups) {
+    const [existing] = await sql`
+      select id
+      from public.groups
+      where company_id = ${companyId}
+        and name = ${group.name}
+      order by created_at
+      limit 1
+    `
+    if (existing) {
+      await sql`
+        update public.groups
+        set deleted_at = null,
+            is_active = true,
+            updated_by = ${profileId},
+            updated_at = now()
+        where id = ${existing.id}
+      `
+    } else {
+      await sql`
+        insert into public.groups (
+          company_id, name, description, type, meeting_day, meeting_time,
+          meeting_location, neighborhood, city, max_capacity, accepts_requests,
+          is_active, postal_code, address_number, address_complement, state,
+          is_address_public, is_leader_whatsapp_public, custom_whatsapp_message,
+          whatsapp_message, created_by, updated_by
+        )
+        values (
+          ${companyId}, ${group.name}, 'Célula E2E de exemplo', 'cell', ${group.meetingDay}, '20:00',
+          'Rua E2E, 100', 'Centro', 'São Paulo', 15, true,
+          true, '01001-000', '100', '', 'SP',
+          true, false, false, '{}', ${profileId}, ${profileId}
+        )
+      `
+    }
+  }
+
+  let [category] = await sql`
+    select id
+    from public.content_categories
+    where company_id = ${companyId}
+      and slug = 'noticias-e2e'
+    order by created_at
+    limit 1
+  `
+  if (!category) {
+    ;[category] = await sql`
+      insert into public.content_categories (
+        company_id, name, slug, description, content_type, sort_order,
+        is_active, created_by, updated_by
+      )
+      values (
+        ${companyId}, 'Notícias E2E', 'noticias-e2e', 'Categoria de exemplo para os testes', 'news', 0,
+        true, ${profileId}, ${profileId}
+      )
+      returning id
+    `
+  }
+
+  const samplePosts = [
+    { title: "Culto de Celebração neste domingo", slug: "culto-de-celebracao-neste-domingo" },
+    { title: "Perseverança em tempos difíceis", slug: "perseveranca-em-tempos-dificeis" },
+  ]
+  for (const post of samplePosts) {
+    const [existing] = await sql`
+      select id
+      from public.content_posts
+      where company_id = ${companyId}
+        and slug = ${post.slug}
+      order by created_at
+      limit 1
+    `
+    if (existing) {
+      await sql`
+        update public.content_posts
+        set title = ${post.title},
+            status = 'published',
+            published_at = now(),
+            deleted_at = null,
+            category_id = ${category.id},
+            updated_by = ${profileId},
+            updated_at = now()
+        where id = ${existing.id}
+      `
+    } else {
+      await sql`
+        insert into public.content_posts (
+          company_id, category_id, type, title, slug, summary, content,
+          author_name, status, published_at, created_by, updated_by
+        )
+        values (
+          ${companyId}, ${category.id}, 'news', ${post.title}, ${post.slug},
+          'Publicação de exemplo criada pelo seed E2E',
+          'Conteúdo fictício usado pelos testes automatizados.',
+          'Admin E2E', 'published', now(), ${profileId}, ${profileId}
+        )
+      `
+    }
+  }
+
+  const [welcomeBanner] = await sql`
+    select id
+    from public.banners
+    where company_id = ${companyId}
+      and title = 'Bem-vindo ao Altar Church'
+    order by created_at
+    limit 1
+  `
+  if (welcomeBanner) {
+    await sql`
+      update public.banners
+      set deleted_at = null,
+          is_active = true,
+          show_in_web = true,
+          show_in_apps = true,
+          updated_at = now()
+      where id = ${welcomeBanner.id}
+    `
+  } else {
+    await sql`
+      insert into public.banners (company_id, title, is_active, show_in_web, show_in_apps, created_by, updated_by)
+      values (${companyId}, 'Bem-vindo ao Altar Church', true, true, true, ${profileId}, ${profileId})
+    `
+  }
+
+  let [department] = await sql`
+    select id
+    from public.volunteer_departments
+    where company_id = ${companyId}
+      and name = 'Recepção E2E'
+    order by created_at
+    limit 1
+  `
+  if (department) {
+    await sql`
+      update public.volunteer_departments
+      set deleted_at = null,
+          is_active = true,
+          updated_at = now()
+      where id = ${department.id}
+    `
+  } else {
+    ;[department] = await sql`
+      insert into public.volunteer_departments (
+        company_id, name, description, is_active, created_by, updated_by
+      )
+      values (${companyId}, 'Recepção E2E', 'Departamento de exemplo para os testes', true, ${profileId}, ${profileId})
+      returning id
+    `
+  }
+
+  const [role] = await sql`
+    select id
+    from public.volunteer_department_roles
+    where company_id = ${companyId}
+      and department_id = ${department.id}
+      and name = 'Recepcionista E2E'
+    order by created_at
+    limit 1
+  `
+  if (role) {
+    await sql`
+      update public.volunteer_department_roles
+      set deleted_at = null,
+          is_active = true,
+          updated_at = now()
+      where id = ${role.id}
+    `
+  } else {
+    await sql`
+      insert into public.volunteer_department_roles (
+        company_id, department_id, name, description, instructions, is_active
+      )
+      values (${companyId}, ${department.id}, 'Recepcionista E2E', 'Função de exemplo', '', true)
+    `
+  }
+}
+
 async function main() {
   const env = { ...process.env, ...readKeyValueFile(envPath) }
   Object.assign(process.env, env)
@@ -534,6 +797,9 @@ async function main() {
       `
 
       await ensurePortalIdentity(sql, { key, account, companyId, profileId: profile.id })
+      if (key === "admin") {
+        await ensureSeedContentData(sql, { companyId, profileId: profile.id })
+      }
       console.log(`ok ${key}: ${account.email} (${runId})`)
     }
   } finally {

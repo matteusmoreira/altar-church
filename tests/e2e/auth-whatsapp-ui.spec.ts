@@ -4,6 +4,10 @@ import { loginAs } from "./helpers/auth"
 
 const e2e = readE2EAccounts()
 
+// /login redireciona usuarios logados para o dashboard; os testes abaixo
+// exercitam a tela de login e precisam comecar sem sessao.
+test.use({ storageState: { cookies: [], origins: [] } })
+
 test("login por e-mail continua autenticando a conta existente", async ({ page }) => {
   await loginAs(page, e2e.accounts.admin)
 })

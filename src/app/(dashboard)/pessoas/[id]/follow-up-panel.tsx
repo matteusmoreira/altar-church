@@ -35,7 +35,10 @@ function formatDateTime(value: string | null) {
 }
 
 function localDateTime(value: string | null) {
-  return value ? value.slice(0, 16) : ""
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 
 export function FollowUpPanel({ personId, companyId, timeline, tasks, responsibleOptions }: FollowUpPanelProps) {
@@ -46,35 +49,48 @@ export function FollowUpPanel({ personId, companyId, timeline, tasks, responsibl
 
   function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const dueAt = String(formData.get("dueAt") ?? "")
+    if (dueAt) formData.set("dueAt", new Date(dueAt).toISOString())
     formData.set("personId", personId)
     formData.set("companyId", companyId)
     startTransition(async () => {
-      const result = await savePersonFollowUpTask(formData)
-      if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível criar a tarefa")
-        return
+      try {
+        const result = await savePersonFollowUpTask(formData)
+        if (!result.ok) {
+          toast.error(result.error ?? "Não foi possível criar a tarefa")
+          return
+        }
+        toast.success("Tarefa de follow-up criada")
+        form.reset()
+        setPriority("normal")
+        setResponsible("")
+        router.refresh()
+      } catch {
+        toast.error("Não foi possível concluir a operação. Atualize a ficha para conferir as tarefas antes de tentar novamente.")
       }
-      toast.success("Tarefa de follow-up criada")
-      event.currentTarget.reset()
-      setPriority("normal")
-      setResponsible("")
-      router.refresh()
     })
   }
 
   function submitUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
+    const dueAt = String(formData.get("dueAt") ?? "")
+    if (dueAt) formData.set("dueAt", new Date(dueAt).toISOString())
     formData.set("companyId", companyId)
     startTransition(async () => {
-      const result = await updatePersonFollowUpTask(formData)
-      if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível atualizar a tarefa")
-        return
+      try {
+        const result = await updatePersonFollowUpTask(formData)
+        if (!result.ok) {
+          toast.error(result.error ?? "Não foi possível atualizar a tarefa")
+          return
+        }
+        toast.success("Tarefa atualizada")
+        router.refresh()
+      } catch {
+        toast.error("Não foi possível atualizar a tarefa. Tente novamente.")
       }
-      toast.success("Tarefa atualizada")
-      router.refresh()
     })
   }
 

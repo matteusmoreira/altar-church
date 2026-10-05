@@ -69,7 +69,7 @@ test("member detail page shows real profile history and journey data", () => {
   assert.match(client, /^"use client"/)
   assert.match(client, /person\.customFields/)
   assert.match(client, /person\.activities/)
-  assert.match(client, /person\.journeySteps/)
+  assert.match(client, /person\.enrolledJourneys/)
   assert.match(client, /Hist[oó]rico pastoral/)
   assert.match(data, /export async function getPersonDetail/)
   assert.match(data, /person_custom_field_values/)

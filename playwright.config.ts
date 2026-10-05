@@ -17,6 +17,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    actionTimeout: 20_000,
     channel: "chrome",
     headless: process.env.E2E_HEADLESS === "1",
     trace: "retain-on-failure",
@@ -28,6 +29,15 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    env: {
+      ...process.env,
+      // Expõe /dev/voluntariado (prévia fictícia) no build de produção do E2E.
+      E2E_VOLUNTEER_PREVIEW: "1",
+      // A suíte loga dezenas de vezes do mesmo IP; afrouxa o rate limit do
+      // login só no servidor de teste (defaults de produção continuam 30/8).
+      LOGIN_RATE_LIMIT_IP_MAX: "1000",
+      LOGIN_RATE_LIMIT_IDENTIFIER_MAX: "100",
+    },
   },
   projects: [
     {

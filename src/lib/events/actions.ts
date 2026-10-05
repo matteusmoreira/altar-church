@@ -164,6 +164,12 @@ export async function cancelGuestEventRegistration(tokenInput: string) {
   try {
     const token = uuid.parse(tokenInput)
     const row = await getSql().begin(async (tx) => {
+      const registration = await tx<{ event_id: string; company_id: string }[]>`
+        select event_id, company_id from public.event_guest_registrations
+        where confirmation_token = ${token}::uuid and status in ('going', 'waitlisted')
+      `
+      if (!registration[0]) throw new Error("Inscrição não encontrada ou já cancelada")
+      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${registration[0].event_id} and company_id = ${registration[0].company_id} for update`
       const rows = await tx<{ id: string; company_id: string; event_id: string; status: string }[]>`
         update public.event_guest_registrations
         set status = 'canceled', canceled_at = now(), updated_at = now()
@@ -171,7 +177,6 @@ export async function cancelGuestEventRegistration(tokenInput: string) {
         returning id, company_id, event_id, status
       `
       if (!rows[0]) throw new Error("Inscrição não encontrada ou já cancelada")
-      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${rows[0].event_id} and company_id = ${rows[0].company_id} for update`
       const capacity = Number(eventRows[0]?.max_capacity ?? 0)
       if (capacity > 0) {
         const goingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.member_event_rsvps where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'going'`

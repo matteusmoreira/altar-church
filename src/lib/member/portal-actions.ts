@@ -80,6 +80,8 @@ export async function cancelMemberEventRsvp(formData: FormData) {
     const eventId = uuid.parse(value(formData, "eventId"))
     const { user, companyId, personId } = await requireMemberContext()
     const rows = await getSql().begin(async (tx) => {
+      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${eventId} and company_id = ${companyId} for update`
+      if (!eventRows[0]) throw new Error("Evento não encontrado")
       const canceled = await tx<{ id: string; event_id: string; status: string }[]>`
         update public.member_event_rsvps set status = 'canceled', updated_at = now()
         where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}
@@ -87,7 +89,6 @@ export async function cancelMemberEventRsvp(formData: FormData) {
         returning id, event_id, status
       `
       if (!canceled[0]) throw new Error("RSVP não encontrado")
-      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${eventId} and company_id = ${companyId} for update`
       const capacity = Number(eventRows[0]?.max_capacity ?? 0)
       if (capacity > 0) {
         const goingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.member_event_rsvps where event_id = ${eventId} and company_id = ${companyId} and status = 'going'`

@@ -15,7 +15,9 @@ export default async function VolunteerPreview({
 }: {
   searchParams: Promise<{ mode?: string; empty?: string }>;
 }) {
-  if (process.env.NODE_ENV !== "development") notFound();
+  // Prévia com dados fictícios: liberada em dev e no servidor de E2E
+  // (build de produção), nunca no deploy real.
+  if (process.env.NODE_ENV !== "development" && process.env.E2E_VOLUNTEER_PREVIEW !== "1") notFound();
   const query = await searchParams;
   const data = volunteerPreviewData();
   if (query.empty === "1") {

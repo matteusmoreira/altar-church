@@ -168,3 +168,39 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - **Asserções obsoletas**: "Eventos consolidados por fonte" não existe mais (painel virou "Linha do tempo integrada"); corrigido no spec. Revisar os demais falhantes antes de acusar regressão.
 - **Rate limit do login** continua como causa provável do bloco de falhas uniformes (~24s = loop de login travado; item já documentado acima, em aberto).
 - Módulos intocados pela feature falham igual (superadmin, informações da igreja, conteúdo, portal público, grupos, friendly-routes) — reforça que o suite precisa de uma passada dedicada de estabilização, com artifacts do CI (`upload-artifact` já salva screenshots/traces/vídeos).
+
+## Campos Tipo/Local da nova escala — 05/10/2026
+
+- Next dev 16.3 bloqueou a conexão de desenvolvimento da prévia acessada por 127.0.0.1; o HTML aparecia, mas o clique em Nova escala não abria o assistente nos testes. Usar localhost:3107 em playwright.volunteers-preview.config.ts resolveu. Os testes dos menus passaram em desktop e mobile.
+- O catálogo salvo usa as colunas programming_kinds/programming_locations de volunteer_module_settings, por igreja. Aplicar 20261005120000_volunteer_programming_options.sql antes de publicar o código que consulta essas colunas. Nesta alteração, o banco remoto e a publicação não foram executados.
+
+
+## Follow-up e trilhas — 05/10/2026
+
+- A configuração antiga de follow-up descartava o resultado das Server Actions e escondia prazo, responsável e pausa. A página agora reutiliza `TriggerConfigDialog` e mostra erros e o resultado da verificação.
+- O fallback legado da ficha inferia inscrição a partir de todas as etapas ativas da igreja. Somente progresso efetivamente concluído pode inferir uma inscrição antiga. Encerrar uma trilha mantém a inscrição com status `dropped`, evitando que o fallback ressuscite o acompanhamento.
+- Editar uma etapa sem `sortOrder` zerava sua posição. Preservar a posição atual quando o formulário não envia uma nova ordem.
+- No construtor, atualizar as props após salvar uma etapa não deve fechar ou limpar o formulário seguinte. Inicializar os campos ao abrir ou trocar de trilha; atualizar a lista sem descartar a edição em andamento.
+- Os E2E próprios devem esperar a hidratação antes do primeiro clique e usar saída/reporter separados quando outras sessões testam o mesmo checkout. `E2E_COMPANY_LEGACY_ID` deve coincidir com o documento local; credenciais ficam somente em memória. `--env-file` não é aceito em `NODE_OPTIONS`: passar a opção ao executável Node.
+
+## Revisão de bugs — 05/10/2026
+
+- Relatório desta revisão: `docs/REVISAO-BUGS-2026-10-05.md`. Foram encontrados 8 bugs; nenhuma correção funcional, migration ou publicação foi executada nesta revisão.
+- `input type="number"` envia ponto decimal. Remover todos os pontos no parser financeiro transforma `10.50` em `1050`; a prova deve considerar o FormData real do navegador e o parser do servidor.
+- As rotas públicas em `(public)` ainda passam pelo middleware. Proteger prefixos `/kids` e `/eventos` sem exceções bloqueia cadastro de visitantes e links públicos de eventos antes de validar slug/token.
+- HTTP 200 e build verde não bastam: `/voluntariado` devolveu 200 com erro de renderização porque a migration de `programming_kinds/programming_locations` estava pendente (87 locais/86 remotas).
+- A criação de receita/despesa/doação ocorre antes do upload de comprovante; falha posterior pode ser apresentada como erro mesmo com registro gravado. Reprodução desta auditoria usa banco/storage simulados, sem lançar valores reais.
+- As sondas desta sessão estão em `artifacts/review-20261005-*`; os testes de reprodução afirmam o comportamento defeituoso atual, e seu resultado verde não comprova correção. Testes/build desta rodada usaram Node 25.1.0, enquanto o projeto/CI exige Node 24.x.
+
+
+## Correções da revisão — 05/10/2026
+
+- Os oito achados da revisão receberam correções; consultar `docs/CORRECOES-BUGS-2026-10-05.md` para a validação final. A descrição anterior permanece como registro da auditoria inicial.
+- O guard das ações da prévia de Voluntariado deve reconhecer `/dev/voluntariado` também no build de teste com `next start`. Condicioná-lo a `NODE_ENV=development` enviava chamadas reais com IDs fictícios e esvaziava a lista de candidatos. A rota continua indisponível no deploy sem a flag de E2E.
+- Estado de autenticação do Playwright contém tokens: ignorar `playwright/.auth/`, `.codex-local/` e `artifacts/` no Git, além do documento local de contas.
+- A aparente divergência de checksum da migration histórica `20260929140000_unique_parciais_e_indices` era apenas CRLF do Windows versus LF no carimbo remoto. A igualdade após normalização foi confirmada, assim como os quatro índices previstos. O runner grava hashes normalizados e aceita carimbos históricos LF/CRLF, verificando mudanças reais de SQL também quando não há migrations pendentes.
+- Nos smokes, limitar seletores de conteúdo ao `main`, evitar categoria não criada pelo setup e acompanhar o título atual de Regras de follow-up. Essas correções mantêm as asserções de CRUD e visibilidade.
+
+- O E2E de notificações de chat do gestor continua omitido porque o workspace V2 não expõe o botão Chat. Não confundir testes de navegação/permissões com prova de envio real de notificações; manter essa lacuna explícita.
+
+- Não usar `locator.count() === 0` logo após `domcontentloaded` para omitir E2E de uma funcionalidade exigida pelo setup. O streaming pode ainda estar carregando a tela. Esperar a visibilidade e falhar caso a funcionalidade esteja realmente ausente.

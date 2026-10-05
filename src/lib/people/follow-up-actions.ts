@@ -6,6 +6,7 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { processFollowUpTriggers } from "./follow-up"
+import { parseFollowUpConfig } from "./follow-up-config"
 
 const uuid = z.string().uuid()
 const priority = z.enum(["low", "normal", "high", "urgent"])
@@ -40,6 +41,17 @@ async function context(formData: FormData, permission: "members.edit" | "crm.edi
   return { user, companyId }
 }
 
+async function validateResponsible(companyId: string, responsibleProfileId: string | null) {
+  if (!responsibleProfileId) return
+  uuid.parse(responsibleProfileId)
+  const rows = await getSql()`
+    select id from public.profiles
+    where id = ${responsibleProfileId} and company_id = ${companyId} and active = true and deleted_at is null
+    limit 1
+  `
+  if (!rows[0]) throw new Error("Responsável inválido nesta igreja")
+}
+
 export async function savePersonFollowUpTask(formData: FormData) {
   try {
     const personId = uuid.parse(formText(formData, "personId"))
@@ -58,14 +70,7 @@ export async function savePersonFollowUpTask(formData: FormData) {
       limit 1
     `
     if (!people[0]) throw new Error("Pessoa não encontrada")
-    if (responsibleProfileId) {
-      const responsible = await sql<{ id: string }[]>`
-        select id from public.profiles
-        where id = ${responsibleProfileId} and company_id = ${companyId} and active = true
-        limit 1
-      `
-      if (!responsible[0]) throw new Error("Responsável inválido")
-    }
+    await validateResponsible(companyId, responsibleProfileId)
     const cards = await sql<{ id: string }[]>`
       select id from public.crm_cards
       where company_id = ${companyId} and person_id = ${personId} and deleted_at is null
@@ -106,6 +111,7 @@ export async function updatePersonFollowUpTask(formData: FormData) {
     const responsibleProfileId = formOptionalUuid(formData, "responsibleProfileId")
     const dueAt = parseDueAt(formText(formData, "dueAt"))
     const { user, companyId } = await context(formData, "members.edit")
+    await validateResponsible(companyId, responsibleProfileId)
     const rows = await getSql()<{ id: string; person_id: string }[]>`
       update public.person_follow_up_tasks
       set status = ${selectedStatus}, responsible_profile_id = ${responsibleProfileId},
@@ -148,7 +154,12 @@ export async function savePersonFollowUpTrigger(formData: FormData) {
     } catch {
       throw new Error("Configuração do gatilho deve ser um objeto JSON")
     }
+    config = parseFollowUpConfig(config)
     const sql = getSql()
+    if (config.responsibleProfileId) {
+      const responsible = await sql`select id from public.profiles where id = ${String(config.responsibleProfileId)} and company_id = ${companyId} and active = true and deleted_at is null`
+      if (!responsible[0]) throw new Error("Responsável não encontrado nesta igreja")
+    }
     const existing = triggerId
       ? await sql<{ id: string }[]>`
           select id from public.person_follow_up_triggers
@@ -205,7 +216,12 @@ export async function updateTriggerConfigDirect(input: {
     const selectedKind = triggerKind.parse(input.triggerKind)
     const name = input.name.trim()
     if (name.length < 3 || name.length > 180) throw new Error("Nome do gatilho inválido")
+    const config = parseFollowUpConfig(input.config)
     const sql = getSql()
+    if (config.responsibleProfileId) {
+      const responsible = await sql`select id from public.profiles where id = ${config.responsibleProfileId} and company_id = ${companyId} and active = true and deleted_at is null`
+      if (!responsible[0]) throw new Error("Responsável não encontrado nesta igreja")
+    }
 
     const existing = input.id
       ? await sql<{ id: string }[]>`
@@ -220,14 +236,14 @@ export async function updateTriggerConfigDirect(input: {
     const rows = existing[0]
       ? await sql<{ id: string }[]>`
           update public.person_follow_up_triggers
-          set trigger_kind = ${selectedKind}, name = ${name}, is_active = ${input.isActive}, config = ${JSON.stringify(input.config)}::jsonb,
+          set trigger_kind = ${selectedKind}, name = ${name}, is_active = ${input.isActive}, config = ${JSON.stringify(config)}::jsonb,
               updated_by = ${user.id}, updated_at = now()
           where id = ${existing[0].id} and company_id = ${companyId}
           returning id
         `
       : await sql<{ id: string }[]>`
           insert into public.person_follow_up_triggers (company_id, trigger_kind, name, is_active, config, created_by, updated_by)
-          values (${companyId}, ${selectedKind}, ${name}, ${input.isActive}, ${JSON.stringify(input.config)}::jsonb, ${user.id}, ${user.id})
+          values (${companyId}, ${selectedKind}, ${name}, ${input.isActive}, ${JSON.stringify(config)}::jsonb, ${user.id}, ${user.id})
           returning id
         `
 

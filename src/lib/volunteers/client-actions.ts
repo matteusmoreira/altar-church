@@ -3,7 +3,6 @@
 // Keep the navigable local fixture isolated from server actions, even with a logged-in browser.
 export function isVolunteerPreview() {
   return (
-    process.env.NODE_ENV === "development" &&
     typeof window !== "undefined" &&
     window.location.pathname === "/dev/voluntariado"
   );
@@ -50,6 +49,7 @@ import { checkInVolunteerAssignment as server_checkInVolunteerAssignment } from 
 import { checkOutVolunteerAssignment as server_checkOutVolunteerAssignment } from "@/lib/volunteers/v2-actions";
 import { deleteVolunteerEventSchedule as server_deleteVolunteerEventSchedule } from "@/lib/volunteers/v2-actions";
 import { deleteVolunteerProgramming as server_deleteVolunteerProgramming } from "@/lib/volunteers/programming-actions";
+import { changeVolunteerProgrammingOption as server_changeVolunteerProgrammingOption } from "@/lib/volunteers/programming-actions";
 import { generateSmartVolunteerSchedule as server_generateSmartVolunteerSchedule } from "@/lib/volunteers/v2-actions";
 import { generateVolunteerScheduleForEvent as server_generateVolunteerScheduleForEvent } from "@/lib/volunteers/v2-actions";
 import { getVolunteerShiftCandidates as server_getVolunteerShiftCandidates } from "@/lib/volunteers/v2-actions";
@@ -83,6 +83,7 @@ export const acceptVolunteerSwap = previewGuard(
   server_acceptVolunteerSwap,
   "acceptVolunteerSwap",
 );
+export const changeVolunteerProgrammingOption = previewGuard(server_changeVolunteerProgrammingOption, "changeVolunteerProgrammingOption");
 export const checkInVolunteerAssignment = previewGuard(
   server_checkInVolunteerAssignment,
   "checkInVolunteerAssignment",

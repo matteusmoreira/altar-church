@@ -3,10 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { afterResponse } from "@/lib/performance/after-response"
 import { z } from "zod"
+import { randomUUID } from "node:crypto"
+import type { TransactionSql } from "postgres"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
-import { getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { parseMoney } from "./money"
 import { createNotificationCampaignDeliveries } from "@/lib/notifications/campaign"
 import type { Permission } from "@/lib/types"
 
@@ -26,7 +29,7 @@ const optionalUuidField = z
   .optional()
 const requiredUuidField = z.string().trim().refine((value) => uuidPattern.test(value), "ID inválido")
 const positiveMoneyField = z.preprocess(
-  (value) => (typeof value === "string" ? Number(value.replace(/\./g, "").replace(",", ".")) : value),
+  parseMoney,
   z.number().positive("Valor obrigatório")
 )
 
@@ -147,9 +150,11 @@ function bool(formData: FormData, key: string, fallback = false) {
 }
 
 function money(formData: FormData, key: string) {
-  const normalized = text(formData, key).replace(/\./g, "").replace(",", ".")
-  const value = Number(normalized)
-  return Number.isFinite(value) ? value : 0
+  const raw = text(formData, key)
+  if (!raw) return 0
+  const value = parseMoney(raw)
+  if (!Number.isFinite(value)) throw new Error("Valor inválido")
+  return value
 }
 
 function integer(formData: FormData, key: string, fallback = 0) {
@@ -253,42 +258,56 @@ async function resolvePersonReference(
   return { personId: null, personName, personPhone: "", personEmail: "" }
 }
 
-async function attachReceiptFile(formData: FormData, input: { companyId: string; userId: string; entityTable: "revenues" | "expenses" | "donations"; entityId: string }) {
+async function createFinancialRecord(
+  formData: FormData,
+  input: { companyId: string; userId: string; entityTable: "revenues" | "expenses" | "donations" | "donation_recurrences"; action: string },
+  insert: (tx: TransactionSql, id: string, receiptFileId: string | null) => PromiseLike<{ id: string }[]>,
+) {
+  const sql = getSql()
+  const id = optionalText(formData, "requestId") ?? randomUUID()
+  if (!uuidPattern.test(id)) throw new Error("Identificador da operação inválido")
+  const existing = await sql<{ id: string }[]>`
+    select id from public.${sql(input.entityTable)} where id = ${id} and company_id = ${input.companyId}
+  `
+  if (existing[0]) return existing[0].id
   const file = getOptionalFile(formData, "receiptFile")
-  if (!file) return
-
-  const uploaded = await uploadManagedFile({
+  const uploaded = file ? await uploadManagedFile({
     file,
     companyId: input.companyId,
     ownerProfileId: input.userId,
     entityTable: input.entityTable,
-    entityId: input.entityId,
+    entityId: id,
     purpose: "receipt",
     metadata: { source: "financial_receipt" },
-  })
-
-  const sql = getSql()
-  await sql`
-    update public.${sql(input.entityTable)}
-    set receipt_file_id = ${uploaded.id},
-        updated_by = ${input.userId},
-        updated_at = now()
-    where id = ${input.entityId}
-      and company_id = ${input.companyId}
-  `
-
-  await writeAuditLog({
-    action: "financial_receipt.upload",
-    entityTable: input.entityTable,
-    entityId: input.entityId,
-    companyId: input.companyId,
-    metadata: {
-      fileId: uploaded.id,
-      originalName: uploaded.originalName,
-      mimeType: uploaded.mimeType,
-      sizeBytes: uploaded.sizeBytes,
-    },
-  })
+  }) : null
+  let created = false
+  try {
+    await sql.begin(async (tx) => {
+      const rows = await insert(tx, id, uploaded?.id ?? null)
+      if (!rows[0]) {
+        const replay = await tx`select id from public.${tx(input.entityTable)} where id = ${id} and company_id = ${input.companyId}`
+        if (!replay[0]) throw new Error("Identificador da operação inválido")
+        return
+      }
+      created = true
+      await tx`
+        insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+        values (${input.companyId}, ${input.userId}, ${input.action}, ${input.entityTable}, ${id}, '{}'::jsonb)
+      `
+      if (uploaded) {
+        await tx`
+          insert into public.audit_logs (company_id, actor_profile_id, action, entity_table, entity_id, metadata)
+          values (${input.companyId}, ${input.userId}, 'financial_receipt.upload', ${input.entityTable}, ${id},
+            ${JSON.stringify({ fileId: uploaded.id, originalName: uploaded.originalName, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes })}::jsonb)
+        `
+      }
+    })
+  } catch (error) {
+    if (uploaded) await deleteManagedFile(uploaded.id, input.companyId).catch(() => undefined)
+    throw error
+  }
+  if (!created && uploaded) await deleteManagedFile(uploaded.id, input.companyId).catch(() => undefined)
+  return id
 }
 
 async function attachOperationalMediaFile(
@@ -1569,26 +1588,24 @@ export async function saveRevenue(formData: FormData): Promise<ActionResult> {
     const { user, companyId } = await actionContext(formData, "finance.create")
     const amount = money(formData, "amount")
     if (amount <= 0) throw new Error("Valor obrigatório")
-    const rows = await getSql()<{ id: string }[]>`
+    const id = await createFinancialRecord(formData, { companyId, userId: user.id, entityTable: "revenues", action: "revenue.create" }, (tx, id, receiptFileId) => tx<{ id: string }[]>`
       insert into public.revenues (
-        company_id, amount, category, subcategory, received_from, received_from_name,
+        id, receipt_file_id, company_id, amount, category, subcategory, received_from, received_from_name,
         description, cost_center, bank_account, payment_method, due_date, payment_date,
         received, notes, created_by, updated_by
       )
       values (
-        ${companyId}, ${amount}, ${text(formData, "category")}, ${text(formData, "subcategory")},
+        ${id}, ${receiptFileId}, ${companyId}, ${amount}, ${text(formData, "category")}, ${text(formData, "subcategory")},
         ${text(formData, "receivedFrom", "person")}, ${text(formData, "receivedFromName")},
         ${requiredText(formData, "description", "Descrição")}, ${text(formData, "costCenter")},
         ${text(formData, "bankAccount")}, ${text(formData, "paymentMethod")},
         ${optionalText(formData, "dueDate")}, ${requiredText(formData, "paymentDate", "Data de pagamento")},
         ${bool(formData, "received", true)}, ${text(formData, "notes")}, ${user.id}, ${user.id}
       )
-      returning id
-    `
-    await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "revenues", entityId: rows[0].id })
-    await audit("revenue.create", "revenues", rows[0].id, companyId)
+      on conflict (id) do nothing returning id
+    `)
     refresh(["/financeiro", "/relatorios", "/dashboard"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id }
   } catch (error) {
     return toErrorResult(error)
   }
@@ -1600,25 +1617,23 @@ export async function saveExpense(formData: FormData): Promise<ActionResult> {
     const { user, companyId } = await actionContext(formData, "finance.create")
     const amount = money(formData, "amount")
     if (amount <= 0) throw new Error("Valor obrigatório")
-    const rows = await getSql()<{ id: string }[]>`
+    const id = await createFinancialRecord(formData, { companyId, userId: user.id, entityTable: "expenses", action: "expense.create" }, (tx, id, receiptFileId) => tx<{ id: string }[]>`
       insert into public.expenses (
-        company_id, amount, category, subcategory, paid_to, paid_to_name,
+        id, receipt_file_id, company_id, amount, category, subcategory, paid_to, paid_to_name,
         description, cost_center, bank_account, payment_method, due_date, payment_date,
         paid, notes, created_by, updated_by
       )
       values (
-        ${companyId}, ${amount}, ${text(formData, "category")}, ${text(formData, "subcategory")},
+        ${id}, ${receiptFileId}, ${companyId}, ${amount}, ${text(formData, "category")}, ${text(formData, "subcategory")},
         'supplier', ${text(formData, "paidToName")}, ${requiredText(formData, "description", "Descrição")},
         ${text(formData, "costCenter")}, ${text(formData, "bankAccount")}, ${text(formData, "paymentMethod")},
         ${optionalText(formData, "dueDate")}, ${requiredText(formData, "paymentDate", "Data de pagamento")},
         ${bool(formData, "paid", true)}, ${text(formData, "notes")}, ${user.id}, ${user.id}
       )
-      returning id
-    `
-    await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "expenses", entityId: rows[0].id })
-    await audit("expense.create", "expenses", rows[0].id, companyId)
+      on conflict (id) do nothing returning id
+    `)
     refresh(["/financeiro", "/relatorios", "/dashboard"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id }
   } catch (error) {
     return toErrorResult(error)
   }
@@ -1895,15 +1910,13 @@ export async function saveDonation(formData: FormData): Promise<ActionResult> {
     const { user, companyId } = await actionContext(formData, "donation.create")
     const amount = money(formData, "amount")
     if (amount <= 0) throw new Error("Valor obrigatório")
-    const rows = await getSql()<{ id: string }[]>`
-      insert into public.donations (company_id, donor_name, amount, reason, method, donated_on, status, created_by, updated_by)
-      values (${companyId}, ${text(formData, "donorName")}, ${amount}, ${text(formData, "reason")}, ${text(formData, "method", "pix")}, ${requiredText(formData, "date", "Data")}, ${text(formData, "status", "confirmed")}, ${user.id}, ${user.id})
-      returning id
-    `
-    await attachReceiptFile(formData, { companyId, userId: user.id, entityTable: "donations", entityId: rows[0].id })
-    await audit("donation.create", "donations", rows[0].id, companyId)
+    const id = await createFinancialRecord(formData, { companyId, userId: user.id, entityTable: "donations", action: "donation.create" }, (tx, id, receiptFileId) => tx<{ id: string }[]>`
+      insert into public.donations (id, receipt_file_id, company_id, donor_name, amount, reason, method, donated_on, status, created_by, updated_by)
+      values (${id}, ${receiptFileId}, ${companyId}, ${text(formData, "donorName")}, ${amount}, ${text(formData, "reason")}, ${text(formData, "method", "pix")}, ${requiredText(formData, "date", "Data")}, ${text(formData, "status", "confirmed")}, ${user.id}, ${user.id})
+      on conflict (id) do nothing returning id
+    `)
     refresh(["/doacao", "/relatorios", "/dashboard"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id }
   } catch (error) {
     return toErrorResult(error)
   }
@@ -1915,16 +1928,14 @@ export async function saveDonationRecurrence(formData: FormData): Promise<Action
     const { user, companyId } = await actionContext(formData, "donation.create")
     const amount = money(formData, "amount")
     if (amount <= 0) throw new Error("Valor obrigatório")
-    const rows = await getSql()<{ id: string }[]>`
-      insert into public.donation_recurrences (company_id, user_name, reason, amount, frequency, is_active, pending, created_by, updated_by)
-      values (${companyId}, ${requiredText(formData, "userName", "Usuário")}, ${text(formData, "reason")}, ${amount}, ${text(formData, "frequency", "monthly")}, ${bool(formData, "active", true)}, ${bool(formData, "pending")}, ${user.id}, ${user.id})
-      returning id
-    `
-    await audit("donation_recurrence.create", "donation_recurrences", rows[0].id, companyId)
+    const id = await createFinancialRecord(formData, { companyId, userId: user.id, entityTable: "donation_recurrences", action: "donation_recurrence.create" }, (tx, id) => tx<{ id: string }[]>`
+      insert into public.donation_recurrences (id, company_id, user_name, reason, amount, frequency, is_active, pending, created_by, updated_by)
+      values (${id}, ${companyId}, ${requiredText(formData, "userName", "Usuário")}, ${text(formData, "reason")}, ${amount}, ${text(formData, "frequency", "monthly")}, ${bool(formData, "active", true)}, ${bool(formData, "pending")}, ${user.id}, ${user.id})
+      on conflict (id) do nothing returning id
+    `)
     refresh(["/doacao"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id }
   } catch (error) {
     return toErrorResult(error)
   }
 }
-

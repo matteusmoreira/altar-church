@@ -4,12 +4,13 @@ import { fromActionResult } from "@/lib/api/action"
 import { jsonError, jsonOk } from "@/lib/api/http"
 import { getOptionalBoolean, getPageParams, getSearchParam, parseJsonBody } from "@/lib/api/parse"
 import { savePerson } from "@/lib/people/actions"
-import { listPeople } from "@/lib/people/data"
+import { listPeople, listPeopleForCompany } from "@/lib/people/data"
 import type { PeopleListFilters } from "@/lib/people/types"
 
 export async function GET(request: NextRequest) {
   try {
-    const { companyId } = await requireApiListContext(request, "members.view")
+    const auth = await requireApiListContext(request, "members.view")
+    const { companyId } = auth
     const { page, pageSize } = getPageParams(request)
     const filters: PeopleListFilters = {
       companyId,
@@ -23,7 +24,9 @@ export async function GET(request: NextRequest) {
       emailValidated: getOptionalBoolean(request, "emailValidated"),
       isActive: getOptionalBoolean(request, "isActive"),
     }
-    const data = await listPeople(filters)
+    const data = auth.authType === "api_key"
+      ? await listPeopleForCompany(companyId, filters)
+      : await listPeople(filters)
     return jsonOk(data.people, {
       meta: {
         total: data.total,

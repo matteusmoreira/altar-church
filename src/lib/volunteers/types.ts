@@ -5,7 +5,7 @@ export type CheckinSource = "button" | "qr" | "manual"
 export type FeedStatus = "draft" | "published" | "archived"
 export type DepartmentAccessRole = "coordinator" | "leader" | "scheduler"
 export type VolunteerSwapStatus = "open" | "offered" | "accepted" | "approved" | "rejected" | "cancelled"
-export type VolunteerProgrammingKind = "service" | "cleaning" | "rehearsal" | "meeting" | "outreach" | "other"
+export type VolunteerProgrammingKind = string
 export type VolunteerRecurrenceFrequency = "none" | "weekly" | "monthly"
 export type VolunteerProgrammingStatus = "no_team" | "draft" | "incomplete" | "ready" | "published"
 
@@ -258,6 +258,8 @@ export interface VolunteerNotificationPreferences {
 }
 
 export interface VolunteerModuleSettings {
+  programmingKinds?: string[]
+  programmingLocations?: string[]
   v2Enabled: boolean
   timezone: string
   requireSwapApproval: boolean

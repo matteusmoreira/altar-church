@@ -20,11 +20,18 @@ export type LoginResult = { ok: boolean; error?: string }
 /**
  * Janelas de força bruta. O limite por identificador é o que realmente importa;
  * o limite por IP evita varredura de muitas contas a partir de uma mesma origem.
+ * Os tetos são sobreponíveis por env (usado para afrouxar o servidor E2E, que
+ * loga dezenas de vezes do mesmo IP na janela).
  */
+function rateLimitMaxFromEnv(name: string, fallback: number) {
+  const value = Number.parseInt(process.env[name] ?? "", 10)
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
 const LOGIN_RATE_LIMITS = {
-  perIp: { bucket: "auth.login.ip", max: 30, windowSeconds: 900 },
-  perIdentifier: { bucket: "auth.login.identifier", max: 8, windowSeconds: 900 },
-} as const
+  perIp: { bucket: "auth.login.ip", max: rateLimitMaxFromEnv("LOGIN_RATE_LIMIT_IP_MAX", 30), windowSeconds: 900 },
+  perIdentifier: { bucket: "auth.login.identifier", max: rateLimitMaxFromEnv("LOGIN_RATE_LIMIT_IDENTIFIER_MAX", 8), windowSeconds: 900 },
+}
 
 export async function loginWithIdentifier(input: z.input<typeof loginSchema>): Promise<LoginResult> {
   try {

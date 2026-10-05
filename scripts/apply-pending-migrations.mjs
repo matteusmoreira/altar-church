@@ -19,7 +19,7 @@ if (!connectionString) {
 const sql = postgres(connectionString, { max: 1 })
 
 const migrationStamp = (version) => version.slice(0, 14)
-const checksumOf = (contents) => crypto.createHash("sha256").update(contents, "utf8").digest("hex")
+const checksumOf = (contents) => crypto.createHash("sha256").update(contents.replace(/\r\n/g, "\n"), "utf8").digest("hex")
 
 try {
   const repoMigrations = fs
@@ -40,12 +40,10 @@ try {
 
   if (pending.length === 0) {
     console.log("nenhuma migration pendente")
-    process.exit(0)
   }
 
   // Trava consultiva em nivel de transacao: dois deploys Vercel em corrida
   // nao aplicam a mesma migration. Expira com o COMMIT/ROLLBACK.
-  await sql`select pg_advisory_xact_lock(hashtext('altar-church-migrations'))`
 
   for (const version of pending) {
     const filePath = path.join(migrationsDir, `${version}.sql`)
@@ -56,8 +54,11 @@ try {
     // Transacao unica por arquivo: falha no meio = rollback total, sem carimbo parcial.
     // O carimbo grava o checksum para detectar edicao de migration ja aplicada.
     await sql.begin(async (tx) => {
-      await tx.unsafe(contents)
+      await tx`select pg_advisory_xact_lock(hashtext('altar-church-migrations'))`
       const stamp = migrationStamp(version)
+      const existing = await tx`select version from supabase_migrations.schema_migrations where version = ${stamp}`
+      if (existing[0]) return
+      await tx.unsafe(contents)
       const name = version.slice(15) || version
       await tx.unsafe(
         "insert into supabase_migrations.schema_migrations(version, name) values ($1, $2) on conflict (version) do nothing",
@@ -72,9 +73,12 @@ try {
   for (const version of repoMigrations) {
     const row = applied.get(migrationStamp(version))
     if (!row || typeof row.name !== "string" || !row.name.includes("#sha256:")) continue
-    const local = checksumOf(fs.readFileSync(path.join(migrationsDir, `${version}.sql`), "utf8"))
+    const contents = fs.readFileSync(path.join(migrationsDir, `${version}.sql`), "utf8")
+    const local = checksumOf(contents)
+    // Carimbos antigos usavam bytes CRLF do Windows. Aceitar ambas as quebras, sem esconder mudanças de SQL.
+    const windowsChecksum = crypto.createHash("sha256").update(contents.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n"), "utf8").digest("hex")
     const recorded = row.name.split("#sha256:")[1]
-    if (recorded && recorded !== local) {
+    if (recorded && recorded !== local && recorded !== windowsChecksum) {
       console.warn(`AVISO: ${version} foi editada apos aplicacao (checksum diverge). Crie nova migration em vez de editar.`)
     }
   }

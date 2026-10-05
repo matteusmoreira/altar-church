@@ -17,6 +17,14 @@ export function objectToFormData(record: Record<string, unknown>): FormData {
       continue
     }
 
+    if (Array.isArray(value) && ["recurrenceWeekdays", "objectives", "audiencePersonIds"].includes(key)) {
+      for (const item of value) {
+        if (typeof item !== "string" && typeof item !== "number") throw new Error("Lista inválida")
+        formData.append(key, String(item))
+      }
+      continue
+    }
+
     if (typeof value === "object") {
       formData.append(key, JSON.stringify(value))
       continue

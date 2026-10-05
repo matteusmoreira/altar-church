@@ -10,7 +10,6 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
-  Church,
   LogOut,
   MapPin,
   MessageSquare,
