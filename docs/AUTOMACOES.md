@@ -52,7 +52,7 @@ Os testes de automações executam a migration e o código real do motor em Post
 
 `npm run test:automations`, typecheck, lint e build são verificações locais. A suíte ampla local evita quatro arquivos que carregam credenciais de `.env.local` e escrevem em banco real; a suíte de ministérios também pula seu caso externo sem `POSTGRES_URL`. A prévia fictícia `/dev/automacoes` permite verificar editor/abas/duplicação/desfazer/refazer/simulação no desktop e por toque. Ela não grava nem envia e fica indisponível em produção, exceto quando `E2E_AUTOMATIONS_PREVIEW=1` é definido expressamente para E2E.
 
-Ainda exigem configuração/prova em homologação: implantação da Edge Function, URL/segredo no Vault e na aplicação, worker executando por cron, reinício e concorrência entre invocações reais, webhooks públicos, formatos interativos/mídias em aparelhos, grupos e recibos, resposta humana na instância, conexão desconectada, consumo real OpenRouter e autorização de dados sensíveis. Ativação para membros reais somente após essa validação e revisão/publicação explícitas dos fluxos.
+Ainda exigem prova em homologação: reinício e concorrência com execuções pendentes, webhooks públicos, formatos interativos/mídias em aparelhos, grupos e recibos, resposta humana na instância, conexão desconectada, consumo real OpenRouter e autorização de dados sensíveis. Ativação para membros reais somente após essa validação e revisão/publicação explícitas dos fluxos.
 
 ## Configuração do worker — atualização em 05/10/2026
 
@@ -61,4 +61,10 @@ Após autorização, `automation_worker_url` e `automation_worker_secret` foram 
 Atualização após novo acesso Vercel: `AUTOMATION_WORKER_SECRET` configurado como variável sensível somente em produção, reaproveitando o segredo do Vault em memória; `APP_URL=https://altarchurch.com.br`. Republicação do mesmo commit `870cb75` solicitada. A rota pública retornou 401 sem segredo e 200 com o segredo correto, `processed: 0`, mantendo zero entregas. O novo plugin Supabase está instalado, mas retorna `USER_NOT_LOGGED_IN`; a publicação da Edge Function e seus segredos permanecem pendentes. A Service Role e a senha do banco não substituem acesso à Management API.
 ### Confirmação do deploy do worker — 05/10/2026
 
-O redeploy de produção `dpl_jajDQggyGDicJrzKvfjcVJYw39mb`, vinculado ao commit `870cb75dada4d8607edc87ca098512d6dfb037bb`, foi confirmado como `READY`. A publicação da Edge Function e seus segredos permanece pendente de conexão do plugin Supabase ou acesso à Management API. O cron continua pausado até validar o caminho completo; o teste direto do backend retornou zero etapas e zero envios.
+O redeploy de produção `dpl_jajDQggyGDicJrzKvfjcVJYw39mb`, vinculado ao commit `870cb75dada4d8607edc87ca098512d6dfb037bb`, foi confirmado como `READY`. O teste direto do backend retornou zero etapas e zero envios.
+
+### Configuração concluída após conexão do Supabase — 05/10/2026
+
+O plugin confirmou o projeto `zsldqioutjxchgmmwtfi` (Altar Church, `ACTIVE_HEALTHY`). A Edge Function `automation-worker`, versão 1, foi publicada com autenticação pelo segredo dedicado. Seus dois segredos foram configurados no painel autenticado, sem registrar os valores em arquivos ou saídas. O segredo foi transferido do Vault em memória, preservando o mesmo valor da aplicação.
+
+A função rejeitou chamadas sem segredo ou com segredo incorreto (401) e aceitou a chamada correta (200, `processed: 0`). A invocação pelo PostgreSQL/`pg_net` também retornou 200, sem timeout ou erro, com zero etapas. O job `automation-worker-minute` foi reativado para `* * * * *`; a execução agendada às 16:54 UTC foi confirmada como `succeeded`, com respostas HTTP 200. Nenhum fluxo está ativo e a contagem de entregas permanece zero; essa configuração não comprova envio real pela Uazapi nem consumo OpenRouter.
