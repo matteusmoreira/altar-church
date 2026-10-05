@@ -31,7 +31,7 @@ test("serverless uses transaction pooling without changing local or direct conne
       loaded.exports.getSql();
       assert.equal(new URL(captured.url).port, expectedPort);
       assert.equal(captured.options.prepare, false);
-      assert.equal(captured.options.max_pipeline, 1);
+      assert.equal(captured.options.max_pipeline, 0);
       assert.equal(new URL(process.env.POSTGRES_URL).port, port);
     }
   } finally {

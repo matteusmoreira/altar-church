@@ -3,7 +3,7 @@
 ## Automações — 05/10/2026
 
 - Nós controlados do React Flow precisam preservar `measured` e `dragging`; descartar esses campos ao reconstruir os nós provoca ocultação e remedição durante o arraste. O editor preserva esses campos e adia o autosave até soltar o bloco; há regressão E2E para arraste contínuo e desfazer.
-- `EMAXCONNSESSION` reapareceu com o pool compartilhado em modo sessão (15 conexões). O cliente da aplicação na Vercel agora usa a porta 6543 do mesmo pooler em modo transação, com `prepare: false` e `max_pipeline: 1`; conexões locais e diretas preservam sua configuração.
+- `EMAXCONNSESSION` reapareceu com o pool compartilhado em modo sessão (15 conexões). O cliente da aplicação na Vercel agora usa a porta 6543 do mesmo pooler em modo transação, com `prepare: false` e `max_pipeline: 0`; conexões locais e diretas preservam sua configuração. No Postgres.js, o limite exclui a consulta atual: `1` ainda permite duas consultas em trânsito e pode travar no pool transacional; usar `0` para desativar pipelining.
 
 - A suíte geral contém quatro testes que carregam `.env.local` e alteram banco remoto. A validação desta entrega excluiu esses arquivos; migration, RLS e motor foram executados em PGlite isolado, com provedores simulados. Isso não comprova cron, webhook público ou entrega real.
 - Em períodos de pouca memória no Windows, o Node pode abortar com `Fatal process out of memory: Zone`, inclusive em testes que passam quando executados sozinhos. Executar build, navegador e suítes SQL em sequência; não encerrar processos de outras sessões.
