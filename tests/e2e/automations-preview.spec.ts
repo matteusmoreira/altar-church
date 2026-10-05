@@ -1,4 +1,28 @@
 import { test, expect } from "@playwright/test";
+test("flow and template deletion confirmations, template editor and history clearing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/dev/automacoes");
+  await expect(page.getByRole("heading", { name: "Automações", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Excluir", exact: true }).first().click();
+  await expect(page.getByRole("alertdialog")).toContainText("excluídos definitivamente");
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "Modelos prontos", exact: true }).click();
+  await page.getByRole("button", { name: "Excluir modelo", exact: true }).first().click();
+  await expect(page.getByRole("alertdialog")).toContainText("Fluxos já criados");
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await page.getByRole("button", { name: "Editar modelo", exact: true }).first().click();
+  await expect(page.getByLabel("Nome do fluxo")).toHaveValue("Mensagem semanal da célula");
+  await expect(page.getByText("Editando modelo pronto", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publicar", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Voltar", exact: true }).click();
+  await page.getByRole("button", { name: "Histórico arquivado", exact: true }).click();
+  await page.getByRole("button", { name: "Limpar todo o histórico", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("Execuções em andamento");
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  expect(errors).toEqual([]);
+});
 test("dragging blocks keeps measurements, position and undo stable", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop", "Mouse drag regression");
   const errors: string[] = [];

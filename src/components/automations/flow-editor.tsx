@@ -42,6 +42,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
   saveAutomation,
+  saveAutomationTemplate,
   publishAutomation,
   simulateAutomation,
   generateAutomation,
@@ -126,6 +127,7 @@ type Props = {
   flow?: FlowItem;
   initial?: FlowDefinition;
   initialName?: string;
+  template?: { id: string; revision: number };
   onClose: () => void;
   preview?: boolean;
 };
@@ -141,6 +143,7 @@ function Editor({
   flow,
   initial,
   initialName,
+  template,
   onClose,
   preview,
 }: Props) {
@@ -173,10 +176,10 @@ function Editor({
     [testOpen, setTestOpen] = useState(false);
   const record = useRef({
       id: flow?.id,
-      revision: flow?.revision ?? 0,
+      revision: flow?.revision ?? template?.revision ?? 0,
       snapshot: flow
         ? JSON.stringify({ name: flow.name, definition: flow.draft })
-        : "",
+        : template ? JSON.stringify({ name: initialName, definition: initial }) : "",
     }),
     saving = useRef<Promise<string | undefined> | null>(null),
     dragKind = useRef<NodeKind | null>(null);
@@ -208,7 +211,9 @@ function Editor({
     setSaved("Salvando…");
     const pending = (async () => {
       try {
-        const result = await saveAutomation({
+        const result = template ? await saveAutomationTemplate({
+          id: template.id, revision: record.current.revision ?? template.revision, name, definition,
+        }) : await saveAutomation({
           id: record.current.id,
           revision: record.current.revision,
           name,
@@ -228,7 +233,7 @@ function Editor({
     } finally {
       if (saving.current === pending) saving.current = null;
     }
-  }, [definition, name, preview, canEdit]);
+  }, [definition, name, preview, canEdit, template]);
   useEffect(() => {
     if (!canEdit || preview || dragging) return;
     const timeout = setTimeout(() => {
@@ -446,7 +451,7 @@ function Editor({
         <Badge variant="outline">
           {flow?.status === "active"
             ? "Editando rascunho · versão ativa preservada"
-            : "Rascunho"}
+            : template ? "Editando modelo pronto" : "Rascunho"}
         </Badge>
         <span className="text-xs text-muted-foreground">
           {preview ? "Prévia local" : saved}
@@ -516,7 +521,7 @@ function Editor({
           <Sparkles className="h-4 w-4" />
           Criar com IA
         </Button>
-        <Button
+        {!template && <Button
           size="sm"
           disabled={
             busy || !canPublish || !simulation || issues.length > 0 || preview
@@ -534,7 +539,7 @@ function Editor({
         >
           <CheckCircle2 className="h-4 w-4" />
           Publicar
-        </Button>
+        </Button>}
         <Button
           variant="ghost"
           size="icon"

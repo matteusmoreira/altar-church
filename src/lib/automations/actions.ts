@@ -27,8 +27,74 @@ import { randomBytes, createHash } from "node:crypto";
 import { enqueueAutomationRun } from "./runtime";
 import { SHARED_DELIVERY_EVENTS } from "./ownership";
 import { sendAutomationTestMessage } from "./delivery";
+import { TEMPLATES } from "./templates";
 
 const uuid = z.string().uuid();
+export async function saveAutomationTemplate(input: {
+  id: string; name: string; definition: FlowDefinition; revision: number;
+}) {
+  const { user, companyId } = await automationAccess("automations.edit");
+  if (!TEMPLATES.some(t => t.id === input.id)) throw new Error("Modelo inválido");
+  const name = z.string().trim().min(3).max(160).parse(input.name);
+  const definition = flowSchema.parse(input.definition);
+  const revision = z.number().int().nonnegative().parse(input.revision);
+  assertDefinitionPermissions(user.role, definition);
+  const sql = getSql();
+  const rows = revision === 0
+    ? await sql`insert into public.automation_templates(company_id,template_id,name,definition) values(${companyId},${input.id},${name},${sql.json(definition)}::jsonb) on conflict do nothing returning revision`
+    : await sql`update public.automation_templates set name=${name},definition=${sql.json(definition)}::jsonb,revision=revision+1,updated_at=now() where company_id=${companyId} and template_id=${input.id} and revision=${revision} and deleted_at is null returning revision`;
+  if (!rows[0]) throw new Error("Este modelo foi alterado ou excluído em outra aba. Atualize antes de salvar.");
+  await writeAuditLog({ action: "automation.template_save", entityTable: "automation_templates", companyId, metadata: { templateId: input.id } });
+  revalidatePath("/automacoes");
+  return { id: input.id, revision: Number(rows[0].revision) };
+}
+export async function deleteAutomationTemplate(id: string) {
+  const { companyId } = await automationAccess("automations.edit");
+  const template = TEMPLATES.find(t => t.id === id);
+  if (!template) throw new Error("Modelo inválido");
+  const sql = getSql();
+  await sql`insert into public.automation_templates(company_id,template_id,name,definition,deleted_at) values(${companyId},${id},${template.name},${sql.json(template.definition)}::jsonb,now()) on conflict(company_id,template_id) do update set deleted_at=now(),revision=automation_templates.revision+1,updated_at=now()`;
+  await writeAuditLog({ action: "automation.template_delete", entityTable: "automation_templates", companyId, metadata: { templateId: id } });
+  revalidatePath("/automacoes");
+}
+export async function deleteAutomation(id: string) {
+  const { companyId } = await automationAccess("automations.edit");
+  await automationAccess("automations.operate");
+  uuid.parse(id);
+  await getSql().begin(async tx => {
+    const [flow] = await tx`select id from public.automation_flows where id=${id} and company_id=${companyId} for update`;
+    if (!flow) throw new Error("Fluxo não encontrado nesta igreja");
+    const runs = await tx`select id,status from public.automation_runs where company_id=${companyId} and flow_id=${id} for update`;
+    const sending = await tx`select d.id from public.automation_deliveries d join public.automation_runs r on r.id=d.run_id and r.company_id=d.company_id where r.flow_id=${id} and r.company_id=${companyId} and d.status='sending' limit 1`;
+    if (runs.some(r => r.status === "working") || sending.length)
+      throw new Error("Pause o fluxo e aguarde o processamento atual terminar antes de excluir.");
+    await tx`delete from public.automation_conversations where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_interests where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_tasks where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_steps where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_deliveries where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_group_occurrences where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
+    await tx`delete from public.automation_source_owners where company_id=${companyId} and flow_id=${id}`;
+    await tx`delete from public.automation_runs where company_id=${companyId} and flow_id=${id}`;
+    await tx`update public.automation_flows set published_version_id=null where company_id=${companyId} and id=${id}`;
+    await tx`delete from public.automation_versions where company_id=${companyId} and flow_id=${id}`;
+    await tx`delete from public.automation_flows where company_id=${companyId} and id=${id}`;
+  });
+  await writeAuditLog({ action: "automation.delete", entityTable: "automation_flows", entityId: id, companyId });
+  revalidatePath("/automacoes");
+}
+export async function clearAutomationHistory() {
+  const { companyId } = await automationAccess("automations.edit");
+  await automationAccess("automations.operate");
+  const count = await getSql().begin(async tx => {
+    const archive = await tx`delete from public.automation_legacy_archive where company_id=${companyId} returning id`;
+    const runs = await tx`update public.automation_runs set history_cleared_at=now() where company_id=${companyId} and history_cleared_at is null and status in ('completed','failed','canceled','skipped') returning id`;
+    return archive.length + runs.length;
+  });
+  await writeAuditLog({ action: "automation.history_clear", entityTable: "automation_runs", companyId, metadata: { count } });
+  revalidatePath("/automacoes");
+  return { count };
+}
 export async function automationMediaPreview(id: string) {
   const { companyId } = await automationAccess();
   const [file] =

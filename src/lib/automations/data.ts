@@ -141,10 +141,11 @@ export async function getAutomationWorkspace() {
     activities,
     forms,
     stages,
+    templates,
   ] = await Promise.all([
     sql`select id,name,description,draft,revision,status,published_version_id,updated_at from public.automation_flows where company_id=${companyId} and status<>'archived' order by updated_at desc`,
-    sql`select r.id,r.flow_id,r.node_id,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} order by r.created_at desc limit 150`,
-    sql`select t.*,p.full_name as person_name,pr.name as responsible_name from public.automation_tasks t left join public.people p on p.id=t.person_id and p.company_id=t.company_id left join public.profiles pr on pr.id=t.responsible_id and pr.company_id=t.company_id where t.company_id=${companyId} and (${["superadmin", "admin", "pastor"].includes(user.role)} or t.responsible_id=${user.id}) order by t.created_at desc limit 150`,
+    sql`select r.id,r.flow_id,r.node_id,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} and r.history_cleared_at is null order by r.created_at desc limit 150`,
+    sql`select t.*,p.full_name as person_name,pr.name as responsible_name from public.automation_tasks t left join public.people p on p.id=t.person_id and p.company_id=t.company_id left join public.profiles pr on pr.id=t.responsible_id and pr.company_id=t.company_id where t.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=t.run_id and r.company_id=t.company_id and r.history_cleared_at is null) and (${["superadmin", "admin", "pastor"].includes(user.role)} or t.responsible_id=${user.id}) order by t.created_at desc limit 150`,
     sql`select company_id,timezone,quiet_start::text,quiet_end::text,allowed_models,monthly_budget_usd,knowledge from public.automation_settings where company_id=${companyId}`,
     sql`select kind,source_id,snapshot,archived_at from public.automation_legacy_archive where company_id=${companyId} order by archived_at desc limit 500`,
     sql`select id,name,status from public.uazapi_instances where company_id=${companyId} and active order by name`,
@@ -152,9 +153,9 @@ export async function getAutomationWorkspace() {
     sql`select g.id,g.name,g.automation_whatsapp_chat_id,(select p.id from public.profiles p where p.company_id=g.company_id and p.person_id=g.leader_person_id and p.active order by p.created_at limit 1) as responsible_id from public.groups g where g.company_id=${companyId} and g.type='cell' and g.deleted_at is null and g.is_active order by g.name`,
     sql`select id,name as full_name,login_phone as phone from public.profiles where company_id=${companyId} and active order by name`,
     sql`select model,flow_id,run_id,count(*)::int as calls,sum(coalesce(cost_usd,reserved_usd))::text as cost from public.automation_ai_usage where company_id=${companyId} and status<>'failed' and created_at>=date_trunc('month',now()) group by model,flow_id,run_id`,
-    sql`select id,run_id,node_id,status,detail,created_at from public.automation_steps where company_id=${companyId} order by created_at desc limit 300`,
-    sql`select id,run_id,node_id,status,last_error,chat_id,receipts from public.automation_deliveries where company_id=${companyId} order by created_at desc limit 300`,
-    sql`select i.interest,p.full_name as person_name,i.created_at from public.automation_interests i join public.people p on p.id=i.person_id and p.company_id=i.company_id where i.company_id=${companyId} order by i.created_at desc limit 150`,
+    sql`select id,run_id,node_id,status,detail,created_at from public.automation_steps where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and history_cleared_at is null) order by created_at desc limit 300`,
+    sql`select id,run_id,node_id,status,last_error,chat_id,receipts from public.automation_deliveries where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and history_cleared_at is null) order by created_at desc limit 300`,
+    sql`select i.interest,p.full_name as person_name,i.created_at from public.automation_interests i join public.people p on p.id=i.person_id and p.company_id=i.company_id where i.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=i.run_id and r.company_id=i.company_id and r.history_cleared_at is null) order by i.created_at desc limit 150`,
     sql`select id,name from public.congregations where company_id=${companyId} and deleted_at is null order by name`,
     hasPermission(user.role, "ministries.view")
       ? sql`select id,name from public.ministries where company_id=${companyId} and deleted_at is null order by name`
@@ -162,6 +163,7 @@ export async function getAutomationWorkspace() {
     sql`select id,description as name from public.person_activities where company_id=${companyId} and deleted_at is null order by description`,
     hasPermission(user.role, "forms.view") ? sql`select id,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
     hasPermission(user.role, "crm.view") ? sql`select id,name from public.crm_stages where company_id=${companyId} and deleted_at is null order by sort_order,created_at` : [],
+    sql`select template_id as id,name,definition,revision,deleted_at from public.automation_templates where company_id=${companyId}`,
   ]);
   return JSON.parse(
     JSON.stringify({
@@ -176,6 +178,7 @@ export async function getAutomationWorkspace() {
       tasks,
       settings: settings[0] ?? null,
       archive,
+      templates,
       instances,
       people,
       cells,

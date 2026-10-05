@@ -13,9 +13,11 @@ import {
   Play,
   Pencil,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,9 @@ import type { FlowDefinition } from "@/lib/automations/contract";
 import type { FlowItem, Workspace } from "@/lib/automations/workspace-types";
 import {
   setAutomationStatus,
+  deleteAutomation,
+  deleteAutomationTemplate,
+  clearAutomationHistory,
   operateAutomationTask,
   saveAutomationSettings,
   saveAutomationGroup,
@@ -98,11 +103,18 @@ export function AutomationWorkspace({
       flow?: FlowItem;
       definition?: FlowDefinition;
       name?: string;
+      template?: { id: string; revision: number };
     } | null>(null),
     [busy, setBusy] = useState(false),
     [selectedRun, setSelectedRun] = useState<string | null>(null),
     [query, setQuery] = useState(""),
     [archiveKind, setArchiveKind] = useState("all");
+  const [confirmation, setConfirmation] = useState<{ title: string; description: string; run: () => Promise<unknown>; success: string } | null>(null);
+  const templates = TEMPLATES.flatMap(t => {
+    const saved = workspace.templates?.find(item => item.id === t.id);
+    if (saved?.deleted_at) return [];
+    return [{ ...t, name: saved?.name ?? t.name, definition: saved?.definition ?? (t.id === "cell_invite" ? cellInvitationTemplate(workspace.cells) : t.definition), revision: saved?.revision ?? 0 }];
+  });
   const [settings, setSettings] = useState({
     timezone: workspace.settings?.timezone ?? "America/Sao_Paulo",
     start: (workspace.settings?.quiet_start ?? "08:00").slice(0, 5),
@@ -145,6 +157,7 @@ export function AutomationWorkspace({
         flow={editor.flow}
         initial={editor.definition}
         initialName={editor.name}
+        template={editor.template}
         preview={preview}
         onClose={() => {
           setEditor(null);
@@ -227,6 +240,24 @@ export function AutomationWorkspace({
           </button>
         ))}
       </nav>
+      <AlertDialog open={!!confirmation} onOpenChange={open => { if (!open && !busy) setConfirmation(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmation?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmation?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setConfirmation(null)}>Cancelar</Button>
+            <Button variant="destructive" disabled={busy} onClick={() => { if (confirmation) void action(async () => { await confirmation.run(); setConfirmation(null); }, confirmation.success); }}>{busy ? "Aguarde…" : "Confirmar"}</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {(tab === "Histórico arquivado" || tab === "Execuções") && edit && operate && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+          <p className="text-sm text-muted-foreground">Limpe o histórico arquivado e as execuções encerradas desta igreja.</p>
+          <Button variant="destructive" size="sm" disabled={busy} onClick={() => setConfirmation({ title: "Limpar todo o histórico?", description: "Remove todos os registros de Follow-up e Trilhas do histórico arquivado e limpa as execuções concluídas, canceladas, ignoradas ou com falha. Execuções em andamento, fluxos, modelos e consumo de IA serão preservados. Esta ação não pode ser desfeita.", run: async () => { await clearAutomationHistory(); setSelectedRun(null); }, success: "Histórico limpo" })}><Trash2 className="h-4 w-4" />Limpar todo o histórico</Button>
+        </div>
+      )}
       {tab === "Fluxos" && (
         <>
           <Input
@@ -335,6 +366,11 @@ export function AutomationWorkspace({
                             </Button>
                           </>
                         )}
+                        {edit && operate && <Button size="sm" variant="ghost" className="text-destructive" disabled={busy} onClick={() => setConfirmation({
+                          title: `Excluir “${f.name}”?`,
+                          description: "O fluxo, suas versões, execuções e tarefas serão excluídos definitivamente. Os envios pendentes serão interrompidos. Mensagens já enviadas e o consumo de IA permanecem registrados. Esta ação não pode ser desfeita.",
+                          run: () => deleteAutomation(f.id), success: "Fluxo excluído",
+                        })}><Trash2 className="h-3 w-3" />Excluir</Button>}
                         {operate &&
                           f.status === "active" &&
                           f.draft.nodes.find((n) => n.kind === "trigger")
@@ -415,7 +451,8 @@ export function AutomationWorkspace({
       )}
       {tab === "Modelos prontos" && (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {TEMPLATES.map((t) => (
+          {templates.length === 0 && <Empty text="Nenhum modelo pronto nesta igreja." />}
+          {templates.map((t) => (
             <Card key={t.id}>
               <CardContent className="space-y-3 p-5">
                 <Workflow className="h-5 w-5 text-primary" />
@@ -423,13 +460,14 @@ export function AutomationWorkspace({
                 <p className="min-h-10 text-sm text-muted-foreground">
                   {t.description}
                 </p>
+                <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!edit}
+                  disabled={!edit || busy}
                   onClick={() =>
                     setEditor({
-                      definition: t.id==="cell_invite"?cellInvitationTemplate(workspace.cells):structuredClone(t.definition),
+                      definition: structuredClone(t.definition),
                       name: t.name,
                     })
                   }
@@ -437,6 +475,11 @@ export function AutomationWorkspace({
                   Usar modelo
                   <ChevronRight className="h-3 w-3" />
                 </Button>
+                {edit && <>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditor({ definition: structuredClone(t.definition), name: t.name, template: { id: t.id, revision: t.revision } })}><Pencil className="h-3 w-3" />Editar modelo</Button>
+                  <Button size="sm" variant="ghost" className="text-destructive" disabled={busy} onClick={() => setConfirmation({ title: `Excluir o modelo “${t.name}”?`, description: "O modelo será removido dos modelos prontos desta igreja. Fluxos já criados a partir dele continuam funcionando. Esta ação não pode ser desfeita.", run: () => deleteAutomationTemplate(t.id), success: "Modelo excluído" })}><Trash2 className="h-3 w-3" />Excluir modelo</Button>
+                </>}
+                </div>
               </CardContent>
             </Card>
           ))}

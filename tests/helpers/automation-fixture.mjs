@@ -166,6 +166,7 @@ export async function automationFixture() {
     `create function public.get_uazapi_instance_credential(uuid,uuid) returns table(base_url text,instance_token text) language sql as $$select 'https://uazapi.test','fixture-token'$$;`,
   );
   const { newNode } = load("src/lib/automations/templates.ts");
+  await db.exec(readFileSync("supabase/migrations/20261005194037_automation_management.sql", "utf8"));
   const runtime = load("src/lib/automations/runtime.ts");
   async function flow(definition, companyId = A) {
     const f = (

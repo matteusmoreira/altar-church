@@ -239,3 +239,10 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 
 - `postgres.js` 3.4.9 com `max_pipeline: 0` não executa o callback `onexecute` que reserva a conexão de `sql.begin`. Com pool maior que 1, o driver rejeita `BEGIN` com `UNSAFE_TRANSACTION`, mesmo usando a API correta. Corrigido para `max_pipeline: 1` no cliente compartilhado.
 - O teste de regressão em `tests/db-serverless-pool.test.mjs` reproduziu o erro antes do ajuste e validou transações simultâneas, conexão reservada, commit e rollback depois, usando somente consultas sem gravações no banco. Rodar com `POSTGRES_URL` para ativar esse teste. Seis testes focados, typecheck e lint passaram com Node 25.1.0; publicação e criação real no provedor não foram executadas nesta sessão.
+
+
+## Gerenciamento de automações — 05/10/2026
+
+- Limpar o histórico de execuções não pode apagar as chaves de ocorrência: o coletor pode recriar a mesma execução e reenviar mensagens. `history_cleared_at` retira execuções encerradas e seus detalhes da interface, preservando deduplicação, recibos e consumo de IA. O histórico legado é excluído por igreja.
+- Modelos prontos são personalizados e removidos por igreja em `automation_templates`; a revisão impede que uma aba antiga sobrescreva ou restaure um modelo excluído. Editar modelo não publica um fluxo.
+- A exclusão definitiva de fluxo precisa remover dependências na mesma transação e desvincular a versão publicada antes de apagar as versões. Bloquear exclusão durante processamento/envio em andamento.
