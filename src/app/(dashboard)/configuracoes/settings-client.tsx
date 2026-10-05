@@ -38,11 +38,17 @@ const roleLabels: Record<UserRole, string> = {
   member: "Membro",
 }
 
-const roleColors: Partial<Record<UserRole, string>> = {
-  superadmin: "bg-warning/10 text-warning border-warning/20",
-  admin: "bg-primary/10 text-primary border-primary/20",
-  pastor: "bg-info/10 text-info border-info/20",
-  finance: "bg-success/10 text-success border-success/20",
+const roleColors: Record<UserRole, string> = {
+  superadmin: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-700",
+  admin: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-700",
+  pastor: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-200 dark:border-purple-700",
+  ministry_leader: "bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-200 dark:border-indigo-700",
+  cell_supervisor: "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-200 dark:border-cyan-700",
+  cell_leader: "bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-200 dark:border-teal-700",
+  communication: "bg-pink-100 text-pink-800 border-pink-300 dark:bg-pink-950 dark:text-pink-200 dark:border-pink-700",
+  finance: "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-700",
+  volunteer: "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:border-orange-700",
+  member: "bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600",
 }
 
 function formatDate(value: string) {
@@ -162,7 +168,7 @@ export function SettingsClient({
                       <TableCell className="font-medium text-sm">{profile.name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{profile.email}</TableCell>
                       <TableCell>
-                        <Badge className={roleColors[profile.role] ?? "bg-secondary/10 text-secondary border-secondary/20"}>
+                        <Badge variant="outline" className={roleColors[profile.role]}>
                           {roleLabels[profile.role]}
                         </Badge>
                       </TableCell>
