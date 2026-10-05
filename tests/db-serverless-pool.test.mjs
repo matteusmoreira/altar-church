@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import postgres from "postgres";
 
 test("serverless uses transaction pooling without changing local or direct connections", () => {
   const originalUrl = process.env.POSTGRES_URL;
@@ -31,7 +32,7 @@ test("serverless uses transaction pooling without changing local or direct conne
       loaded.exports.getSql();
       assert.equal(new URL(captured.url).port, expectedPort);
       assert.equal(captured.options.prepare, false);
-      assert.equal(captured.options.max_pipeline, 0);
+      assert.equal(captured.options.max_pipeline, 1);
       assert.equal(new URL(process.env.POSTGRES_URL).port, port);
     }
   } finally {
@@ -39,6 +40,44 @@ test("serverless uses transaction pooling without changing local or direct conne
     else process.env.POSTGRES_URL = originalUrl;
     if (originalVercel === undefined) delete process.env.VERCEL;
     else process.env.VERCEL = originalVercel;
+    globalThis.ecclesiaHubSql = originalSql;
+  }
+});
+
+test("application pool reserves transactions for commit, rollback and concurrent queries", {
+  skip: !process.env.POSTGRES_URL && "POSTGRES_URL não configurado",
+  timeout: 30_000,
+}, async () => {
+  const originalSql = globalThis.ecclesiaHubSql;
+  const source = ts.transpileModule(readFileSync("src/lib/db/client.ts", "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const loaded = { exports: {} };
+  let sql;
+  try {
+    delete globalThis.ecclesiaHubSql;
+    new Function("require", "module", "exports", source)(() => ({ default: (url, options) =>
+      postgres(url, { ...options, max: 2 })
+    }), loaded, loaded.exports);
+    sql = loaded.exports.getSql();
+    const transactions = await Promise.all([1, 2].map((value) => sql.begin(async (tx) => {
+      await tx`set transaction read only`;
+      const [first] = await tx`select pg_backend_pid() as pid, ${value}::int as value`;
+      const [second] = await tx`select pg_backend_pid() as pid`;
+      assert.equal(first.pid, second.pid, "transaction must retain its connection");
+      return first.value;
+    })));
+    assert.deepEqual(transactions, [1, 2]);
+    const rollback = new Error("intentional rollback");
+    await assert.rejects(sql.begin(async (tx) => {
+      await tx`set transaction read only`;
+      await tx`select 1`;
+      throw rollback;
+    }), (error) => error === rollback);
+    const [row] = await sql`select 1::int as value`;
+    assert.equal(row.value, 1, "pool remains usable after rollback");
+  } finally {
+    if (sql) await sql.end({ timeout: 5 });
     globalThis.ecclesiaHubSql = originalSql;
   }
 });
