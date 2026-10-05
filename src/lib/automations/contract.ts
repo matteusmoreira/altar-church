@@ -245,6 +245,10 @@ export const flowSchema = z
   })
   .strict();
 export type FlowDefinition = z.infer<typeof flowSchema>;
+
+export function parseStoredFlowDefinition(value: unknown): FlowDefinition {
+  return flowSchema.parse(typeof value === "string" ? JSON.parse(value) : value);
+}
 export type FlowNode = FlowDefinition["nodes"][number];
 export type ValidationIssue = { nodeId: string; message: string };
 

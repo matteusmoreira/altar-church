@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
 import { writeAuditLog } from "@/lib/auth/permissions";
-import { flowSchema, validateFlow, type FlowDefinition } from "./contract";
+import { flowSchema, parseStoredFlowDefinition, validateFlow, type FlowDefinition } from "./contract";
 import {
   automationAccess,
   assertDefinitionPermissions,
@@ -30,7 +30,7 @@ export async function saveAutomation(input: {
     name = z.string().trim().min(3).max(160).parse(input.name);
   assertDefinitionPermissions(user.role, definition);
   const sql = getSql(),
-    body = JSON.stringify(definition);
+    body = sql.json(definition);
   const rows = input.id
     ? await sql`update public.automation_flows set name=${name},description=${input.description ?? ""},draft=${body}::jsonb,revision=revision+1,updated_at=now() where id=${uuid.parse(input.id)} and company_id=${companyId} and revision=${input.revision ?? 0} and status<>'archived' returning id,revision`
     : await sql`insert into public.automation_flows(company_id,name,description,draft,created_by) values(${companyId},${name},${input.description ?? ""},${body}::jsonb,${user.id}) returning id,revision`;
@@ -55,7 +55,7 @@ export async function publishAutomation(id: string, revision: number) {
       await tx`select * from public.automation_flows where id=${uuid.parse(id)} and company_id=${companyId} for update`;
     if (!flow || flow.revision !== revision)
       throw new Error("Salve a versão atual antes de publicar");
-    const definition = flowSchema.parse(flow.draft);
+    const definition = parseStoredFlowDefinition(flow.draft);
     assertDefinitionPermissions(user.role, definition);
     const issues = validateFlow(definition);
     if (issues.length)
@@ -142,7 +142,7 @@ export async function publishAutomation(id: string, revision: number) {
         throw new Error("Vincule um grupo WhatsApp à célula nas configurações");
     }
     const [version] =
-      await tx`insert into public.automation_versions(company_id,flow_id,number,definition,actor_id) select ${companyId},${id},coalesce(max(number),0)+1,${JSON.stringify(definition)}::jsonb,${user.id} from public.automation_versions where flow_id=${id} returning id`;
+      await tx`insert into public.automation_versions(company_id,flow_id,number,definition,actor_id) select ${companyId},${id},coalesce(max(number),0)+1,${tx.json(definition)}::jsonb,${user.id} from public.automation_versions where flow_id=${id} returning id`;
     await tx`update public.automation_flows set status='active',published_version_id=${version.id},published_at=now(),updated_at=now() where id=${id}`;
   });
   await writeAuditLog({

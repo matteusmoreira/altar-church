@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/auth/permissions";
 import { getCompanyEnabledModuleIds } from "@/lib/admin/data";
 import { getSql } from "@/lib/db/client";
 import { hasPermission, type Permission, type UserRole } from "@/lib/types";
-import { type AudienceFilter, type FlowDefinition } from "./contract";
+import { parseStoredFlowDefinition, type AudienceFilter, type FlowDefinition } from "./contract";
 
 export async function automationAccess(
   permission: Permission = "automations.view",
@@ -163,7 +163,10 @@ export async function getAutomationWorkspace() {
       companyId,
       userId: user.id,
       role: user.role,
-      flows,
+      flows: flows.map((flow) => ({
+        ...flow,
+        draft: parseStoredFlowDefinition(flow.draft),
+      })),
       runs,
       tasks,
       settings: settings[0] ?? null,
