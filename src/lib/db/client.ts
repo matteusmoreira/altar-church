@@ -17,7 +17,12 @@ export function getSql() {
   }
 
   if (!globalThis.ecclesiaHubSql) {
-    globalThis.ecclesiaHubSql = postgres(connectionString, {
+    const databaseUrl = new URL(connectionString)
+    // Serverless instances must share backend connections by transaction.
+    if (process.env.VERCEL && databaseUrl.hostname.endsWith(".pooler.supabase.com") && databaseUrl.port === "5432") {
+      databaseUrl.port = "6543"
+    }
+    const connectionOptions = {
       // Pooler em modo sessao tem so 15 slots compartilhados com todas as
       // instancias serverless: cada instancia segura ate `max` conexoes por
       // `idle_timeout` segundos. Padroes baixos evitam EMAXCONNSESSION.
@@ -26,11 +31,13 @@ export function getSql() {
       idle_timeout: integerEnv("POSTGRES_IDLE_TIMEOUT_SECONDS", 30, 10, 1_800),
       connect_timeout: 10,
       prepare: false,
+      max_pipeline: 1,
       // Uma query lenta nao pode travar metade do pool de 2 (achado Fase 2 da auditoria).
       connection: {
         statement_timeout: integerEnv("POSTGRES_STATEMENT_TIMEOUT_MS", 15_000, 1_000, 300_000),
       },
-    })
+    }
+    globalThis.ecclesiaHubSql = postgres(databaseUrl.toString(), connectionOptions)
   }
 
   return globalThis.ecclesiaHubSql

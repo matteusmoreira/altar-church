@@ -182,6 +182,8 @@ function Editor({
     dragKind = useRef<NodeKind | null>(null);
   const history = useRef<FlowDefinition[]>([]),
     future = useRef<FlowDefinition[]>([]);
+  const [canvasState, setCanvasState] = useState<Record<string, Pick<CanvasNode, "measured" | "dragging">>>({});
+  const [dragging, setDragging] = useState(false);
   const canEdit = hasPermission(workspace.role, "automations.edit"),
     canPublish = hasPermission(workspace.role, "automations.publish");
   const issues = useMemo(() => validateFlow(definition), [definition]),
@@ -228,30 +230,31 @@ function Editor({
     }
   }, [definition, name, preview, canEdit]);
   useEffect(() => {
-    if (!canEdit || preview) return;
+    if (!canEdit || preview || dragging) return;
     const timeout = setTimeout(() => {
       void persist().catch(() => {});
     }, 1600);
     return () => clearTimeout(timeout);
-  }, [persist, canEdit, preview]);
-  const nodes: CanvasNode[] = definition.nodes.map((n) => ({
+  }, [persist, canEdit, preview, dragging]);
+  const nodes: CanvasNode[] = useMemo(() => definition.nodes.map((n) => ({
     id: n.id,
     type: "automation",
     position: n.position,
+    ...canvasState[n.id],
     data: {
       node: n,
       issues: issues.filter((i) => i.nodeId === n.id).map((i) => i.message),
     },
     selected: n.id === selected,
-  }));
-  const edges = definition.edges.map((e) => ({
+  })), [definition.nodes, issues, selected, canvasState]);
+  const edges = useMemo(() => definition.edges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
     sourceHandle: e.port,
     label: portLabel(definition.nodes.find(n=>n.id===e.source),e.port),
     type: "smoothstep",
-  }));
+  })), [definition.edges, definition.nodes]);
   const updateConfig = (patch: Partial<FlowNode["config"]>) => {
     if (active)
       commit({
@@ -301,6 +304,12 @@ function Editor({
   }
   function onNodesChange(changes: NodeChange<CanvasNode>[]) {
     const next = applyNodeChanges(changes, nodes);
+    if (changes.some((c) => c.type === "dimensions" || c.type === "position")) {
+      setCanvasState(Object.fromEntries(next.map((n) => [n.id, {
+        measured: n.measured,
+        dragging: n.dragging,
+      }])));
+    }
     if (changes.some((c) => c.type === "remove")) {
       commit({
         ...definition,
@@ -692,8 +701,13 @@ function Editor({
               setSelected(null);
               setMobilePanel(null);
             }}
-            onNodeDragStart={() => history.current.push(definition)}
+            onNodeDragStart={() => {
+              history.current.push(definition);
+              future.current = [];
+              setDragging(true);
+            }}
             onNodeDragStop={() => {
+              setDragging(false);
               setSimulation(null);
               setSaved("Alterações pendentes");
             }}
