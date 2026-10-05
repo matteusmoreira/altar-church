@@ -75,8 +75,6 @@ const labels: Record<string, string> = {
   read: "Lida",
   uncertain: "Entrega incerta",
 };
-const date = (value: string | null) =>
-  value ? new Date(value).toLocaleString("pt-BR") : "—";
 export function AutomationWorkspace({
   workspace,
   preview = false,
@@ -86,6 +84,10 @@ export function AutomationWorkspace({
   preview?: boolean;
   initialTab?: string;
 }) {
+  const date = (value: string | null) =>
+    value ? new Date(value).toLocaleString("pt-BR", {
+      timeZone: workspace.settings?.timezone ?? "America/Sao_Paulo",
+    }) : "—";
   const router = useRouter(),
     [tab, setTab] = useState(
       initialTab && tabs.includes(initialTab as (typeof tabs)[number])
