@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { FileText, Plug, Search, ShieldCheck } from "lucide-react"
+import { FileText, Plug, Search, ShieldCheck, Plus, Pencil, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { AccessEditor, AccessDeleteDialog } from "./access-editor"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,7 +21,7 @@ import {
 } from "@/components/ui/table"
 import { IntegrationsPanel } from "./integrations-panel"
 import { UazapiInstancesPanel } from "./uazapi-instances-panel"
-import type { SettingsData } from "@/lib/settings/data"
+import type { SettingsData, SettingsProfile } from "@/lib/settings/data"
 import type { UazapiInstancesData } from "@/lib/uazapi/types"
 import type { UserRole } from "@/lib/types"
 
@@ -55,6 +57,8 @@ export function SettingsClient({
   uazapiData: UazapiInstancesData | null
 }) {
   const [accessSearch, setAccessSearch] = useState("")
+  const [editing, setEditing] = useState<SettingsProfile | null | undefined>(undefined)
+  const [deleting, setDeleting] = useState<SettingsProfile | null>(null)
   const query = accessSearch.trim().toLowerCase()
   const filteredProfiles = useMemo(() => {
     if (!query) return settingsData.profiles
@@ -123,6 +127,10 @@ export function SettingsClient({
         </TabsContent>
 
         <TabsContent value="acessos" className="mt-0 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">{settingsData.profiles.length} acesso(s). Gerencie os logins e as funções da equipe.</p>
+            {settingsData.company && <Button onClick={() => setEditing(null)}><Plus className="mr-2 h-4 w-4" />Novo acesso</Button>}
+          </div>
           <Card className="glass">
             <CardHeader>
               <div className="relative">
@@ -145,6 +153,7 @@ export function SettingsClient({
                     <TableHead>Empresa</TableHead>
                     <TableHead>Criado em</TableHead>
                     <TableHead>Ativo</TableHead>
+                    {settingsData.company && <TableHead className="text-right">Ações</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -164,6 +173,10 @@ export function SettingsClient({
                           {profile.active ? "Sim" : "Não"}
                         </Badge>
                       </TableCell>
+                      {settingsData.company && <TableCell><div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setEditing(profile)} disabled={profile.role === "superadmin"} aria-label={`Editar acesso de ${profile.name}`}><Pencil className="mr-1 h-3.5 w-3.5" />Editar</Button>
+                        <Button size="icon-sm" variant="ghost" className="text-destructive" disabled={profile.id === settingsData.actorId || profile.role === "superadmin"} onClick={() => setDeleting(profile)} aria-label={`Excluir acesso de ${profile.name}`}><Trash2 className="h-4 w-4" /></Button>
+                      </div></TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -198,6 +211,8 @@ export function SettingsClient({
           )}
         </TabsContent>
       </Tabs>
+      {editing !== undefined && <AccessEditor key={editing?.id ?? "new"} profile={editing} cells={settingsData.cells} actorId={settingsData.actorId} onClose={() => setEditing(undefined)} />}
+      {deleting && <AccessDeleteDialog profile={deleting} onClose={() => setDeleting(null)} />}
     </div>
   )
 }

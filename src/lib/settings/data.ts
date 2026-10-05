@@ -23,9 +23,12 @@ export interface SettingsProfile {
   role: UserRole
   active: boolean
   createdAt: string
+  cellIds: string[]
 }
 
 export interface SettingsData {
+  actorId: string
+  cells: { id: string; name: string; companyId: string }[]
   company: SettingsCompany | null
   profiles: SettingsProfile[]
   integrations: {
@@ -52,6 +55,7 @@ interface ProfileRow {
   role: UserRole
   active: boolean
   created_at: Date | string
+  cell_ids: string[]
 }
 
 function toIso(value: Date | string) {
@@ -88,12 +92,13 @@ function toProfile(row: ProfileRow): SettingsProfile {
     role: row.role,
     active: row.active,
     createdAt: toIso(row.created_at),
+    cellIds: row.cell_ids ?? [],
   }
 }
 
 export async function getSettingsData(): Promise<SettingsData> {
   const companyId = await resolveCompanyId()
-  await requirePermission("settings.manage_settings", companyId)
+  const actor = await requirePermission("settings.manage_settings", companyId)
 
   const sql = getSql()
   const companyRows = companyId
@@ -116,10 +121,14 @@ export async function getSettingsData(): Promise<SettingsData> {
           p.email,
           p.role,
           p.active,
-          p.created_at
+          p.created_at,
+          array(select g.id::text from public.groups g where g.company_id = p.company_id
+            and g.leader_person_id = p.person_id and g.type = 'cell'
+            and g.is_active = true and g.deleted_at is null) as cell_ids
         from public.profiles p
         left join public.companies c on c.id = p.company_id
         where p.company_id = ${companyId}
+          and p.deleted_at is null
         order by p.created_at desc
       `
     : await sql<ProfileRow[]>`
@@ -131,9 +140,13 @@ export async function getSettingsData(): Promise<SettingsData> {
           p.email,
           p.role,
           p.active,
-          p.created_at
+          p.created_at,
+          array(select g.id::text from public.groups g where g.company_id = p.company_id
+            and g.leader_person_id = p.person_id and g.type = 'cell'
+            and g.is_active = true and g.deleted_at is null) as cell_ids
         from public.profiles p
         left join public.companies c on c.id = p.company_id
+        where p.deleted_at is null
         order by p.created_at desc
         limit 200
       `
@@ -153,6 +166,12 @@ export async function getSettingsData(): Promise<SettingsData> {
   }
 
   return {
+    actorId: actor.id,
+    cells: companyId ? await sql<{ id: string; name: string; companyId: string }[]>`
+      select id, name, company_id as "companyId" from public.groups
+      where company_id = ${companyId} and type = 'cell' and is_active = true and deleted_at is null
+      order by name
+    ` : [],
     company: companyRows[0] ? toCompany(companyRows[0]) : null,
     profiles: profileRows.map(toProfile),
     integrations,

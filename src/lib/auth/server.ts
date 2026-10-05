@@ -56,6 +56,7 @@ async function getProfileForAuthUser(authUserId: string, email?: string | null, 
       p.created_at
     from public.profiles p
     where p.active = true
+      and p.deleted_at is null
       and (
         p.auth_user_id = ${authUserId}
         -- Auto-vinculo por e-mail SOMENTE com posse provada (e-mail confirmado no provedor).
