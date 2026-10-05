@@ -14,6 +14,10 @@ export function newNode(
   const config: FlowNode["config"] =
     kind === "trigger"
       ? { mode: "manual" }
+      : kind === "question"
+        ? { questionType: "text", questionText: "Qual é seu nome completo?", answerVariable: "cadastro_nome", minutes: 1440 }
+      : kind === "register_person"
+        ? { nameVariable: "cadastro_nome", emailVariable: "cadastro_email", congregationVariable: "cadastro_congregacao", initialPassword: "@mudar123" }
       : kind === "whatsapp"
         ? {
             destination: "person",
@@ -70,6 +74,29 @@ function template(
       { id: "g", source: "task", target: "end", port: "next" },
       { id: "h", source: "task", target: "error", port: "error" },
     );
+  }
+  return { schemaVersion: 1, nodes, edges };
+}
+export function registrationTemplate(): FlowDefinition {
+  const nodes = [newNode("trigger", "start"), newNode("question", "name", 80, 260),
+    newNode("question", "email", 80, 440), newNode("question", "congregation", 80, 620),
+    newNode("register_person", "register", 80, 800), newNode("whatsapp", "confirmation", 80, 980),
+    newNode("end", "end", 80, 1160), newNode("end", "error", 430, 800), newNode("end", "timeout", 430, 440)];
+  nodes[0].config = { mode: "message", keyword: "cadastro", allowUnknownContacts: true };
+  nodes[1].label = "Perguntar nome completo";
+  nodes[1].config.questionType = "full_name";
+  nodes[2].label = "Perguntar e-mail";
+  nodes[2].config = { questionType: "email", questionText: "Qual é seu e-mail?", answerVariable: "cadastro_email", minutes: 1440 };
+  nodes[3].label = "Escolher congregação";
+  nodes[3].config = { questionType: "congregation", questionText: "Qual é sua congregação?", answerVariable: "cadastro_congregacao", minutes: 1440 };
+  nodes[5].config.message = { type: "text", text: "{{primeiro_nome}}, seu cadastro foi concluído! Se você já tinha acesso, continue usando sua senha. Se seu acesso foi criado agora, entre com seu e-mail e a senha inicial informada pela igreja." };
+  nodes[7].label = "Encerrar com erro registrado";
+  nodes[8].label = "Encerrar por prazo vencido";
+  const edges: FlowDefinition["edges"] = [];
+  for (let i = 0; i < 6; i++) {
+    edges.push({ id: `registration_${i}`, source: nodes[i].id, target: nodes[i + 1].id, port: nodes[i].kind === "question" ? "response" : "next" });
+    if (i > 0) edges.push({ id: `registration_error_${i}`, source: nodes[i].id, target: "error", port: "error" });
+    if (nodes[i].kind === "question") edges.push({ id: `registration_timeout_${i}`, source: nodes[i].id, target: "timeout", port: "timeout" });
   }
   return { schemaVersion: 1, nodes, edges };
 }
@@ -173,6 +200,7 @@ export const TEMPLATES = [
       true,
     ),
   },
+  { id: "whatsapp_registration", name: "Cadastro pelo WhatsApp", description: "Palavra cadastro, perguntas de nome, e-mail e congregação, criação do acesso e confirmação. Selecione as instâncias antes de publicar.", definition: registrationTemplate() },
 ];
 
 /** An editable invitation with paginated lists; every cell has its own interest and leader notification. */

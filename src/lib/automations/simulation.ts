@@ -4,6 +4,7 @@ import {
   type FlowDefinition,
   type FlowNode,
 } from "./contract";
+import { validateQuestionAnswer, type CongregationChoice } from "./questions";
 
 export type SimulationEntry = {
   nodeId: string;
@@ -26,13 +27,14 @@ export function advanceSimulation(
     port?: string;
     aiText?: string;
     audienceMatches?: boolean;
+    congregations?: CongregationChoice[];
   } = {},
 ): SimulationState {
   const node = definition.nodes.find((n) => n.id === state.nodeId);
   if (!node) return { ...state, nodeId: null, error: "Bloco não encontrado" };
   const c = node.config,
     context = { ...state.context };
-  if (node.kind === "trigger" && input.audienceMatches === false)
+  if (node.kind === "trigger" && input.audienceMatches === false && !c.allowUnknownContacts)
     return {
       ...state,
       nodeId: null,
@@ -40,6 +42,23 @@ export function advanceSimulation(
     };
   let port = "next",
     detail = "Bloco simulado";
+  if (node.kind === "question") {
+    port = input.port ?? "response";
+    if (port === "response") {
+      const answer = validateQuestionAnswer(c.questionType, input.response ?? "", input.congregations, Number(context.question_page ?? 0));
+      if (answer.value) { context[c.answerVariable!] = answer.value; context.resposta = answer.value; context.question_page = "0"; }
+      else return { ...state, context: { ...context, question_page: String(answer.page ?? context.question_page ?? 0) }, error: answer.page !== undefined ? undefined : c.invalidAnswerText || answer.error };
+    }
+    detail = port === "response" ? `${c.answerVariable}: ${context[c.answerVariable!]}` : `Pergunta: ${port === "timeout" ? "prazo vencido" : "erro"}`;
+  }
+  if (node.kind === "register_person") {
+    port = input.port ?? "next";
+    const name = context[c.nameVariable ?? ""] ?? "";
+    const email = context[c.emailVariable ?? ""] ?? "";
+    if (port === "next" && (!validateQuestionAnswer("full_name", name).value || !validateQuestionAnswer("email", email).value || !input.congregations?.some(g => g.id === context[c.congregationVariable ?? ""]))) port = "error";
+    if (port === "next") { context.nome = name; context.primeiro_nome = name.split(" ")[0]; }
+    detail = port === "next" ? `Cadastraria ${name} com acesso de membro; nenhum usuário foi criado` : "Erro de cadastro simulado; nenhum usuário foi criado";
+  }
   if (node.kind === "condition")
     port = conditionMatches(
       context[c.field ?? "resposta"],
@@ -125,7 +144,7 @@ export function advanceSimulation(
 }
 
 export function simulationPrompt(node: FlowNode) {
-  return node.kind === "response"
+  return node.kind === "question" ? node.config.questionText ?? "Informe a resposta recebida" : node.kind === "response"
     ? "Informe a resposta recebida"
     : node.kind === "task_wait"
       ? "Simule a conclusão ou o prazo da tarefa"

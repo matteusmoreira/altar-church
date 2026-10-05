@@ -158,10 +158,12 @@ export function MessageEditor({
   value,
   onChange,
   preview,
+  variables = [],
 }: {
   value: AutomationMessage;
   onChange: (value: AutomationMessage) => void;
   preview?: boolean;
+  variables?: string[];
 }) {
   const [uploading, setUploading] = useState(false);
   const mounted = useRef(true),
@@ -320,7 +322,7 @@ export function MessageEditor({
         }}
       >
         <option value="">Inserir variável…</option>
-        {VARIABLES.map((v) => (
+        {[...new Set([...VARIABLES, ...variables])].map((v) => (
           <option key={v} value={v}>
             {v}
           </option>

@@ -32,6 +32,7 @@ import {
   deleteAutomation,
   deleteAutomationTemplate,
   clearAutomationHistory,
+  reconcileAutomationRegistration,
   operateAutomationTask,
   saveAutomationSettings,
   saveAutomationGroup,
@@ -514,6 +515,9 @@ export function AutomationWorkspace({
                     {r.last_error && (
                       <p className="text-sm text-amber-700">{r.last_error}</p>
                     )}
+                    {operate && r.status === "review" && r.node_kind === "register_person" && <Button size="sm" variant="outline" disabled={busy} onClick={() => void action(() => reconcileAutomationRegistration(r.id), "Cadastro reconciliado; retomada agendada")}>
+                      Reconciliar cadastro
+                    </Button>}
                     <p className="text-xs text-muted-foreground">
                       Próxima verificação: {date(r.due_at)}
                     </p>

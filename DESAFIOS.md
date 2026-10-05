@@ -15,6 +15,8 @@
 
 ## Automações — 05/10/2026
 
+- Cadastro por WhatsApp exige aplicar `20261005195628_automation_whatsapp_registration.sql` antes de publicar fluxos com o bloco de cadastro. O registro interno não guarda senha. Retornos Auth incertos ficam em revisão e só podem ser retomados após conferir a identidade pelo marcador interno, nunca pelo e-mail isolado; não excluir o fluxo enquanto houver criação pendente. Testes de cadastro usam PGlite e Auth simulado, sem comprovar login ou botões/listas em aparelhos reais.
+
 - Gatilhos por formulário precisam escopar também `automation_source_owners`: transferir somente o filtro do gatilho sem escopar o dono desliga o envio direto de outros formulários. Versões publicadas sem `formId` continuam legadas; o novo contrato exige seleção na republicação.
 - Upload de carrossel não deve criar o cartão: crie o cartão editável antes do upload e ignore respostas de upload após trocar de bloco. Os testes de rascunho usam entrega separada por identificador de solicitação e jamais entram no worker de produção.
 
@@ -246,3 +248,9 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - Limpar o histórico de execuções não pode apagar as chaves de ocorrência: o coletor pode recriar a mesma execução e reenviar mensagens. `history_cleared_at` retira execuções encerradas e seus detalhes da interface, preservando deduplicação, recibos e consumo de IA. O histórico legado é excluído por igreja.
 - Modelos prontos são personalizados e removidos por igreja em `automation_templates`; a revisão impede que uma aba antiga sobrescreva ou restaure um modelo excluído. Editar modelo não publica um fluxo.
 - A exclusão definitiva de fluxo precisa remover dependências na mesma transação e desvincular a versão publicada antes de apagar as versões. Bloquear exclusão durante processamento/envio em andamento.
+
+
+## Picos de cadastro WhatsApp — 05/10/2026
+
+- Deduplicação do recibo e criação da execução precisam ficar na mesma transação; marcar o recibo antes e criar depois pode perder o gatilho em uma falha. Consultas de público dentro da transação devem usar sua conexão para não bloquear o pool pequeno.
+- A confirmação do webhook agora depende da entrada durável. O novo agendamento fica pausado até GET autenticado comprovar backend/schema novos; a publicação vigente respondeu 405. Não usar o resultado de 1.500 conversas em PGlite com provedor/Auth simulados como prova de capacidade do Supabase Free ou de velocidade de entrega.

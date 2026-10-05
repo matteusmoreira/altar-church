@@ -22,7 +22,10 @@ import {
   whatsappChatId,
   UncertainDelivery,
 } from "./delivery";
+import { DeferredAutomationDelivery, processAutomationInbox } from "./queue";
 import type { UserRole } from "@/lib/types";
+import { congregationQuestion, validateQuestionAnswer, type CongregationChoice } from "./questions";
+import { registerAutomationPerson, RegistrationNeedsReview } from "./registration";
 
 type Run = {
   id: string;
@@ -244,6 +247,10 @@ async function waitFor(run: Run, node: FlowNode, kind: string) {
       await tx`select context from public.automation_runs where id=${run.id} and lease_token=${run.lease_token} and status='working' for update`;
     if (!current) return;
     if (kind !== "task" && current.context.pending_response) {
+      if (kind === "question") {
+        await tx`update public.automation_runs set status='ready',context=context||${JSON.stringify({ question_input: current.context.pending_response, pending_response: null })}::jsonb,due_at=now(),wait_kind=null,lease_token=null,lease_until=null where id=${run.id}`;
+        return;
+      }
       const [version] = await tx<
         { definition: FlowDefinition }[]
       >`select definition from public.automation_versions where id=${run.version_id}`;
@@ -314,6 +321,51 @@ async function step(run: Run) {
     }
     if (node.kind === "end") return finish(run, node, "next");
     if (node.kind === "trigger") return finish(run, node, "next");
+    if (node.kind === "register_person") {
+      const result = await registerAutomationPerson(run, node, version.actor_id);
+      return finish(run, node, "next", "ready", { nome: result.nome, primeiro_nome: result.primeiro_nome });
+    }
+    if (node.kind === "question") {
+      const chatId = String(run.context.chat_id ?? run.context.last_chat ?? "");
+      if (!chatId.endsWith("@s.whatsapp.net")) throw new Error("Perguntas exigem conversa privada identificada");
+      if (!c.instanceId || !c.answerVariable || !c.questionType || !c.questionText) throw new Error("Configure a pergunta");
+      const [opt] = await sql`select opted_out from public.automation_contacts where company_id=${run.company_id} and chat_id=${chatId}`;
+      if (opt?.opted_out) throw new Error("Contato descadastrado");
+      const alreadyAsked = run.context.question_node === node.id;
+      let choices = (alreadyAsked ? run.context.question_choices : []) as CongregationChoice[];
+      let page = alreadyAsked ? Number(run.context.question_page ?? 0) : 0;
+      let sequence = alreadyAsked ? Number(run.context.question_sequence ?? 0) : 0;
+      let correction = "";
+      if (!alreadyAsked && c.questionType === "congregation")
+        choices = await sql<CongregationChoice[]>`select id,name from public.congregations where company_id=${run.company_id} and is_active and deleted_at is null order by name,id`;
+      const input = run.context.question_input ?? (alreadyAsked ? run.context.pending_response : undefined);
+      if (typeof input === "string") {
+        const answer = validateQuestionAnswer(c.questionType, input, choices, page);
+        if (answer.value) {
+          if (c.questionType === "congregation") {
+            const [available] = await sql`select id from public.congregations where id=${answer.value}::uuid and company_id=${run.company_id} and is_active and deleted_at is null`;
+            if (!available) throw new Error("Congregação selecionada não está mais disponível");
+          }
+          return finish(run, node, "response", "ready", { [c.answerVariable]: answer.value, resposta: answer.value,
+            question_input: null, question_node: null, question_choices: null, question_page: null, question_sequence: null, question_prompt: null, question_fallback: null, pending_response: null });
+        }
+        if (answer.page !== undefined) page = answer.page;
+        else correction = c.invalidAnswerText || answer.error || "Resposta inválida.";
+        sequence++;
+      }
+      const text = renderText(`${correction ? `${correction}\n\n` : ""}${c.questionText}`, run.context);
+      const generated = c.questionType === "congregation" ? congregationQuestion(text, choices, page) : { message: { type: "text" as const, text }, fallbackText: undefined };
+      const prompt = alreadyAsked && typeof input !== "string" && run.context.question_prompt
+        ? { message: run.context.question_prompt as import("./contract").AutomationMessage, fallbackText: run.context.question_fallback as string | undefined }
+        : generated;
+      const context = { question_node: node.id, question_choices: choices, question_page: page, question_sequence: sequence, question_input: null, question_prompt: prompt.message, question_fallback: prompt.fallbackText ?? null };
+      await sql`update public.automation_runs set context=(case when context->>'pending_response'=${typeof run.context.pending_response === "string" ? run.context.pending_response : null} then context-'pending_response' else context end)||${JSON.stringify(context)}::jsonb where id=${run.id} and lease_token=${run.lease_token} and status='working'`;
+      await ensureConversation(run, c.instanceId, chatId, c.minutes ?? 1440);
+      const providerId = await sendAutomationMessage({ companyId: run.company_id, runId: run.id, nodeId: `${node.id}:question:${sequence}`,
+        instanceId: c.instanceId, chatId, ...prompt, context: run.context });
+      await ensureConversation(run, c.instanceId, chatId, c.minutes ?? 1440, providerId);
+      return waitFor(run, node, "question");
+    }
     if (node.kind === "audience")
       return finish(
         run,
@@ -669,31 +721,46 @@ async function step(run: Run) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha no bloco";
-    if (error instanceof UncertainDelivery) {
+    if (error instanceof DeferredAutomationDelivery) {
+      await sql`update public.automation_runs set status='ready',due_at=${error.retryAt},lease_token=null,lease_until=null
+        where id=${run.id} and lease_token=${run.lease_token}`;
+      return error.retryAt;
+    }
+    if (error instanceof UncertainDelivery || error instanceof RegistrationNeedsReview) {
       await sql`update public.automation_runs set status='review',last_error=${message},lease_token=null where id=${run.id} and lease_token=${run.lease_token}`;
       return;
     }
     return finish(run, node, "error", "ready", { last_error: message });
   }
 }
-export async function processAutomations(batchSize = 25) {
+export async function processAutomations(batchSize = 25, options: { concurrency?: number; maxMs?: number } = {}) {
+  const concurrency = Math.max(1, Math.min(Math.trunc(options.concurrency ?? 1) || 1, 8));
+  batchSize = Math.max(1, Math.min(Math.trunc(batchSize) || 25, 5000));
+  const deadline = Date.now() + Math.max(1, Math.min(options.maxMs ?? 45000, 45000));
+  const inbox = await processAutomationInbox(batchSize, concurrency, Math.min(deadline, Date.now() + 10000));
   await collectAutomationStarts();
   const sql = getSql();
-  // Completed tasks can wake their own waiter before the timeout.
   await sql`update public.automation_runs r set due_at=now() where r.status='waiting' and r.wait_kind='task' and exists(select 1 from public.automation_tasks t where t.id=(r.context->>'task_id')::uuid and t.run_id=r.id and t.status='completed')`;
-  let processed = 0;
-  const deadline = Date.now() + 45000;
-  while (Date.now() < deadline && processed < batchSize) {
-    const runs = await sql<
-      Run[]
-    >`select * from public.claim_automation_runs(1)`;
-    if (!runs[0]) break;
-    try {
-      await step(runs[0]);
-    } catch {
-      await sql`update public.automation_runs set status='failed',last_error='Falha de processamento; consulte a operação',lease_token=null where id=${runs[0].id} and lease_token=${runs[0].lease_token}`;
+  let reserved = 0, processed = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (Date.now() < deadline && reserved < batchSize) {
+      reserved++;
+      const [run] = await sql<Run[]>`select * from public.claim_automation_runs(1)`;
+      if (!run) break;
+      try {
+        const deferredUntil = await step(run);
+        if (deferredUntil instanceof Date) {
+          // Rate waiting is not a completed stage. Give the number its interval instead of burning the batch.
+          reserved--;
+          await new Promise(resolve => setTimeout(resolve, Math.min(250, Math.max(5, deferredUntil.getTime() - Date.now()))));
+          continue;
+        }
+      }
+      catch {
+        await sql`update public.automation_runs set status='failed',last_error='Falha de processamento; consulte a operação',lease_token=null where id=${run.id} and lease_token=${run.lease_token}`;
+      }
+      processed++;
     }
-    processed++;
-  }
-  return { processed };
+  }));
+  return { processed, inbox };
 }

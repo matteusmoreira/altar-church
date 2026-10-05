@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { PGlite } from "@electric-sql/pglite";
 const require = createRequire(import.meta.url);
 function loadModules(sql, extraMocks) {
@@ -54,9 +55,15 @@ export const A = "10000000-0000-4000-8000-000000000001",
   I = "50000000-0000-4000-8000-000000000001",
   F = "60000000-0000-4000-8000-000000000001",
   S = "70000000-0000-4000-8000-000000000001";
-export async function automationFixture() {
+export async function automationFixture(extraMocks = {}, { queue = false } = {}) {
   const db = new PGlite();
-  let transaction = null;
+  const transaction = new AsyncLocalStorage();
+  let tail = Promise.resolve();
+  function exclusive(fn) {
+    const pending = tail.then(fn);
+    tail = pending.catch(() => {});
+    return pending;
+  }
   const sql = (strings, ...values) => {
     let query = "";
     const params = [];
@@ -77,18 +84,11 @@ export async function automationFixture() {
         }
       }
     });
-    return (transaction ?? db).query(query, params).then((r) => r.rows);
+    const tx = transaction.getStore();
+    return (tx ? tx.query(query, params) : exclusive(() => db.query(query, params))).then(r => r.rows);
   };
   sql.array = (a) => a;
-  sql.begin = (fn) =>
-    db.transaction(async (tx) => {
-      transaction = tx;
-      try {
-        return await fn(sql);
-      } finally {
-        transaction = null;
-      }
-    });
+  sql.begin = fn => exclusive(() => db.transaction(tx => transaction.run(tx, () => fn(sql))));
   const tag = sql;
   const tagged = (strings, ...v) =>
     Array.isArray(strings) && strings.raw
@@ -102,6 +102,7 @@ export async function automationFixture() {
 
   const permissions = { denied: new Set() };
   const load = loadModules(tagged, {
+    "@/lib/supabase/admin": { createSupabaseAdminClient: () => null },
     "next/cache": { revalidatePath() {} },
     "@/lib/auth/server": {
       getCurrentUser: async () => ({ id: U, company_id: A, role: "admin" }),
@@ -117,6 +118,11 @@ export async function automationFixture() {
     "@/lib/admin/data": {
       getCompanyEnabledModuleIds: async () => ["automations"],
     },
+    ...(!queue ? { "./queue": {
+      reserveAutomationSend: async () => {}, processAutomationInbox: async () => ({ processed: 0, failed: 0 }),
+      DeferredAutomationDelivery: class extends Error {},
+    } } : {}),
+    ...extraMocks,
   });
   await db.exec(`create role authenticated;create role anon;create role service_role;create schema auth;create schema vault;create schema net;
     create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.user_id',true),'')::uuid$$;
@@ -167,6 +173,7 @@ export async function automationFixture() {
   );
   const { newNode } = load("src/lib/automations/templates.ts");
   await db.exec(readFileSync("supabase/migrations/20261005194037_automation_management.sql", "utf8"));
+  if (queue) await db.exec(readFileSync("supabase/migrations/20261005200510_automation_burst_queue.sql", "utf8"));
   const runtime = load("src/lib/automations/runtime.ts");
   async function flow(definition, companyId = A) {
     const f = (

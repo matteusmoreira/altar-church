@@ -8,12 +8,9 @@ import {
 import { flowSchema } from "./contract";
 import { selectAudience, personContext } from "./data";
 import type { FlowDefinition } from "./contract";
+import { matchesKeyword } from "./questions";
 
-export async function receiveAutomationWebhook(
-  instanceId: string,
-  secret: string,
-  body: unknown,
-) {
+export async function authenticateAutomationWebhook(instanceId: string, secret: string) {
   const sql = getSql(),
     [credential] =
       await sql`select company_id,secret_hash from public.automation_webhook_secrets where instance_id=${instanceId}`;
@@ -26,8 +23,16 @@ export async function receiveAutomationWebhook(
     )
   )
     throw new Error("UNAUTHORIZED");
-  const e = normalizeUazapiEvent(body),
-    companyId = String(credential.company_id);
+  return String(credential.company_id);
+}
+
+export async function receiveAutomationWebhook(instanceId: string, secret: string, body: unknown) {
+  const companyId = await authenticateAutomationWebhook(instanceId, secret);
+  return processAutomationWebhook(companyId, instanceId, normalizeUazapiEvent(body));
+}
+
+export async function processAutomationWebhook(companyId: string, instanceId: string, e: ReturnType<typeof normalizeUazapiEvent>) {
+  const sql = getSql();
   const status = /update|receipt|ack/.test(e.type)
     ? deliveryStatus(e.status)
     : null;
@@ -42,8 +47,8 @@ export async function receiveAutomationWebhook(
     return { ok: true };
   }
   if (!e.id) return { ignored: true };
-  let shouldStart = false;
   await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${`${instanceId}:${e.chat}`}))`;
     const receiptKey = `${e.type}:${e.id}:${e.status}:${e.receipts.length ? createHash("sha256").update(JSON.stringify(e.receipts)).digest("hex") : ""}`;
     const receipts =
       await tx`insert into public.automation_webhook_receipts(instance_id,event_key) values(${instanceId},${receiptKey}) on conflict do nothing returning event_key`;
@@ -92,7 +97,7 @@ export async function receiveAutomationWebhook(
       return;
     }
     if (!conversation) {
-      if (!e.fromMe) shouldStart = true;
+      if (!e.fromMe) await startConversation(tx as unknown as ReturnType<typeof getSql>);
       return;
     }
     if (e.fromMe) {
@@ -137,7 +142,7 @@ export async function receiveAutomationWebhook(
     }
     if (
       conversation.run_status === "waiting" &&
-      ["response", "ai"].includes(conversation.wait_kind)
+      ["response", "ai", "question"].includes(conversation.wait_kind)
     ) {
       const [v] = await tx<
         { definition: FlowDefinition }[]
@@ -145,32 +150,31 @@ export async function receiveAutomationWebhook(
       const definition = flowSchema.parse(v.definition),
         node = definition.nodes.find((n) => n.id === conversation.node_id)!;
       const next =
-        conversation.wait_kind === "ai"
+        ["ai", "question"].includes(conversation.wait_kind)
           ? node.id
           : definition.edges.find(
               (edge) => edge.source === node.id && edge.port === "response",
             )?.target;
-      await tx`update public.automation_runs set node_id=${next ?? node.id},status=${next ? "ready" : "failed"},due_at=now(),wait_kind=null,waiting_node_id=null,context=context||${JSON.stringify({ resposta: e.text, inbound: true, pending_response: null })}::jsonb,updated_at=now() where id=${conversation.run_id} and status='waiting'`;
+      await tx`update public.automation_runs set node_id=${next ?? node.id},status=${next ? "ready" : "failed"},due_at=now(),wait_kind=null,waiting_node_id=null,context=context||${JSON.stringify({ resposta: e.text, inbound: true, pending_response: null, ...(conversation.wait_kind === "question" ? { question_input: e.text } : {}) })}::jsonb,updated_at=now() where id=${conversation.run_id} and status='waiting'`;
       if (conversation.wait_kind === "response")
         await tx`insert into public.automation_steps(company_id,run_id,node_id,status,detail) values(${companyId},${conversation.run_id},${node.id},'completed','{"port":"response"}'::jsonb) on conflict(run_id,node_id) do nothing`;
     } else if (["ready", "working"].includes(conversation.run_status)) {
       await tx`update public.automation_runs set context=context||${JSON.stringify({ pending_response: e.text })}::jsonb where id=${conversation.run_id}`;
     }
   });
-  if (shouldStart) {
+  async function startConversation(tx: ReturnType<typeof getSql>) {
     const opted =
-      await sql`select opted_out from public.automation_contacts where company_id=${companyId} and chat_id=${e.chat}`;
+      await tx`select opted_out from public.automation_contacts where company_id=${companyId} and chat_id=${e.chat}`;
     if (opted[0]?.opted_out) return { ignored: true };
     const digits = e.chat.split("@")[0].replace(/\D/g, "");
     const people =
-      await sql`select id from public.people where company_id=${companyId} and deleted_at is null and is_active and (regexp_replace(phone,'\D','','g')=${digits} or '55'||regexp_replace(phone,'\D','','g')=${digits})`;
+      await tx`select id from public.people where company_id=${companyId} and deleted_at is null and is_active and (regexp_replace(phone,'\D','','g')=${digits} or '55'||regexp_replace(phone,'\D','','g')=${digits})`;
     if (
-      people.length !== 1 ||
       e.chat.endsWith("@g.us") ||
       e.chat.endsWith("@lid")
     )
       return { ignored: true };
-    const flows = await sql<
+    const flows = await tx<
       {
         id: string;
         company_id: string;
@@ -187,25 +191,25 @@ export async function receiveAutomationWebhook(
         root.config.instanceId !== instanceId
       )
         continue;
-      const [p] = await selectAudience(
+      if (!matchesKeyword(e.text, root.config.keyword)) continue;
+      if (people.length !== 1 && !root.config.allowUnknownContacts) continue;
+      const [p] = people.length === 1 ? await selectAudience(
         companyId,
         root.config.filter,
         people[0].id,
-      );
-      if (!p) continue;
-      await sql.begin(async (tx) => {
-        await tx`select pg_advisory_xact_lock(hashtext(${`${instanceId}:${e.chat}`}))`;
-        if (
-          (
-            await tx`select id from public.automation_conversations where instance_id=${instanceId} and chat_id=${e.chat}`
-          )[0]
-        )
-          return;
-        const [run] =
-          await tx`insert into public.automation_runs(company_id,flow_id,version_id,person_id,event_key,node_id,context,ancestry) values(${companyId},${flow.id},${flow.published_version_id},${p.id},${`inbound:${instanceId}:${e.id}`},${root.id},${JSON.stringify({ ...personContext(p), chat_id: e.chat, resposta: e.text, inbound: true, last_instance: instanceId, last_chat: e.chat })}::jsonb,${tx.array([flow.id])}::uuid[]) on conflict(company_id,flow_id,event_key) do nothing returning id`;
-        if (run)
-          await tx`insert into public.automation_conversations(company_id,instance_id,chat_id,run_id,expires_at) values(${companyId},${instanceId},${e.chat},${run.id},now()+interval '1 day')`;
-      });
+        tx,
+      ) : [];
+      if (people.length === 1 && !p) continue;
+      if (
+        (
+          await tx`select id from public.automation_conversations where instance_id=${instanceId} and chat_id=${e.chat}`
+        )[0]
+      )
+        return;
+      const [run] =
+        await tx`insert into public.automation_runs(company_id,flow_id,version_id,person_id,event_key,node_id,context,ancestry) values(${companyId},${flow.id},${flow.published_version_id},${p?.id ?? null},${`inbound:${instanceId}:${e.id}`},${root.id},${JSON.stringify({ ...(p ? personContext(p) : {}), chat_id: e.chat, resposta: e.text, inbound: true, last_instance: instanceId, last_chat: e.chat })}::jsonb,${tx.array([flow.id])}::uuid[]) on conflict(company_id,flow_id,event_key) do nothing returning id`;
+      if (run)
+        await tx`insert into public.automation_conversations(company_id,instance_id,chat_id,run_id,expires_at) values(${companyId},${instanceId},${e.chat},${run.id},now()+interval '1 day')`;
       break;
     }
   }

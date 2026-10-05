@@ -4,6 +4,8 @@ import { buildUazapiPayload } from "@/lib/forms/direct-message";
 import type { FormDirectMessage } from "@/lib/forms/types";
 import { renderText, type AutomationMessage } from "./contract";
 
+import { reserveAutomationSend, DeferredAutomationDelivery } from "./queue";
+
 export class UncertainDelivery extends Error {}
 export async function sendAutomationMessage(input: {
   companyId: string;
@@ -33,12 +35,14 @@ export async function sendAutomationMessage(input: {
     throw new UncertainDelivery(
       "Entrega anterior não confirmada; revisar antes de reenviar",
     );
+  if (Number(existing?.attempts ?? 0) >= 5) throw new Error("Limite de tentativas de envio atingido; revisão necessária");
   const { credential, message, payload } = await prepareAutomationMessage({
     ...input,
     trackId: `automation:${input.runId}:${input.nodeId}`,
   });
+  await reserveAutomationSend(input.instanceId);
   const [delivery] =
-    await sql`insert into public.automation_deliveries(company_id,run_id,node_id,instance_id,chat_id,message,status,attempts) values(${input.companyId},${input.runId},${input.nodeId},${input.instanceId},${input.chatId},${JSON.stringify(message)}::jsonb,'sending',1) on conflict(run_id,node_id) do update set status='sending',attempts=automation_deliveries.attempts+1 returning id`;
+    await sql`insert into public.automation_deliveries(company_id,run_id,node_id,instance_id,chat_id,message,status,attempts) values(${input.companyId},${input.runId},${input.nodeId},${input.instanceId},${input.chatId},${JSON.stringify(message)}::jsonb,'sending',1) on conflict(run_id,node_id) do update set status='sending',attempts=automation_deliveries.attempts+1 returning id,attempts`;
   async function request(endpoint: string, body: unknown) {
     return fetch(`${credential.base_url.replace(/\/$/, "")}${endpoint}`, {
       method: "POST",
@@ -62,6 +66,15 @@ export async function sendAutomationMessage(input: {
         text: renderText(input.fallbackText, input.context),
         track_id: `automation:${input.runId}:${input.nodeId}:fallback`,
       });
+    if (response.status === 429) {
+      await sql`update public.automation_deliveries set status='failed',last_error='Provedor limitou a velocidade de envio (429)',updated_at=now() where id=${delivery.id}`;
+      const retryAfter = response.headers.get("retry-after");
+      const seconds = Number(retryAfter);
+      const ms = retryAfter && Number.isFinite(seconds) ? seconds * 1000 : retryAfter ? Date.parse(retryAfter) - Date.now() : 0;
+      const retryAt = new Date(Date.now() + Math.min(3600000, Math.max(1000 * 2 ** Number(delivery.attempts ?? 1), ms || 0)));
+      await sql`update public.automation_send_slots set next_at=greatest(next_at,${retryAt}) where instance_id=${input.instanceId}`;
+      throw new DeferredAutomationDelivery(retryAt);
+    }
     if (!response.ok) {
       const uncertain = response.status >= 500;
       await sql`update public.automation_deliveries set status=${uncertain ? "uncertain" : "failed"},last_error=${`Uazapi ${response.status}`},updated_at=now() where id=${delivery.id}`;

@@ -39,11 +39,17 @@ export function AutomationTestPanel({
   const [results, setResults] = useState<Record<number, string>>({});
   const selectClass = "h-9 w-full rounded-md border bg-background px-2 text-sm";
   const node = definition.nodes.find((n) => n.id === state?.nodeId);
+  const allowsGuest = definition.nodes.some(n => n.kind === "trigger" && n.config.allowUnknownContacts);
+  const congregationPage = Number(state?.context.question_page ?? 0);
+  const congregationChoices = workspace.congregations.length > 10 ? workspace.congregations.slice(congregationPage * 8, congregationPage * 8 + 8) : workspace.congregations;
   async function start() {
     setBusy(true);
     try {
       let context: Record<string, string>;
-      if (preview) {
+      if (personId === "guest" && allowsGuest) {
+        context = { nome: "", primeiro_nome: "", igreja: "Sua igreja", chat_id: "5511999999999@s.whatsapp.net" };
+        setAudiences({});
+      } else if (preview) {
         const person = workspace.people.find((p) => p.id === personId)!;
         context = {
           nome: person.full_name,
@@ -138,6 +144,7 @@ export function AutomationTestPanel({
             requests.current.clear();
           }}
         >
+          {allowsGuest && <option value="guest">Contato novo (simulado)</option>}
           {workspace.people.map((p) => (
             <option key={p.id} value={p.id}>
               {p.full_name}
@@ -238,7 +245,17 @@ export function AutomationTestPanel({
             <div className="space-y-2 border-t pt-3">
               <p className="text-sm font-medium">Próximo: {node.label}</p>
               <p className="text-xs">{simulationPrompt(node)}</p>
-              {(node.kind === "response" || node.kind === "ai") && (
+              {node.kind === "question" && node.config.questionType === "congregation" && (
+                <label className="block text-sm">Congregação simulada
+                  <select aria-label="Congregação simulada" className={selectClass} value={answer} onChange={e => setAnswer(e.target.value)}>
+                    <option value="">Selecione…</option>
+                    {congregationChoices.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    {congregationPage > 0 && <option value="__previous">Página anterior</option>}
+                    {workspace.congregations.length > 10 && (congregationPage + 1) * 8 < workspace.congregations.length && <option value="__next">Próxima página</option>}
+                  </select>
+                </label>
+              )}
+              {(node.kind === "response" || node.kind === "ai" || (node.kind === "question" && node.config.questionType !== "congregation")) && (
                 <Textarea
                   aria-label={
                     node.kind === "ai"
@@ -250,9 +267,9 @@ export function AutomationTestPanel({
                 />
               )}
               <div className="flex flex-wrap gap-2">
-                {(node.kind === "response" || node.kind === "task_wait"
+                {(node.kind === "response" || node.kind === "task_wait" || node.kind === "question"
                   ? ["response", "timeout", "error"]
-                  : ["next"]
+                  : node.kind === "register_person" ? ["next", "error"] : ["next"]
                 ).map((port) => (
                   <Button
                     key={port}
@@ -264,7 +281,8 @@ export function AutomationTestPanel({
                           response: answer,
                           aiText: answer,
                           port,
-                          audienceMatches: preview
+                          congregations: workspace.congregations,
+                          audienceMatches: preview || personId === "guest"
                             ? true
                             : audiences[node.id]?.includes(personId),
                         }),
@@ -284,6 +302,7 @@ export function AutomationTestPanel({
                   </Button>
                 ))}
               </div>
+              {state.error && <p role="alert" className="text-sm text-amber-700">{state.error}</p>}
             </div>
           ) : (
             <p role="status" className="text-sm">

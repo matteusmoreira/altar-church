@@ -69,7 +69,7 @@ export default function AutomationsPreview() {
     steps: [],
     deliveries: [],
     interests: [],
-    congregations: [],
+    congregations: [{ id: "71000000-0000-4000-8000-000000000001", name: "Congregação Central" }],
     ministries: [],
     activities: [],
     forms: [{ id: "60000000-0000-4000-8000-000000000001", name: "Novos visitantes", creates_person: true }],

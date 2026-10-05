@@ -42,6 +42,8 @@ export const KINDS = [
   "switch",
   "wait",
   "response",
+  "question",
+  "register_person",
   "task_wait",
   "whatsapp",
   "kanban_move",
@@ -63,6 +65,8 @@ export const LABELS: Record<NodeKind, string> = {
   switch: "Múltiplos caminhos",
   wait: "Esperar",
   response: "Aguardar resposta",
+  question: "Perguntar e salvar resposta",
+  register_person: "Cadastrar pessoa",
   task_wait: "Aguardar tarefa",
   whatsapp: "Enviar WhatsApp",
   kanban_move: "Mover no Kanban",
@@ -179,6 +183,16 @@ const configSchema = z
   .object({
     deliveryOwner: z.enum(["existing", "automation"]).optional(),
     mode: z.string().max(80).optional(),
+    keyword: z.string().trim().max(180).optional(),
+    allowUnknownContacts: z.boolean().optional(),
+    questionType: z.enum(["text", "full_name", "email", "congregation"]).optional(),
+    answerVariable: z.string().regex(/^cadastro_[a-z][a-z0-9_]*$/).max(80).optional(),
+    questionText: text.optional(),
+    invalidAnswerText: text.optional(),
+    nameVariable: z.string().max(80).optional(),
+    emailVariable: z.string().max(80).optional(),
+    congregationVariable: z.string().max(80).optional(),
+    initialPassword: z.string().max(128).optional(),
     event: z.string().max(100).optional(),
     formId: uuid.optional(),
     stageId: uuid.optional(),
@@ -284,6 +298,8 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
         "interest",
         "audience",
         "kanban_move",
+        "question",
+        "register_person",
       ].includes(n.kind),
     )
   )
@@ -295,6 +311,7 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
     roots[0]?.config.event?.startsWith("kids.") &&
     input.nodes.some(
       (n) =>
+        n.kind === "question" || n.kind === "register_person" ||
         (n.kind === "whatsapp" && n.config.destination === "group") ||
         (n.kind === "ai" && n.config.mode === "conversation"),
     )
@@ -304,6 +321,9 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
       "Eventos do Kids exigem mensagens privadas guiadas para responsáveis autorizados",
     );
   const ports = new Set<string>();
+  const answerVariables = new Set(input.nodes.filter(n => n.kind === "question").map(n => n.config.answerVariable).filter(Boolean));
+  if (answerVariables.size !== input.nodes.filter(n => n.kind === "question" && n.config.answerVariable).length)
+    add("", "Cada pergunta deve salvar em uma variável diferente");
   for (const edge of input.edges) {
     if (!ids.has(edge.source) || !ids.has(edge.target))
       add(edge.source, "Conexão aponta para bloco inexistente");
@@ -383,6 +403,28 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
     }
     if (node.kind === "whatsapp" && (!c.message || !c.instanceId))
       add(node.id, "Configure a mensagem e a instância");
+    if (node.kind === "trigger" && c.allowUnknownContacts) {
+      if (c.mode !== "message" || !c.keyword?.trim()) add(node.id, "Contatos novos exigem mensagem recebida com palavra-chave");
+      if (Object.values(c.filter ?? {}).some(v => v !== undefined && v !== false)) add(node.id, "Filtros de pessoas cadastradas não podem ser usados com contatos novos");
+    }
+    if (node.kind === "question" && (!c.questionText?.trim() || !c.questionType || !c.answerVariable || !c.instanceId))
+      add(node.id, "Configure pergunta, tipo, variável e instância");
+    if (node.kind === "register_person") {
+      for (const [variable, type] of [[c.nameVariable, "full_name"], [c.emailVariable, "email"], [c.congregationVariable, "congregation"]]) {
+        const question = input.nodes.find(n => n.kind === "question" && n.config.answerVariable === variable);
+        if (!variable || !question || question.config.questionType !== type) { add(node.id, "Vincule cada campo a uma pergunta do tipo correspondente"); continue; }
+        const seen = new Set<string>();
+        const pathWithoutQuestion = (id: string): boolean => {
+          if (id === question.id || seen.has(id)) return false;
+          if (id === roots[0]?.id) return true;
+          seen.add(id);
+          return input.edges.filter(e => e.target === id).some(e => pathWithoutQuestion(e.source));
+        };
+        if (pathWithoutQuestion(node.id)) add(node.id, "Todos os caminhos até o cadastro devem passar pelas perguntas vinculadas");
+      }
+      if ((c.initialPassword ?? "@mudar123").length < 8) add(node.id, "Senha inicial deve ter pelo menos 8 caracteres");
+      if (roots[0]?.config.mode !== "message") add(node.id, "Cadastro exige um fluxo iniciado por mensagem recebida");
+    }
     if (node.kind === "kanban_move" && !c.stageId)
       add(node.id, "Escolha a coluna do Kanban");
     if (c.message) {
@@ -481,8 +523,9 @@ export function validateFlow(input: FlowDefinition): ValidationIssue[] {
       (c.title ?? "") +
       (c.interest ?? "") +
       (c.fallbackText ?? "");
-    for (const match of templates.matchAll(/{{\s*([\w]+)\s*}}/g))
-      if (!VARIABLES.includes(match[1] as (typeof VARIABLES)[number]))
+    const questionTemplates = templates + (c.questionText ?? "") + (c.invalidAnswerText ?? "");
+    for (const match of questionTemplates.matchAll(/{{\s*([\w]+)\s*}}/g))
+      if (!VARIABLES.includes(match[1] as (typeof VARIABLES)[number]) && !answerVariables.has(match[1]))
         add(node.id, `Variável desconhecida: ${match[1]}`);
   }
   return issues;
@@ -495,11 +538,12 @@ export function requiredPorts(node: FlowNode): string[] {
     return ["yes", "no"];
   if (node.kind === "switch")
     return [...(node.config.cases ?? []).map((c) => c.port), "default"];
-  if (node.kind === "response" || node.kind === "task_wait")
+  if (node.kind === "response" || node.kind === "task_wait" || node.kind === "question")
     return ["response", "timeout", "error"];
   if (
     [
       "whatsapp",
+      "register_person",
       "ai",
       "interest",
       "update",

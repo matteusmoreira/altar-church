@@ -1,5 +1,19 @@
 # Automações do Altar Church
 
+## Cadastro pelo WhatsApp — 05/10/2026
+
+O modelo pronto **Cadastro pelo WhatsApp** inicia com a mensagem exata `cadastro`, ignorando maiúsculas e espaços nas pontas. Selecione uma instância conectada no início, nas perguntas e na confirmação antes de publicar. A opção **Permitir contatos ainda não cadastrados** exige palavra-chave e não aceita filtros de pessoas; ela começa desativada em novos gatilhos comuns. Fluxos antigos sem palavra-chave continuam aceitando qualquer mensagem de uma pessoa identificada.
+
+Cada bloco **Perguntar e salvar resposta** configura texto, tipo (texto, nome completo, e-mail ou congregação), variável `cadastro_*`, mensagem de correção e prazo em minutos (padrão: 1440). Conecte resposta válida, prazo vencido e erro. As respostas são persistidas separadamente; respostas inválidas repetem a pergunta. As congregações ativas da igreja são consultadas ao perguntar: até três geram botões, acima de três geram lista, e acima de dez há páginas. Uma recusa HTTP 400 do formato interativo usa opções numeradas em texto; navegue digitando “próxima” ou “anterior”. A seleção fica vinculada às opções enviadas e é revalidada antes de cadastrar.
+
+O bloco **Cadastrar pessoa** vincula as variáveis de nome, e-mail e congregação, usa o WhatsApp privado da conversa e permite editar a senha inicial mascarada (padrão `@mudar123`). Cria pessoa ativa e acesso de membro; para pessoa já identificada pelo WhatsApp, completa apenas dados faltantes e preserva o acesso e sua senha. E-mail/WhatsApp conflitante, cadastro ambíguo, pessoa inativa e congregação indisponível não criam nem adotam outro acesso.
+
+O registro interno por execução/bloco não guarda senha e é acessível apenas pelo servidor. Se Auth não confirmar a criação, a execução fica em revisão. Em **Execuções**, abra o registro e use **Reconciliar cadastro**: a retomada só é agendada quando a identidade estiver comprovadamente vinculada ao registro interno; a conta nunca é adotada apenas pelo e-mail. Não é possível excluir um fluxo com criação de acesso ainda pendente de reconciliação.
+
+**Testar automação** permite escolher **Contato novo (simulado)** e completar as perguntas sem criar usuários. A confirmação é um bloco WhatsApp comum e editável. Um envio de teste exige clique explícito e usa somente o número privado informado, nunca o contato da conversa simulada.
+
+Migration `20261005195628_automation_whatsapp_registration.sql` validada em PostgreSQL isolado (PGlite) e aplicada no projeto vinculado em 05/10/2026 durante a preparação da fila. A aplicação atualizada ainda precisa de publicação. Login no provedor e recebimento de botões/listas em aparelhos reais precisam de homologação após a publicação.
+
 Implementação em 05/10/2026. A migration foi aplicada no banco configurado do projeto após autorização do usuário; a ativação de envios depende da homologação abaixo. Nenhum fluxo é criado/publicado automaticamente pela migration.
 
 ## Entrega
@@ -87,3 +101,24 @@ Migration incremental: `20261005184126_automation_form_kanban_testing.sql`. Nest
 Após autorização, `20261005184126_automation_form_kanban_testing.sql` foi aplicada em transação no Supabase Altar Church (`zsldqioutjxchgmmwtfi`), com trava consultiva e registro no histórico. SHA-256 confirmado: `db2cd77c40bbd7996dce066425b151159d9785d885b1ac517ce3ef652e9e113e`.
 
 A verificação remota confirmou as duas tabelas com RLS, leitura autenticada condicionada à igreja e sem escrita para usuários autenticados ou acesso anônimo. Foram conferidos a unicidade por execução/bloco, as referências do Kanban e a captura de formulário somente na inserção, com contexto e proteção contra recursão. As tabelas novas permanecem vazias. Esta aplicação não inclui publicação da aplicação nem envio real de WhatsApp.
+
+
+## Fila para picos de cadastro — 05/10/2026
+
+O webhook público autentica a instância e salva somente o evento normalizado em `automation_inbox` antes de responder HTTP 200. Falha ao salvar retorna 503 para permitir nova entrega pelo provedor. O segredo não é armazenado no evento. Duplicatas são reconhecidas; o recibo e o início/retomada da conversa são gravados na mesma transação, eliminando o intervalo que podia consumir uma mensagem sem iniciar seu fluxo.
+
+O processador publicado deve consumir até 500 mensagens e 500 etapas por chamada, com quatro consumidores. Claims possuem token, expiração e `SKIP LOCKED`; mensagens de uma conversa mantêm a ordem e aguardam a execução chegar à próxima pergunta. Mensagens não processadas recebem até oito tentativas com espera progressiva; após esse limite ficam registradas para revisão e bloqueiam respostas posteriores da mesma conversa. Ao processar, o conteúdo da entrada é apagado, preservando apenas o recibo para deduplicação. Consultas de público dentro de uma transação reutilizam sua conexão, evitando esgotar o pool.
+
+`automation_send_slots` controla o intervalo entre envios de uma instância em todos os processadores. Padrão: `AUTOMATION_SEND_INTERVAL_MS=250` (até quatro inícios de envio por segundo; configuração limitada entre 100 e 60.000 ms). Uma espera por velocidade não consome o limite de etapas nem causa falha no fluxo. HTTP 429 pausa a instância e agenda nova tentativa com `Retry-After`/espera progressiva, até cinco tentativas por entrega. O texto original da pergunta é preservado. Timeout/resultado incerto continua exigindo revisão, sem reenvio automático. Não interpretar o padrão como limite homologado do provedor: ajustar após medição real.
+
+Com o padrão de quatro envios/s, 1.500 primeiras perguntas exigem pelo menos 6min15s de capacidade de envio de um único número; as quatro mensagens por cadastro somam pelo menos 25 minutos de capacidade. Consultas, chamadas externas, agendamento e respostas humanas aumentam o tempo. O teste sem espera não é uma previsão desse tempo e não comprova capacidade do Supabase Free.
+
+### Evidência e estado da entrega
+
+- `tests/automations-queue.test.mjs`: 1.500 conversas, 6.000 entradas únicas e 12.000 recebimentos com duplicatas; 1.500 pessoas/acessos e 1.500 confirmações simuladas, nenhum cadastro duplicado e vínculos individuais conferidos. PostgreSQL local PGlite executa SQL e runtime reais; Auth, WhatsApp e passagem do intervalo de envio são simulados nesse teste. O controle de intervalo foi testado separadamente com dois processadores simultâneos.
+- Testes adicionais: falha após registrar recibo com rollback, recuperação de lease expirado, respostas consecutivas, 429, envio incerto, reconexão, permissões e rotas HTTP (persistência antes da confirmação; 503 se o banco falhar). Suíte de automações, typecheck, lint dos arquivos alterados e build de produção passaram.
+- Evidência local, sem credenciais: `.codex-local/automation-queue/load-result.json`. Resultados são da máquina local, não do Supabase hospedado.
+- O rascunho **Cadastro pelo WhatsApp — culto**, ID `da4fce9d-a05e-416f-8386-0ad762eecb88`, foi salvo na Dignus Est com a instância conectada selecionada e duas congregações ativas. Ele não está publicado.
+- As migrations de cadastro e `20261005200510_automation_burst_queue.sql` foram aplicadas no projeto `zsldqioutjxchgmmwtfi`, com checksum registrado e validação de RLS/permissões. O job `automation-worker-burst` está preparado para dez segundos e **pausado**. O agendamento anterior permanece intacto.
+- A publicação vigente respondeu HTTP 405 ao GET de saúde do novo processador, portanto ainda não contém essa versão. O script `scripts/setup-automation-cron.mjs` valida GET autenticado, schema e configuração antes de ativar o novo job e remover o antigo; reaproveita o segredo do Vault em memória quando não existe variável local. Configurar a URL canônica, publicar a aplicação atualizada, executar o probe e só então ativar o job. Não há envio durante o probe.
+- A publicação da aplicação, a ativação do novo agendamento e um piloto autorizado com WhatsApps reais continuam pendentes. Nenhum dos 1.500 cadastros simulados foi criado na igreja real e nenhuma mensagem real foi enviada nesta verificação.

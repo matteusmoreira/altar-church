@@ -68,6 +68,9 @@ export async function deleteAutomation(id: string) {
     const sending = await tx`select d.id from public.automation_deliveries d join public.automation_runs r on r.id=d.run_id and r.company_id=d.company_id where r.flow_id=${id} and r.company_id=${companyId} and d.status='sending' limit 1`;
     if (runs.some(r => r.status === "working") || sending.length)
       throw new Error("Pause o fluxo e aguarde o processamento atual terminar antes de excluir.");
+    const registrationVersions = await tx`select id from public.automation_versions where flow_id=${id} and company_id=${companyId} and exists(select 1 from jsonb_array_elements(definition->'nodes') n where n->>'kind'='register_person')`;
+    if (registrationVersions.length && (await tx`select a.id from public.automation_registrations a join public.automation_runs r on r.id=a.run_id and r.company_id=a.company_id where r.flow_id=${id} and a.company_id=${companyId} and a.status in ('creating','auth_created') limit 1`).length)
+      throw new Error("Reconcile os cadastros pendentes antes de excluir o fluxo");
     await tx`delete from public.automation_conversations where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
     await tx`delete from public.automation_interests where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
     await tx`delete from public.automation_tasks where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and flow_id=${id})`;
@@ -94,6 +97,27 @@ export async function clearAutomationHistory() {
   await writeAuditLog({ action: "automation.history_clear", entityTable: "automation_runs", companyId, metadata: { count } });
   revalidatePath("/automacoes");
   return { count };
+}
+export async function reconcileAutomationRegistration(id: string) {
+  const { companyId, user } = await automationAccess("automations.operate");
+  uuid.parse(id);
+  await getSql().begin(async tx => {
+    const [run] = await tx`select r.*,v.definition,f.status as flow_status from public.automation_runs r join public.automation_versions v on v.id=r.version_id and v.company_id=r.company_id join public.automation_flows f on f.id=r.flow_id and f.company_id=r.company_id where r.id=${id} and r.company_id=${companyId} for update of r`;
+    if (!run || run.status !== "review" || run.flow_status !== "active") throw new Error("Cadastro precisa estar em revisão e o fluxo ativo");
+    const definition = parseStoredFlowDefinition(run.definition);
+    assertDefinitionPermissions(user.role, definition);
+    if (!definition.nodes.some(n => n.id === run.node_id && n.kind === "register_person")) throw new Error("Esta execução não aguarda revisão de cadastro");
+    const [record] = await tx`select * from public.automation_registrations where run_id=${id} and node_id=${run.node_id} and company_id=${companyId} for update`;
+    if (!record || record.status === "failed") throw new Error("Cadastro sem progresso recuperável; revise os dados antes de reiniciar");
+    if (!record.profile_id && record.status !== "reserved") {
+      const owned = await tx`select id,email from auth.users where raw_app_meta_data->>'automation_registration_id'=${record.id}`;
+      if (owned.length !== 1 || String(owned[0].email).toLowerCase() !== record.email) throw new Error("Criação do acesso ainda não confirmada. Nenhum novo acesso foi criado");
+      await tx`update public.automation_registrations set auth_user_id=${owned[0].id},status=${record.status === "completed" ? "completed" : "auth_created"},updated_at=now() where id=${record.id}`;
+    }
+    await tx`update public.automation_runs set status='ready',due_at=now(),lease_token=null,lease_until=null,last_error=null where id=${id}`;
+  });
+  await writeAuditLog({ action: "automation.registration_reconcile", entityTable: "automation_runs", entityId: id, companyId });
+  revalidatePath("/automacoes");
 }
 export async function automationMediaPreview(id: string) {
   const { companyId } = await automationAccess();
@@ -123,12 +147,13 @@ export async function sendAutomationDraftTest(input: {
     (n) => n.id === input.nodeId && n.kind === "whatsapp",
   );
   if (!node?.config.message) throw new Error("Selecione um bloco de mensagem");
-  const [person] = await selectAudience(
+  const guest = input.personId === "guest" && definition.nodes.some(n => n.kind === "trigger" && n.config.allowUnknownContacts);
+  const [person] = guest ? [] : await selectAudience(
     companyId,
     undefined,
     uuid.parse(input.personId),
   );
-  if (!person) throw new Error("Pessoa não disponível nesta igreja");
+  if (!guest && !person) throw new Error("Pessoa não disponível nesta igreja");
   const context = z
     .record(z.string().max(80), z.string().max(4096))
     .parse(input.context);
@@ -143,6 +168,7 @@ export async function sendAutomationDraftTest(input: {
       destination: "person" as const,
     },
   };
+  const answerVariables = definition.nodes.filter(n => n.kind === "question").map(n => n.config.answerVariable);
   const messageIssues = validateFlow({
     schemaVersion: 1,
     nodes: [
@@ -167,7 +193,7 @@ export async function sendAutomationDraftTest(input: {
       { id: "b", source: "message", target: "end", port: "next" },
       { id: "c", source: "message", target: "end", port: "error" },
     ],
-  });
+  }).filter(issue => !answerVariables.some(variable => variable && issue.message === `Variável desconhecida: ${variable}`));
   if (messageIssues.length)
     throw new Error(messageIssues.map((i) => i.message).join("; "));
   const result = await sendAutomationTestMessage({
@@ -178,7 +204,7 @@ export async function sendAutomationDraftTest(input: {
     instanceId: testNode.config.instanceId,
     phone: z.string().min(10).max(30).parse(input.phone),
     message: node.config.message,
-    context: { ...personContext(person), ...context },
+    context: { ...(person ? personContext(person) : {}), ...context },
   });
   await writeAuditLog({
     action: "automation.message_test",

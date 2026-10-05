@@ -44,7 +44,11 @@ export function definitionPermissions(
       permissions.add("attendance.view");
     if (n.kind === "update" || n.kind === "interest")
       permissions.add("members.edit");
-    if (n.kind === "whatsapp" || (n.kind === "ai" && c.mode === "conversation"))
+    if (n.kind === "register_person") {
+      permissions.add("members.create");
+      permissions.add("members.edit");
+    }
+    if (n.kind === "whatsapp" || n.kind === "question" || (n.kind === "ai" && c.mode === "conversation"))
       permissions.add("communication.send");
     if (["task", "assign", "handoff", "notify"].includes(n.kind))
       permissions.add("automations.tasks");
@@ -77,8 +81,8 @@ export async function selectAudience(
   companyId: string,
   filter: AudienceFilter = {},
   personId?: string | null,
+  sql: ReturnType<typeof getSql> = getSql(),
 ) {
-  const sql = getSql();
   return sql<AudiencePerson[]>`
     select p.id,p.full_name,p.phone,p.person_type,p.status,p.birth_date,p.baptism_date,company.name as company_name,
      selected_cell.name as cell_name,selected_cell.leader_name,selected_cell.meeting_time
@@ -144,7 +148,7 @@ export async function getAutomationWorkspace() {
     templates,
   ] = await Promise.all([
     sql`select id,name,description,draft,revision,status,published_version_id,updated_at from public.automation_flows where company_id=${companyId} and status<>'archived' order by updated_at desc`,
-    sql`select r.id,r.flow_id,r.node_id,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} and r.history_cleared_at is null order by r.created_at desc limit 150`,
+    sql`select r.id,r.flow_id,r.node_id,(select n->>'kind' from jsonb_array_elements(v.definition->'nodes') n where n->>'id'=r.node_id limit 1) as node_kind,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id join public.automation_versions v on v.id=r.version_id and v.company_id=r.company_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} and r.history_cleared_at is null order by r.created_at desc limit 150`,
     sql`select t.*,p.full_name as person_name,pr.name as responsible_name from public.automation_tasks t left join public.people p on p.id=t.person_id and p.company_id=t.company_id left join public.profiles pr on pr.id=t.responsible_id and pr.company_id=t.company_id where t.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=t.run_id and r.company_id=t.company_id and r.history_cleared_at is null) and (${["superadmin", "admin", "pastor"].includes(user.role)} or t.responsible_id=${user.id}) order by t.created_at desc limit 150`,
     sql`select company_id,timezone,quiet_start::text,quiet_end::text,allowed_models,monthly_budget_usd,knowledge from public.automation_settings where company_id=${companyId}`,
     sql`select kind,source_id,snapshot,archived_at from public.automation_legacy_archive where company_id=${companyId} order by archived_at desc limit 500`,

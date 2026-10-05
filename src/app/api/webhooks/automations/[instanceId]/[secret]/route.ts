@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { receiveAutomationWebhook } from "@/lib/automations/webhook";
+import { enqueueAutomationWebhook } from "@/lib/automations/queue";
 export const runtime = "nodejs";
 export async function POST(
   request: Request,
@@ -18,7 +18,7 @@ export async function POST(
     if (raw.length > 262144)
       return NextResponse.json({ error: "Payload excedido" }, { status: 413 });
     return NextResponse.json(
-      await receiveAutomationWebhook(instanceId, secret, JSON.parse(raw)),
+      await enqueueAutomationWebhook(instanceId, secret, JSON.parse(raw)),
     );
   } catch (error) {
     return NextResponse.json(
@@ -27,7 +27,7 @@ export async function POST(
         status:
           error instanceof Error && error.message === "UNAUTHORIZED"
             ? 401
-            : 400,
+            : error instanceof SyntaxError || error instanceof z.ZodError ? 400 : 503,
       },
     );
   }

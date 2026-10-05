@@ -21,6 +21,7 @@ export type Workspace = {
     id: string;
     flow_id: string;
     node_id: string;
+    node_kind?: string;
     status: string;
     last_error: string | null;
     due_at: string;

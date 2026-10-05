@@ -14,6 +14,7 @@ const A = "10000000-0000-4000-8000-000000000001",
 function loadModules(sql) {
   const cache = new Map(),
     mocks = {
+      "./queue": { reserveAutomationSend: async () => {}, processAutomationInbox: async () => ({ processed: 0, failed: 0 }), DeferredAutomationDelivery: class extends Error {} },
       "./openrouter-config": { getOpenRouterApiKey: async () => process.env.OPENROUTER_API_KEY ?? "" },
       "@/lib/db/client": { getSql: () => sql },
       "@/lib/files/server": {

@@ -74,7 +74,7 @@ const portLabels: Record<string, string> = {
   timeout: "Prazo vencido",
   default: "Outra resposta",
 };
-const portLabel=(node:FlowNode|undefined,port:string)=>node?.kind === "kanban_move" ? (port === "next" ? "Sucesso" : "Erro") : node?.config.cases?.find(c=>c.port===port)?.value??portLabels[port]??port;
+const portLabel=(node:FlowNode|undefined,port:string)=>node?.kind === "question" && port === "response" ? "Resposta válida" : ["kanban_move", "register_person"].includes(node?.kind ?? "") ? (port === "next" ? "Sucesso" : "Erro") : node?.config.cases?.find(c=>c.port===port)?.value??portLabels[port]??port;
 type CanvasNode = Node<{ node: FlowNode; issues: string[] }, "automation">;
 function AutomationNode({ data, selected }: NodeProps<CanvasNode>) {
   const ports = requiredPorts(data.node);
@@ -862,6 +862,18 @@ function Editor({
                     { id: "event", name: "Evento do sistema" },
                     { id: "message", name: "Mensagem recebida" },
                   ])}
+                  {active.config.mode === "message" && (
+                    <>
+                      {field("Palavra-chave (mensagem exata)", "keyword")}
+                      <p className="text-xs text-muted-foreground">Ignora maiúsculas e espaços nas pontas. Vazio mantém qualquer mensagem.</p>
+                      <label className="flex items-start gap-2 text-xs">
+                        <input type="checkbox" checked={active.config.allowUnknownContacts ?? false}
+                          onChange={e => updateConfig({ allowUnknownContacts: e.target.checked, ...(e.target.checked ? { filter: {} } : {}) })} />
+                        Permitir contatos ainda não cadastrados
+                      </label>
+                      {active.config.allowUnknownContacts && <p className="text-xs text-muted-foreground">Exige palavra-chave. A pessoa será criada somente no bloco Cadastrar pessoa; filtros de cadastro não se aplicam.</p>}
+                    </>
+                  )}
                   {active.config.mode === "schedule" && (
                     <>
                       {pick("Recorrência", "schedule", [
@@ -955,12 +967,13 @@ function Editor({
                     active.config.mode ?? "",
                   ) && field("Horário", "time", "time")}
                   {active.config.mode === "message" && instance()}
-                  <p className="text-xs font-semibold">Quem participa</p>
+                  {!active.config.allowUnknownContacts && <><p className="text-xs font-semibold">Quem participa</p>
                   <FilterPanel
                     filter={active.config.filter ?? {}}
                     onChange={(filter) => updateConfig({ filter })}
                     workspace={workspace}
                   />
+                  </>}
                 </>
               )}
               {active.kind === "audience" && (
@@ -1049,6 +1062,30 @@ function Editor({
                   {field("Ou até data e hora", "until", "datetime-local")}
                 </>
               )}
+              {active.kind === "question" && (
+                <>
+                  {instance()}
+                  {field("Texto da pergunta", "questionText")}
+                  {pick("Tipo de resposta", "questionType", [
+                    { id: "text", name: "Texto" }, { id: "full_name", name: "Nome completo" },
+                    { id: "email", name: "E-mail" }, { id: "congregation", name: "Congregação" },
+                  ])}
+                  {field("Salvar resposta na variável", "answerVariable")}
+                  <p className="text-xs text-muted-foreground">Use cadastro_nome, cadastro_email ou outro nome começando com cadastro_. Use a variável nas mensagens com {"{{cadastro_nome}}"}.</p>
+                  {field("Prazo em minutos", "minutes", "number")}
+                  {field("Mensagem de resposta inválida", "invalidAnswerText")}
+                  {active.config.questionType === "congregation" && <p className="text-xs text-muted-foreground">Opções da própria igreja: até 3 em botões; acima de 3 em lista, com páginas quando necessário. A resposta salva o identificador da congregação.</p>}
+                </>
+              )}
+              {active.kind === "register_person" && (
+                <>
+                  {([ ["nameVariable", "Variável do nome completo"], ["emailVariable", "Variável do e-mail"], ["congregationVariable", "Variável da congregação"] ] as const).map(([key, label]) => (
+                    <div key={key}>{pick(label, key, definition.nodes.filter(n => n.kind === "question" && n.config.answerVariable).map(n => ({ id: n.config.answerVariable!, name: `${n.label} · ${n.config.answerVariable}` })))}</div>
+                  ))}
+                  {field("Senha inicial", "initialPassword", "password")}
+                  <p className="text-xs text-muted-foreground">WhatsApp obtido da conversa. Cria pessoa ativa e acesso de membro. Para pessoa existente, completa apenas dados faltantes e preserva a senha.</p>
+                </>
+              )}
               {active.kind === "kanban_move" && (
                 <>
                   {pick("Coluna do Kanban", "stageId", workspace.stages)}
@@ -1077,6 +1114,7 @@ function Editor({
                   {active.config.destination === "group" &&
                     pick("Célula vinculada", "cellId", workspace.cells)}
                   <MessageEditor
+                    variables={definition.nodes.filter(n => n.kind === "question" && n.config.answerVariable).map(n => n.config.answerVariable!)}
                     value={active.config.message ?? { type: "text", text: "" }}
                     onChange={(message) => updateConfig({ message })}
                     preview={preview}
