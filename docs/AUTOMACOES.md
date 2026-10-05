@@ -34,11 +34,11 @@ Integrações de formulário, visita à célula e escalas/lembretes do voluntari
 2. Disponibilizar aplicação e `volunteer-delivery-worker` atualizados na mesma entrega; aplicar a migration antes de expor as telas novas.
 3. Implantar a função `automation-worker`. `supabase/config.toml` desativa a verificação JWT apenas nessa função; o segredo dedicado é obrigatório.
 4. Configurar, sem imprimir valores:
-   - Aplicação: `AUTOMATION_WORKER_SECRET`, `OPENROUTER_API_KEY` central e `APP_URL` canônica HTTPS.
+   - Aplicação: `AUTOMATION_WORKER_SECRET` e `APP_URL` canônica HTTPS. Cadastre a chave central no painel `/admin`, aba **OpenRouter / IA**; `OPENROUTER_API_KEY` continua como alternativa quando nenhuma chave foi cadastrada no painel.
    - Edge Function: `AUTOMATION_WORKER_SECRET` com o mesmo valor e `AUTOMATION_DISPATCH_URL` apontando para `https://<app>/api/internal/automations/dispatch`.
    - Supabase Vault: `automation_worker_url` apontando para `https://<project>.supabase.co/functions/v1/automation-worker` e `automation_worker_secret` com o mesmo segredo.
 5. Confirmar `pg_cron`, `pg_net`, Vault e o job `automation-worker-minute`, com execução bem-sucedida. Se `pg_cron` não estiver instalado, a migration não cria o job; habilitar a extensão e cadastrar o agendamento durante a configuração de homologação.
-6. Superadmin define modelos compatíveis com respostas estruturadas e orçamento da igreja. A igreja configura horários, contexto público, instâncias e grupos. A chave central não é solicitada/mostrada na interface.
+6. Na aba **OpenRouter / IA** do painel `/admin`, o superadmin cadastra/substitui a chave central, seleciona a igreja e salva os modelos autorizados e seu orçamento mensal em US$. O catálogo lista somente modelos compatíveis com respostas estruturadas. A chave cadastrada fica no Supabase Vault (`altar_church_openrouter_api_key`), tem prioridade sobre a variável de ambiente e nunca é devolvida ao navegador. Não é necessário reiniciar a aplicação ao substituir a chave. A igreja configura horários, contexto público, instâncias e grupos em `/automacoes?tab=Configurações`.
 7. Conectar o webhook adicional pela interface. Isso preserva os webhooks existentes. Se houver timeout na configuração, revisar os webhooks da instância antes de repetir. Tratar URLs do webhook como credenciais e evitar logs com seu caminho/segredo.
 8. Criar rascunhos, revisar configurações e público, publicar explicitamente e testar com destinatário controlado em igreja cujo `status` é `test`. Nenhuma publicação de rascunho por IA ocorre sozinha.
 

@@ -17,6 +17,7 @@ import {
   personContext,
 } from "./data";
 import { callAutomationAI, openRouterModels } from "./ai";
+import { getOpenRouterApiKey } from "./openrouter-config";
 import {
   uploadManagedFile,
   getOptionalFile,
@@ -154,6 +155,8 @@ export async function saveAutomation(input: {
 export async function publishAutomation(id: string, revision: number) {
   const { user, companyId } = await automationAccess("automations.publish"),
     sql = getSql();
+  // Read before reserving the transaction connection; small pools may have only one slot.
+  const openRouterKey = await getOpenRouterApiKey();
   await sql.begin(async (tx) => {
     const [flow] =
       await tx`select * from public.automation_flows where id=${uuid.parse(id)} and company_id=${companyId} for update`;
@@ -212,7 +215,7 @@ export async function publishAutomation(id: string, revision: number) {
         node.kind === "ai" &&
         (!settings?.allowed_models.includes(c.model) ||
           Number(settings.monthly_budget_usd) <= 0 ||
-          !process.env.OPENROUTER_API_KEY)
+          !openRouterKey)
       )
         throw new Error(
           "IA exige modelo autorizado, orçamento e chave central configurada",

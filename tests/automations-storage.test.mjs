@@ -36,6 +36,7 @@ test("saved and previously double-encoded drafts load with their original blocks
     "@/lib/types": { hasPermission: () => true },
     "@/lib/files/server": {},
     "./ai": {},
+    "./openrouter-config": { getOpenRouterApiKey: async () => "" },
     "./runtime": {},
     "./delivery": {},
   };

@@ -71,6 +71,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { OpenRouterPanel } from "./openrouter-panel"
 import {
   Table,
   TableBody,
@@ -80,7 +81,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-type AdminTab = "overview" | "companies" | "users" | "plans" | "modules"
+type AdminTab = "overview" | "companies" | "users" | "plans" | "modules" | "ai"
 type ViewMode = "list" | "grid"
 
 type DeleteTarget =
@@ -600,7 +601,12 @@ export function SuperAdminConsole({ initialData, initialTab = "overview" }: Supe
             <Layers3 />
             Módulos
           </TabsTrigger>
+          <TabsTrigger value="ai"><KeyRound />OpenRouter / IA</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="ai" className="mt-0">
+          {activeTab === "ai" && <OpenRouterPanel companies={data.companies} />}
+        </TabsContent>
 
         <TabsContent value="overview" className="mt-0 space-y-6">
           <div className="grid gap-4 lg:grid-cols-2">

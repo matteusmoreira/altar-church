@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getSql } from "@/lib/db/client";
+import { getOpenRouterApiKey } from "./openrouter-config";
 import {
   flowSchema,
   validateFlow,
@@ -50,7 +51,7 @@ export async function callAutomationAI(input: {
   maxTokens?: number;
   generation?: boolean;
 }) {
-  const token = process.env.OPENROUTER_API_KEY;
+  const token = await getOpenRouterApiKey();
   if (!token)
     throw new Error("OpenRouter não configurado pelo administrador do SaaS");
   const sql = getSql();

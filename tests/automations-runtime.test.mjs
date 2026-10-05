@@ -14,6 +14,7 @@ const A = "10000000-0000-4000-8000-000000000001",
 function loadModules(sql) {
   const cache = new Map(),
     mocks = {
+      "./openrouter-config": { getOpenRouterApiKey: async () => process.env.OPENROUTER_API_KEY ?? "" },
       "@/lib/db/client": { getSql: () => sql },
       "@/lib/files/server": {
         createSignedUrlsByStoragePath: async (paths) =>

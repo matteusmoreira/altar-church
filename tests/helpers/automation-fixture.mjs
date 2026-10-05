@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 function loadModules(sql, extraMocks) {
   const cache = new Map(),
     mocks = {
+      "./openrouter-config": { getOpenRouterApiKey: async () => "" },
       "@/lib/db/client": { getSql: () => sql },
       "@/lib/files/server": {
         createSignedUrlsByStoragePath: async (paths) =>
