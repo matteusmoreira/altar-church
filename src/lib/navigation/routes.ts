@@ -1,4 +1,5 @@
 export const dashboardRoutes = {
+  "automations": "/automacoes",
   "admin": "/admin",
   "dashboard": "/dashboard",
   "attendance": "/presenca",

@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Workflow,
   Building2,
   CalendarDays,
   ChevronRight,
@@ -86,6 +87,7 @@ const navGroups: { label: string; items: NavigationItem[] }[] = [
   {
     label: "Comunicar",
     items: [
+      { href: dashboardRoutes.automations, label: "Automações", icon: Workflow, moduleId: "automations" },
       { href: dashboardRoutes.events, label: "Eventos", icon: CalendarDays, moduleId: "events" },
       { href: dashboardRoutes.content, label: "Conteúdo", icon: Newspaper, moduleId: "content" },
       { href: dashboardRoutes.notifications, label: "Notificação", icon: Bell, moduleId: "notifications" },
@@ -180,6 +182,7 @@ function SidebarContent({
   const pathname = usePathname()
   const { logout, hasRole, user } = useAuth()
   const canSeeModule = (moduleId: string) => {
+    if (moduleId === "automations" && !hasRole(["superadmin", "admin", "pastor", "communication"])) return false
     if (user?.role === "volunteer") {
       return ["dashboard", "volunteers"].includes(moduleId) && (enabledModuleIds === null || enabledModuleIds.includes(moduleId))
     }

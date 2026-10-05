@@ -3,6 +3,7 @@ import { jsonbParam, parseJsonbObject } from "@/lib/db/jsonb"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { buildUazapiPayload, parseDirectMessageConfig, renderDirectMessage } from "@/lib/forms/direct-message"
 import type { FormDirectMessage } from "@/lib/forms/types"
+import { automationOwnsDelivery } from "@/lib/automations/ownership"
 
 type Queryable = ReturnType<typeof getSql>
 
@@ -130,6 +131,7 @@ export async function dispatchCellVisitWhatsAppAutomation({
   const sql = getSql()
 
   try {
+    if(await automationOwnsDelivery(companyId,"cell.visit_requested"))return
     // 1. Resolve cell and leader
     const cellRows = await sql<{
       name: string

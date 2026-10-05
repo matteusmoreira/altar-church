@@ -14,17 +14,17 @@ import {
   CalendarDays,
   Cake,
   CheckCircle2,
-  Circle,
+
   Church,
   ClipboardList,
-  Clock,
+
   Edit3,
   ExternalLink,
   FileCheck2,
   FileText,
   HeartPulse,
   KeyRound,
-  Loader2,
+
   Mail,
   MapPin,
   Pencil,
@@ -45,15 +45,15 @@ import { formatBrazilianWhatsapp } from "@/lib/auth/phone"
 import { cn } from "@/lib/utils"
 import {
   assignPersonActivity,
-  enrollPersonInJourney,
+
   invitePersonAccess,
   removePersonActivity,
   togglePersonActivityAssignment,
-  toggleStepProgress,
-  unenrollPersonFromJourney,
+
+
   savePersonPhoto,
 } from "../actions"
-import { FollowUpPanel } from "./follow-up-panel"
+
 import type {
   PersonAccessRole,
   PersonDetail,
@@ -72,9 +72,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { Switch } from "@/components/ui/switch"
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
+
 import { KidEditDialog } from "./kid-edit-dialog"
 
 interface MemberDetailClientProps {
@@ -253,7 +253,7 @@ function DetailItem({
   )
 }
 
-export function MemberDetailClient({ person, cells, responsibleOptions, canManageKids }: MemberDetailClientProps) {
+export function MemberDetailClient({ person, cells,  canManageKids }: MemberDetailClientProps) {
   const router = useRouter()
   const { hasRole } = useAuth()
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
@@ -270,22 +270,14 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
   const [isAssigningActivity, setIsAssigningActivity] = useState(false)
 
   // Journey enrollment state
-  const [enrollJourneyOpen, setEnrollJourneyOpen] = useState(false)
-  const [selectedJourneyId, setSelectedJourneyId] = useState("")
-  const [isEnrollingJourney, setIsEnrollingJourney] = useState(false)
+
+
+
 
   // Step toggle & note modal state
-  const [stepModalOpen, setStepModalOpen] = useState(false)
-  const [stepModalData, setStepModalData] = useState<{
-    journeyId: string
-    journeyName: string
-    stepId: string
-    stepName: string
-    completed: boolean
-    completedAt: string
-    notes: string
-  } | null>(null)
-  const [isSavingStep, setIsSavingStep] = useState(false)
+
+
+
 
   // Photo management & lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -432,105 +424,19 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
     }
   }
 
-  const handleEnrollJourney = async () => {
-    if (!selectedJourneyId) {
-      toast.error("Selecione uma trilha de integração")
-      return
-    }
-    setIsEnrollingJourney(true)
-    try {
-      const res = await enrollPersonInJourney({
-        personId: person.id,
-        journeyId: selectedJourneyId,
-      })
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao iniciar trilha")
-        return
-      }
-      toast.success("Pessoa inscrita na trilha com sucesso!")
-      setEnrollJourneyOpen(false)
-      setSelectedJourneyId("")
-      router.refresh()
-    } catch {
-      toast.error("Erro ao inscrever na trilha")
-    } finally {
-      setIsEnrollingJourney(false)
-    }
-  }
 
-  const handleUnenrollJourney = async (enrollmentId: string) => {
-    try {
-      const res = await unenrollPersonFromJourney(enrollmentId)
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao encerrar trilha")
-        return
-      }
-      toast.success("Inscrição na trilha encerrada com sucesso.")
-      router.refresh()
-    } catch {
-      toast.error("Erro ao encerrar trilha")
-    }
-  }
 
-  const handleOpenStepModal = (
-    journeyId: string,
-    journeyName: string,
-    step: {
-      stepId: string
-      stepName: string
-      completedAt: string | null
-      notes: string
-    },
-  ) => {
-    const isDone = Boolean(step.completedAt)
-    setStepModalData({
-      journeyId,
-      journeyName,
-      stepId: step.stepId,
-      stepName: step.stepName,
-      completed: !isDone,
-      completedAt: step.completedAt ? step.completedAt.split("T")[0] : format(new Date(), "yyyy-MM-dd"),
-      notes: step.notes || "",
-    })
-    setStepModalOpen(true)
-  }
 
-  const handleSaveStepProgress = async () => {
-    if (!stepModalData) return
-    setIsSavingStep(true)
-    try {
-      const res = await toggleStepProgress({
-        personId: person.id,
-        journeyId: stepModalData.journeyId,
-        stepId: stepModalData.stepId,
-        completed: stepModalData.completed,
-        notes: stepModalData.notes.trim() || undefined,
-        completedAt: stepModalData.completed ? stepModalData.completedAt : null,
-      })
-      if (!res.ok) {
-        toast.error(res.error ?? "Erro ao atualizar etapa")
-        return
-      }
-      toast.success(
-        stepModalData.completed ? "Etapa concluída com sucesso!" : "Etapa reaberta.",
-      )
-      setStepModalOpen(false)
-      setStepModalData(null)
-      router.refresh()
-    } catch {
-      toast.error("Erro ao atualizar etapa")
-    } finally {
-      setIsSavingStep(false)
-    }
-  }
+
+
+
+
 
   const assignableActivities = (person.availableActivities ?? []).filter(
     (act) => !person.activities.some((pa) => pa.activityId === act.id),
   )
 
-  const enrollableJourneys = (person.availableJourneys ?? []).filter(
-    (j) => !person.enrolledJourneys?.some((ej) => ej.journeyId === j.id),
-  )
+
 
 
   return (
@@ -1416,207 +1322,11 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
               </Card>
             </TabsContent>
 
-            <TabsContent value="jornada" className="mt-4 space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold tracking-tight">Trilhas de Integração & Crescimento</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Acompanhe e registre os passos espirituais, discipulado e formação ministerial desta pessoa.
-                  </p>
-                </div>
-                {enrollableJourneys.length > 0 && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setSelectedJourneyId("")
-                      setEnrollJourneyOpen(true)
-                    }}
-                    className="gradient-primary shrink-0"
-                  >
-                    <Plus className="mr-2 h-4 w-4" /> Iniciar nova trilha
-                  </Button>
-                )}
-              </div>
-
-              {person.enrolledJourneys.length === 0 ? (
-                <Card className="glass">
-                  <CardContent className="py-10 text-center space-y-3">
-                    <Route className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                    <p className="text-sm text-muted-foreground">
-                      {enrollableJourneys.length > 0 ? "Escolha uma trilha para começar a acompanhar as etapas desta pessoa." : "Não há trilhas disponíveis para iniciar. Configure uma trilha com etapas e depois volte aqui para inscrever esta pessoa."}
-                    </p>
-                    {enrollableJourneys.length > 0 ? (
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          setSelectedJourneyId("")
-                          setEnrollJourneyOpen(true)
-                        }}
-                        className="gradient-primary"
-                      >
-                        <Plus className="mr-1.5 h-4 w-4" /> Iniciar primeira trilha
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        render={<Link href="/pessoas?tab=config#trilhas" />}
-                        nativeButton={false}
-                        variant="outline"
-                      >
-                        Configurar trilhas e etapas
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-4">
-                  {person.enrolledJourneys.map((journey) => {
-                    const completedStepsCount = journey.steps.filter((s) => s.completedAt).length
-                    const totalStepsCount = journey.steps.length
-                    const progress = totalStepsCount > 0 ? Math.round((completedStepsCount / totalStepsCount) * 100) : 0
-
-                    return (
-                      <Card key={journey.enrollmentId} className="glass">
-                        <CardHeader className="pb-3">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                  <Route className="h-4 w-4 text-primary" />
-                                  {journey.journeyName}
-                                </CardTitle>
-                                {journey.status === "completed" ? (
-                                  <Badge className="bg-success/15 text-success border-success/30 text-xs">
-                                    Concluída
-                                  </Badge>
-                                ) : journey.status === "dropped" ? (
-                                  <Badge variant="outline" className="text-muted-foreground text-xs">
-                                    Encerrada
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-info/15 text-info border-info/30 text-xs">
-                                    Em andamento
-                                  </Badge>
-                                )}
-                              </div>
-                              {journey.description ? (
-                                <CardDescription className="text-xs">{journey.description}</CardDescription>
-                              ) : null}
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-xs font-semibold text-muted-foreground">
-                                {completedStepsCount} de {totalStepsCount} etapas ({progress}%)
-                              </span>
-                              {journey.status !== "dropped" && !journey.enrollmentId.startsWith("legacy-") && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleUnenrollJourney(journey.enrollmentId)}
-                                  title="Encerrar inscrição nesta trilha"
-                                >
-                                  Encerrar trilha
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
-                            <div
-                              className="h-full rounded-full bg-primary transition-all duration-300"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                        </CardHeader>
-
-                        <CardContent>
-                          <div className="space-y-2.5">
-                            {journey.steps.map((step) => {
-                              const done = Boolean(step.completedAt)
-                              return (
-                                <div
-                                  key={step.stepId}
-                                  className="flex items-start justify-between gap-3 rounded-lg border border-border/40 p-3 bg-muted/10 hover:border-primary/30 transition-colors"
-                                >
-                                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                                    <button
-                                      type="button"
-                                      disabled={journey.status === "dropped"}
-                                      onClick={() => handleOpenStepModal(journey.journeyId, journey.journeyName, step)}
-                                      className="mt-0.5 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                                      title={done ? "Clique para gerenciar conclusão" : "Clique para concluir esta etapa"}
-                                    >
-                                      {done ? (
-                                        <CheckCircle2 className="h-5 w-5 text-success hover:scale-110 transition-transform" />
-                                      ) : (
-                                        <Circle className="h-5 w-5 text-muted-foreground hover:scale-110 hover:text-primary transition-all" />
-                                      )}
-                                    </button>
-
-                                    <div className="min-w-0 flex-1 space-y-1">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <p
-                                          className={`text-sm font-medium ${
-                                            done ? "line-through text-muted-foreground" : "text-foreground"
-                                          }`}
-                                        >
-                                          {step.stepName}
-                                        </p>
-                                        {step.estimatedDays ? (
-                                          <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground py-0">
-                                            <Clock className="h-2.5 w-2.5" /> SLA: ~{step.estimatedDays}d
-                                          </Badge>
-                                        ) : null}
-                                        {done ? (
-                                          <Badge variant="outline" className="border-success/30 text-success text-[10px] py-0">
-                                            Concluída em {formatDate(step.completedAt)}
-                                          </Badge>
-                                        ) : null}
-                                      </div>
-
-                                      {step.description ? (
-                                        <p className="text-xs text-muted-foreground">{step.description}</p>
-                                      ) : null}
-
-                                      {step.notes ? (
-                                        <div className="mt-1.5 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground border border-border/20">
-                                          <strong className="text-foreground">Anotação pastoral:</strong> {step.notes}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </div>
-
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 text-xs shrink-0 text-muted-foreground hover:text-foreground"
-                                    disabled={journey.status === "dropped"}
-                                      onClick={() => handleOpenStepModal(journey.journeyId, journey.journeyName, step)}
-                                  >
-                                    <Edit3 className="mr-1 h-3.5 w-3.5" />
-                                    {done ? "Editar conclusão" : "Concluir etapa"}
-                                  </Button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
-            </TabsContent>
+            <TabsContent value="jornada" className="mt-4"><Card><CardContent className="space-y-3 p-5"><p className="font-semibold">Histórico de trilhas arquivado</p><p className="text-sm text-muted-foreground">Consulte os registros preservados no módulo Automações.</p><Button render={<Link href="/automacoes?tab=Hist%C3%B3rico%20arquivado" />} nativeButton={false}>Consultar histórico</Button></CardContent></Card></TabsContent>
 
             <TabsContent value="linha-do-tempo" className="mt-4">
-              <FollowUpPanel
-                personId={person.id}
-                companyId={person.companyId}
-                timeline={person.timeline}
-                tasks={person.followUpTasks}
-                responsibleOptions={responsibleOptions}
-              />
+              <Card><CardContent className="space-y-3 p-5"><p className="font-semibold">Automações e acompanhamento</p><p className="text-sm text-muted-foreground">Os fluxos e tarefas agora ficam no módulo Automações. A linha do tempo preserva os registros anteriores.</p><Button render={<Link href="/automacoes" />} nativeButton={false}>Abrir automações</Button></CardContent></Card>
+              <Card className="mt-4"><CardContent className="space-y-3 p-5"><h3 className="font-semibold">Linha do tempo</h3>{person.timeline.length===0?<p className="text-sm text-muted-foreground">Nenhum registro no histórico.</p>:person.timeline.map(item=><div key={`${item.kind}:${item.id}`} className="border-l-2 border-primary/30 pl-3"><p className="text-sm font-medium">{item.title}</p><p className="text-xs text-muted-foreground">{new Date(item.occurredAt).toLocaleString("pt-BR")} · {item.source}</p>{item.description&&<p className="mt-1 whitespace-pre-wrap text-sm">{item.description}</p>}</div>)}</CardContent></Card>
             </TabsContent>
           </Tabs>
         </div>
@@ -1871,123 +1581,6 @@ export function MemberDetailClient({ person, cells, responsibleOptions, canManag
               className="gradient-primary"
             >
               {isAssigningActivity ? "Vinculando..." : "Vincular atividade"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Enroll Journey Dialog */}
-      <Dialog open={enrollJourneyOpen} onOpenChange={setEnrollJourneyOpen}>
-        <DialogContent className="glass-strong sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Iniciar Trilha de Integração</DialogTitle>
-            <DialogDescription>
-              Inscrever {person.fullName} em uma trilha de crescimento espiritual ou discipulado.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-3">
-            <div className="grid gap-2">
-              <Label>Trilha de Integração *</Label>
-              <Select
-                value={selectedJourneyId}
-                onValueChange={(val) => val && setSelectedJourneyId(val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma trilha..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {enrollableJourneys.map((j) => (
-                    <SelectItem key={j.id} value={j.id}>
-                      {j.name} {j.description ? `— ${j.description}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEnrollJourneyOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleEnrollJourney}
-              disabled={isEnrollingJourney || !selectedJourneyId}
-              className="gradient-primary"
-            >
-              {isEnrollingJourney ? "Inscrevendo..." : "Iniciar Trilha"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Step Completion & Notes Modal */}
-      <Dialog open={stepModalOpen} onOpenChange={setStepModalOpen}>
-        <DialogContent className="glass-strong sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{stepModalData?.stepName}</DialogTitle>
-            <DialogDescription>
-              Trilha: {stepModalData?.journeyName} · {person.fullName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-3">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/40 p-3 bg-muted/20">
-              <div>
-                <Label>Status da etapa</Label>
-                <p className="text-xs text-muted-foreground">
-                  {stepModalData?.completed
-                    ? "Etapa será marcada como CONCLUÍDA"
-                    : "Etapa será mantida como PENDENTE"}
-                </p>
-              </div>
-              <Switch
-                checked={stepModalData?.completed ?? false}
-                onCheckedChange={(checked) =>
-                  setStepModalData((prev) => (prev ? { ...prev, completed: checked } : null))
-                }
-              />
-            </div>
-
-            {stepModalData?.completed ? (
-              <div className="grid gap-2">
-                <Label>Data de Conclusão</Label>
-                <Input
-                  type="date"
-                  value={stepModalData.completedAt}
-                  onChange={(e) =>
-                    setStepModalData((prev) => (prev ? { ...prev, completedAt: e.target.value } : null))
-                  }
-                />
-              </div>
-            ) : null}
-
-            <div className="grid gap-2">
-              <Label>Anotações Pastorais / Observações</Label>
-              <Textarea
-                placeholder="Ex.: Conversa realizada, participou do culto, batizado na congregação sede..."
-                rows={3}
-                value={stepModalData?.notes ?? ""}
-                onChange={(e) =>
-                  setStepModalData((prev) => (prev ? { ...prev, notes: e.target.value } : null))
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStepModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSaveStepProgress}
-              disabled={isSavingStep}
-              className="gradient-primary"
-            >
-              {isSavingStep ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
-                </>
-              ) : (
-                "Salvar etapa"
-              )}
             </Button>
           </DialogFooter>
         </DialogContent>

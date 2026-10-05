@@ -34,86 +34,13 @@ test("follow-up configuration accepts today's deadline and rejects invalid days 
   }
 })
 
-test("editing a step preserves its order when the form sends no new position", async () => {
-  let position = 3
-  const api = actions(async (strings, ...values) => {
-    const query = strings.join("?")
-    if (query.includes("select id from public.member_journeys")) return [{ id: "journey" }]
-    if (query.includes("update public.member_journey_steps")) {
-      assert.match(query, /sort_order = coalesce\(\?::integer, sort_order\)/)
-      position = values[2] ?? position
-      assert.match(query, /journey_id = \?/)
-      return [{ id: "step" }]
-    }
-    throw new Error("Unexpected query")
-  })
-  const result = await api.saveJourneyStep({ id: "step", journeyId: "journey", name: "Nome atualizado", estimatedDays: 7 })
-  assert.equal(result.ok, true)
-  assert.equal(position, 3)
-})
-
-test("invalid suggested deadlines are rejected before writing a step", async () => {
-  const api = actions(async () => { throw new Error("Must not reach database") })
-  for (const estimatedDays of [0, -1, 1.5, 366]) {
-    const result = await api.saveJourneyStep({ journeyId: "journey", name: "Etapa", estimatedDays })
-    assert.equal(result.ok, false)
-    assert.match(result.error, /entre 1 e 365/)
-  }
-})
-
-test("empty or unavailable journeys cannot enroll a person", async () => {
-  let inserts = 0
-  const api = actions(async (strings) => {
-    const query = strings.join("?")
-    if (query.includes("insert into")) inserts++
-    assert.match(query, /step\.is_active = true/)
-    assert.match(query, /person\.company_id = journey\.company_id/)
-    return []
-  })
-  const result = await api.enrollPersonInJourney({ personId: "person", journeyId: "journey" })
-  assert.equal(result.ok, false)
-  assert.equal(inserts, 0)
-})
-
-test("ending a journey keeps the enrollment to avoid resurrecting it from legacy progress", async () => {
-  let updated = false
-  const api = actions(async (strings) => {
-    const query = strings.join("?")
-    assert.match(query, /update public\.person_journey_enrollments/)
-    assert.match(query, /status = 'dropped'/)
-    assert.doesNotMatch(query, /delete from/)
-    updated = true
-    return [{ person_id: "person" }]
-  })
-  assert.equal((await api.unenrollPersonFromJourney("enrollment")).ok, true)
-  assert.equal(updated, true)
-})
-
-test("follow-up processing skips handled candidates before the limit and preserves zero-day deadlines", async () => {
-  const kinds = ["new_visitor", "visitor_without_contact", "without_cell", "without_portal_access", "new_prayer_request", "recurring_absence"]
-  const candidateQueries = []
-  const api = load("src/lib/people/follow-up.ts", {
-    "./types": { isFollowUpPriority: (value) => ["low", "normal", "high", "urgent"].includes(value) },
-    "@/lib/db/client": { getSql: () => async (strings, ...values) => {
-      const query = strings.join("?")
-      if (query.includes("select id, trigger_kind")) return kinds.map((trigger_kind) => ({ id: trigger_kind, trigger_kind, name: trigger_kind, config: { dueDays: 0 } }))
-      if (query.includes("select distinct company_id")) return [{ company_id: "church" }]
-      if (query.includes("existing_task")) {
-        assert.ok(query.indexOf("existing_task.source_key") < query.indexOf("limit ?"))
-        candidateQueries.push(query)
-        return [{ person_id: "person", source_key: `${values[0]}:person` }]
-      }
-      if (query.includes("insert into public.person_follow_up_tasks")) {
-        assert.equal(values.at(-1), 0)
-        return [{ id: "task" }]
-      }
-      return []
-    } },
-  })
-  const result = await api.processFollowUpTriggers("church", 100)
-  assert.equal(result.created, 6)
-  assert.equal(candidateQueries.length, 6)
-  assert.match(candidateQueries[3], /person_type in \('member', 'leader', 'volunteer'\)/)
+test("archived journeys and rules refuse mutations without touching the database", async () => {
+ const api=actions(async()=>{throw new Error("Archived APIs must not query")})
+ for(const [fn,arg] of [["saveJourneyStep",{}],["enrollPersonInJourney",{}],["unenrollPersonFromJourney","id"],["updateMemberJourney",{}],["toggleStepProgress",{}]]){
+  const result=await api[fn](arg);assert.equal(result.ok,false);assert.match(result.error,/arquivad/i)
+ }
+ const follow=load("src/lib/people/follow-up.ts",{"./types":{},"@/lib/db/client":{getSql:()=>{throw new Error("Old rules must not query")}}})
+ assert.deepEqual(await follow.processFollowUpTriggers("church",100),{triggers:0,created:0})
 })
 
 test("a person with no enrollment is not enrolled in every configured journey", async () => {

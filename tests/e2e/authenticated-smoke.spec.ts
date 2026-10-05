@@ -75,7 +75,7 @@ test("admin logado abre Pessoas e detalhe real de pessoa", async ({ page }) => {
   await expectNoDevError(page)
   await expect(page.getByText("Histórico pastoral")).toBeVisible()
   await page.getByRole("tab", { name: "Jornada" }).click()
-  await expect(page.getByText("Trilhas de Integração")).toBeVisible()
+  await expect(page.getByText("Histórico de trilhas arquivado", { exact: true })).toBeVisible()
 })
 
 test("admin logado revisa duplicidades em Pessoas", async ({ page }) => {
@@ -266,8 +266,9 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
     { path: "/discipulado", heading: /Planos de Leitura/i },
     { path: "/comunicacao", heading: /Comunica/i },
     { path: "/notificacao", heading: /Notifica/i },
-    { path: "/pessoas/follow-up", heading: /Follow-up/i },
-    { path: "/configuracoes/follow-up", heading: /Regras de follow-up/i },
+    { path: "/automacoes", heading: /^Automações$/i },
+    { path: "/pessoas/follow-up", heading: /^Automações$/i },
+    { path: "/configuracoes/follow-up", heading: /^Automações$/i },
     { path: "/crm", heading: /CRM/i },
     { path: "/celulas/saude", heading: /Saúde das células/i },
     { path: "/financeiro", heading: /Financeiro/i },
@@ -282,7 +283,7 @@ test("admin logado faz smoke dos modulos P4", async ({ page }) => {
   }
 })
 
-test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ page }) => {
+test("admin logado abre Pessoa 360 com linha do tempo preservada", async ({ page }) => {
   await gotoAuthenticated(page, e2e.accounts.admin, "/dashboard")
   await page.goto("/pessoas", { waitUntil: "domcontentloaded" })
   await expectNoDevError(page)
@@ -293,8 +294,9 @@ test("admin logado abre Pessoa 360 com linha do tempo e follow-up", async ({ pag
   await expectNoDevError(page)
   await expect(page.getByRole("heading", { name: /Linha do tempo/i })).toHaveCount(0)
   await page.getByRole("tab", { name: /Linha do tempo/i }).click()
-  await expect(page.getByText("Novo follow-up", { exact: true })).toBeVisible()
-  await expect(page.getByText("Linha do tempo integrada")).toBeVisible()
+  await expect(page.getByRole("button", { name: "Abrir automações", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Linha do tempo", exact: true })).toBeVisible()
+  await expect(page.getByText("Novo follow-up", { exact: true })).toHaveCount(0)
 })
 
 test("admin logado exporta CSV dos relatorios operacionais", async ({ page }) => {

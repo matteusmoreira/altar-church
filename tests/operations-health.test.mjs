@@ -49,11 +49,11 @@ test("Pessoa 360 keeps timeline, audited tasks, trigger dedupe and CRM reuse", (
   assert.match(migration, /source_key/)
   assert.match(timeline, /notification_deliveries/)
   assert.match(timeline, /person_follow_up_tasks/)
-  assert.match(timeline, /onflict do nothing/i)
+  assert.match(timeline, /return \{ triggers: 0, created: 0 \}/)
   assert.match(actions, /crm_card_id/)
   assert.match(actions, /person_follow_up_task\.create/)
   assert.match(detail, /Linha do tempo/)
-  assert.match(worker, /processFollowUpTriggers/)
+  assert.doesNotMatch(worker, /processFollowUpTriggers/)
 })
 
 test("cell health and member portal keep scoped metrics, RSVP race safety and self-service", () => {

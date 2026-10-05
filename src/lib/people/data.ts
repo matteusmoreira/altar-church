@@ -61,6 +61,7 @@ interface PersonRow {
   person_type: PersonType
   journey_status: string
   baptized: boolean
+  baptism_date: Date | string | null
   email_validated: boolean
   is_active: boolean
   created_at: Date | string
@@ -321,6 +322,7 @@ function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
     personType: row.person_type,
     journeyStatus: row.journey_status,
     baptized: row.baptized,
+    baptismDate: toIsoDate(row.baptism_date),
     emailValidated: row.email_validated,
     isActive: row.is_active,
     createdAt: toIso(row.created_at),
@@ -426,6 +428,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.person_type,
         p.journey_status,
         p.baptized,
+        p.baptism_date,
         p.email_validated,
         p.internal_notes,
         p.is_active,
@@ -1054,6 +1057,7 @@ export async function listPeopleForCompany(companyId: string, filters: PeopleLis
         p.person_type,
         p.journey_status,
         p.baptized,
+        p.baptism_date,
         p.email_validated,
         p.is_active,
         p.created_at,

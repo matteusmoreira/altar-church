@@ -3,6 +3,11 @@ export type UserRole = "superadmin" | "admin" | "pastor" | "ministry_leader" | "
 export type ChurchStatus = "active" | "blocked" | "test"
 
 export type Permission =
+  | "automations.view"
+  | "automations.edit"
+  | "automations.publish"
+  | "automations.operate"
+  | "automations.tasks"
   | "members.view"
   | "members.create"
   | "members.edit"
@@ -421,6 +426,7 @@ const MINISTRY_OPERATION_PERMISSIONS: Permission[] = [
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   superadmin: [],
   admin: [
+    "automations.view", "automations.edit", "automations.publish", "automations.operate", "automations.tasks",
     "members.view", "members.create", "members.edit", "members.delete", "members.export",
     "visitors.view", "visitors.create", "visitors.edit",
     "cells.view", "cells.create", "cells.edit", "cells.delete", "cells.study.manage", "cells.meeting.manage",
@@ -449,6 +455,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     ...KIDS_ADMIN_PERMISSIONS,
   ],
   pastor: [
+    "automations.view", "automations.edit", "automations.publish", "automations.operate", "automations.tasks",
     "members.view", "members.create", "members.edit", "members.export",
     "visitors.view", "visitors.create", "visitors.edit",
     "cells.view", "cells.create", "cells.edit", "cells.self.view", "cells.self.checkin", "cells.self.prayer",
@@ -492,6 +499,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "cells.leader.manage",
   ],
   communication: [
+    "automations.view", "automations.edit", "automations.tasks",
     "members.view",
     "communication.view", "communication.create", "communication.edit", "communication.send",
     "content.view", "content.create", "content.edit", "content.publish",

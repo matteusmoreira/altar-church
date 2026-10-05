@@ -82,6 +82,7 @@ const personSchema = z.object({
   personType: z.enum(["visitor", "attendee", "member", "leader", "volunteer"]).optional().default("member"),
   journeyStatus: z.string().trim().optional().default(""),
   baptized: z.boolean().optional().default(false),
+  baptismDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().default(null),
   emailValidated: z.boolean().optional().default(false),
   internalNotes: z.string().trim().optional().default(""),
   isActive: z.boolean().optional().default(true),
@@ -467,6 +468,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
               person_type = ${parsed.personType},
               journey_status = ${parsed.journeyStatus},
               baptized = ${parsed.baptized},
+              baptism_date = ${parsed.baptismDate},
               email_validated = ${parsed.emailValidated},
               internal_notes = ${parsed.internalNotes},
               is_active = ${parsed.isActive},
@@ -509,6 +511,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             person_type,
             journey_status,
             baptized,
+            baptism_date,
             email_validated,
             internal_notes,
             is_active,
@@ -539,6 +542,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
             ${parsed.personType},
             ${parsed.journeyStatus},
             ${parsed.baptized},
+            ${parsed.baptismDate},
             ${parsed.emailValidated},
             ${parsed.internalNotes},
             ${parsed.isActive},
@@ -556,33 +560,6 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
         `
     const personId = rows[0]?.id ?? null
     if (!personId) throw new Error("Pessoa não foi salva")
-
-    if (!parsed.id && personId) {
-      try {
-        await sql`
-          insert into public.person_journey_enrollments (company_id, person_id, journey_id, status, started_at, created_by)
-          select ${companyId}, ${personId}, id, 'in_progress', now(), ${user.id}
-          from public.member_journeys
-          where company_id = ${companyId}
-            and deleted_at is null
-            and is_active = true
-            and is_auto_enroll = true
-            and exists (
-              select 1 from public.member_journey_steps step
-              where step.journey_id = member_journeys.id and step.company_id = ${companyId}
-                and step.deleted_at is null and step.is_active = true
-            )
-            and (
-              auto_enroll_type = 'all'
-              or (auto_enroll_type = 'visitor' and (${parsed.status} = 'visitor' or ${parsed.personType} = 'visitor'))
-              or (auto_enroll_type = 'member' and (${parsed.personType} = 'member' or ${parsed.personType} = 'leader' or ${parsed.personType} = 'volunteer'))
-            )
-          on conflict (person_id, journey_id) do nothing
-        `
-      } catch (err) {
-        console.error("Erro na auto-inscrição em jornada:", err)
-      }
-    }
 
     if (parsed.inviteAccess && personId && parsed.accessRole && parsed.temporaryPassword) {
       const provisioned = await provisionPersonAccess({
@@ -945,282 +922,50 @@ export async function togglePersonActivityAssignment(
   }
 }
 
-export async function createMemberJourney(input: CreateMemberJourneyInput): Promise<PeopleActionResult> {
-  try {
-    const name = input.name.trim()
-    if (!name) {
-      return { ok: false, error: "Nome da jornada é obrigatório" }
-    }
-    const { user, companyId } = await resolveActionCompanyId(input.companyId)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const rows = await sql<{ id: string }[]>`
-      insert into public.member_journeys (
-        company_id,
-        name,
-        description,
-        is_active,
-        is_auto_enroll,
-        auto_enroll_type,
-        created_by,
-        updated_by
-      ) values (
-        ${companyId},
-        ${name},
-        ${input.description?.trim() || ""},
-        true,
-        ${Boolean(input.isAutoEnroll)},
-        ${input.autoEnrollType || null},
-        ${user.id},
-        ${user.id}
-      )
-      returning id
-    `
-    await refreshPeoplePaths()
-    return { ok: true, id: rows[0]?.id }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+export async function createMemberJourney(_input: CreateMemberJourneyInput): Promise<PeopleActionResult> { void _input;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function updateMemberJourney(input: UpdateMemberJourneyInput): Promise<PeopleActionResult> {
-  try {
-    const name = input.name.trim()
-    if (!name) {
-      return { ok: false, error: "Nome da jornada é obrigatório" }
-    }
-    const { user, companyId } = await resolveActionCompanyId(input.companyId)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const rows = await sql<{ id: string }[]>`
-      update public.member_journeys
-      set name = ${name},
-          description = ${input.description?.trim() || ""},
-          is_auto_enroll = ${input.isAutoEnroll !== undefined ? input.isAutoEnroll : false},
-          auto_enroll_type = ${input.autoEnrollType || null},
-          is_active = ${input.isActive !== undefined ? input.isActive : true},
-          updated_by = ${user.id},
-          updated_at = now()
-      where id = ${input.id} and company_id = ${companyId} and deleted_at is null
-      returning id
-    `
-    if (!rows[0]) return { ok: false, error: "Jornada não encontrada" }
-    await refreshPeoplePaths()
-    return { ok: true, id: rows[0].id }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+export async function updateMemberJourney(_input: UpdateMemberJourneyInput): Promise<PeopleActionResult> { void _input;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function deleteMemberJourney(journeyId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
-  try {
-    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    await sql`
-      update public.member_journeys
-      set deleted_at = now(),
-          is_active = false,
-          updated_by = ${user.id},
-          updated_at = now()
-      where id = ${journeyId} and company_id = ${companyId}
-    `
-    await refreshPeoplePaths()
-    return { ok: true, id: journeyId }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+export async function deleteMemberJourney(_journeyId: string, _companyIdInput?: string | null): Promise<PeopleActionResult> { void _journeyId; void _companyIdInput;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function saveJourneyStep(input: SaveJourneyStepInput): Promise<PeopleActionResult> {
-  try {
-    const name = input.name.trim()
-    if (!name) {
-      return { ok: false, error: "Nome da etapa é obrigatório" }
-    }
-    if (input.estimatedDays !== undefined && (!Number.isInteger(input.estimatedDays) || input.estimatedDays < 1 || input.estimatedDays > 365)) {
-      return { ok: false, error: "Informe um prazo inteiro entre 1 e 365 dias" }
-    }
-    const { user, companyId } = await resolveActionCompanyId(input.companyId)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const journey = await sql`select id from public.member_journeys where id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null`
-    if (!journey[0]) return { ok: false, error: "Trilha não encontrada" }
-    if (input.id) {
-      const rows = await sql<{ id: string }[]>`
-        update public.member_journey_steps
-        set name = ${name},
-            description = ${input.description?.trim() || ""},
-            sort_order = coalesce(${typeof input.sortOrder === "number" ? input.sortOrder : null}::integer, sort_order),
-            estimated_days = ${typeof input.estimatedDays === "number" && input.estimatedDays > 0 ? input.estimatedDays : 7},
-            is_active = ${input.isActive !== undefined ? input.isActive : true},
-            updated_by = ${user.id},
-            updated_at = now()
-        where id = ${input.id} and journey_id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null
-        returning id
-      `
-      if (!rows[0]) return { ok: false, error: "Etapa não encontrada" }
-      await refreshPeoplePaths()
-      return { ok: true, id: rows[0].id }
-    }
-
-    // New step: determine sort_order if not provided
-    let sortOrder = input.sortOrder
-    if (typeof sortOrder !== "number") {
-      const maxRows = await sql<{ max_order: number | null }[]>`
-        select max(sort_order) as max_order
-        from public.member_journey_steps
-        where journey_id = ${input.journeyId} and company_id = ${companyId} and deleted_at is null
-      `
-      sortOrder = (maxRows[0]?.max_order ?? 0) + 1
-    }
-
-    const rows = await sql<{ id: string }[]>`
-      insert into public.member_journey_steps (
-        company_id,
-        journey_id,
-        name,
-        description,
-        sort_order,
-        estimated_days,
-        is_active,
-        created_by,
-        updated_by
-      ) values (
-        ${companyId},
-        ${input.journeyId},
-        ${name},
-        ${input.description?.trim() || ""},
-        ${sortOrder},
-        ${typeof input.estimatedDays === "number" && input.estimatedDays > 0 ? input.estimatedDays : 7},
-        true,
-        ${user.id},
-        ${user.id}
-      )
-      returning id
-    `
-    await refreshPeoplePaths()
-    return { ok: true, id: rows[0]?.id }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+export async function saveJourneyStep(_input: SaveJourneyStepInput): Promise<PeopleActionResult> { void _input;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function deleteJourneyStep(stepId: string, companyIdInput?: string | null): Promise<PeopleActionResult> {
-  try {
-    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    await sql`
-      update public.member_journey_steps
-      set deleted_at = now(),
-          is_active = false,
-          updated_by = ${user.id},
-          updated_at = now()
-      where id = ${stepId} and company_id = ${companyId}
-    `
-    await refreshPeoplePaths()
-    return { ok: true, id: stepId }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+export async function deleteJourneyStep(_stepId: string, _companyIdInput?: string | null): Promise<PeopleActionResult> { void _stepId; void _companyIdInput;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
 export async function reorderJourneySteps(
-  journeyId: string,
-  stepIds: string[],
-  companyIdInput?: string | null,
-): Promise<PeopleActionResult> {
-  try {
-    const { user, companyId } = await resolveActionCompanyId(companyIdInput)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    for (let i = 0; i < stepIds.length; i++) {
-      await sql`
-        update public.member_journey_steps
-        set sort_order = ${i + 1}, updated_by = ${user.id}, updated_at = now()
-        where id = ${stepIds[i]} and journey_id = ${journeyId} and company_id = ${companyId}
-      `
-    }
-    await refreshPeoplePaths()
-    return { ok: true }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+  _journeyId: string,
+  _stepIds: string[],
+  _companyIdInput?: string | null,
+): Promise<PeopleActionResult> { void _journeyId; void _stepIds; void _companyIdInput;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function enrollPersonInJourney(input: {
+export async function enrollPersonInJourney(_input: {
   personId: string
   journeyId: string
   companyId?: string | null
-}): Promise<PeopleActionResult> {
-  try {
-    const { user, companyId } = await resolveActionCompanyId(input.companyId)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const eligible = await sql`
-      select journey.id from public.member_journeys journey
-      inner join public.people person on person.id = ${input.personId} and person.company_id = journey.company_id and person.deleted_at is null
-      where journey.id = ${input.journeyId} and journey.company_id = ${companyId}
-        and journey.deleted_at is null and journey.is_active = true
-        and exists (
-          select 1 from public.member_journey_steps step
-          where step.journey_id = journey.id and step.company_id = ${companyId}
-            and step.deleted_at is null and step.is_active = true
-        )
-    `
-    if (!eligible[0]) return { ok: false, error: "A trilha precisa estar ativa e ter pelo menos uma etapa para receber inscrições." }
-    const rows = await sql<{ id: string }[]>`
-      insert into public.person_journey_enrollments (
-        company_id, person_id, journey_id, status, started_at, created_by
-      ) values (
-        ${companyId}, ${input.personId}, ${input.journeyId}, 'in_progress', now(), ${user.id}
-      )
-      on conflict (person_id, journey_id)
-      do update set status = 'in_progress', completed_at = null, updated_at = now()
-      returning id
-    `
-    await refreshPeoplePaths()
-    revalidatePath(`/pessoas/${input.personId}`)
-    return { ok: true, id: rows[0]?.id }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+}): Promise<PeopleActionResult> { void _input;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
 export async function unenrollPersonFromJourney(
-  enrollmentId: string,
-  companyIdInput?: string | null,
-): Promise<PeopleActionResult> {
-  try {
-    const { companyId } = await resolveActionCompanyId(companyIdInput)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const rows = await sql<{ person_id: string }[]>`
-      update public.person_journey_enrollments
-      set status = 'dropped', completed_at = null, updated_at = now()
-      where id = ${enrollmentId} and company_id = ${companyId}
-      returning person_id
-    `
-    await refreshPeoplePaths()
-    if (rows[0]?.person_id) {
-      revalidatePath(`/pessoas/${rows[0].person_id}`)
-    }
-    return { ok: true }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+  _enrollmentId: string,
+  _companyIdInput?: string | null,
+): Promise<PeopleActionResult> { void _enrollmentId; void _companyIdInput;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
-export async function toggleStepProgress(input: {
+export async function toggleStepProgress(_input: {
   personId: string
   journeyId: string
   stepId: string
@@ -1228,87 +973,8 @@ export async function toggleStepProgress(input: {
   notes?: string
   completedAt?: string | null
   companyId?: string | null
-}): Promise<PeopleActionResult> {
-  try {
-    const { user, companyId } = await resolveActionCompanyId(input.companyId)
-    await requirePermission("members.edit", companyId)
-
-    const sql = getSql()
-    const eligible = await sql`
-      select step.id from public.member_journey_steps step
-      inner join public.member_journeys journey on journey.id = step.journey_id and journey.company_id = step.company_id
-      inner join public.people person on person.id = ${input.personId} and person.company_id = journey.company_id and person.deleted_at is null
-      where step.id = ${input.stepId} and step.journey_id = ${input.journeyId} and step.company_id = ${companyId}
-        and step.deleted_at is null and step.is_active = true and journey.deleted_at is null
-    `
-    if (!eligible[0]) return { ok: false, error: "Etapa não encontrada nesta trilha" }
-    if (input.completed) {
-      const completedAt = input.completedAt ? new Date(input.completedAt).toISOString() : new Date().toISOString()
-      await sql`
-        insert into public.person_journey_progress (
-          company_id, person_id, journey_id, step_id, completed_at, completed_by, notes, updated_at
-        ) values (
-          ${companyId}, ${input.personId}, ${input.journeyId}, ${input.stepId},
-          ${completedAt}, ${user.id}, ${input.notes?.trim() || ""}, now()
-        )
-        on conflict (person_id, journey_id, step_id)
-        do update set completed_at = ${completedAt}, completed_by = ${user.id},
-                      notes = ${input.notes?.trim() || ""}, updated_at = now()
-      `
-
-      // Make sure the person is enrolled in this journey
-      await sql`
-        insert into public.person_journey_enrollments (
-          company_id, person_id, journey_id, status, started_at, created_by
-        ) values (
-          ${companyId}, ${input.personId}, ${input.journeyId}, 'in_progress', now(), ${user.id}
-        )
-        on conflict (person_id, journey_id) do nothing
-      `
-
-      // Check if all active steps in this journey are now completed
-      const checkRows = await sql<{ total_steps: number; completed_steps: number }[]>`
-        select
-          count(mjs.id)::int as total_steps,
-          count(pjp.completed_at)::int as completed_steps
-        from public.member_journey_steps mjs
-        left join public.person_journey_progress pjp
-          on pjp.step_id = mjs.id
-         and pjp.person_id = ${input.personId}
-         and pjp.completed_at is not null
-        where mjs.journey_id = ${input.journeyId}
-          and mjs.company_id = ${companyId}
-          and mjs.deleted_at is null
-          and mjs.is_active = true
-      `
-      const counts = checkRows[0]
-      if (counts && counts.total_steps > 0 && counts.completed_steps >= counts.total_steps) {
-        await sql`
-          update public.person_journey_enrollments
-          set status = 'completed', completed_at = now(), updated_at = now()
-          where person_id = ${input.personId} and journey_id = ${input.journeyId} and company_id = ${companyId}
-        `
-      }
-    } else {
-      await sql`
-        update public.person_journey_progress
-        set completed_at = null, updated_at = now()
-        where person_id = ${input.personId} and journey_id = ${input.journeyId} and step_id = ${input.stepId}
-          and company_id = ${companyId}
-      `
-      await sql`
-        update public.person_journey_enrollments
-        set status = 'in_progress', completed_at = null, updated_at = now()
-        where person_id = ${input.personId} and journey_id = ${input.journeyId} and company_id = ${companyId}
-      `
-    }
-
-    await refreshPeoplePaths()
-    revalidatePath(`/pessoas/${input.personId}`)
-    return { ok: true }
-  } catch (error) {
-    return toErrorResult(error)
-  }
+}): Promise<PeopleActionResult> { void _input;
+  return { ok: false, error: "Trilhas arquivadas. Use o módulo Automações." }
 }
 
 export async function loadBirthdayPeople(month?: number): Promise<BirthdayPerson[]> {

@@ -55,8 +55,8 @@ test("Follow-up backend: triggers calibration and direct execution", () => {
 
   // Dynamic trigger parameters & tasks
   assert.match(followUp, /processFollowUpTriggers/)
-  assert.match(followUp, /daysThreshold/)
-  assert.match(followUp, /dueDays/)
+  assert.match(followUp, /return \{ triggers: 0, created: 0 \}/)
+
   assert.match(followUp, /responsible_profile_id/)
 
   // Follow-up actions
@@ -88,8 +88,8 @@ test("Server Actions: Journey, Activity, Enrollment, and Auto-enroll on Person c
   assert.match(actions, /export async function toggleStepProgress/)
 
   // Auto-enroll on savePerson
-  assert.match(actions, /is_auto_enroll = true/)
-  assert.match(actions, /person_journey_enrollments/)
+  assert.doesNotMatch(actions, /is_auto_enroll = true/)
+  assert.match(actions, /Trilhas arquivadas/)
 
   // Route actions export
   assert.match(routeActions, /export async function assignPersonActivity/)
@@ -131,19 +131,11 @@ test("UI integration: members-client config tab and member profile detail", () =
   // members-client config tab
   assert.match(membersClient, /TabsContent value="config"/)
   assert.match(membersClient, /Atividades e Ministérios Pastorais/)
-  assert.match(membersClient, /Trilhas de Crescimento & Integração/)
-  assert.match(membersClient, /Gatilhos Automáticos de Follow-up/)
-  assert.match(membersClient, /ActivityMembersSheet/)
-  assert.match(membersClient, /JourneyBuilderSheet/)
-  assert.match(membersClient, /TriggerConfigDialog/)
-  assert.match(membersClient, /handleRunFollowUpTriggers/)
-
-  // member-detail-client
+  assert.match(membersClient, /Automações/)
+  assert.doesNotMatch(membersClient, /<JourneyBuilderSheet|<TriggerConfigDialog/)
   assert.match(memberDetail, /TabsContent value="historico"/)
   assert.match(memberDetail, /Vincular atividade/)
-  assert.match(memberDetail, /TabsContent value="jornada"/)
-  assert.match(memberDetail, /Iniciar nova trilha/)
-  assert.match(memberDetail, /handleOpenStepModal/)
-  assert.match(memberDetail, /handleSaveStepProgress/)
-  assert.match(memberDetail, /enrolledJourneys/)
+  assert.match(memberDetail, /Automações/)
+  assert.doesNotMatch(memberDetail, /<FollowUpPanel|Iniciar nova trilha/)
+
 })

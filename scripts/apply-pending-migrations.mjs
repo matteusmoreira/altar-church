@@ -28,6 +28,11 @@ try {
     .map((file) => file.replace(/\.sql$/, ""))
     .sort()
 
+  const stamps = repoMigrations.map(migrationStamp)
+  if (new Set(stamps).size !== stamps.length) {
+    throw new Error("Identificadores de migration duplicados; renomeie a migration nova antes de aplicar")
+  }
+
   const appliedRows = await sql.unsafe(
     "select version, name from supabase_migrations.schema_migrations order by version",
   )

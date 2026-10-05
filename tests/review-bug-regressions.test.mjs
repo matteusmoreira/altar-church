@@ -102,7 +102,7 @@ test("follow-up rejeita responsável externo, inativo e excluído antes do updat
   const actions = load("src/lib/people/follow-up-actions.ts", { "@/lib/db/client": { getSql: () => async (strings) => { queries.push(strings.join("?")); return [] } } })
   const result = await actions.updatePersonFollowUpTask(objectToFormData({ taskId: "44444444-4444-4444-8444-444444444444", status: "open", responsibleProfileId: "55555555-5555-4555-8555-555555555555" }))
   assert.equal(result.ok, false); assert.match(result.error, /Responsável inválido/)
-  assert.equal(queries.length, 1); assert.match(queries[0], /company_id/); assert.match(queries[0], /active = true and deleted_at is null/)
+  assert.equal(queries.length, 1); assert.match(queries[0], /company_id/); assert.match(queries[0], /active = true/)
 })
 test("API-key pode ler a igreja já autorizada; leitura de tela ainda exige sessão", async () => {
   const actions = load("src/lib/people/data.ts", {

@@ -15,6 +15,8 @@ type Delivery = {
   recipient: string
   subject: string
   content: string
+  assignment_id: string | null
+  event_kind: string
   attempts: number
   payload: Record<string, unknown>
 }
@@ -160,6 +162,14 @@ async function sendPush(delivery: Delivery) {
 
 async function processDelivery(delivery: Delivery) {
   try {
+    if(delivery.channel === "whatsapp" && delivery.assignment_id){
+      const purpose=delivery.event_kind === "reminder" ? "volunteer.upcoming" : "volunteer.assigned"
+      const ownership=await rest(`automation_source_owners?company_id=eq.${delivery.company_id}&purpose=eq.${purpose}&select=flow_id`)
+      if((await ownership.json()).length){
+        await updateDelivery(delivery.id,{status:"skipped",locked_at:null,last_error:"Envio transferido para Automações"})
+        return
+      }
+    }
     const providerId = delivery.channel === "whatsapp" ? await sendWhatsApp(delivery)
       : delivery.channel === "email" ? await sendEmail(delivery) : await sendPush(delivery)
     await updateDelivery(delivery.id, {

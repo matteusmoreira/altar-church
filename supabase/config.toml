@@ -4,6 +4,10 @@
 # working directory name when running `supabase init`.
 project_id = "altar-church"
 
+# Cron uses the dedicated automation secret checked by the function.
+[functions.automation-worker]
+verify_jwt = false
+
 [api]
 enabled = true
 # Port to use for the API URL.

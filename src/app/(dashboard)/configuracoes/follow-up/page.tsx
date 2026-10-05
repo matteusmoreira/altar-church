@@ -1,10 +1,2 @@
-import { FollowUpSettingsClient } from "@/components/people/follow-up-settings-client"
-import { listFollowUpResponsibleOptions, listFollowUpTriggers } from "@/lib/people/follow-up"
-
-export default async function FollowUpSettingsPage() {
-  const [triggers, responsibleOptions] = await Promise.all([
-    listFollowUpTriggers(),
-    listFollowUpResponsibleOptions(),
-  ])
-  return <FollowUpSettingsClient triggers={triggers} responsibleOptions={responsibleOptions} />
-}
+import { redirect } from "next/navigation"
+export default function ArchivedPage(){ redirect("/automacoes?tab=Hist%C3%B3rico%20arquivado") }

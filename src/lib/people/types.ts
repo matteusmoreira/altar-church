@@ -65,6 +65,7 @@ export interface PersonListItem {
   personType: PersonType
   journeyStatus: string
   baptized: boolean
+  baptismDate?: string | null
   emailValidated: boolean
   isActive: boolean
   createdAt: string
@@ -481,6 +482,7 @@ export interface SavePersonInput {
   personType?: PersonType
   journeyStatus?: string
   baptized?: boolean
+  baptismDate?: string | null
   emailValidated?: boolean
   internalNotes?: string
   isActive?: boolean

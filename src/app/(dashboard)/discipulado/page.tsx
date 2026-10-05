@@ -15,6 +15,7 @@ import {
   saveReadingPlanStep,
 } from "@/lib/operational/actions"
 import { listReadingPlans } from "@/lib/operational/data"
+import { DiscipleshipParticipants } from "@/components/automations/discipleship-participants"
 
 async function saveReadingPlanForm(formData: FormData) {
   "use server"
@@ -53,6 +54,7 @@ export default async function ReadingPlansPage() {
         <MetricCard title="Rascunhos" value={drafts} icon={FilePen} tone="primary" />
         <MetricCard title="Etapas" value={totalSteps} icon={Plus} tone="primary" />
       </MetricGrid>
+      <DiscipleshipParticipants />
 
       <Card className="glass">
         <CardHeader>

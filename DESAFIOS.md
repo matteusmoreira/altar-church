@@ -1,5 +1,14 @@
 # Desafios conhecidos
 
+## Automações — 05/10/2026
+
+- A suíte geral contém quatro testes que carregam `.env.local` e alteram banco remoto. A validação desta entrega excluiu esses arquivos; migration, RLS e motor foram executados em PGlite isolado, com provedores simulados. Isso não comprova cron, webhook público ou entrega real.
+- Em períodos de pouca memória no Windows, o Node pode abortar com `Fatal process out of memory: Zone`, inclusive em testes que passam quando executados sozinhos. Executar build, navegador e suítes SQL em sequência; não encerrar processos de outras sessões.
+- `datetime-local` não contém fuso. Agendas únicas e esperas absolutas precisam converter usando o fuso da igreja, independentemente do fuso do worker. Essa conversão tem teste para São Paulo e timestamps UTC explícitos.
+- A Uazapi publica recibos em `event.MessageIDs` e recibos de participantes em `GroupReceipts`; não tratar um recibo individual como leitura de todo o grupo. Campos interativos vazios também não devem ocultar texto livre.
+- A migration de automações arquiva e desativa regras antigas em todas as igrejas do banco alvo. Aplicar primeiro em homologação com backup/revisão do arquivo; novos fluxos começam como rascunhos e exigem publicação explícita. Consultar `docs/AUTOMACOES.md` para configuração e pendências externas.
+- O carimbo de migrations usa somente os primeiros 14 caracteres. Duas migrations com o mesmo horário fazem a segunda ser pulada; o instalador agora recusa identificadores duplicados. Automações recebeu `20261005140000`, preservando o carimbo já aplicado de Voluntariado.
+
 - A validacao SQL local depende dos containers do Supabase; sem o container `supabase_db_altar-church`, `supabase status` nao consegue validar a migration. Manter a prova local de codigo separada da aplicacao da migration em staging/producao.
 
 - E2E pode travar ao reutilizar um servidor `next dev` antigo durante recompilação de rota. Para prova confiável, usar `next start` novo em porta isolada e limpar o processo ao final.
