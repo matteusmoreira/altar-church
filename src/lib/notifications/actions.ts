@@ -33,6 +33,7 @@ export async function retryNotificationDeliveryAction(formData: FormData) {
       companyId,
       metadata: { notificationId, profileId: user.id },
     })
+    revalidatePath("/notificacao/[id]", "page")
     revalidatePath(`/notificacao/${notificationId}`)
     afterResponse("notification retry", () => processNotificationOutbox(25, notificationId, companyId))
   }

@@ -165,7 +165,7 @@ export async function getAutomationWorkspace() {
       ? sql`select id,name from public.ministries where company_id=${companyId} and deleted_at is null order by name`
       : [],
     sql`select id,description as name from public.person_activities where company_id=${companyId} and deleted_at is null order by description`,
-    hasPermission(user.role, "forms.view") ? sql`select id,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
+    hasPermission(user.role, "forms.view") ? sql`select id,slug,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
     hasPermission(user.role, "crm.view") ? sql`select id,name from public.crm_stages where company_id=${companyId} and deleted_at is null order by sort_order,created_at` : [],
     sql`select template_id as id,name,definition,revision,deleted_at from public.automation_templates where company_id=${companyId}`,
   ]);

@@ -891,7 +891,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
                                   </Button>
                                 )}
                                 <Button
-                                  render={<Link href={`/pessoas/${child.personId}`} />}
+                                  render={<Link href={`/pessoas/${child.personSlug || child.personId}`} />}
                                   nativeButton={false}
                                   variant="outline"
                                   size="sm"

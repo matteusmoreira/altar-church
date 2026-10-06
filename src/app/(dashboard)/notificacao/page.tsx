@@ -19,7 +19,7 @@ import { getNotificationPushSummary } from "@/lib/notifications/data"
 async function saveNotificationForm(formData: FormData) {
   "use server"
   const result = await saveNotification(formData)
-  if (result.ok && result.id) redirect(`/notificacao/${result.id}`)
+  if (result.ok && result.id) redirect(`/notificacao/${result.slug || result.id}`)
   return result
 }
 
@@ -178,7 +178,7 @@ export default async function NotificationsPage() {
                 <TableCell>
                   <Badge>{statusLabels[notification.status]}</Badge>
                 </TableCell>
-                <TableCell className="font-medium"><Link href={`/notificacao/${notification.id}`} className="hover:underline">{notification.title}</Link></TableCell>
+                <TableCell className="font-medium"><Link href={`/notificacao/${notification.slug || notification.id}`} className="hover:underline">{notification.title}</Link></TableCell>
                 <TableCell>{methodLabels[notification.method as keyof typeof methodLabels] ?? notification.method}</TableCell>
                 <TableCell className="max-w-sm truncate">{notification.content}</TableCell>
                 <TableCell>{notification.audienceKind ? audienceLabels[notification.audienceKind] : notification.type}</TableCell>

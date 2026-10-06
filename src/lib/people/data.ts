@@ -30,6 +30,7 @@ import type {
 
 interface PersonRow {
   id: string
+  slug: string
   company_id: string
   congregation_id: string | null
   congregation_name: string | null
@@ -162,6 +163,7 @@ interface MonthlyRegistrationRow {
 
 interface BirthdayRow {
   id: string
+  slug: string
   full_name: string
   birth_date: Date | string
   phone: string
@@ -173,6 +175,7 @@ interface BirthdayRow {
 
 interface DuplicatePersonRow {
   id: string
+  slug: string
   full_name: string
   email: string | null
   phone: string
@@ -184,6 +187,7 @@ interface DuplicateCandidateRow {
   id: string
   company_id: string
   primary_person_id: string
+  primary_slug: string
   primary_full_name: string
   primary_email: string | null
   primary_phone: string
@@ -191,6 +195,7 @@ interface DuplicateCandidateRow {
   primary_birth_date: Date | string | null
   primary_photo_path?: string | null
   duplicate_person_id: string
+  duplicate_slug: string
   duplicate_full_name: string
   duplicate_email: string | null
   duplicate_phone: string
@@ -291,6 +296,7 @@ function toJourneyStep(row: PersonJourneyStepRow) {
 function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
   return {
     id: row.id,
+    slug: row.slug,
     companyId: row.company_id,
     congregationId: row.congregation_id,
     congregationName: row.congregation_name,
@@ -335,6 +341,7 @@ function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
 function toDuplicatePerson(row: DuplicatePersonRow, photoUrl?: string | null) {
   return {
     id: row.id,
+    slug: row.slug,
     fullName: row.full_name,
     email: row.email,
     phone: row.phone,
@@ -350,6 +357,7 @@ function toDuplicateCandidate(row: DuplicateCandidateRow, urls?: Map<string, str
     companyId: row.company_id,
     primaryPerson: toDuplicatePerson({
       id: row.primary_person_id,
+      slug: row.primary_slug,
       full_name: row.primary_full_name,
       email: row.primary_email,
       phone: row.primary_phone,
@@ -358,6 +366,7 @@ function toDuplicateCandidate(row: DuplicateCandidateRow, urls?: Map<string, str
     }, row.primary_photo_path && urls ? urls.get(row.primary_photo_path) ?? null : null),
     duplicatePerson: toDuplicatePerson({
       id: row.duplicate_person_id,
+      slug: row.duplicate_slug,
       full_name: row.duplicate_full_name,
       email: row.duplicate_email,
       phone: row.duplicate_phone,
@@ -396,7 +405,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
   ] = await Promise.all([
     sql<PersonDetailRow[]>`
       select
-        p.id,
+        p.id, p.slug,
         p.company_id,
         p.congregation_id,
         c.name as congregation_name,
@@ -569,6 +578,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
       linked_at: Date | string
       kid_id: string
       child_person_id: string
+      child_slug: string
       kid_status: string
       is_visitor: boolean
       kid_notes: string | null
@@ -600,7 +610,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         guardian.email_enabled,
         guardian.created_at as linked_at,
         kid.id as kid_id,
-        kid.person_id as child_person_id,
+        kid.person_id as child_person_id, child_p.slug as child_slug,
         kid.status as kid_status,
         kid.is_visitor,
         kid.notes as kid_notes,
@@ -840,6 +850,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
     return {
       kidId: row.kid_id,
       personId: row.child_person_id,
+      personSlug: row.child_slug,
       fullName: row.full_name,
       firstName: row.first_name,
       lastName: row.last_name,
@@ -941,14 +952,14 @@ export async function listDuplicateCandidates(companyIdInput?: string | null): P
     select
       dc.id,
       dc.company_id,
-      primary_person.id as primary_person_id,
+      primary_person.id as primary_person_id, primary_person.slug as primary_slug,
       primary_person.full_name as primary_full_name,
       primary_person.email as primary_email,
       primary_person.phone as primary_phone,
       primary_congregation.name as primary_congregation_name,
       primary_person.birth_date as primary_birth_date,
       primary_photo.storage_path as primary_photo_path,
-      duplicate_person.id as duplicate_person_id,
+      duplicate_person.id as duplicate_person_id, duplicate_person.slug as duplicate_slug,
       duplicate_person.full_name as duplicate_full_name,
       duplicate_person.email as duplicate_email,
       duplicate_person.phone as duplicate_phone,
@@ -1010,7 +1021,7 @@ export async function listPeopleForCompany(companyId: string, filters: PeopleLis
   const [peopleRows, countRows] = await Promise.all([
     sql<PersonRow[]>`
       select
-        p.id,
+        p.id, p.slug,
         p.company_id,
         p.congregation_id,
         c.name as congregation_name,
@@ -1355,7 +1366,7 @@ export async function listBirthdayPeople(
   const sql = getSql()
   const rows = await sql<BirthdayRow[]>`
     select
-      p.id,
+      p.id, p.slug,
       p.full_name,
       p.birth_date,
       p.phone,
@@ -1374,6 +1385,7 @@ export async function listBirthdayPeople(
 
   return rows.map((r) => ({
     id: r.id,
+    slug: r.slug,
     fullName: r.full_name,
     birthDate: toIsoDate(r.birth_date) ?? "",
     day: r.day,

@@ -374,6 +374,7 @@ export type KidAccessEventType =
 
 export interface KidSessionClassroomItem {
   id: string
+  slug?: string
   classroomId: string
   name: string
   congregationId: string | null

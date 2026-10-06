@@ -129,6 +129,7 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
       metadata: { ministryId: membership.ministry_id, status },
     })
     revalidatePath("/ministerios")
+    revalidatePath("/membro/ministerios/[id]", "page")
     revalidatePath(`/membro/ministerios/${membership.ministry_id}`)
     revalidatePath("/membro")
     revalidatePath("/membro/ministerios")

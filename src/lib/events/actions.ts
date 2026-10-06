@@ -41,7 +41,13 @@ async function queueGuestConfirmation(input: { companyId: string; eventId: strin
     const recipient = channel === "email" ? guest.email.toLowerCase() : channel === "whatsapp" ? guest.phone : null
     if (!channel || !recipient) return
     const title = input.status === "waitlisted" ? `Inscrição em espera: ${input.eventTitle}` : `Inscrição confirmada: ${input.eventTitle}`
-    const content = `${guest.full_name}, sua inscrição foi registrada como ${input.status === "waitlisted" ? "lista de espera" : "confirmada"}.\nAcesse: /eventos/publico/${input.eventToken}`
+    const [eventRoute] = await tx<{ company_slug: string; public_slug: string }[]>`
+      select company.slug as company_slug, event.public_slug from public.events event
+      join public.companies company on company.id = event.company_id
+      where event.id = ${input.eventId} and event.company_id = ${input.companyId}
+    `
+    const publicPath = `/eventos/publico/${eventRoute.company_slug}/${eventRoute.public_slug}`
+    const content = `${guest.full_name}, sua inscrição foi registrada como ${input.status === "waitlisted" ? "lista de espera" : "confirmada"}.\nAcesse: ${publicPath}`
     const notifications = await tx<{ id: string }[]>`
       insert into public.notifications(company_id, title, content, method, type, target_group, scheduled_send, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, event_id, event_template_key)
       values (${input.companyId}, ${title}, ${content}, ${channel}, 'group', 'guests', false, 'event_guests', ${input.eventId}, '[]'::jsonb, now(), 1, 'queued', ${input.eventId}, ${`confirmation:${channel}:guest:${input.guestId}`})
@@ -228,6 +234,7 @@ export async function createEventCheckinSession(eventIdInput: string) {
     `
     if (!rows[0]) throw new Error("Sessão de check-in não foi criada")
     await writeAuditLog({ action: "event.checkin.session.open", entityTable: "event_checkin_sessions", entityId: rows[0].token, companyId, metadata: { eventId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     return { ok: true as const, token: rows[0].token, expiresAt: rows[0].expires_at.toISOString() }
   } catch (error) {
@@ -245,6 +252,7 @@ export async function closeEventCheckinSession(eventIdInput: string) {
       returning token
     `
     await writeAuditLog({ action: "event.checkin.session.close", entityTable: "event_checkin_sessions", entityId: rows[0]?.token, companyId, metadata: { eventId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     return { ok: true as const }
   } catch (error) {
@@ -262,7 +270,11 @@ export async function rotateEventPublicToken(eventIdInput: string) {
       returning public_token
     `
     if (!rows[0]) throw new Error("Evento não encontrado")
+    revalidatePath("/eventos/publico/[token]", "page")
+    revalidatePath("/eventos/publico/[token]/[eventSlug]", "page")
+    revalidatePath("/eventos/[id]", "page")
     await writeAuditLog({ action: "event.public_token.rotate", entityTable: "events", entityId: eventId, companyId })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     revalidatePath("/eventos")
     return { ok: true as const, token: rows[0].public_token }
@@ -478,7 +490,8 @@ export async function manualCheckInEventParticipant(input: { eventId: string; ki
         returning id
       `
       await writeAuditLog({ action: "event.checkin.manual", entityTable: "attendance_records", entityId: saved[0]?.id, companyId, metadata: { eventId, kind: input.kind, attendeeId } })
-      revalidatePath(`/eventos/${eventId}`)
+      revalidatePath("/eventos/[id]", "page")
+    revalidatePath(`/eventos/${eventId}`)
       return { ok: true as const, id: saved[0]?.id }
     }
     const rows = await sql<{ full_name: string }[]>`select full_name from public.event_guest_registrations where id = ${attendeeId} and company_id = ${companyId} and event_id = ${eventId} and status = 'going' limit 1`
@@ -492,6 +505,7 @@ export async function manualCheckInEventParticipant(input: { eventId: string; ki
     `
     await sql`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${attendeeId} and company_id = ${companyId}`
     await writeAuditLog({ action: "event.checkin.manual", entityTable: "attendance_records", entityId: saved[0]?.id, companyId, metadata: { eventId, kind: input.kind, attendeeId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     return { ok: true as const, id: saved[0]?.id }
   } catch (error) {
@@ -511,6 +525,7 @@ export async function linkEventGuestToPerson(input: { eventId: string; guestId: 
     const rows = await sql<{ id: string }[]>`update public.event_guest_registrations set person_id = ${personId}, updated_at = now() where id = ${guestId} and event_id = ${eventId} and company_id = ${companyId} returning id`
     if (!rows[0]) throw new Error("Inscrição de visitante não encontrada")
     await writeAuditLog({ action: "event.guest.link_person", entityTable: "event_guest_registrations", entityId: guestId, companyId, metadata: { eventId, personId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     return { ok: true as const, id: rows[0].id }
   } catch (error) {
@@ -580,6 +595,7 @@ export async function createEventGuestCrmProfile(input: { eventId: string; guest
       return { personId, cardId, eventTitle: guest.event_title }
     })
     await writeAuditLog({ action: "event.guest.crm_link", entityTable: "event_guest_registrations", entityId: parsed.guestId, companyId, metadata: { eventId: parsed.eventId, personId: resultRow.personId, cardId: resultRow.cardId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${parsed.eventId}`)
     return { ok: true as const, personId: resultRow.personId, cardId: resultRow.cardId }
   } catch (error) {
@@ -605,6 +621,7 @@ export async function saveEventResource(input: { eventId: string; id?: string | 
       : await sql<{ id: string }[]>`insert into public.event_resources(company_id, event_id, title, notes, external_url, visibility, created_by, updated_by) values (${companyId}, ${parsed.eventId}, ${parsed.title}, ${parsed.notes}, ${parsed.externalUrl || null}, ${parsed.visibility}, ${user.id}, ${user.id}) returning id`
     if (!rows[0]) throw new Error("Recurso não salvo")
     await writeAuditLog({ action: parsed.id ? "event.resource.update" : "event.resource.create", entityTable: "event_resources", entityId: rows[0].id, companyId, metadata: { eventId: parsed.eventId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${parsed.eventId}`)
     return { ok: true as const, id: rows[0].id }
   } catch (error) {
@@ -620,6 +637,7 @@ export async function deleteEventResource(input: { eventId: string; resourceId: 
     const rows = await getSql()<{ id: string }[]>`update public.event_resources set deleted_at = now(), updated_by = ${user.id}, updated_at = now() where id = ${resourceId} and event_id = ${eventId} and company_id = ${companyId} and deleted_at is null returning id`
     if (!rows[0]) throw new Error("Recurso não encontrado")
     await writeAuditLog({ action: "event.resource.delete", entityTable: "event_resources", entityId: resourceId, companyId, metadata: { eventId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
     return { ok: true as const, id: rows[0].id }
   } catch (error) {
@@ -643,6 +661,7 @@ export async function createEventFollowUp(input: { eventId: string; personId: st
       returning id
     `
     await writeAuditLog({ action: "event.follow_up.create", entityTable: "person_follow_up_tasks", entityId: rows[0]?.id, companyId, metadata: { eventId: parsed.eventId, personId: parsed.personId } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${parsed.eventId}`)
     return { ok: true as const, id: rows[0]?.id }
   } catch (error) {
@@ -783,6 +802,7 @@ export async function scheduleEventCommunication(input: {
     })
     if (recipients.deliveryCount === 0) throw new Error("Nenhum participante possui contato ou assinatura compatível com este canal")
     await writeAuditLog({ action: "event.communication.schedule", entityTable: "notifications", entityId: recipients.notificationId, companyId, metadata: { eventId: parsed.eventId, templateKey: parsed.templateKey, audience: parsed.audience, channel: parsed.channel, deliveryCount: recipients.deliveryCount } })
+    revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${parsed.eventId}`)
     return { ok: true as const, id: recipients.notificationId, deliveryCount: recipients.deliveryCount }
   } catch (error) {

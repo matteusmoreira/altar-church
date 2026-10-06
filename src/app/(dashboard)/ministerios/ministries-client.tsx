@@ -469,7 +469,7 @@ export function MinistriesClient({
                 onChange={(event) => {
                   const nextName = event.target.value
                   const currentAutoSlug = slugifyMinistry(formData.name)
-                  const shouldAutoSlug = !formData.slug || formData.slug === currentAutoSlug
+                  const shouldAutoSlug = !editingMinistry && (!formData.slug || formData.slug === currentAutoSlug)
                   setFormData({
                     ...formData,
                     name: nextName,

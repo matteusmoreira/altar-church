@@ -42,7 +42,7 @@ test("resolveMinistryAccess accepts both UUID and friendly slug", () => {
 
 test("page.tsx redirects UUID access to canonical friendly slug", () => {
   const page = read("src/app/(dashboard)/ministerios/[id]/page.tsx")
-  assert.match(page, /redirect\(`\/ministerios\/\$\{friendlySlug\}`\)/)
+  assert.match(page, /redirect\(canonicalEntityPath\("\/ministerios", friendlySlug, await searchParams\)\)/)
 })
 
 test("ministries client and workspace expose slug configuration", () => {

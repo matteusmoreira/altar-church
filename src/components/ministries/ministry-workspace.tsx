@@ -1974,7 +1974,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                     <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>
                       {COMMUNICATION_STATUS_LABELS[communication.status] ?? communication.status}
                     </Badge>
-                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/notificacao/${communication.id}`)}>
+                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/notificacao/${communication.slug || communication.id}`)}>
                       Ver entregas
                     </Button>
                     {canManage && (

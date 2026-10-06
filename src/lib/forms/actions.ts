@@ -181,6 +181,8 @@ async function getCompanySlug(companyId: string) {
 }
 
 async function revalidateForms(companySlug?: string | null, formSlug?: string | null) {
+  revalidatePath("/formularios/[id]", "page")
+  revalidatePath("/f/[companySlug]/[formSlug]", "page")
   revalidatePath("/formularios")
   revalidatePath("/crm")
   revalidatePath("/dashboard")
@@ -448,7 +450,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
     }
 
     const targetStageId = await assertStageBelongsToCompany(companyId, parsed.targetStageId)
-    const slug = await ensureUniqueFormSlug(
+    let slug = await ensureUniqueFormSlug(
       companyId,
       parsed.slug || parsed.title,
       parsed.id
@@ -472,6 +474,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
       `
       const currentForm = currentRows[0]
       if (!currentForm) throw new Error("Formulário não encontrado")
+      if (!parsed.slug) slug = currentForm.slug
       createAccountAfterSubmit =
         parsed.createAccountAfterSubmit ?? currentForm.create_account_after_submit
       if (createAccountAfterSubmit) {
@@ -498,6 +501,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
       `
       if (!rows[0]) throw new Error("Formulário não encontrado")
       formId = rows[0].id
+      slug = rows[0].slug
     } else {
       const rows = await sql<{ id: string; slug: string }[]>`
         insert into public.forms (
@@ -516,6 +520,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
         returning id, slug
       `
       formId = rows[0].id
+      slug = rows[0].slug
       await insertDefaultFields(formId!, companyId, user.id, createAccountAfterSubmit)
     }
 
@@ -529,7 +534,7 @@ export async function saveForm(input: SaveFormInput): Promise<FormsActionResult>
     const companySlug = await getCompanySlug(companyId)
     await revalidateForms(companySlug, slug)
     if (formId) revalidatePath(`/formularios/${formId}`)
-    return { ok: true, id: formId ?? undefined }
+    return { ok: true, id: formId ?? undefined, slug }
   } catch (error) {
     return toErrorResult(error)
   }

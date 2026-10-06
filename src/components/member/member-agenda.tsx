@@ -1207,7 +1207,7 @@ function MemberAgendaCard({ event }: MemberAgendaCardProps) {
                 </div>
               )) : <p className="text-sm text-muted-foreground">Nenhuma escala publicada para esta atividade.</p>}
             </section>
-            {event.canManageMinistry && event.ministryId && <Button variant="outline" className="w-full" render={<Link href={`/membro/ministerios/${event.ministryId}`} />} nativeButton={false}>
+            {event.canManageMinistry && event.ministryId && <Button variant="outline" className="w-full" render={<Link href={`/membro/ministerios/${event.ministrySlug || event.ministryId}`} />} nativeButton={false}>
               <Settings2 className="h-4 w-4" />Configurar ministério e agenda
             </Button>}
           </div>

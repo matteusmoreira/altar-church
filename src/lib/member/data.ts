@@ -230,6 +230,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     type: string
     ministry_name: string | null
     ministry_id: string | null
+    ministry_slug: string | null
     can_manage_ministry: boolean
     scale: MemberAgendaEvent["scale"]
     starts_at: DateValue
@@ -244,7 +245,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     registration_enabled: boolean
   }[]>`
     select event.id, event.title, event.description, event.type, ministry.name as ministry_name,
-      event.ministry_id,
+      event.ministry_id, ministry.slug as ministry_slug,
       (ministry.leader_person_id = ${personId} or exists (
         select 1 from public.ministry_memberships manager
         where manager.company_id = ${companyId} and manager.ministry_id = event.ministry_id
@@ -311,6 +312,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     type: row.type,
     ministryName: row.ministry_name,
     ministryId: row.ministry_id,
+    ministrySlug: row.ministry_slug,
     canManageMinistry: Boolean(row.can_manage_ministry),
     scale: row.scale ?? [],
     startsAt: iso(row.starts_at) ?? "",
@@ -370,6 +372,7 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
   const { companyId, personId } = await requireMemberContext()
   const rows = await getSql()<{
     id: string
+    slug: string
     name: string
     description: string
     contact: string
@@ -383,7 +386,7 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
     onboarding_total: number
     onboarding_completed: number
   }[]>`
-    select ministry.id, ministry.name, ministry.description, ministry.contact,
+    select ministry.id, ministry.slug, ministry.name, ministry.description, ministry.contact,
       leader.full_name as leader_name,
       count(active_member.id) filter (where active_member.status = 'active')::integer as member_count,
       own.id as membership_id, own.role as membership_role, own.status as membership_status,
@@ -404,6 +407,7 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
   `
   return rows.map((row) => ({
     id: row.id,
+    slug: row.slug,
     name: row.name,
     description: row.description,
     contact: row.contact,

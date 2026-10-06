@@ -476,7 +476,7 @@ export function VisitorsClient({
       return
     }
 
-    const memberId = convertingVisitor.id
+    const memberId = convertingVisitor.slug || convertingVisitor.id
     toast.success(`${convertingVisitor.fullName} agora é um membro ativo!`, {
       action: {
         label: "Ver membro",
@@ -816,7 +816,7 @@ export function VisitorsClient({
                             </Avatar>
                             <div className="min-w-0">
                               <Link
-                                href={`/pessoas/${visitor.id}`}
+                                href={`/pessoas/${visitor.slug || visitor.id}`}
                                 className="truncate font-semibold text-foreground hover:underline hover:text-primary transition-colors block text-base"
                               >
                                 {visitor.fullName}
@@ -841,7 +841,7 @@ export function VisitorsClient({
                               <MoreVertical className="h-4 w-4" />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuItem onClick={() => router.push(`/pessoas/${visitor.id}`)}>
+                              <DropdownMenuItem onClick={() => router.push(`/pessoas/${visitor.slug || visitor.id}`)}>
                                 <ExternalLink className="mr-2 h-4 w-4" />
                                 Ver cadastro completo
                               </DropdownMenuItem>
@@ -977,7 +977,7 @@ export function VisitorsClient({
                       </Avatar>
                       <div className="min-w-0">
                         <Link
-                          href={`/pessoas/${visitor.id}`}
+                          href={`/pessoas/${visitor.slug || visitor.id}`}
                           className="truncate font-semibold text-foreground hover:underline hover:text-primary transition-colors block text-sm"
                         >
                           {visitor.fullName}
@@ -1052,7 +1052,7 @@ export function VisitorsClient({
                             <MoreVertical className="h-4 w-4" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => router.push(`/pessoas/${visitor.id}`)}>
+                            <DropdownMenuItem onClick={() => router.push(`/pessoas/${visitor.slug || visitor.id}`)}>
                               <ExternalLink className="mr-2 h-4 w-4" />
                               Ficha completa
                             </DropdownMenuItem>

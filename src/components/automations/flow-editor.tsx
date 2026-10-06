@@ -937,7 +937,7 @@ function Editor({
                                 pessoa.{" "}
                                 <a
                                   className="underline"
-                                  href={`/formularios/${active.config.formId}`}
+                                  href={`/formularios/${workspace.forms.find(form => form.id === active.config.formId)?.slug || active.config.formId}`}
                                 >
                                   Configurar formulário
                                 </a>

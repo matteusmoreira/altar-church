@@ -54,7 +54,7 @@ function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListI
           </div>
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button render={<Link href={`/eventos/${event.id}`} />} nativeButton={false} variant="link" className="h-auto min-w-0 p-0 text-left text-base font-semibold text-foreground">
+              <Button render={<Link href={`/eventos/${event.slug || event.id}`} />} nativeButton={false} variant="link" className="h-auto min-w-0 p-0 text-left text-base font-semibold text-foreground">
                 {event.title}
               </Button>
               <Badge variant="outline">{typeLabels[event.type]}</Badge>
@@ -70,7 +70,7 @@ function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListI
             </div>
             {event.ministryName && <p className="text-xs text-primary">Ministério: {event.ministryName}</p>}
           </div>
-          <EventActions eventId={event.id} eventTitle={event.title} status={event.status} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
+          <EventActions eventId={event.id} eventSlug={event.slug} eventTitle={event.title} status={event.status} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
         </div>
       </CardContent>
     </Card>
@@ -96,7 +96,7 @@ function MonthView({ events, cursor, onCursorChange }: { events: EventListItem[]
         {cells.map((day, index) => {
           const items = day ? byDay.get(dateKey(day)) ?? [] : []
           return <div key={day ? dateKey(day) : `empty-${index}`} className="min-h-28 border-b border-r p-2 align-top last:border-r-0">
-            {day && <><div className="mb-2 text-xs font-semibold text-muted-foreground">{day.getDate()}</div><div className="space-y-1">{items.map((event) => <Button key={event.id} render={<Link href={`/eventos/${event.id}`} />} nativeButton={false} variant="ghost" className="h-auto w-full justify-start truncate p-1 text-left text-xs">{event.title}</Button>)}</div></>}
+            {day && <><div className="mb-2 text-xs font-semibold text-muted-foreground">{day.getDate()}</div><div className="space-y-1">{items.map((event) => <Button key={event.id} render={<Link href={`/eventos/${event.slug || event.id}`} />} nativeButton={false} variant="ghost" className="h-auto w-full justify-start truncate p-1 text-left text-xs">{event.title}</Button>)}</div></>}
           </div>
         })}
       </div>

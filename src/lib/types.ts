@@ -323,6 +323,7 @@ export interface Group {
 
 export interface ChurchEvent {
   id: string
+  slug?: string
   churchId: string
   title: string
   description: string
@@ -729,6 +730,7 @@ export interface Banner {
 
 export interface Notification {
   id: string
+  slug?: string
   churchId: string
   title: string
   content: string

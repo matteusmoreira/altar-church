@@ -115,6 +115,7 @@ async function audit(action: string, entityTable: string, entityId: string, comp
 }
 
 function refresh() {
+  revalidatePath("/kids/salas/[id]", "page")
   revalidatePath("/kids")
   revalidatePath("/kids/recepcao")
 }

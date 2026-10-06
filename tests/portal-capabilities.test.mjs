@@ -22,7 +22,7 @@ test("leader opens the existing scoped ministry workspace from the portal", () =
   const page = read("src/app/(member)/membro/ministerios/[id]/page.tsx")
   const actions = read("src/lib/ministries/actions.ts")
   assert.match(portal, /Configurar ministério/)
-  assert.match(portal, /href=\{`\/membro\/ministerios\/\$\{ministry.id\}`\}/)
+  assert.match(portal, /href=\{`\/membro\/ministerios\/\$\{ministry.slug \|\| ministry.id\}`\}/)
   assert.match(page, /requireMemberContext/)
   assert.match(page, /requireMinistryPermission[\s\S]*manage: true/)
   assert.match(page, /initialTab="configuracoes" memberPortal/)

@@ -143,6 +143,7 @@ async function resolveActionCompanyId(inputCompanyId?: string | null) {
 }
 
 async function refreshPeoplePaths(visitor = false) {
+  revalidatePath("/pessoas/[id]", "page")
   if (visitor) revalidatePath("/visitantes")
   else revalidatePath("/pessoas")
 }
@@ -608,7 +609,8 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
 
     await refreshPeoplePaths(parsed.status === "visitor" || parsed.personType === "visitor")
 
-    return { ok: true, id: personId ?? undefined }
+    const [savedRoute] = await getSql()<{ slug: string }[]>`select slug from public.people where id = ${personId} and company_id = ${companyId}`
+    return { ok: true, id: personId ?? undefined, slug: savedRoute?.slug }
     } catch (error) {
       return toErrorResult(error)
     }
@@ -868,6 +870,7 @@ export async function assignPersonActivity(input: {
       returning id
     `
     await refreshPeoplePaths()
+    revalidatePath("/pessoas/[id]", "page")
     revalidatePath(`/pessoas/${input.personId}`)
     return { ok: true, id: rows[0]?.id }
   } catch (error) {
@@ -888,7 +891,8 @@ export async function removePersonActivity(assignmentId: string, companyIdInput?
     `
     await refreshPeoplePaths()
     if (rows[0]?.person_id) {
-      revalidatePath(`/pessoas/${rows[0].person_id}`)
+      revalidatePath("/pessoas/[id]", "page")
+    revalidatePath(`/pessoas/${rows[0].person_id}`)
     }
     return { ok: true }
   } catch (error) {
@@ -914,7 +918,8 @@ export async function togglePersonActivityAssignment(
     `
     await refreshPeoplePaths()
     if (rows[0]?.person_id) {
-      revalidatePath(`/pessoas/${rows[0].person_id}`)
+      revalidatePath("/pessoas/[id]", "page")
+    revalidatePath(`/pessoas/${rows[0].person_id}`)
     }
     return { ok: true }
   } catch (error) {
@@ -1013,7 +1018,8 @@ export async function convertVisitorToMember(personId: string): Promise<PeopleAc
       await refreshMemberCount(companyId)
       await refreshPeoplePaths(true)
       await refreshPeoplePaths(false)
-      revalidatePath(`/pessoas/${personId}`)
+      revalidatePath("/pessoas/[id]", "page")
+    revalidatePath(`/pessoas/${personId}`)
 
       await writeAuditLog({
         action: "person.convert_to_member",
@@ -1096,7 +1102,8 @@ export async function assignVisitorToCell(input: {
 
       await refreshPeoplePaths(true)
       await refreshPeoplePaths(false)
-      revalidatePath(`/pessoas/${input.personId}`)
+      revalidatePath("/pessoas/[id]", "page")
+    revalidatePath(`/pessoas/${input.personId}`)
       revalidatePath("/celulas")
 
       await writeAuditLog({

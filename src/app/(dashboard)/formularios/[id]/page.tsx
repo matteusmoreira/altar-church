@@ -1,15 +1,19 @@
-import { notFound } from "next/navigation"
+import { resolveEntityRoute, canonicalEntityPath, type RouteSearchParams } from "@/lib/navigation/entity-slugs"
+import { notFound, redirect } from "next/navigation"
 import { FormBuilderClient } from "./form-builder-client"
 import { getFormBuilderData } from "@/lib/forms/data"
 import { listDeliveries, listWebhookEndpoints } from "@/lib/integrations/webhooks"
 
 type PageProps = {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ submissionsPage?: string | string[] }>
+  searchParams: Promise<RouteSearchParams>
 }
 
 export default async function FormBuilderPage({ params, searchParams }: PageProps) {
-  const { id } = await params
+  const { id: identifier } = await params
+  const route = await resolveEntityRoute("forms", identifier)
+  if (!route) notFound()
+  const id = route.id
   const query = await searchParams
   const rawSubmissionPage = Array.isArray(query.submissionsPage)
     ? query.submissionsPage[0]
@@ -19,6 +23,7 @@ export default async function FormBuilderPage({ params, searchParams }: PageProp
     submissionPage: Number.isFinite(parsedSubmissionPage) ? parsedSubmissionPage : 1,
   })
   if (!data) notFound()
+  if (identifier !== route.slug) redirect(canonicalEntityPath("/formularios", route.slug, await searchParams))
   let formWebhooks: Awaited<ReturnType<typeof listWebhookEndpoints>> = []
   let formDeliveries: Awaited<ReturnType<typeof listDeliveries>> = []
   try {

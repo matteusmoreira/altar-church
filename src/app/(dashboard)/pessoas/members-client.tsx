@@ -394,7 +394,7 @@ function DuplicatePersonPanel({
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
           <Link
-            href={`/pessoas/${person.id}`}
+            href={`/pessoas/${person.slug || person.id}`}
             className="mt-1 block truncate font-medium transition-colors hover:text-primary"
           >
             {person.fullName}
@@ -739,7 +739,7 @@ export function MembersClient({
   }
 
   const openDetail = (person: PersonListItem) => {
-    router.push(`/pessoas/${person.id}`)
+    router.push(`/pessoas/${person.slug || person.id}`)
   }
 
   const handleSave = async () => {
@@ -1284,7 +1284,7 @@ export function MembersClient({
                               </Avatar>
                               <div>
                                 <Link
-                                  href={`/pessoas/${person.id}`}
+                                  href={`/pessoas/${person.slug || person.id}`}
                                   className="text-sm font-medium transition-colors hover:text-primary"
                                 >
                                   {person.fullName}
@@ -1418,7 +1418,7 @@ export function MembersClient({
                         </Avatar>
                         <div className="min-w-0 flex-1">
                           <Link
-                            href={`/pessoas/${person.id}`}
+                            href={`/pessoas/${person.slug || person.id}`}
                             className="block truncate text-sm font-medium transition-colors hover:text-primary"
                           >
                             {person.fullName}
@@ -1871,7 +1871,7 @@ export function MembersClient({
                           </div>
                           <div className="min-w-0 flex-1">
                             <Link
-                              href={`/pessoas/${person.id}`}
+                              href={`/pessoas/${person.slug || person.id}`}
                               className="truncate text-sm font-medium block hover:text-primary transition-colors"
                             >
                               {person.fullName}

@@ -127,7 +127,7 @@ export function FormsClient({ data }: FormsClientProps) {
       toast.success("Formulário criado")
       setCreateOpen(false)
       if (result.id) {
-        router.push(`/formularios/${result.id}`)
+        router.push(`/formularios/${result.slug || result.id}`)
       }
     })
   }
@@ -217,7 +217,7 @@ export function FormsClient({ data }: FormsClientProps) {
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        href={`/formularios/${form.id}`}
+                        href={`/formularios/${form.slug || form.id}`}
                         className="truncate font-semibold hover:text-primary"
                       >
                         {form.title}
@@ -238,7 +238,7 @@ export function FormsClient({ data }: FormsClientProps) {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Link
-                      href={`/formularios/${form.id}`}
+                      href={`/formularios/${form.slug || form.id}`}
                       className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
                     >
                       Editar

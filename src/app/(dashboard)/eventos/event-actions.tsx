@@ -11,6 +11,7 @@ import { deleteEvent, duplicateEvent, setEventStatus } from "@/lib/operational/a
 
 export function EventActions({
   eventId,
+  eventSlug,
   eventTitle,
   status,
   canEdit,
@@ -18,6 +19,7 @@ export function EventActions({
   canDelete,
 }: {
   eventId: string
+  eventSlug?: string
   eventTitle: string
   status: "draft" | "published" | "cancelled"
   canEdit: boolean
@@ -30,7 +32,7 @@ export function EventActions({
 
   if (!canEdit && !canCreate && !canDelete) return null
 
-  function run(action: (formData: FormData) => Promise<{ ok: boolean; error?: string; id?: string }>, fields: Record<string, string>, success: string, redirectTo?: string | ((id: string | undefined) => string)) {
+  function run(action: (formData: FormData) => Promise<{ ok: boolean; error?: string; id?: string; slug?: string }>, fields: Record<string, string>, success: string, redirectTo?: string | ((id: string | undefined) => string)) {
     startTransition(async () => {
       const formData = new FormData()
       Object.entries(fields).forEach(([key, value]) => formData.set(key, value))
@@ -41,7 +43,7 @@ export function EventActions({
       }
       toast.success(success)
       setConfirm(null)
-      if (redirectTo) router.push(typeof redirectTo === "function" ? redirectTo(result.id) : redirectTo)
+      if (redirectTo) router.push(typeof redirectTo === "function" ? redirectTo(result.slug || result.id) : redirectTo)
       else router.refresh()
     })
   }
@@ -54,7 +56,7 @@ export function EventActions({
           <span className="sr-only">Ações de {eventTitle}</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {canEdit && <DropdownMenuItem onClick={() => router.push(`/eventos/${eventId}`)}><Edit3 /> Abrir e editar</DropdownMenuItem>}
+          {canEdit && <DropdownMenuItem onClick={() => router.push(`/eventos/${eventSlug || eventId}`)}><Edit3 /> Abrir e editar</DropdownMenuItem>}
           {canCreate && <DropdownMenuItem onClick={() => run(duplicateEvent, { id: eventId }, "Evento duplicado", (id) => id ? `/eventos/${id}` : "/eventos")}><Copy /> Duplicar</DropdownMenuItem>}
           {canEdit && status !== "published" && status !== "cancelled" && <DropdownMenuItem onClick={() => run(setEventStatus, { id: eventId, status: "published" }, "Evento publicado")}><Send /> Publicar</DropdownMenuItem>}
           {canEdit && status !== "cancelled" && <DropdownMenuItem onClick={() => setConfirm("cancel")}><XCircle /> Cancelar evento</DropdownMenuItem>}

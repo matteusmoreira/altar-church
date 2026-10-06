@@ -100,7 +100,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     type="button"
                     variant="outline"
                     className="w-full"
-                    render={<Link href={`/membro/ministerios/${ministry.id}`} />}
+                    render={<Link href={`/membro/ministerios/${ministry.slug || ministry.id}`} />}
                     nativeButton={false}
                   >
                     <Settings2 className="mr-2 h-4 w-4" />
