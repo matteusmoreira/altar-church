@@ -40,7 +40,7 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
   assert.match(data, /getMinistryWorkspaceData/)
   assert.match(actions, /createNotificationCampaignDeliveries/)
   assert.match(actions, /afterResponse\("ministry notification outbox"/)
-  assert.match(actions, /processNotificationOutbox\(25\)/)
+  assert.match(actions, /processNotificationOutbox\(25, saved, access\.companyId\)/)
   assert.match(actions, /personIds = \[\.\.\.new Set\(parsed\.personIds\)\]/)
   assert.match(actions, /audience_person_ids = .*snapshot\.personIds/)
   assert.match(actions, /materialize_volunteer_programmings/)

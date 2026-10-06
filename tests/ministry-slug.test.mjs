@@ -52,7 +52,7 @@ test("ministries client and workspace expose slug configuration", () => {
 
   const workspace = read("src/components/ministries/ministry-workspace.tsx")
   assert.match(workspace, /Link amigável \(slug\)/)
-  assert.match(workspace, /\/ministerios\/\{profile\.slug\}/)
+  assert.match(workspace, /value=\{profileForm\.slug\}/)
 })
 
 test("database query resolves ministry by both UUID and friendly slug", async (t) => {

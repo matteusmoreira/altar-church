@@ -1,12 +1,16 @@
 "use client"
 
-import { useState, useTransition, type ReactNode } from "react"
+import { Children, useId, cloneElement, isValidElement, useState, useSyncExternalStore, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Activity, AlertTriangle, BarChart3, Check, ClipboardCheck, Clock3, Download, FileText, HeartHandshake, Megaphone, Pencil, Plus, Save, Search, Settings2, Trash2, UserMinus, UserPlus, Users, X } from "lucide-react"
+import { ArrowLeft, Grid2X2, List, Activity, AlertTriangle, BarChart3, Check, ClipboardCheck, Clock3, Download, FileText, HeartHandshake, Megaphone, Pencil, Plus, Save, Search, Settings2, Trash2, UserMinus, UserPlus, Users, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { EmptyState } from "@/components/shared/empty-state"
+import { SectionHeader } from "@/components/shared/section-header"
+import { ViewToggle } from "@/components/shared/view-toggle"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -16,6 +20,37 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, publishMinistryScale, recordMinistryAttendance, removeMinistryActivity, removeMinistryAttendance, removeMinistryCommunication, removeMinistryFollowUp, removeMinistryScale, removeMinistryTeam, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryResource } from "@/lib/ministries/actions"
 import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
+
+type PeopleView = "list" | "grid"
+const PEOPLE_VIEW_KEY = "altar-church:ministry-people-view:v1"
+const PEOPLE_VIEW_EVENT = "ministry-people-view-change"
+let peopleViewFallback: PeopleView = "list"
+function subscribePeopleView(callback: () => void) {
+  window.addEventListener("storage", callback)
+  window.addEventListener(PEOPLE_VIEW_EVENT, callback)
+  return () => { window.removeEventListener("storage", callback); window.removeEventListener(PEOPLE_VIEW_EVENT, callback) }
+}
+function getPeopleView(): PeopleView {
+  try { return window.localStorage.getItem(PEOPLE_VIEW_KEY) === "grid" ? "grid" : "list" } catch { return peopleViewFallback }
+}
+function getServerPeopleView(): PeopleView { return "list" }
+function setPeopleView(value: PeopleView) {
+  peopleViewFallback = value
+  try { window.localStorage.setItem(PEOPLE_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
+  window.dispatchEvent(new Event(PEOPLE_VIEW_EVENT))
+}
+
+function WorkspaceDialog({ open, onOpenChange, title, description, pending, children }: {
+  open: boolean; onOpenChange: (open: boolean) => void; title: string; description: string; pending: boolean; children: ReactNode
+}) {
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="min-w-0 sm:max-w-2xl" showCloseButton={!pending}>
+      <DialogHeader className="pr-8"><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+      <fieldset disabled={pending} aria-busy={pending} className="min-w-0 space-y-4 [&_form]:min-w-0 [&_input]:min-w-0 [&_[data-slot=select-trigger]]:w-full">{children}</fieldset>
+      <DialogFooter><Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>Cancelar</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>
+}
 
 const DAY_NAMES = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"]
 const TEAM_ROLE_LABELS = {
@@ -99,21 +134,32 @@ const emptyTeamForm: TeamForm = {
 
 function Stat({ label, value, tone = "primary" }: { label: string; value: number; tone?: string }) {
   return (
-    <Card className="glass py-0">
-      <CardContent className="p-4">
+    <Card className="py-0 shadow-none">
+      <CardContent className="p-3">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-2xl font-bold text-${tone}`}>{value}</p>
+        <p className={`mt-1 text-2xl font-bold ${({ primary: "text-primary", "amber-600": "text-amber-600", "blue-600": "text-blue-600", "green-600": "text-green-600", "violet-600": "text-violet-600" } as Record<string, string>)[tone] ?? "text-primary"}`}>{value}</p>
       </CardContent>
     </Card>
   )
 }
 
+function labelFieldControls(children: ReactNode, id: string, helpId?: string): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement<{ children?: ReactNode; id?: string; "aria-describedby"?: string }>(child)) return child
+    if (child.type === Input || child.type === Textarea || child.type === SelectTrigger) {
+      return cloneElement(child, { id, "aria-describedby": helpId })
+    }
+    return child.props.children ? cloneElement(child, { children: labelFieldControls(child.props.children, id, helpId) }) : child
+  })
+}
+
 function Field({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
+  const id = useId()
   return (
     <div className="grid gap-1.5">
-      <Label>{label}</Label>
-      {children}
-      {help && <p className="text-xs leading-relaxed text-muted-foreground">{help}</p>}
+      <Label htmlFor={id}>{label}</Label>
+      {labelFieldControls(children, id, help ? `${id}-help` : undefined)}
+      {help && <p id={`${id}-help`} className="text-xs leading-relaxed text-muted-foreground">{help}</p>}
     </div>
   )
 }
@@ -149,6 +195,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
 
   const [activeTab, setActiveTab] = useState("visao-geral")
   const [peopleSearch, setPeopleSearch] = useState("")
+  const [addPeopleSearch, setAddPeopleSearch] = useState("")
+  const [peopleStatus, setPeopleStatus] = useState("all")
+  const peopleView = useSyncExternalStore(subscribePeopleView, getPeopleView, getServerPeopleView)
+  const [dialog, setDialog] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ label: string; run: () => void } | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState("")
   const [profileForm, setProfileForm] = useState({
@@ -215,6 +265,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
     isActive: true,
   })
   const [onboardingStepForm, setOnboardingStepForm] = useState({
+    id: "",
     templateId: data.onboardingTemplates[0]?.id ?? "",
     title: "",
     description: "",
@@ -242,6 +293,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
         if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
         else {
           toast.success(success)
+          if (dialog) setDialog(null)
           router.refresh()
         }
       } catch (error) {
@@ -257,6 +309,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
         if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
         else {
           toast.success(success)
+          if (dialog) setDialog(null)
           router.refresh()
         }
       } catch (error) {
@@ -270,7 +323,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
   }
 
   const normalizedPeopleSearch = peopleSearch.trim().toLocaleLowerCase("pt-BR")
-  const filteredMembers = data.members.filter((member) => !normalizedPeopleSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedPeopleSearch))
+  const normalizedAddPeopleSearch = addPeopleSearch.trim().toLocaleLowerCase("pt-BR")
+  const filteredMembers = data.members.filter((member) => (peopleStatus === "all" || member.status === peopleStatus) && (!normalizedPeopleSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedPeopleSearch)))
   const normalizedCommunicationSearch = communicationSearch.trim().toLocaleLowerCase("pt-BR")
   const communicationPeople = activeMembers.filter((member) => !normalizedCommunicationSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedCommunicationSearch))
   const setWeekday = (day: number) =>
@@ -280,6 +334,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
     }))
 
   function editTeam(team: (typeof data.teams)[number]) {
+    setDialog("team")
     setTeamForm({
       id: team.id,
       name: team.name,
@@ -297,6 +352,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
 
   function editActivity(activity: (typeof data.agenda)[number]) {
     if (!activity.programmingId) return
+    setDialog("activity")
     setActivityForm({
       id: activity.programmingId,
       title: activity.title,
@@ -340,26 +396,21 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5 [&_[data-slot=card]]:min-w-0 [&_[data-slot=card-content]]:min-w-0 [&_[data-slot=card-title]]:text-base [&_[data-slot=card-content]]:break-words">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
               <HeartHandshake className="mr-1 h-3 w-3" />
-              Workspace
+              Gestão do ministério
             </Badge>
             <Badge>{profile.isActive ? "Ativo" : "Inativo"}</Badge>
-            {profile.slug && (
-              <Badge variant="secondary" className="font-mono text-xs text-muted-foreground">
-                /ministerios/{profile.slug}
-              </Badge>
-            )}
           </div>
           <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{profile.name}</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{profile.mission || profile.description || "Centro operacional do ministério."}</p>
         </div>
         <Button variant="outline" onClick={() => router.push("/ministerios")}>
-          <X className="mr-2 h-4 w-4" />
+          <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
         </Button>
       </div>
@@ -376,7 +427,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
       </div>
 
       {workspace.alerts.length > 0 && (
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2">
           {workspace.alerts.map((alert) => (
             <button key={alert.kind} type="button" onClick={() => setActiveTab(alert.href.replace(/^#/, ""))} className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-left text-sm">
               <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
@@ -388,7 +439,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList density="compact" className="w-full flex-wrap justify-start overflow-x-auto">
+        <TabsList aria-label="Gestão do ministério" className="w-full flex-nowrap justify-start overflow-x-auto rounded-xl border bg-muted/50 p-1 [&_[role=tab]]:min-h-11 [&_[role=tab]]:px-3">
           <TabsTrigger value="visao-geral">
             <BarChart3 />
             Visão geral
@@ -419,7 +470,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           </TabsTrigger>
           <TabsTrigger value="onboarding">
             <Check />
-            Onboarding
+            Integração
           </TabsTrigger>
           <TabsTrigger value="recursos">
             <FileText />
@@ -435,8 +486,9 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="visao-geral">
-          <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <TabsContent value="visao-geral" className="space-y-4">
+<SectionHeader title="Visão geral" description="Acompanhe as atividades e a participação do ministério." />
+          <div className="grid grid-cols-1 gap-4">
             <Card>
               <CardHeader>
                 <CardTitle>Próximas atividades</CardTitle>
@@ -446,7 +498,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                 {workspace.activities.length ? (
                   workspace.activities.slice(0, 8).map((activity) => (
                     <div key={activity.id} className="flex items-center gap-3 rounded-xl border p-3">
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 break-words">
                         <p className="font-medium">{activity.title}</p>
                         <p className="text-xs text-muted-foreground">
                           {formatDateTime(activity.startsAt)} · {activity.location || "Local não informado"}
@@ -456,7 +508,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground">Nenhuma atividade cadastrada.</p>
+                  <EmptyState icon={Activity} className="py-8" title="Nenhuma atividade cadastrada" description="Organize os próximos encontros na Agenda do ministério." action={<Button variant="outline" onClick={() => setActiveTab("agenda")}>Ver Agenda</Button>} />
                 )}
               </CardContent>
             </Card>
@@ -475,25 +527,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground">Sem registros de presença.</p>
+                  <EmptyState icon={ClipboardCheck} className="py-8" title="Sem registros de presença" description="As presenças registradas nas atividades aparecerão aqui." action={canManage ? <Button variant="outline" onClick={() => setActiveTab("escalas")}>Ver Escalas</Button> : undefined} />
                 )}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="pessoas">
-          <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.8fr)_1.4fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Adicionar pessoa</CardTitle>
-                <CardDescription>A pessoa precisa já existir em Pessoas. Isso apenas cria o vínculo ativo com este ministério.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
+        <TabsContent value="pessoas" className="space-y-4">
+<SectionHeader title="Pessoas" description="Gerencie os membros e as solicitações de participação." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("person") }}><Plus className="h-4 w-4" />Adicionar pessoa</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "person"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Adicionar pessoa"} description="A pessoa precisa já existir em Pessoas. Isso apenas cria o vínculo ativo com este ministério." pending={pending}>
+
                 <Field label="Buscar pessoa" help="Pesquise por nome, e-mail ou telefone.">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Ex.: Ana ou (11) 99999-0000" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} />
+                    <Input className="pl-9" placeholder="Ex.: Ana ou (11) 99999-0000" value={addPeopleSearch} onChange={(event) => setAddPeopleSearch(event.target.value)} />
                   </div>
                 </Field>
                 <Field label="Pessoa cadastrada">
@@ -504,7 +553,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     <SelectContent>
                       <SelectItem value="none">Selecione uma pessoa</SelectItem>
                       {data.people
-                        .filter((person) => !normalizedPeopleSearch || `${person.fullName} ${person.email} ${person.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedPeopleSearch))
+                        .filter((person) => !normalizedAddPeopleSearch || `${person.fullName} ${person.email} ${person.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedAddPeopleSearch))
                         .map((person) => (
                           <SelectItem key={person.id} value={person.id}>
                             {person.fullName}
@@ -532,24 +581,29 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   Adicionar pessoa
                 </Button>
                 <p className="text-xs text-muted-foreground">Para cadastrar alguém novo, use a aba Pessoas da igreja e depois volte aqui.</p>
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <Card>
               <CardHeader>
                 <CardTitle>Pessoas e solicitações</CardTitle>
                 <CardDescription>{data.members.length} vínculos encontrados. Use a busca para localizar rapidamente.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="relative mb-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center"><div className="relative min-w-0 flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input className="pl-9" placeholder="Filtrar membros por nome, e-mail ou telefone" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} />
+                  <Input className="pl-9" aria-label="Buscar membros" placeholder="Filtrar membros por nome, e-mail ou telefone" value={peopleSearch} onChange={(event) => setPeopleSearch(event.target.value)} />
                 </div>
-                {filteredMembers.map((member) => (
-                  <div key={member.id} className="flex flex-col gap-3 rounded-xl border p-3 md:flex-row md:items-center">
-                    <div className="min-w-0 flex-1">
+ <Select value={peopleStatus} onValueChange={(value) => setPeopleStatus(value ?? "all")}><SelectTrigger aria-label="Situação dos membros" className="w-full lg:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas as situações</SelectItem>{Object.entries(MEMBER_STATUS_LABELS).map(([value,label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+ <ViewToggle value={peopleView} onChange={setPeopleView} showLabel className="[&_[aria-pressed=true]]:bg-primary [&_[aria-pressed=true]]:text-primary-foreground" options={[{ value: "list", label: "Lista", icon: List }, { value: "grid", label: "Grade", icon: Grid2X2 }]} />
+ </div><p className="text-xs text-muted-foreground" role="status">{filteredMembers.length} de {data.members.length} pessoas</p>
+                <div className={peopleView === "grid" ? "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"} data-people-view={peopleView}>
+{filteredMembers.map((member) => (
+                  <div key={member.id} className={peopleView === "grid" ? "flex min-w-0 flex-col gap-4 rounded-xl border bg-background p-4" : "flex min-w-0 flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center"}>
+                    <div className="min-w-0 flex-1 break-words">
                       <p className="font-medium">{member.personName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {member.email || member.phone || "Sem contato"} · {member.teamNames.length ? member.teamNames.join(", ") : "Sem equipe"}
+                        {[member.email, member.phone].filter(Boolean).join(" · ") || "Sem contato"}
+                      </p><p className="mt-1 text-xs text-muted-foreground">{member.teamNames.length ? member.teamNames.join(", ") : "Sem equipe"}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -640,20 +694,18 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                   </div>
                 ))}
-                {filteredMembers.length === 0 && <p className="py-6 text-sm text-muted-foreground">Nenhuma pessoa encontrada.</p>}
+                </div>
+ {filteredMembers.length === 0 && <EmptyState icon={Users} title={data.members.length ? "Nenhuma pessoa encontrada" : "Seu ministério ainda não tem membros"} description={data.members.length ? "Tente outro nome, contato ou situação." : "Adicione pessoas já cadastradas na igreja ou acompanhe as solicitações de participação."} action={data.members.length ? <Button variant="outline" onClick={() => { setPeopleSearch(""); setPeopleStatus("all") }}>Limpar filtros</Button> : canManage ? <Button onClick={() => setDialog("person")}>Adicionar pessoa</Button> : undefined} />}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="equipes">
-          <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.9fr)_1.4fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>{teamForm.id ? "Editar equipe" : "Criar equipe"}</CardTitle>
-                <CardDescription>Uma equipe é um grupo de trabalho dentro do ministério. Os campos de encontro ficam separados para não gerar dúvida.</CardDescription>
-              </CardHeader>
-              <CardContent>
+        <TabsContent value="equipes" className="space-y-4">
+<SectionHeader title="Equipes" description="Organize os membros, a liderança e os encontros." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("teamMember") }}><Plus className="h-4 w-4" />Adicionar à equipe</Button>}{canManage && <Button type="button" disabled={pending} onClick={() => { setTeamForm(emptyTeamForm); setDialog("team") }}><Plus className="h-4 w-4" />Criar equipe</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "team"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={teamForm.id ? "Editar equipe" : "Criar equipe"} description="Organize a liderança, os encontros e a capacidade da equipe." pending={pending}>
+
                 <form
                   className="space-y-3"
                   onSubmit={(event) => {
@@ -838,15 +890,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       <Save className="mr-2 h-4 w-4" />
                       {teamForm.id ? "Salvar alterações" : "Criar equipe"}
                     </Button>
-                    {teamForm.id && (
-                      <Button type="button" variant="outline" onClick={() => setTeamForm(emptyTeamForm)}>
-                        Cancelar
-                      </Button>
-                    )}
                   </div>
                 </form>
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <div className="space-y-4">
               <Card>
                 <CardHeader>
@@ -970,11 +1017,12 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       </div>
                     )
                   })}
-                  {data.teams.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma equipe criada.</p>}
-                  <div className="border-t pt-3">
+                  {data.teams.length === 0 && <EmptyState icon={Users} title="Nenhuma equipe criada" description="Crie uma equipe para organizar os membros." action={canManage ? <Button onClick={() => setDialog("team")}>Criar equipe</Button> : undefined} />}
+                  <WorkspaceDialog open={dialog === "teamMember"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Adicionar pessoa à equipe"} description="Selecione uma equipe, um membro ativo e sua função." pending={pending}>
+<div className="space-y-3">
                     <p className="mb-2 text-sm font-medium">Adicionar pessoa a uma equipe</p>
-                    <div className="grid gap-2 sm:grid-cols-4">
-                      <Select
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Field label="Equipe"><Select
                         value={teamMember.groupId || "none"}
                         onValueChange={(value) =>
                           setTeamMember({
@@ -996,8 +1044,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               </SelectItem>
                             ))}
                         </SelectContent>
-                      </Select>
-                      <Select
+                      </Select></Field>
+                      <Field label="Pessoa"><Select
                         value={teamMember.personId || "none"}
                         onValueChange={(value) =>
                           setTeamMember({
@@ -1017,8 +1065,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             </SelectItem>
                           ))}
                         </SelectContent>
-                      </Select>
-                      <Select
+                      </Select></Field>
+                      <Field label="Função na equipe"><Select
                         value={teamMember.role}
                         onValueChange={(value) =>
                           setTeamMember({
@@ -1037,7 +1085,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             </SelectItem>
                           ))}
                         </SelectContent>
-                      </Select>
+                      </Select></Field>
                       <Button
                         type="button"
                         disabled={pending || !canManage || !teamMember.groupId || !teamMember.personId}
@@ -1060,20 +1108,18 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">A pessoa precisa estar ativa no ministério. Remover da equipe não remove do ministério.</p>
                   </div>
+</WorkspaceDialog>
                 </CardContent>
               </Card>
             </div>
           </div>
         </TabsContent>
 
-        <TabsContent value="agenda">
-          <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.9fr)_1.2fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Nova atividade</CardTitle>
-                <CardDescription>Crie primeiro a atividade. Depois você poderá montar a escala na aba Escalas.</CardDescription>
-              </CardHeader>
-              <CardContent>
+        <TabsContent value="agenda" className="space-y-4">
+<SectionHeader title="Agenda" description="Planeje as próximas atividades do ministério." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setActivityForm({ id: "", title: "", description: "", startsAt: "", durationMinutes: "60", kind: "meeting", location: "", recurrenceFrequency: "none", recurrenceWeekdays: [] }); setDialog("activity") }}><Plus className="h-4 w-4" />Nova atividade</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "activity"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={activityForm.id ? "Editar atividade" : "Nova atividade"} description="Defina os detalhes da atividade e depois organize a escala." pending={pending}>
+
                 <form
                   className="space-y-3"
                   onSubmit={(event) => {
@@ -1199,20 +1245,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       <Save className="mr-2 h-4 w-4" />
                       {activityForm.id ? "Atualizar atividade" : "Salvar atividade"}
                     </Button>
-                    {activityForm.id && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={pending}
-                        onClick={() => setActivityForm({ id: "", title: "", description: "", startsAt: "", durationMinutes: "60", kind: "meeting", location: "", recurrenceFrequency: "none", recurrenceWeekdays: [] })}
-                      >
-                        Cancelar edição
-                      </Button>
-                    )}
                   </div>
                 </form>
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <Card>
               <CardHeader>
                 <CardTitle>Agenda do ministério</CardTitle>
@@ -1221,7 +1257,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
               <CardContent className="space-y-2">
                 {data.agenda.map((activity) => (
                   <div key={activity.id} className="flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 break-words">
                       <p className="font-medium">{activity.title}</p>
                       <p className="mt-1 text-sm text-muted-foreground">{activity.description || "Sem descrição"}</p>
                       <p className="text-xs text-muted-foreground">
@@ -1255,20 +1291,17 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     )}
                   </div>
                 ))}
-                {data.agenda.length === 0 && <p className="py-6 text-sm text-muted-foreground">Nenhuma atividade cadastrada. Crie a primeira para liberar as escalas.</p>}
+                {data.agenda.length === 0 && <EmptyState icon={Activity} title="Nenhuma atividade cadastrada" description="Planeje uma atividade para começar a organizar as escalas." action={canManage ? <Button onClick={() => setDialog("activity")}>Nova atividade</Button> : undefined} />}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="escalas">
-          <div className="grid gap-4 lg:grid-cols-[minmax(330px,0.9fr)_1.4fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Criar escala</CardTitle>
-                <CardDescription>Fluxo simples: escolha a atividade, cadastre as funções, escolha pessoas e publique.</CardDescription>
-              </CardHeader>
-              <CardContent>
+        <TabsContent value="escalas" className="space-y-4">
+<SectionHeader title="Escalas" description="Distribua as funções e acompanhe a presença nas atividades." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("attendance") }}><Plus className="h-4 w-4" />Registrar presença</Button>}{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("scale") }}><Plus className="h-4 w-4" />Criar escala</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "scale"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Criar escala"} description="Fluxo simples: escolha a atividade, cadastre as funções, escolha pessoas e publique." pending={pending}>
+
                 {data.agenda.length === 0 ? (
                   <div className="space-y-3 rounded-xl border border-dashed p-4">
                     <p className="font-medium">Você ainda não tem uma atividade.</p>
@@ -1416,8 +1449,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </Button>
                   </form>
                 )}
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <div className="space-y-4">
               <Card>
                 <CardHeader>
@@ -1462,7 +1495,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                               return (
                                 <div key={position.id} className="rounded-lg bg-muted/40 p-3">
                                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                    <div className="min-w-0 flex-1">
+                                    <div className="min-w-0 flex-1 break-words">
                                       <p className="font-medium">{position.roleName}</p>
                                       <p className="text-xs text-muted-foreground">
                                         {position.assignedVolunteers}/{position.requiredVolunteers} pessoas {position.missingVolunteers ? `· faltam ${position.missingVolunteers}` : "· preenchida"}
@@ -1510,7 +1543,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                       <p className="text-xs font-medium">Candidatos ativos do ministério</p>
                                       {candidateState.items.map((candidate) => (
                                         <div key={candidate.personId} className="flex flex-col gap-2 rounded-lg border bg-background p-2 sm:flex-row sm:items-center">
-                                          <div className="min-w-0 flex-1">
+                                          <div className="min-w-0 flex-1 break-words">
                                             <p className="text-sm">{candidate.personName}</p>
                                             {candidate.blockers.length > 0 && <p className="text-xs text-destructive">Bloqueado: {candidate.blockers.join(", ")}</p>}
                                             {candidate.warnings.length > 0 && <p className="text-xs text-amber-600">Atenção: {candidate.warnings.join(", ")}</p>}
@@ -1569,16 +1602,11 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       </div>
                     )
                   })}
-                  {data.scales.length === 0 && <p className="py-6 text-sm text-muted-foreground">Nenhuma atividade disponível para escala.</p>}
+                  {data.scales.length === 0 && <EmptyState icon={ClipboardCheck} title="Nenhuma atividade disponível" description="Cadastre uma atividade na Agenda para montar sua escala." action={<Button variant="outline" onClick={() => setActiveTab("agenda")}>Ir para Agenda</Button>} />}
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Registrar presença</CardTitle>
-                  <CardDescription>Presença fica vinculada à atividade e alimenta os acompanhamentos por ausência.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form
+              <WorkspaceDialog open={dialog === "attendance"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Registrar presença"} description="Registre a participação de uma pessoa na atividade." pending={pending}>
+<form
                     className="space-y-3"
                     onSubmit={(event) => {
                       event.preventDefault()
@@ -1595,7 +1623,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       )
                     }}
                   >
-                    <Select
+                    <Field label="Atividade"><Select
                       value={attendanceForm.eventId || "none"}
                       onValueChange={(value) =>
                         setAttendanceForm({
@@ -1615,8 +1643,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           </SelectItem>
                         ))}
                       </SelectContent>
-                    </Select>
-                    <Select
+                    </Select></Field>
+                    <Field label="Pessoa"><Select
                       value={attendanceForm.personId || "none"}
                       onValueChange={(value) =>
                         setAttendanceForm({
@@ -1636,8 +1664,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           </SelectItem>
                         ))}
                       </SelectContent>
-                    </Select>
-                    <Select
+                    </Select></Field>
+                    <Field label="Situação da presença"><Select
                       value={attendanceForm.status}
                       onValueChange={(value) =>
                         setAttendanceForm({
@@ -1654,11 +1682,19 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         <SelectItem value="absent">Ausente sem justificativa</SelectItem>
                         <SelectItem value="justified">Ausente com justificativa</SelectItem>
                       </SelectContent>
-                    </Select>
+                    </Select></Field>
                     <Button type="submit" className="w-full" disabled={pending || !canManage || !attendanceForm.eventId || !attendanceForm.personId}>
                       Salvar presença
                     </Button>
                   </form>
+</WorkspaceDialog>
+          <Card>
+                <CardHeader>
+                  <CardTitle>Histórico de presença</CardTitle>
+                  <CardDescription>Registros de participação nas atividades do ministério.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {data.attendanceRecords.length === 0 && <EmptyState icon={ClipboardCheck} title="Nenhuma presença registrada" description="Registre a participação dos membros nas atividades." action={canManage ? <Button onClick={() => setDialog("attendance")}>Registrar presença</Button> : undefined} />}
                   {data.attendanceRecords.length > 0 && (
                     <div className="mt-6 space-y-2 border-t pt-4">
                       <p className="text-sm font-medium">Registros recentes</p>
@@ -1697,14 +1733,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           </div>
         </TabsContent>
 
-        <TabsContent value="comunicacao">
-          <Card>
-            <CardHeader>
-              <CardTitle>Nova comunicação</CardTitle>
-              <CardDescription>Escolha exatamente quem receberá. A seleção é validada e congelada no servidor antes de entrar na fila.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
+        <TabsContent value="comunicacao" className="space-y-4">
+<SectionHeader title="Comunicação" description="Prepare mensagens e acompanhe suas entregas." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("communication") }}><Plus className="h-4 w-4" />Nova comunicação</Button>}</>} />
+          <WorkspaceDialog open={dialog === "communication"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Nova comunicação"} description="Escolha o canal, os destinatários e a mensagem antes de enviar para a fila." pending={pending}>
+<form
                 className="grid gap-4 lg:grid-cols-2"
                 onSubmit={(event) => {
                   event.preventDefault()
@@ -1848,14 +1880,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   Enviar para fila
                 </Button>
               </form>
-              <div className="mt-6 space-y-2 border-t pt-4">
+</WorkspaceDialog>
+          <Card>
+            <CardHeader>
+              <CardTitle>Comunicações do ministério</CardTitle>
+              <CardDescription>Acompanhe a situação das mensagens e consulte as entregas.</CardDescription>
+            </CardHeader>
+            <CardContent>
+
+              <div className="space-y-3">
                 <div>
                   <p className="font-medium">Comunicações criadas</p>
                   <p className="text-xs text-muted-foreground">Excluir remove a campanha da operação; mensagens já entregues não podem ser desfeitas.</p>
                 </div>
                 {data.communications.map((communication) => (
                   <div key={communication.id} className="flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 break-words">
                       <p className="truncate font-medium">{communication.title}</p>
                       <p className="text-xs text-muted-foreground">
                         {communication.method.toUpperCase()} · {communication.snapshotCount} destinatário(s) · {new Date(communication.createdAt).toLocaleString("pt-BR")}
@@ -1886,20 +1926,17 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     )}
                   </div>
                 ))}
-                {data.communications.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma comunicação criada.</p>}
+                {data.communications.length === 0 && <EmptyState icon={Megaphone} title="Nenhuma comunicação criada" description="Prepare uma mensagem e escolha seus destinatários." action={canManage ? <Button onClick={() => setDialog("communication")}>Nova comunicação</Button> : undefined} />}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="acompanhamentos">
-          <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.9fr)_1.4fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Novo acompanhamento</CardTitle>
-                <CardDescription>Tarefas de cuidado, como ligar, conversar ou acompanhar uma ausência.</CardDescription>
-              </CardHeader>
-              <CardContent>
+        <TabsContent value="acompanhamentos" className="space-y-4">
+<SectionHeader title="Acompanhamentos" description="Cuide das pessoas e acompanhe as próximas ações." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("followUp") }}><Plus className="h-4 w-4" />Novo acompanhamento</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "followUp"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Novo acompanhamento"} description="Tarefas de cuidado, como ligar, conversar ou acompanhar uma ausência." pending={pending}>
+
                 <form
                   className="space-y-3"
                   onSubmit={(event) => {
@@ -2031,8 +2068,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     Criar acompanhamento
                   </Button>
                 </form>
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <Card>
               <CardHeader>
                 <CardTitle>Fila de acompanhamentos</CardTitle>
@@ -2042,7 +2079,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                 {data.followUps.map((task) => (
                   <div key={task.id} className="rounded-xl border p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 break-words">
                         <p className="font-medium">{task.personName}</p>
                         <p className="text-sm">{task.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{task.notes || "Sem detalhes"}</p>
@@ -2097,21 +2134,32 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                   </div>
                 ))}
-                {data.followUps.length === 0 && <p className="py-6 text-sm text-muted-foreground">Nenhum acompanhamento aberto.</p>}
+                {data.followUps.length === 0 && <EmptyState icon={Clock3} title="Nenhum acompanhamento aberto" description="Crie uma ação de cuidado para um membro do ministério." action={canManage ? <Button onClick={() => setDialog("followUp")}>Novo acompanhamento</Button> : undefined} />}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="onboarding">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+        <TabsContent value="onboarding" className="space-y-4">
+ <WorkspaceDialog open={dialog === "step"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={onboardingStepForm.id ? "Editar etapa" : "Adicionar etapa"} description="Configure a etapa do checklist de integração." pending={pending}>
+<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); run(() => saveMinistryOnboardingStep({ ministryId: profile.id, ...onboardingStepForm, id: onboardingStepForm.id || null, sortOrder: Number(onboardingStepForm.sortOrder) }), "Etapa salva") }}>
+ <Field label="Título"><Input required minLength={2} value={onboardingStepForm.title} onChange={(event) => setOnboardingStepForm({ ...onboardingStepForm, title: event.target.value })} /></Field>
+ <Field label="Descrição"><Textarea value={onboardingStepForm.description} onChange={(event) => setOnboardingStepForm({ ...onboardingStepForm, description: event.target.value })} /></Field>
+ <Field label="Ordem"><Input type="number" min={0} max={10000} required value={onboardingStepForm.sortOrder} onChange={(event) => setOnboardingStepForm({ ...onboardingStepForm, sortOrder: event.target.value })} /></Field>
+ <label className="flex items-center gap-2"><input type="checkbox" checked={onboardingStepForm.isRequired} onChange={(event) => setOnboardingStepForm({ ...onboardingStepForm, isRequired: event.target.checked })} />Etapa obrigatória</label>
+ <Button type="submit" disabled={pending || !canManage}>Salvar etapa</Button>
+ </form>
+</WorkspaceDialog>
+<SectionHeader title="Integração" description="Organize checklists e acompanhe o progresso dos membros." action={<><Button type="button" disabled={pending} onClick={() => setDialog("onboardingProgress")}><Check className="h-4 w-4" />Atualizar etapa</Button>{canManage && <Button type="button" disabled={pending} onClick={() => { setOnboardingTemplateForm({ id: "", name: "Integração no ministério", description: "", isActive: true }); setDialog("template") }}><Plus className="h-4 w-4" />Criar checklist</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
             <Card>
               <CardHeader>
                 <CardTitle>Checklist de integração</CardTitle>
                 <CardDescription>Defina os passos para receber uma pessoa no ministério.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form
+                <WorkspaceDialog open={dialog === "template"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={onboardingTemplateForm.id ? "Editar checklist" : "Criar checklist"} description="Defina o nome e a descrição da integração." pending={pending}>
+<form
                   className="space-y-3"
                   onSubmit={(event) => {
                     event.preventDefault()
@@ -2122,13 +2170,13 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           id: onboardingTemplateForm.id || null,
                           name: onboardingTemplateForm.name,
                           description: onboardingTemplateForm.description,
-                          isActive: true,
+                          isActive: onboardingTemplateForm.isActive,
                         }),
-                      "Checklist salva",
+                      "Checklist salvo",
                     )
                   }}
                 >
-                  <Input
+                  <Field label="Nome do checklist"><Input
                     required
                     placeholder="Nome do checklist"
                     value={onboardingTemplateForm.name}
@@ -2138,8 +2186,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         name: event.target.value,
                       })
                     }
-                  />
-                  <Textarea
+                  /></Field>
+                  <Field label="Descrição"><Textarea
                     placeholder="Descrição"
                     value={onboardingTemplateForm.description}
                     onChange={(event) =>
@@ -2148,17 +2196,20 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         description: event.target.value,
                       })
                     }
-                  />
+                  /></Field>
                   <Button type="submit" className="w-full" disabled={pending || !canManage}>
                     <Save className="mr-2 h-4 w-4" />
-                    Criar checklist
+                    {onboardingTemplateForm.id ? "Salvar checklist" : "Criar checklist"}
                   </Button>
                 </form>
-                {data.onboardingTemplates.map((template) => (
+</WorkspaceDialog>
+                {data.onboardingTemplates.length === 0 && <EmptyState icon={ClipboardCheck} title="Nenhum checklist criado" description="Defina as etapas para receber novos membros." action={canManage ? <Button onClick={() => setDialog("template")}>Criar checklist</Button> : undefined} />}
+ {data.onboardingTemplates.map((template) => (
                   <div key={template.id} className="rounded-xl border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium">{template.name}</p>
+ {canManage && <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => { setOnboardingTemplateForm({ id: template.id, name: template.name, description: template.description, isActive: template.isActive }); setDialog("template") }}><Pencil className="h-4 w-4" />Editar checklist</Button>}
                         <p className="text-xs text-muted-foreground">{template.description || "Sem descrição"}</p>
                       </div>
                       {canManage && (
@@ -2189,6 +2240,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             {step.title}
                             {step.isRequired ? " · obrigatório" : ""}
                           </span>
+ {canManage && <Button type="button" size="icon-sm" variant="ghost" disabled={pending} aria-label={`Editar etapa ${step.title}`} onClick={() => { setOnboardingStepForm({ id: step.id, templateId: template.id, title: step.title, description: step.description, sortOrder: String(step.sortOrder), isRequired: step.isRequired }); setDialog("step") }}><Pencil className="h-3.5 w-3.5" /></Button>}
                           {canManage && (
                             <Button
                               type="button"
@@ -2212,41 +2264,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       ))}
                       {template.steps.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma etapa criada.</p>}
                     </div>
-                    <form
-                      className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        run(
-                          () =>
-                            saveMinistryOnboardingStep({
-                              ministryId: profile.id,
-                              templateId: template.id,
-                              title: onboardingStepForm.templateId === template.id ? onboardingStepForm.title : "",
-                              description: onboardingStepForm.description,
-                              sortOrder: Number(onboardingStepForm.sortOrder),
-                              isRequired: true,
-                            }),
-                          "Etapa adicionada",
-                        )
-                      }}
-                    >
-                      <Input
-                        required
-                        placeholder="Nova etapa"
-                        value={onboardingStepForm.templateId === template.id ? onboardingStepForm.title : ""}
-                        onChange={(event) =>
-                          setOnboardingStepForm({
-                            ...onboardingStepForm,
-                            templateId: template.id,
-                            title: event.target.value,
-                          })
-                        }
-                      />
-                      <Button type="submit" variant="outline" disabled={pending || !canManage || onboardingStepForm.templateId !== template.id}>
-                        <Plus className="mr-1 h-4 w-4" />
-                        Etapa
-                      </Button>
-                    </form>
+                    {canManage && <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => {
+  setOnboardingStepForm({ id: "", templateId: template.id, title: "", description: "", sortOrder: String(template.steps.length), isRequired: true })
+  setDialog("step")
+}}><Plus className="h-4 w-4" />Adicionar etapa</Button>}
                   </div>
                 ))}
               </CardContent>
@@ -2267,9 +2288,10 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </p>
                   </div>
                 ))}
-                {data.onboarding.length === 0 && <p className="text-sm text-muted-foreground">Aprove um membro e crie um checklist para acompanhar a integração.</p>}
-                <form
-                  className="border-t pt-4 space-y-3"
+                {data.onboarding.length === 0 && <EmptyState icon={Users} title="Nenhum progresso para acompanhar" description="Aprove os membros e crie um checklist para iniciar a integração." action={canManage ? <Button variant="outline" onClick={() => setActiveTab("pessoas")}>Ver Pessoas</Button> : undefined} />}
+                <WorkspaceDialog open={dialog === "onboardingProgress"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Atualizar etapa"} description="Selecione o membro e a etapa concluída." pending={pending}>
+<form
+                  className="space-y-3"
                   onSubmit={(event) => {
                     event.preventDefault()
                     run(
@@ -2285,7 +2307,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   }}
                 >
                   <p className="text-sm font-medium">Atualizar etapa</p>
-                  <Select
+                  <Field label="Membro"><Select
                     value={onboardingCheckForm.membershipId || "none"}
                     onValueChange={(value) =>
                       setOnboardingCheckForm({
@@ -2305,8 +2327,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         </SelectItem>
                       ))}
                     </SelectContent>
-                  </Select>
-                  <Select
+                  </Select></Field>
+                  <Field label="Etapa"><Select
                     value={onboardingCheckForm.stepId || "none"}
                     onValueChange={(value) =>
                       setOnboardingCheckForm({
@@ -2328,24 +2350,22 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           </SelectItem>
                         ))}
                     </SelectContent>
-                  </Select>
+                  </Select></Field>
                   <Button type="submit" className="w-full" disabled={pending || !onboardingCheckForm.membershipId || !onboardingCheckForm.stepId}>
                     Marcar como concluída
                   </Button>
                 </form>
+</WorkspaceDialog>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="recursos">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Novo recurso</CardTitle>
-                <CardDescription>Compartilhe materiais com o ministério.</CardDescription>
-              </CardHeader>
-              <CardContent>
+        <TabsContent value="recursos" className="space-y-4">
+<SectionHeader title="Recursos" description="Compartilhe materiais com o ministério." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("resource") }}><Plus className="h-4 w-4" />Novo recurso</Button>}</>} />
+          <div className="grid grid-cols-1 gap-4">
+            <WorkspaceDialog open={dialog === "resource"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Novo recurso"} description="Compartilhe materiais com o ministério." pending={pending}>
+
                 <form
                   className="space-y-3"
                   onSubmit={(event) => {
@@ -2373,7 +2393,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     }
                   }}
                 >
-                  <Input
+                  <Field label="Título"><Input
                     required
                     placeholder="Título"
                     value={resourceForm.title}
@@ -2383,8 +2403,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         title: event.target.value,
                       })
                     }
-                  />
-                  <Textarea
+                  /></Field>
+                  <Field label="Descrição"><Textarea
                     placeholder="Descrição"
                     value={resourceForm.description}
                     onChange={(event) =>
@@ -2393,9 +2413,9 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         description: event.target.value,
                       })
                     }
-                  />
+                  /></Field>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <Input
+                    <Field label="Categoria"><Input
                       placeholder="Categoria"
                       value={resourceForm.category}
                       onChange={(event) =>
@@ -2404,8 +2424,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                           category: event.target.value,
                         })
                       }
-                    />
-                    <Select
+                    /></Field>
+                    <Field label="Visibilidade"><Select
                       value={resourceForm.visibility}
                       onValueChange={(value) =>
                         setResourceForm({
@@ -2422,9 +2442,9 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         <SelectItem value="members">Membros</SelectItem>
                         <SelectItem value="public">Público</SelectItem>
                       </SelectContent>
-                    </Select>
+                    </Select></Field>
                   </div>
-                  <Input
+                  <Field label="Link externo"><Input
                     placeholder="URL externa (ou envie um arquivo)"
                     type="url"
                     value={resourceForm.externalUrl}
@@ -2434,15 +2454,15 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         externalUrl: event.target.value,
                       })
                     }
-                  />
-                  <Input name="file" type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx" />
+                  /></Field>
+                  <Field label="Arquivo"><Input name="file" type="file" accept=".pdf,.txt,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx" /></Field>
                   <Button type="submit" className="w-full" disabled={pending || !canManage}>
                     <FileText className="mr-2 h-4 w-4" />
                     Publicar recurso
                   </Button>
                 </form>
-              </CardContent>
-            </Card>
+
+</WorkspaceDialog>
             <Card>
               <CardHeader>
                 <CardTitle>Biblioteca do ministério</CardTitle>
@@ -2450,7 +2470,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
               <CardContent className="space-y-2">
                 {data.resources.map((resource) => (
                   <div key={resource.id} className="flex items-center gap-3 rounded-xl border p-3">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 break-words">
                       <p className="font-medium">{resource.title}</p>
                       <p className="text-xs text-muted-foreground">
                         {resource.category} · {resource.visibility}
@@ -2483,13 +2503,14 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     )}
                   </div>
                 ))}
-                {data.resources.length === 0 && <p className="text-sm text-muted-foreground">Nenhum recurso publicado.</p>}
+                {data.resources.length === 0 && <EmptyState icon={FileText} title="Nenhum recurso publicado" description="Compartilhe arquivos e links úteis para o ministério." action={canManage ? <Button onClick={() => setDialog("resource")}>Novo recurso</Button> : undefined} />}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="relatorios">
+        <TabsContent value="relatorios" className="space-y-4">
+<SectionHeader title="Relatórios" description="Consulte os indicadores e a participação por equipe." />
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <Stat label="Horas voluntárias" value={Math.round(data.report.volunteerHours)} tone="blue-600" />
             <Stat label="Escalas publicadas" value={data.report.filledScales} tone="green-600" />
@@ -2525,7 +2546,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="configuracoes">
+        <TabsContent value="configuracoes" className="space-y-4">
+<SectionHeader title="Configurações" description="Atualize as informações e as preferências do ministério." />
           <Card>
             <CardHeader>
               <CardTitle>Configurações do ministério</CardTitle>
