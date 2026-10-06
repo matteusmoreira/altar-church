@@ -24,6 +24,7 @@ const dateTime = (value: string) =>
     month: "long",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(value))
 
 export function MemberDashboard({ data }: { data: MemberPortalSummary }) {
@@ -154,6 +155,25 @@ export function MemberDashboard({ data }: { data: MemberPortalSummary }) {
           </Card>
         )}
       </section>
+
+      {data.scaleNotices.length > 0 && (
+        <section className="space-y-2.5" aria-label="Avisos de escala">
+          <h2 className="flex items-center gap-2 text-sm font-bold sm:text-base">
+            <Bell className="h-4 w-4 text-primary" />
+            Você foi escalado
+          </h2>
+          {data.scaleNotices.map((notice) => (
+            <Card key={notice.id} className="border-primary/20 bg-primary/5 py-0">
+              <CardContent className="space-y-1.5 p-4">
+                <p className="font-semibold">{notice.eventTitle}</p>
+                <p className="text-sm">{notice.departmentName} · Sua função: {notice.roleName}</p>
+                <p className="text-sm text-muted-foreground">{dateTime(notice.startsAt)}</p>
+                {notice.instructions && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{notice.instructions}</p>}
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+      )}
 
       {/* Ações Rápidas Compactas Lado a Lado */}
       <section className="space-y-2">

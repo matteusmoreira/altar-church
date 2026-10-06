@@ -39,6 +39,7 @@ function resultError(error: unknown): VolunteerActionResult {
 
 function refreshVolunteerPaths() {
   revalidatePath("/voluntariado");
+  revalidatePath("/membro");
   revalidatePath("/membro/voluntariado");
   revalidatePath("/eventos");
   revalidatePath("/dashboard");
@@ -190,168 +191,6 @@ export async function saveVolunteerDepartmentAccess(
   }
 }
 
-const availabilitySchema = z
-  .object({
-    desiredServicesPerMonth: z.number().int().min(0).max(31),
-    maxServicesPerMonth: z.number().int().min(1).max(62),
-    minimumRestHours: z.number().int().min(0).max(168),
-    rules: z
-      .array(
-        z.object({
-          weekday: z.number().int().min(0).max(6),
-          available: z.boolean(),
-          startsAt: z
-            .string()
-            .regex(/^\d{2}:\d{2}$/)
-            .nullable(),
-          endsAt: z
-            .string()
-            .regex(/^\d{2}:\d{2}$/)
-            .nullable(),
-          validFrom: z.string().date().nullable(),
-          validUntil: z.string().date().nullable(),
-        }),
-      )
-      .max(50),
-    exceptions: z
-      .array(
-        z.object({
-          startsAt: z.string().datetime(),
-          endsAt: z.string().datetime(),
-          available: z.boolean(),
-          reason: z.string().trim().max(300).default(""),
-        }),
-      )
-      .max(200),
-    preferences: z
-      .array(
-        z.object({
-          departmentId: uuid,
-          roleId: optionalUuid,
-          roleName: z.string().trim().min(1).max(80),
-          preference: z.number().int().min(-2).max(2),
-        }),
-      )
-      .max(100),
-  })
-  .refine(
-    (value) => value.desiredServicesPerMonth <= value.maxServicesPerMonth,
-    { message: "Frequência desejada deve respeitar limite mensal" },
-  );
-
-export async function saveMyVolunteerAvailability(
-  input: z.input<typeof availabilitySchema>,
-): Promise<VolunteerActionResult> {
-  try {
-    const parsed = availabilitySchema.parse(input);
-    const { user, companyId, volunteerId } = await volunteerContext(
-      "volunteer.self.availability",
-    );
-    const sql = getSql();
-    await sql.begin(async (tx) => {
-      await tx`update public.volunteer_profiles set desired_services_per_month = ${parsed.desiredServicesPerMonth},
-        max_services_per_month = ${parsed.maxServicesPerMonth}, minimum_rest_hours = ${parsed.minimumRestHours}, updated_by = ${user.id}
-        where id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`delete from public.volunteer_availability_rules where volunteer_id = ${volunteerId}`;
-      await tx`delete from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId}`;
-      await tx`delete from public.volunteer_role_preferences where volunteer_id = ${volunteerId}`;
-      for (const rule of parsed.rules)
-        await tx`
-        insert into public.volunteer_availability_rules(company_id, volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until)
-        values (${companyId}, ${volunteerId}, ${rule.weekday}, ${rule.available}, ${rule.startsAt}, ${rule.endsAt}, ${rule.validFrom}, ${rule.validUntil})
-      `;
-      for (const exception of parsed.exceptions)
-        await tx`
-        insert into public.volunteer_availability_exceptions(company_id, volunteer_id, starts_at, ends_at, available, reason)
-        values (${companyId}, ${volunteerId}, ${exception.startsAt}, ${exception.endsAt}, ${exception.available}, ${exception.reason})
-      `;
-      for (const preference of parsed.preferences)
-        await tx`
-        insert into public.volunteer_role_preferences(company_id, volunteer_id, department_id, role_id, role_name, preference)
-        values (${companyId}, ${volunteerId}, ${preference.departmentId}, ${preference.roleId}, ${preference.roleName}, ${preference.preference})
-      `;
-    });
-    await audit(
-      "volunteer_availability.save",
-      "volunteer_profiles",
-      volunteerId,
-      companyId,
-    );
-    refreshVolunteerPaths();
-    return { ok: true, id: volunteerId };
-  } catch (error) {
-    return resultError(error);
-  }
-}
-
-export async function saveVolunteerAvailabilityForManager(
-  input: z.input<typeof availabilitySchema> & { volunteerId: string },
-): Promise<VolunteerActionResult> {
-  try {
-    const volunteerId = uuid.parse(input.volunteerId);
-    const rows = await getSql()<
-      { company_id: string; department_id: string | null }[]
-    >`
-      select volunteer.company_id, membership.department_id
-      from public.volunteer_profiles volunteer
-      left join public.volunteer_department_memberships membership
-        on membership.volunteer_id = volunteer.id
-        and membership.company_id = volunteer.company_id
-        and membership.is_active
-      where volunteer.id = ${volunteerId} and volunteer.deleted_at is null
-    `;
-    const target = rows[0];
-    if (!target) throw new Error("Voluntário não encontrado");
-    const departmentIds = rows.flatMap((row) =>
-      row.department_id ? [row.department_id] : [],
-    );
-    const access = await managerContext(
-      "volunteers.edit",
-      departmentIds[0] ?? null,
-      target.company_id,
-    );
-    if (
-      departmentIds.length === 0 &&
-      !["superadmin", "admin", "pastor"].includes(access.user.role)
-    ) {
-      throw new Error("Acesso negado");
-    }
-    for (const departmentId of departmentIds.slice(1))
-      await managerContext("volunteers.edit", departmentId, target.company_id);
-    // Manager flow uses the same durable writes, but cannot impersonate self action.
-    const parsed = availabilitySchema.parse(input);
-    const { user, companyId } = access;
-    const sql = getSql();
-    await sql.begin(async (tx) => {
-      await tx`update public.volunteer_profiles set desired_services_per_month = ${parsed.desiredServicesPerMonth},
-        max_services_per_month = ${parsed.maxServicesPerMonth}, minimum_rest_hours = ${parsed.minimumRestHours}, updated_by = ${user.id}
-        where id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`delete from public.volunteer_availability_rules where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`delete from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
-      await tx`delete from public.volunteer_role_preferences where volunteer_id = ${volunteerId} and company_id = ${companyId}`;
-      for (const rule of parsed.rules)
-        await tx`insert into public.volunteer_availability_rules(company_id, volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until)
-        values (${companyId}, ${volunteerId}, ${rule.weekday}, ${rule.available}, ${rule.startsAt}, ${rule.endsAt}, ${rule.validFrom}, ${rule.validUntil})`;
-      for (const exception of parsed.exceptions)
-        await tx`insert into public.volunteer_availability_exceptions(company_id, volunteer_id, starts_at, ends_at, available, reason)
-        values (${companyId}, ${volunteerId}, ${exception.startsAt}, ${exception.endsAt}, ${exception.available}, ${exception.reason})`;
-      for (const preference of parsed.preferences)
-        await tx`insert into public.volunteer_role_preferences(company_id, volunteer_id, department_id, role_id, role_name, preference)
-        values (${companyId}, ${volunteerId}, ${preference.departmentId}, ${preference.roleId}, ${preference.roleName}, ${preference.preference})`;
-    });
-    await audit(
-      "volunteer_availability.manager_save",
-      "volunteer_profiles",
-      volunteerId,
-      companyId,
-    );
-    refreshVolunteerPaths();
-    return { ok: true, id: volunteerId };
-  } catch (error) {
-    return resultError(error);
-  }
-}
-
 export async function generateSmartVolunteerSchedule(
   scheduleIdInput: string,
   eventIdInput?: string,
@@ -374,8 +213,6 @@ export async function generateSmartVolunteerSchedule(
       shiftRows,
       volunteerRows,
       membershipRows,
-      ruleRows,
-      exceptionRows,
       preferenceRows,
       assignmentRows,
     ] = await Promise.all([
@@ -389,21 +226,13 @@ export async function generateSmartVolunteerSchedule(
       sql<
         Record<string, unknown>[]
       >`select volunteer.id, person.full_name as name, volunteer.registration_status,
-          volunteer.desired_services_per_month, volunteer.max_services_per_month, volunteer.minimum_rest_hours
+          volunteer.desired_services_per_month, volunteer.max_services_per_month
         from public.volunteer_profiles volunteer join public.people person on person.id = volunteer.person_id
         where volunteer.company_id = ${companyId} and volunteer.deleted_at is null`,
       sql<
         Record<string, unknown>[]
       >`select volunteer_id, department_id, role_name from public.volunteer_department_memberships
         where company_id = ${companyId} and is_active`,
-      sql<
-        Record<string, unknown>[]
-      >`select volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until
-        from public.volunteer_availability_rules where company_id = ${companyId}`,
-      sql<
-        Record<string, unknown>[]
-      >`select volunteer_id, starts_at, ends_at, available from public.volunteer_availability_exceptions
-        where company_id = ${companyId} and ends_at >= now() - interval '1 month'`,
       sql<
         Record<string, unknown>[]
       >`select volunteer_id, department_id, role_name, preference from public.volunteer_role_preferences where company_id = ${companyId}`,
@@ -419,8 +248,6 @@ export async function generateSmartVolunteerSchedule(
     )) {
       await managerContext("schedules.edit", departmentId);
     }
-    const textTime = (value: unknown) =>
-      value ? String(value).slice(0, 5) : null;
     const iso = (value: unknown) =>
       value instanceof Date ? value.toISOString() : String(value);
     const candidates: SchedulerCandidateInput[] = volunteerRows.map((row) => {
@@ -433,31 +260,7 @@ export async function generateSmartVolunteerSchedule(
         active: row.registration_status === "active",
         departmentIds: memberships.map((item) => String(item.department_id)),
         roleNames: memberships.map((item) => String(item.role_name)),
-        desiredServicesPerMonth: Number(row.desired_services_per_month),
-        maxServicesPerMonth: Number(row.max_services_per_month),
-        minimumRestHours: Number(row.minimum_rest_hours),
         preference: 0,
-        availabilityRules: ruleRows
-          .filter((item) => item.volunteer_id === row.id)
-          .map((item) => ({
-            weekday: Number(item.weekday),
-            available: Boolean(item.available),
-            startsAt: textTime(item.starts_at),
-            endsAt: textTime(item.ends_at),
-            validFrom: item.valid_from
-              ? iso(item.valid_from).slice(0, 10)
-              : null,
-            validUntil: item.valid_until
-              ? iso(item.valid_until).slice(0, 10)
-              : null,
-          })),
-        availabilityExceptions: exceptionRows
-          .filter((item) => item.volunteer_id === row.id)
-          .map((item) => ({
-            startsAt: iso(item.starts_at),
-            endsAt: iso(item.ends_at),
-            available: Boolean(item.available),
-          })),
         assignments: assignmentRows
           .filter((item) => item.volunteer_id === row.id)
           .map((item) => ({
@@ -558,7 +361,7 @@ export async function getVolunteerShiftCandidates(
     const volunteers = await sql<Record<string, unknown>[]>`
       select volunteer.id, person.full_name as name, photo.storage_path as photo_path,
         volunteer.registration_status, volunteer.desired_services_per_month,
-        volunteer.max_services_per_month, volunteer.minimum_rest_hours,
+        volunteer.max_services_per_month,
         coalesce(array_agg(distinct membership.department_id::text) filter (where membership.department_id is not null), '{}') as department_ids,
         coalesce(array_agg(distinct membership.role_name) filter (where membership.role_name is not null), '{}') as role_names,
         coalesce(preference.preference, 0) as preference
@@ -576,43 +379,15 @@ export async function getVolunteerShiftCandidates(
       value instanceof Date ? value.toISOString() : String(value);
     const candidates: SchedulerCandidateInput[] = [];
     for (const volunteer of volunteers) {
-      const [rules, exceptions, history] = await Promise.all([
-        sql<
-          Record<string, unknown>[]
-        >`select weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = ${String(volunteer.id)} and company_id = ${companyId}`,
-        sql<
-          Record<string, unknown>[]
-        >`select starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = ${String(volunteer.id)} and company_id = ${companyId}`,
-        sql<
-          Record<string, unknown>[]
-        >`select shift.starts_at, coalesce(shift.ends_at, shift.starts_at + interval '2 hours') as ends_at, assignment.status, shift.role_name
-          from public.volunteer_assignments assignment join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = assignment.company_id where assignment.volunteer_id = ${String(volunteer.id)} and assignment.company_id = ${companyId}`,
-      ]);
+      const history = await sql<Record<string, unknown>[]>`select shift.starts_at, coalesce(shift.ends_at, shift.starts_at + interval '2 hours') as ends_at, assignment.status, shift.role_name
+          from public.volunteer_assignments assignment join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = assignment.company_id where assignment.volunteer_id = ${String(volunteer.id)} and assignment.company_id = ${companyId}`;
       candidates.push({
         id: String(volunteer.id),
         name: String(volunteer.name),
         active: volunteer.registration_status === "active",
         departmentIds: volunteer.department_ids as string[],
         roleNames: volunteer.role_names as string[],
-        desiredServicesPerMonth: Number(volunteer.desired_services_per_month),
-        maxServicesPerMonth: Number(volunteer.max_services_per_month),
-        minimumRestHours: Number(volunteer.minimum_rest_hours),
         preference: Number(volunteer.preference),
-        availabilityRules: rules.map((row) => ({
-          weekday: Number(row.weekday),
-          available: Boolean(row.available),
-          startsAt: row.starts_at ? String(row.starts_at).slice(0, 5) : null,
-          endsAt: row.ends_at ? String(row.ends_at).slice(0, 5) : null,
-          validFrom: row.valid_from ? iso(row.valid_from).slice(0, 10) : null,
-          validUntil: row.valid_until
-            ? iso(row.valid_until).slice(0, 10)
-            : null,
-        })),
-        availabilityExceptions: exceptions.map((row) => ({
-          startsAt: iso(row.starts_at),
-          endsAt: iso(row.ends_at),
-          available: Boolean(row.available),
-        })),
         assignments: history.map((row) => ({
           startsAt: iso(row.starts_at),
           endsAt: iso(row.ends_at),
@@ -1249,48 +1024,6 @@ export async function grantVolunteerRecognition(
   }
 }
 
-const notificationPreferencesSchema = z.object({
-  scheduleEnabled: z.boolean(),
-  reminderEnabled: z.boolean(),
-  swapEnabled: z.boolean(),
-  chatEnabled: z.boolean(),
-  feedEnabled: z.boolean(),
-  recognitionEnabled: z.boolean(),
-  pushEnabled: z.boolean(),
-  whatsappEnabled: z.boolean(),
-  emailEnabled: z.boolean(),
-});
-export async function saveMyVolunteerNotificationPreferences(
-  input: z.input<typeof notificationPreferencesSchema>,
-): Promise<VolunteerActionResult> {
-  try {
-    const parsed = notificationPreferencesSchema.parse(input);
-    const { companyId, volunteerId } = await volunteerContext(
-      "volunteer.self.preferences",
-    );
-    await getSql()`
-      insert into public.volunteer_notification_preferences(volunteer_id, company_id, schedule_enabled, reminder_enabled, swap_enabled,
-        chat_enabled, feed_enabled, recognition_enabled, push_enabled, whatsapp_enabled, email_enabled)
-      values (${volunteerId}, ${companyId}, ${parsed.scheduleEnabled}, ${parsed.reminderEnabled}, ${parsed.swapEnabled},
-        ${parsed.chatEnabled}, ${parsed.feedEnabled}, ${parsed.recognitionEnabled}, ${parsed.pushEnabled}, ${parsed.whatsappEnabled}, ${parsed.emailEnabled})
-      on conflict (volunteer_id) do update set schedule_enabled = excluded.schedule_enabled, reminder_enabled = excluded.reminder_enabled,
-        swap_enabled = excluded.swap_enabled, chat_enabled = excluded.chat_enabled, feed_enabled = excluded.feed_enabled,
-        recognition_enabled = excluded.recognition_enabled, push_enabled = excluded.push_enabled,
-        whatsapp_enabled = excluded.whatsapp_enabled, email_enabled = excluded.email_enabled, updated_at = now()
-    `;
-    await audit(
-      "volunteer_preferences.save",
-      "volunteer_notification_preferences",
-      volunteerId,
-      companyId,
-    );
-    refreshVolunteerPaths();
-    return { ok: true, id: volunteerId };
-  } catch (error) {
-    return resultError(error);
-  }
-}
-
 const pushSchema = z.object({
   endpoint: z.string().url(),
   p256dh: z.string().min(10),
@@ -1690,7 +1423,7 @@ export async function publishVolunteerEventSchedule(
 
     await sql`
       update public.volunteer_assignments assignment
-      set status = 'notified',
+      set status = 'confirmed',
           notified_at = coalesce(notified_at, now()),
           updated_by = ${user.id},
           updated_at = now()
@@ -1698,82 +1431,8 @@ export async function publishVolunteerEventSchedule(
       where assignment.shift_id = shift.id
         and shift.event_id = ${eventId}
         and shift.company_id = ${companyId}
-        and assignment.status = 'proposed'
+        and assignment.status in ('proposed', 'notified')
     `;
-    const recipients = await sql<
-      {
-        assignment_id: string;
-        volunteer_id: string;
-        email: string | null;
-        phone: string;
-        email_enabled: boolean;
-        whatsapp_enabled: boolean;
-        push_enabled: boolean;
-        event_title: string;
-        starts_at: Date;
-      }[]
-    >`
-      select assignment.id as assignment_id, volunteer.id as volunteer_id,
-             person.email, person.phone,
-             coalesce(preference.email_enabled, volunteer.email_enabled) as email_enabled,
-             coalesce(preference.whatsapp_enabled, volunteer.whatsapp_enabled) as whatsapp_enabled,
-             coalesce(preference.push_enabled, false) as push_enabled,
-             event.title as event_title, shift.starts_at
-      from public.volunteer_assignments assignment
-      join public.volunteer_shifts shift on shift.id = assignment.shift_id
-      join public.events event on event.id = shift.event_id
-      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-      join public.people person on person.id = volunteer.person_id
-      left join public.volunteer_notification_preferences preference
-        on preference.volunteer_id = volunteer.id
-      where shift.event_id = ${eventId}
-        and shift.company_id = ${companyId}
-        and assignment.status not in ('declined', 'cancelled')
-    `;
-    for (const recipient of recipients) {
-      const content = `Sua escala foi publicada: ${recipient.event_title} em ${recipient.starts_at.toLocaleString("pt-BR")}.`;
-      if (recipient.whatsapp_enabled && recipient.phone)
-        await sql`
-          insert into public.volunteer_delivery_outbox (
-            company_id, volunteer_id, assignment_id, channel, recipient, subject, content
-          )
-          values (
-            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
-            'whatsapp', ${recipient.phone}, 'Sua escala', ${content}
-          )
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-      if (recipient.email_enabled && recipient.email)
-        await sql`
-          insert into public.volunteer_delivery_outbox (
-            company_id, volunteer_id, assignment_id, channel, recipient, subject, content
-          )
-          values (
-            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
-            'email', ${recipient.email}, 'Sua escala foi publicada', ${content}
-          )
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-      if (recipient.push_enabled)
-        await sql`
-          insert into public.volunteer_delivery_outbox (
-            company_id, volunteer_id, assignment_id, channel, recipient,
-            subject, content, event_kind, payload
-          )
-          values (
-            ${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id},
-            'push', '', 'Nova escala', ${content}, 'schedule',
-            ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb
-          )
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-    }
     await sql`
       update public.events
       set volunteer_schedule_published_at = coalesce(volunteer_schedule_published_at, now()),
@@ -1786,7 +1445,6 @@ export async function publishVolunteerEventSchedule(
       "events",
       eventId,
       companyId,
-      { recipients: recipients.length },
     );
     refreshVolunteerPaths();
     return { ok: true, id: eventId };
@@ -1877,11 +1535,6 @@ const moduleSettingsSchema = z.object({
   v2Enabled: z.boolean(),
   timezone: z.string().trim().min(3).max(80).default("America/Sao_Paulo"),
   requireSwapApproval: z.boolean().default(true),
-  reminderHours: z
-    .array(z.number().int().min(1).max(720))
-    .min(1)
-    .max(10)
-    .transform((values) => [...new Set(values)].sort((a, b) => b - a)),
 });
 export async function saveVolunteerModuleSettings(
   input: z.input<typeof moduleSettingsSchema>,
@@ -1889,10 +1542,10 @@ export async function saveVolunteerModuleSettings(
   try {
     const parsed = moduleSettingsSchema.parse(input);
     const { companyId } = await managerContext("volunteer_settings.manage");
-    await getSql()`insert into public.volunteer_module_settings(company_id, v2_enabled, timezone, require_swap_approval, reminder_hours)
-      values (${companyId}, ${parsed.v2Enabled}, ${parsed.timezone}, ${parsed.requireSwapApproval}, ${parsed.reminderHours})
+    await getSql()`insert into public.volunteer_module_settings(company_id, v2_enabled, timezone, require_swap_approval)
+      values (${companyId}, ${parsed.v2Enabled}, ${parsed.timezone}, ${parsed.requireSwapApproval})
       on conflict (company_id) do update set v2_enabled = excluded.v2_enabled, timezone = excluded.timezone,
-        require_swap_approval = excluded.require_swap_approval, reminder_hours = excluded.reminder_hours, updated_at = now()`;
+        require_swap_approval = excluded.require_swap_approval, updated_at = now()`;
     await audit(
       "volunteer_settings.save",
       "volunteer_module_settings",
@@ -1914,7 +1567,6 @@ export async function setVolunteerV2Enabled(
     v2Enabled: enabled,
     timezone: "America/Sao_Paulo",
     requireSwapApproval: true,
-    reminderHours: [72, 24, 2],
   });
 }
 

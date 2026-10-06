@@ -74,44 +74,8 @@ export interface VolunteerListItem {
   lastParticipationAt: string | null
   desiredServicesPerMonth: number
   maxServicesPerMonth: number
-  minimumRestHours: number
   validatedAt: string | null
   memberships?: VolunteerMembership[]
-}
-
-export interface VolunteerAvailabilityRule {
-  id: string
-  weekday: number
-  available: boolean
-  startsAt: string | null
-  endsAt: string | null
-  validFrom: string | null
-  validUntil: string | null
-}
-
-export interface VolunteerAvailabilityException {
-  id: string
-  startsAt: string
-  endsAt: string
-  available: boolean
-  reason: string
-}
-
-export interface VolunteerRolePreference {
-  id: string
-  departmentId: string
-  roleId: string | null
-  roleName: string
-  preference: -2 | -1 | 0 | 1 | 2
-}
-
-export interface VolunteerAvailability {
-  rules: VolunteerAvailabilityRule[]
-  exceptions: VolunteerAvailabilityException[]
-  preferences: VolunteerRolePreference[]
-  desiredServicesPerMonth: number
-  maxServicesPerMonth: number
-  minimumRestHours: number
 }
 
 export interface TemplateSlot {
@@ -147,7 +111,7 @@ export interface VolunteerAssignment {
 }
 
 export interface SchedulingReason {
-  code: "available" | "preferred_role" | "balanced_load" | "rest_ok" | "weekend_balance" | "recent_role" | "manual" | "locked"
+  code: "available" | "preferred_role" | "balanced_load" | "weekend_balance" | "recent_role" | "manual" | "locked"
   label: string
   points: number
 }
@@ -245,25 +209,12 @@ export interface VolunteerRecognition {
   grantedAt: string
 }
 
-export interface VolunteerNotificationPreferences {
-  scheduleEnabled: boolean
-  reminderEnabled: boolean
-  swapEnabled: boolean
-  chatEnabled: boolean
-  feedEnabled: boolean
-  recognitionEnabled: boolean
-  pushEnabled: boolean
-  whatsappEnabled: boolean
-  emailEnabled: boolean
-}
-
 export interface VolunteerModuleSettings {
   programmingKinds?: string[]
   programmingLocations?: string[]
   v2Enabled: boolean
   timezone: string
   requireSwapApproval: boolean
-  reminderHours: number[]
 }
 
 export interface VolunteerSetlistItem {
@@ -379,10 +330,8 @@ export interface VolunteerPortalData {
   volunteer: VolunteerListItem
   upcomingAssignments: VolunteerShift[]
   feedPosts: VolunteerFeedPost[]
-  availability: VolunteerAvailability
   swaps: VolunteerSwapRequest[]
   recognitions: VolunteerRecognition[]
-  notificationPreferences: VolunteerNotificationPreferences
   eventPlans: VolunteerEventPlan[]
 }
 

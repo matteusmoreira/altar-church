@@ -29,127 +29,38 @@ function candidate(
     active: true,
     departmentIds: ["reception"],
     roleNames: ["Recepção"],
-    desiredServicesPerMonth: 2,
-    maxServicesPerMonth: 4,
-    minimumRestHours: 12,
     preference: 0,
-    availabilityRules: [],
-    availabilityExceptions: [],
     assignments: [],
     ...overrides,
   };
 }
 
-test("bloqueia indisponibilidade, conflito, função e limite mensal", () => {
-  const unavailable = scoreVolunteerForShift(
-    candidate({
-      availabilityExceptions: [
-        { startsAt: shift.startsAt, endsAt: shift.endsAt, available: false },
-      ],
-    }),
-    shift,
-  );
-  assert.equal(unavailable.eligible, false);
-  assert.ok(unavailable.blockers.includes("Indisponibilidade informada"));
-
-  const conflict = scoreVolunteerForShift(
-    candidate({
-      assignments: [
-        {
-          startsAt: "2026-07-19T13:00:00.000Z",
-          endsAt: "2026-07-19T15:00:00.000Z",
-        },
-      ],
-    }),
-    shift,
-  );
-  assert.ok(conflict.blockers.includes("Conflito de horário"));
-
-  const incompatible = scoreVolunteerForShift(
-    candidate({ roleNames: ["Câmera"] }),
-    shift,
-  );
-  assert.ok(incompatible.blockers.includes("Função incompatível"));
-
-  const limited = scoreVolunteerForShift(
-    candidate({
-      maxServicesPerMonth: 1,
-      assignments: [
-        {
-          startsAt: "2026-07-05T12:00:00.000Z",
-          endsAt: "2026-07-05T14:00:00.000Z",
-        },
-      ],
-    }),
-    shift,
-  );
-  assert.ok(limited.blockers.includes("Limite mensal atingido"));
+test("permite horários coincidentes, intervalos curtos e várias escalas no mês", () => {
+  for (const assignment of [
+    { startsAt: shift.startsAt, endsAt: shift.endsAt },
+    { startsAt: "2026-07-19T09:00:00.000Z", endsAt: "2026-07-19T11:00:00.000Z" },
+  ]) {
+    const person = candidate({ assignments: Array.from({ length: 10 }, () => assignment) });
+    const scored = scoreVolunteerForShift(person, shift);
+    assert.equal(scored.eligible, true);
+    const manual = withManualSelectionRules(scored);
+    assert.equal(manual.selectableManually, true);
+    assert.deepEqual(manual.blockers, []);
+    assert.ok(!manual.reasons.some((reason) => /descanso|disponibilidade/i.test(reason.label)));
+    assert.deepEqual(selectVolunteersForShift([person], shift).map((item) => item.volunteerId), [person.id]);
+  }
 });
 
-test("escolha manual aceita equipe ou função diferente, mas bloqueia conflito", () => {
-  const mismatch = withManualSelectionRules(
-    scoreVolunteerForShift(
-      candidate({ departmentIds: ["media"], roleNames: ["Câmera"] }),
-      shift,
-    ),
-  );
+test("preserva cadastro ativo e compatibilidade para sugestões", () => {
+  const inactive = withManualSelectionRules(scoreVolunteerForShift(candidate({ active: false }), shift));
+  assert.equal(inactive.selectableManually, false);
+  assert.ok(inactive.blockers.includes("Cadastro inativo"));
+  const mismatch = withManualSelectionRules(scoreVolunteerForShift(
+    candidate({ departmentIds: ["media"], roleNames: ["Câmera"] }), shift,
+  ));
   assert.equal(mismatch.eligibleForSuggestion, false);
   assert.equal(mismatch.selectableManually, true);
-  assert.deepEqual(mismatch.warnings.sort(), [
-    "Função incompatível",
-    "Não pertence à equipe",
-  ]);
-  assert.deepEqual(mismatch.blockers, []);
-
-  const conflict = withManualSelectionRules(
-    scoreVolunteerForShift(
-      candidate({
-        assignments: [{
-          startsAt: "2026-07-19T13:00:00.000Z",
-          endsAt: "2026-07-19T15:00:00.000Z",
-        }],
-      }),
-      shift,
-    ),
-  );
-  assert.equal(conflict.selectableManually, false);
-  assert.ok(conflict.blockers.includes("Conflito de horário"));
-});
-
-test("respeita disponibilidade recorrente no fuso da igreja", () => {
-  const result = scoreVolunteerForShift(
-    candidate({
-      availabilityRules: [
-        {
-          weekday: 0,
-          available: true,
-          startsAt: "08:30",
-          endsAt: "11:30",
-          validFrom: null,
-          validUntil: null,
-        },
-      ],
-    }),
-    shift,
-  );
-  assert.equal(result.eligible, true);
-
-  const outside = scoreVolunteerForShift(
-    candidate({
-      availabilityRules: [
-        {
-          weekday: 0,
-          available: false,
-          startsAt: null,
-          endsAt: null,
-          validFrom: null,
-          validUntil: null,
-        },
-      ],
-    }),
-    shift,
-  );
-  assert.ok(outside.blockers.includes("Fora da disponibilidade recorrente"));
+  assert.deepEqual(mismatch.warnings, ["Não pertence à equipe", "Função incompatível"]);
 });
 
 test("preferência e menor carga vencem com explicação", () => {

@@ -57,7 +57,6 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
     "volunteer_schedules",
     "volunteer_shifts",
     "volunteer_assignments",
-    "volunteer_delivery_outbox",
     "rankVolunteersForShift",
   ]) assert.match(actions, new RegExp(primitive))
   assert.match(actions, /saveMinistryOnboardingTemplate/)

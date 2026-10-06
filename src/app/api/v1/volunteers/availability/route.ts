@@ -1,15 +1,12 @@
-import { fromActionResult } from "@/lib/api/action"
 import { requireApiUser } from "@/lib/api/auth"
-import { jsonError, jsonOk } from "@/lib/api/http"
-import { parseJsonBody } from "@/lib/api/parse"
-import { getVolunteerPortalData } from "@/lib/volunteers/data"
-import { saveMyVolunteerAvailability } from "@/lib/volunteers/v2-actions"
-export async function GET() {
-  try { await requireApiUser(); return jsonOk((await getVolunteerPortalData()).availability) }
-  catch (error) { return jsonError(error) }
-}
-export async function PUT(request: Request) {
-  try { return fromActionResult(await saveMyVolunteerAvailability(await parseJsonBody(request) as Parameters<typeof saveMyVolunteerAvailability>[0])) }
-  catch (error) { return jsonError(error) }
+import { jsonError } from "@/lib/api/http"
+
+async function removedAvailability() {
+  try {
+    await requireApiUser()
+    return Response.json({ error: "A configuração de disponibilidade foi removida. As escalas são definidas pelo responsável." }, { status: 410 })
+  } catch (error) { return jsonError(error) }
 }
 
+export const GET = removedAvailability
+export const PUT = removedAvailability

@@ -38,11 +38,7 @@ test("workspace consolida quatro áreas e mantém fluxos inteligentes", () => {
   assert.match(ui, /VolunteerProgrammingWorkspace/);
   assert.match(read("src/app/(dashboard)/voluntariado/components/escala-culto-drawer.tsx"), /generateSmartVolunteerSchedule\(\s*scheduleId,\s*eventId/);
   for (const flow of [
-    "respondVolunteerAssignment",
-    "requestVolunteerSwap",
     "sendVolunteerShiftMessage",
-    "checkOutVolunteerAssignment",
-    "saveVolunteerFeedback",
   ])
     assert.match(ui, new RegExp(flow));
 });

@@ -49,7 +49,6 @@ function toVolunteer(row: Record<string, unknown>): VolunteerListItem {
     lastParticipationAt: iso(row.last_participation_at as DateValue),
     desiredServicesPerMonth: Number(row.desired_services_per_month ?? 2),
     maxServicesPerMonth: Number(row.max_services_per_month ?? 4),
-    minimumRestHours: Number(row.minimum_rest_hours ?? 12),
     validatedAt: iso(row.validated_at as DateValue),
   }
 }
@@ -99,7 +98,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null, 
     sql<Record<string, unknown>[]>`
       select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
              vp.registration_status, person.is_active, vp.whatsapp_enabled, vp.email_enabled,
-             vp.desired_services_per_month, vp.max_services_per_month, vp.minimum_rest_hours, vp.validated_at,
+             vp.desired_services_per_month, vp.max_services_per_month, vp.validated_at,
              coalesce(string_agg(distinct department.name, '|' order by department.name), '') as department_names,
              count(distinct assignment.id) as assignments,
              count(distinct assignment.id) filter (where assignment.checked_in_at is not null) as checkins,
@@ -496,7 +495,7 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
   const volunteerRows = await sql<Record<string, unknown>[]>`
     select vp.id, vp.person_id, profile.id as profile_id, person.full_name as name, person.email, person.phone,
            vp.registration_status, person.is_active, vp.whatsapp_enabled, vp.email_enabled,
-           vp.desired_services_per_month, vp.max_services_per_month, vp.minimum_rest_hours, vp.validated_at,
+           vp.desired_services_per_month, vp.max_services_per_month, vp.validated_at,
            coalesce(string_agg(distinct department.name, '|' order by department.name), '') as department_names,
            count(distinct assignment.id) as assignments,
            count(distinct assignment.id) filter (where assignment.checked_in_at is not null) as checkins,

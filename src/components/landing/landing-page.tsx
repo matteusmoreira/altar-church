@@ -118,7 +118,7 @@ const FEATURES = [
     icon: ClipboardCheck,
     title: "Voluntariado & Escalas",
     description:
-      "Escalas por disponibilidade, trocas, confirmações e check-in do voluntário.",
+      "O responsável organiza as funções e os membros recebem os avisos de escala no painel.",
   },
   {
     icon: QrCode,
@@ -166,8 +166,8 @@ const PORTALS = [
   {
     icon: Handshake,
     title: "Portal do Voluntário",
-    description: "Serving sem planilha: o voluntário resolve tudo pelo celular.",
-    items: ["Minhas escalas e disponibilidade", "Trocas com a equipe", "Comunicados do ministério"],
+    description: "O membro consulta suas escalas pelo celular, sem precisar configurar nada.",
+    items: ["Minhas escalas", "Funções atribuídas", "Avisos no painel do membro"],
   },
   {
     icon: Home,

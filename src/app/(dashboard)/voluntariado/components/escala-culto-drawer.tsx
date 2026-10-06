@@ -1,6 +1,5 @@
 "use client";
 
-import { summarizeShifts } from "@/lib/volunteers/workspace";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -146,13 +145,7 @@ export function EscalaCultoDrawer({
     (!eventPlan && !occurrenceInfo && schedule?.publishedAt),
   );
 
-  const summary = summarizeShifts(eventShifts);
   const assignments = eventShifts.flatMap((shift) => shift.assignments);
-  const deliveries = assignments.flatMap((item) => item.deliveries ?? []);
-  const deliverySummary =
-    deliveries.length === 0
-      ? "Nenhum envio registrado para os canais habilitados."
-      : `${deliveries.filter((item) => ["pending", "processing", "queued"].includes(item.status)).length} na fila · ${deliveries.filter((item) => item.status === "sent").length} enviados · ${deliveries.filter((item) => item.status === "delivered").length} entregues · ${deliveries.filter((item) => item.status === "failed").length} com falha`;
   const assignmentIds = new Set(assignments.map((item) => item.id));
   const swaps = data.swaps.filter((swap) =>
     assignmentIds.has(swap.assignmentId),
@@ -174,7 +167,7 @@ export function EscalaCultoDrawer({
     setPublishing(true);
     const result = await publishVolunteerEventSchedule(eventId);
     setPublishing(false);
-    if (ok(result, "Escala publicada. Avisos adicionados à fila de envio.")) {
+    if (ok(result, "Escala publicada. Avisos disponíveis no painel dos membros.")) {
       router.refresh();
     }
   }
@@ -323,7 +316,7 @@ export function EscalaCultoDrawer({
               {isPublished ? (
                 <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-md">
                   <CheckCircle2 className="h-4 w-4" />
-                  Escala publicada · acompanhe os avisos e as respostas abaixo
+                  Escala publicada · disponível no painel dos membros
                 </div>
               ) : (
                 <Button
@@ -375,7 +368,7 @@ export function EscalaCultoDrawer({
                 disabled={!isComplete || publishing}
                 onClick={handlePublish}
               >
-                Publicar ajustes e avisar novos escalados
+                Publicar ajustes no painel dos membros
               </Button>
             )}
           {onEditActivity && !isPublished && (
@@ -404,10 +397,8 @@ export function EscalaCultoDrawer({
             <div className="rounded-lg border p-3 text-sm space-y-2">
               <p className="font-medium">Avisos da escala</p>
               <p>
-                {summary.awaiting} aguardando resposta · {summary.confirmed}{" "}
-                confirmações
+                Os escalados recebem o aviso no painel do membro, sem precisar confirmar.
               </p>
-              <p className="text-muted-foreground">{deliverySummary}</p>
             </div>
           )}
           {swaps.length > 0 && <ManagerSwaps data={{ ...data, swaps }} />}

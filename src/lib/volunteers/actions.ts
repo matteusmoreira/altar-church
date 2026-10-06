@@ -139,6 +139,8 @@ async function audit(
 
 function refresh() {
   revalidatePath("/voluntariado");
+  revalidatePath("/membro");
+  revalidatePath("/membro/voluntariado");
 }
 
 async function assertDepartments(companyId: string, ids: string[]) {
@@ -788,73 +790,15 @@ export async function publishVolunteerSchedule(
     if (!schedules[0]?.id) throw new Error("Escala não encontrada");
     await sql`
       update public.volunteer_assignments assignment
-      set status = 'notified', notified_at = coalesce(notified_at, now()), updated_by = ${user.id}, updated_at = now()
+      set status = 'confirmed', notified_at = coalesce(notified_at, now()), updated_by = ${user.id}, updated_at = now()
       from public.volunteer_shifts shift
-      where assignment.shift_id = shift.id and shift.schedule_id = ${id} and assignment.status = 'proposed'
+      where assignment.shift_id = shift.id and shift.schedule_id = ${id} and assignment.status in ('proposed', 'notified')
     `;
-    const recipients = await sql<
-      {
-        assignment_id: string;
-        volunteer_id: string;
-        email: string | null;
-        phone: string;
-        email_enabled: boolean;
-        whatsapp_enabled: boolean;
-        push_enabled: boolean;
-        event_title: string;
-        starts_at: Date;
-      }[]
-    >`
-      select assignment.id as assignment_id, volunteer.id as volunteer_id, person.email, person.phone,
-             coalesce(preference.email_enabled, volunteer.email_enabled) as email_enabled,
-             coalesce(preference.whatsapp_enabled, volunteer.whatsapp_enabled) as whatsapp_enabled,
-             coalesce(preference.push_enabled, false) as push_enabled,
-             coalesce(event.title, 'Escala') as event_title, shift.starts_at
-      from public.volunteer_assignments assignment
-      join public.volunteer_shifts shift on shift.id = assignment.shift_id
-      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-      join public.people person on person.id = volunteer.person_id
-      left join public.volunteer_notification_preferences preference on preference.volunteer_id = volunteer.id
-      left join public.events event on event.id = shift.event_id
-      where shift.schedule_id = ${id} and assignment.status not in ('declined', 'cancelled')
-    `;
-    for (const recipient of recipients) {
-      const content = `Sua escala foi publicada: ${recipient.event_title} em ${recipient.starts_at.toLocaleString("pt-BR")}.`;
-      if (recipient.whatsapp_enabled && recipient.phone) {
-        await sql`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
-          values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-      }
-      if (recipient.email_enabled && recipient.email) {
-        await sql`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
-          values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala foi publicada', ${content})
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-      }
-      if (recipient.push_enabled) {
-        await sql`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content, event_kind, payload)
-          values (${companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule',
-            ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
-          on conflict (assignment_id, volunteer_id, channel)
-            where assignment_id is not null and notification_key is null
-          do nothing
-        `;
-      }
-    }
     await audit(
       "volunteer_schedule.publish",
       "volunteer_schedules",
       id,
       companyId,
-      { recipients: recipients.length },
     );
     refresh();
     return { ok: true, id };

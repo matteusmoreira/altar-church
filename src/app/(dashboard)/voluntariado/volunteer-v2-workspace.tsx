@@ -22,7 +22,6 @@ import {
   MessageSquare,
   Paperclip,
   Plus,
-  QrCode,
   RefreshCw,
   Search,
   Settings,
@@ -66,7 +65,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  checkInVolunteerAssignment,
   saveVolunteer,
   saveVolunteerAssignment,
   saveVolunteerDepartment,
@@ -74,20 +72,13 @@ import {
   searchVolunteerPeople,
 } from "@/lib/volunteers/client-actions";
 import {
-  acceptVolunteerSwap,
-  checkOutVolunteerAssignment,
   generateVolunteerScheduleForEvent,
   getVolunteerShiftCandidates,
   grantVolunteerRecognition,
   markVolunteerShiftConversationRead,
-  requestVolunteerSwap,
-  respondVolunteerAssignment,
   reviewVolunteerSwap,
-  saveMyVolunteerAvailability,
-  saveMyVolunteerNotificationPreferences,
   saveVolunteerDepartmentRole,
   saveVolunteerServicePlan,
-  saveVolunteerFeedback,
   saveVolunteerModuleSettings,
   saveProfilePushSubscription,
   sendVolunteerShiftMessage,
@@ -99,21 +90,19 @@ import type {
   SchedulingCandidate,
   VolunteerActionResult,
   VolunteerDashboardData,
-  VolunteerEventPlan,
-  VolunteerNotificationPreferences,
   VolunteerPortalData,
   VolunteerPersonSuggestion,
   VolunteerShift,
 } from "@/lib/volunteers/types";
 import { isVolunteerPreview } from "@/lib/volunteers/client-actions";
 import { useVolunteerNavigation } from "./use-volunteer-navigation";
-import { VolunteerQrScanner } from "./volunteer-qr-scanner";
 import { VolunteerProgrammingWorkspace } from "./volunteer-programming-workspace";
 
 export const fmt = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(new Date(value));
 export const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 export const assignmentStatusLabels: Record<string, string> = {
@@ -291,8 +280,8 @@ export function CandidatePanel({
               aria-label="Buscar voluntário"
             />
             <p className="text-xs text-muted-foreground">
-              Escolha manualmente. Equipe ou função diferente gera alerta;
-              conflito e indisponibilidade bloqueiam.
+              Escolha as pessoas para esta função. Uma pessoa pode atuar em mais
+              de uma função na mesma atividade.
             </p>
             <div className="max-h-[55dvh] space-y-2 overflow-y-auto pr-1">
               {loading && (
@@ -1084,9 +1073,7 @@ function ManagerVolunteers({ data }: { data: VolunteerDashboardData }) {
                   {volunteer.departmentNames.join(", ") || "Sem equipe"}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {volunteer.checkins}/{volunteer.assignments} presenças · meta{" "}
-                  {volunteer.desiredServicesPerMonth}, limite{" "}
-                  {volunteer.maxServicesPerMonth}/mês
+                  {volunteer.checkins}/{volunteer.assignments} presenças
                 </p>
               </div>
               <div
@@ -2520,22 +2507,14 @@ function ManagerReports({ data }: { data: VolunteerDashboardData }) {
 
 function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
   const router = useRouter();
-  const [settings, setSettings] = useState({
-    ...data.settings,
-    reminderText: data.settings.reminderHours.join(", "),
-  });
+  const [settings, setSettings] = useState(data.settings);
   async function save() {
-    const hours = settings.reminderText
-      .split(",")
-      .map((item) => Number(item.trim()))
-      .filter((item) => Number.isFinite(item));
     if (
       ok(
         await saveVolunteerModuleSettings({
           v2Enabled: settings.v2Enabled,
           timezone: settings.timezone,
           requireSwapApproval: settings.requireSwapApproval,
-          reminderHours: hours,
         }),
         "Configurações salvas",
       )
@@ -2572,16 +2551,6 @@ function ManagerSettings({ data }: { data: VolunteerDashboardData }) {
             }
           />
           Trocas exigem aprovação do líder
-        </label>
-        <label className="space-y-1 text-sm">
-          Lembretes antes da escala, em horas
-          <Input
-            value={settings.reminderText}
-            onChange={(e) =>
-              setSettings({ ...settings, reminderText: e.target.value })
-            }
-            placeholder="72, 24, 2"
-          />
         </label>
         <Button onClick={save}>
           <Settings className="mr-2 h-4 w-4" />
@@ -2894,649 +2863,33 @@ function PushControls({
   );
 }
 
-function PortalAvailability({ data }: { data: VolunteerPortalData }) {
-  const router = useRouter();
-  const [desired, setDesired] = useState(
-    data.availability.desiredServicesPerMonth,
-  );
-  const [max, setMax] = useState(data.availability.maxServicesPerMonth);
-  const [rest, setRest] = useState(data.availability.minimumRestHours);
-  const [days, setDays] = useState(
-    new Set(
-      data.availability.rules
-        .filter((rule) => rule.available)
-        .map((rule) => rule.weekday),
-    ),
-  );
-  async function save() {
-    const rules = weekdayNames.map((_, weekday) => ({
-      weekday,
-      available: days.has(weekday),
-      startsAt: null,
-      endsAt: null,
-      validFrom: null,
-      validUntil: null,
-    }));
-    if (
-      ok(
-        await saveMyVolunteerAvailability({
-          desiredServicesPerMonth: desired,
-          maxServicesPerMonth: max,
-          minimumRestHours: rest,
-          rules,
-          exceptions: data.availability.exceptions.map((item) => ({
-            startsAt: item.startsAt,
-            endsAt: item.endsAt,
-            available: item.available,
-            reason: item.reason,
-          })),
-          preferences: data.availability.preferences,
-        }),
-        "Disponibilidade salva",
-      )
-    )
-      router.refresh();
-  }
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Minha disponibilidade</CardTitle>
-        <CardDescription>
-          Dias sem marcação ficam indisponíveis quando você define uma regra.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {weekdayNames.map((name, weekday) => (
-            <Button
-              key={name}
-              size="sm"
-              variant={days.has(weekday) ? "default" : "outline"}
-              onClick={() =>
-                setDays((current) => {
-                  const next = new Set(current);
-                  if (next.has(weekday)) next.delete(weekday);
-                  else next.add(weekday);
-                  return next;
-                })
-              }
-            >
-              {name}
-            </Button>
-          ))}
-        </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <label className="text-xs">
-            Desejo servir/mês
-            <Input
-              type="number"
-              min="0"
-              value={desired}
-              onChange={(e) => setDesired(Number(e.target.value))}
-            />
-          </label>
-          <label className="text-xs">
-            Limite/mês
-            <Input
-              type="number"
-              min="1"
-              value={max}
-              onChange={(e) => setMax(Number(e.target.value))}
-            />
-          </label>
-          <label className="text-xs">
-            Descanso mínimo (h)
-            <Input
-              type="number"
-              min="0"
-              value={rest}
-              onChange={(e) => setRest(Number(e.target.value))}
-            />
-          </label>
-        </div>
-        <Button onClick={save}>Salvar disponibilidade</Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PortalPreferences({
-  preferences,
-}: {
-  preferences: VolunteerNotificationPreferences;
-}) {
-  const router = useRouter();
-  const [state, setState] = useState(preferences);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<"saved" | "error" | null>(null);
-  const [error, setError] = useState("");
-  const labels: {
-    key: keyof VolunteerNotificationPreferences;
-    label: string;
-  }[] = [
-    { key: "scheduleEnabled", label: "Escalas" },
-    { key: "reminderEnabled", label: "Lembretes" },
-    { key: "swapEnabled", label: "Trocas" },
-    { key: "chatEnabled", label: "Mensagens do chat" },
-    { key: "feedEnabled", label: "Atualizações" },
-    { key: "recognitionEnabled", label: "Reconhecimentos" },
-    { key: "pushEnabled", label: "Notificações push" },
-    { key: "whatsappEnabled", label: "WhatsApp" },
-    { key: "emailEnabled", label: "E-mail" },
-  ];
-  const dirty = labels.some(({ key }) => state[key] !== preferences[key]);
-  async function save() {
-    setSaving(true);
-    setStatus(null);
-    setError("");
-    const result = await saveMyVolunteerNotificationPreferences(state);
-    setSaving(false);
-    if (result.ok) {
-      toast.success("Preferências salvas");
-      setStatus("saved");
-      router.refresh();
-    } else {
-      const message = result.error ?? "Não foi possível salvar as preferências";
-      setError(message);
-      setStatus("error");
-      toast.error(message);
-    }
-  }
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Preferências de avisos</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {labels.map(({ key, label }) => (
-          <label
-            key={key}
-            className="flex items-center justify-between rounded-md border p-2 text-sm"
-          >
-            <span>{label}</span>
-            <input
-              type="checkbox"
-              checked={state[key]}
-              disabled={saving}
-              onChange={(e) => {
-                setState({ ...state, [key]: e.target.checked });
-                setStatus(null);
-              }}
-            />
-          </label>
-        ))}
-        <div className="flex flex-wrap items-center gap-3 pt-1">
-          <Button
-            onClick={() => void save()}
-            disabled={saving || !dirty}
-            aria-busy={saving}
-          >
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {saving ? "Salvando..." : "Salvar preferências"}
-          </Button>
-          {status === "saved" && (
-            <p className="flex items-center gap-1 text-sm text-emerald-700">
-              <Check className="h-4 w-4" />
-              Preferências salvas.
-            </p>
-          )}
-          {status === "error" && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PortalAssignment({
-  shift,
-  plans,
-}: {
-  shift: VolunteerShift;
-  plans: VolunteerEventPlan[];
-}) {
-  const router = useRouter();
-  const assignment = shift.assignments[0];
-  const [reason, setReason] = useState("");
-  const [qr, setQr] = useState("");
-  const [feedback, setFeedback] = useState({
-    rating: 5,
-    loadRating: 3,
-    comment: "",
-    requestContact: false,
-  });
-  async function respond(response: "confirmed" | "declined") {
-    if (
-      ok(
-        await respondVolunteerAssignment({
-          assignmentId: assignment.id,
-          response,
-          reason,
-        }),
-        response === "confirmed" ? "Presença confirmada" : "Recusa registrada",
-      )
-    )
-      router.refresh();
-  }
-  async function swap() {
-    if (
-      ok(
-        await requestVolunteerSwap({
-          assignmentId: assignment.id,
-          replacementVolunteerId: null,
-          reason: reason || "Imprevisto",
-        }),
-        "Troca solicitada",
-      )
-    )
-      router.refresh();
-  }
-  async function checkin() {
-    if (
-      ok(
-        await checkInVolunteerAssignment({
-          assignmentId: assignment.id,
-          qrToken: qr,
-        }),
-        "Check-in realizado",
-      )
-    )
-      router.refresh();
-  }
-  async function checkout() {
-    if (
-      ok(
-        await checkOutVolunteerAssignment(assignment.id),
-        "Check-out realizado",
-      )
-    )
-      router.refresh();
-  }
-  async function sendFeedback() {
-    if (
-      ok(
-        await saveVolunteerFeedback({
-          assignmentId: assignment.id,
-          ...feedback,
-        }),
-        "Feedback enviado",
-      )
-    )
-      router.refresh();
-  }
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">{shift.eventTitle}</CardTitle>
-            <CardDescription>
-              {shift.departmentName} · {shift.roleName} · {fmt(shift.startsAt)}
-            </CardDescription>
-          </div>
-          <StatusBadge status={assignment.status} />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {shift.instructions && (
-          <p className="rounded-md bg-muted p-2 text-sm">
-            {shift.instructions}
-          </p>
-        )}
-        {["proposed", "notified"].includes(assignment.status) && (
-          <>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => respond("confirmed")}>
-                <Check className="mr-1 h-4 w-4" />
-                Confirmar presença
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => respond("declined")}
-              >
-                <X className="mr-1 h-4 w-4" />
-                Não posso participar
-              </Button>
-            </div>
-          </>
-        )}
-        {["confirmed", "notified"].includes(assignment.status) && (
-          <details className="rounded-lg border p-3 space-y-2">
-            <summary className="cursor-pointer text-sm font-medium">Presença no dia da atividade</summary>
-            <p className="text-xs text-muted-foreground">Check-in disponível de {fmt(shift.checkinOpensAt)} até {fmt(shift.checkinClosesAt)}.</p>
-            <Input
-              placeholder="Código QR opcional"
-              value={qr}
-              onChange={(e) => setQr(e.target.value)}
-            />
-            <VolunteerQrScanner onRead={setQr} />
-            <Button size="sm" onClick={checkin}>
-              <QrCode className="mr-1 h-4 w-4" />
-              Check-in
-            </Button>
-          </details>
-        )}
-        {assignment.status === "checked_in" && (
-          <Button size="sm" onClick={checkout}>
-            Check-out
-          </Button>
-        )}
-        {["checked_in", "checked_out"].includes(assignment.status) && (
-          <div className="space-y-2 rounded-lg border p-3">
-            <p className="text-sm font-medium">Como foi servir?</p>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-xs">
-                Experiência 1–5
-                <Input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={feedback.rating}
-                  onChange={(e) =>
-                    setFeedback({ ...feedback, rating: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="text-xs">
-                Carga 1–5
-                <Input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={feedback.loadRating}
-                  onChange={(e) =>
-                    setFeedback({
-                      ...feedback,
-                      loadRating: Number(e.target.value),
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <Textarea
-              placeholder="Observação"
-              value={feedback.comment}
-              onChange={(e) =>
-                setFeedback({ ...feedback, comment: e.target.value })
-              }
-            />
-            <label className="flex gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={feedback.requestContact}
-                onChange={(e) =>
-                  setFeedback({ ...feedback, requestContact: e.target.checked })
-                }
-              />
-              Quero conversar com líder
-            </label>
-            <Button size="sm" variant="outline" onClick={sendFeedback}>
-              Enviar feedback
-            </Button>
-          </div>
-        )}
-        {["notified", "confirmed"].includes(assignment.status) && (
-          <details className="rounded-lg border p-3 space-y-2">
-            <summary className="cursor-pointer text-sm font-medium">Imprevisto ou pedido de troca</summary>
-            <Input aria-label="Motivo do imprevisto" placeholder="Conte o motivo (opcional)" value={reason} onChange={(event) => setReason(event.target.value)} />
-            <Button size="sm" variant="outline" onClick={swap}><RefreshCw className="mr-1 h-4 w-4" />Pedir troca</Button>
-          </details>
-        )}
-        <details className="rounded-lg border p-3">
-          <summary className="cursor-pointer text-sm font-medium">
-            Roteiro e detalhes da atividade
-          </summary>
-          <div className="mt-3">
-            <PortalWorship
-              plans={plans.filter((plan) => plan.eventId === shift.eventId)}
-            />
-          </div>
-        </details>
-        <ShiftChat shiftId={shift.id} unreadCount={shift.unreadChatCount} />
-      </CardContent>
-    </Card>
-  );
-}
-
-function PortalWorship({ plans }: { plans: VolunteerEventPlan[] }) {
-  return (
-    <div className="space-y-3">
-      {plans.map((plan) => (
-        <Card key={plan.eventId}>
-          <CardHeader>
-            <CardTitle>{plan.eventTitle}</CardTitle>
-            <CardDescription>
-              {fmt(plan.startsAt)} · roteiro do culto
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div>
-              <h3 className="mb-2 font-medium">Roteiro</h3>
-              <ol className="space-y-2">
-                {plan.timeline.map((item) => (
-                  <li key={item.id} className="rounded-md border p-2 text-sm">
-                    <strong>
-                      {fmt(item.plannedAt)} · {item.title}
-                    </strong>
-                    <p className="text-xs text-muted-foreground">
-                      {item.durationMinutes} min · {item.instructions}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-              {plan.timeline.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Roteiro ainda não informado.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
 export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
-  const router = useRouter();
-  const { params, navigate } = useVolunteerNavigation();
-  const requested = params.get("area") ?? "schedule";
-  const active = [
-    "schedule",
-    "availability",
-    "updates",
-    "recognition",
-    "settings",
-  ].includes(requested)
-    ? requested
-    : "schedule";
   const upcoming = [...data.upcomingAssignments].sort((a, b) =>
     a.startsAt.localeCompare(b.startsAt),
   );
-  const awaiting = upcoming.filter((shift) =>
-    ["proposed", "notified"].includes(shift.assignments[0]?.status),
-  );
-  useVolunteerChatRealtime();
-  const totalUnread = data.upcomingAssignments.reduce(
-    (total, shift) => total + shift.unreadChatCount,
-    0,
-  );
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Minhas escalas</h1>
-          <p className="text-muted-foreground">
-            Olá, {data.volunteer.name}. Tudo para servir bem.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => navigate({ area: "recognition" })}
-          >
-            Meu histórico
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate({ area: "settings" })}
-          >
-            Preferências de avisos
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold md:text-3xl">Minhas escalas</h1>
+        <p className="text-muted-foreground">Confira as funções atribuídas a você pelo responsável.</p>
       </div>
-      {active === "schedule" && upcoming[0] && (
-        <div className="rounded-xl border bg-primary/5 p-4">
-          <p className="text-sm text-muted-foreground">
-            Seu próximo compromisso
-          </p>
-          <p className="mt-1 text-lg font-semibold">{upcoming[0].eventTitle}</p>
-          <p className="text-sm">
-            {fmt(upcoming[0].startsAt)} · {upcoming[0].departmentName} ·{" "}
-            {upcoming[0].roleName}
-          </p>
-          {awaiting.length > 0 && (
-            <p className="mt-2 text-sm font-medium">
-              Você tem {awaiting.length} escala(s) aguardando resposta.
-            </p>
-          )}
-        </div>
+      {upcoming.length === 0 && (
+        <p className="text-sm text-muted-foreground">Nenhuma escala próxima.</p>
       )}
-      <Tabs value={active} onValueChange={(value) => navigate({ area: value })}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
-          <TabsTrigger value="schedule">
-            Minhas escalas
-            {totalUnread > 0 && <Badge className="ml-2">{totalUnread}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="availability">Disponibilidade</TabsTrigger>
-          <TabsTrigger value="updates">Comunicados</TabsTrigger>
-        </TabsList>
-        <TabsContent value="schedule" className="grid gap-4 lg:grid-cols-2">
-          {data.upcomingAssignments.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Nenhuma escala próxima.
-            </p>
-          )}
-          {[
-            ...awaiting,
-            ...upcoming.filter((shift) => !awaiting.includes(shift)),
-          ].map((shift) => (
-            <PortalAssignment
-              key={shift.id}
-              shift={shift}
-              plans={data.eventPlans}
-            />
-          ))}
-          {data.swaps
-            .filter(
-              (swap) =>
-                swap.replacementVolunteerId === data.volunteer.id &&
-                swap.status === "offered",
-            )
-            .map((swap) => (
-              <Card key={swap.id}>
-                <CardHeader>
-                  <CardTitle>Convite para troca</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm">{swap.reason}</p>
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        if (
-                          ok(
-                            await acceptVolunteerSwap(swap.id, true),
-                            "Troca aceita",
-                          )
-                        )
-                          router.refresh();
-                      }}
-                    >
-                      Aceitar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        if (
-                          ok(
-                            await acceptVolunteerSwap(swap.id, false),
-                            "Troca recusada",
-                          )
-                        )
-                          router.refresh();
-                      }}
-                    >
-                      Não posso participar
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-        </TabsContent>
-        <TabsContent value="availability">
-          <PortalAvailability data={data} />
-        </TabsContent>
-        <TabsContent value="updates" className="space-y-3">
-          {data.feedPosts.map((post) => (
-            <Card key={post.id}>
-              <CardContent className="p-4">
-                <div className="flex justify-between">
-                  <strong>{post.title}</strong>
-                  {post.unread && <Badge>Nova</Badge>}
-                </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {post.content}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-        <TabsContent value="recognition" className="space-y-4">
-          {" "}
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Metric
-              title="Escalas"
-              value={data.volunteer.assignments}
-              icon={CalendarDays}
-            />
-            <Metric
-              title="Presenças"
-              value={data.volunteer.checkins}
-              icon={CheckCircle2}
-            />
-            <Metric
-              title="Equipes"
-              value={data.volunteer.departmentNames.length}
-              icon={UsersRound}
-            />
-          </div>
-          {data.recognitions.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Seus agradecimentos aparecerão aqui.
-            </p>
-          )}
-          {data.recognitions.map((item) => (
-            <Card key={item.id}>
-              <CardContent className="p-4">
-                <Award className="mb-2 h-6 w-6 text-primary" />
-                <strong>{item.title}</strong>
-                <p className="text-sm text-muted-foreground">{item.message}</p>
-                <p className="mt-2 text-xs">{fmt(item.grantedAt)}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </TabsContent>
-        <TabsContent value="settings">
-          <PushControls mode="volunteer" />
-          <PortalPreferences preferences={data.notificationPreferences} />
-        </TabsContent>
-      </Tabs>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {upcoming.map((shift) => (
+          <Card key={shift.id}>
+            <CardHeader>
+              <CardTitle className="text-base">Você foi escalado: {shift.eventTitle}</CardTitle>
+              <CardDescription>{fmt(shift.startsAt)} · {shift.departmentName}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm font-medium">Sua função: {shift.roleName}</p>
+              {shift.instructions && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{shift.instructions}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

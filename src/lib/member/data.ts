@@ -79,7 +79,7 @@ export async function getMemberShellData() {
 export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
   const { user, companyId, personId } = await requireMemberContext()
   const sql = getSql()
-  const [companyRows, cellCountRows, cellCheckinCountRows, ministryCountRows, childrenCountRows, meetingRows, noticeRows, cellCheckinRows] = await Promise.all([
+  const [companyRows, cellCountRows, cellCheckinCountRows, ministryCountRows, childrenCountRows, meetingRows, noticeRows, cellCheckinRows, scaleRows] = await Promise.all([
     sql<{ name: string }[]>`
       select coalesce(nullif(cp.public_name, ''), c.name) as name
       from public.companies c
@@ -163,6 +163,26 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
       order by coalesce(attendance.checkin_at, attendance.created_at) desc
       limit 6
     `,
+    sql<{ id: string; event_title: string; department_name: string; role_name: string; starts_at: DateValue; instructions: string }[]>`
+      select assignment.id, coalesce(event.title, 'Escala') as event_title, department.name as department_name,
+        shift.role_name, shift.starts_at, shift.instructions
+      from public.volunteer_assignments assignment
+      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
+        and volunteer.company_id = ${companyId} and volunteer.person_id = ${personId}
+        and volunteer.deleted_at is null
+      join public.volunteer_shifts shift on shift.id = assignment.shift_id and shift.company_id = ${companyId}
+      left join public.events event on event.id = shift.event_id and event.company_id = ${companyId}
+      join public.volunteer_departments department on department.id = shift.department_id
+        and department.company_id = ${companyId} and department.deleted_at is null
+      join public.volunteer_schedules schedule on schedule.id = shift.schedule_id and schedule.company_id = ${companyId}
+      where assignment.company_id = ${companyId}
+        and (shift.event_id is null or (event.id is not null and event.deleted_at is null and event.status <> 'cancelled'))
+        and assignment.status not in ('proposed', 'declined', 'cancelled', 'no_show')
+        and (event.volunteer_schedule_published_at is not null or schedule.status = 'published')
+        and coalesce(shift.ends_at, shift.starts_at + interval '2 hours') >= now()
+      order by shift.starts_at, assignment.id
+      limit 10
+    `,
   ])
   const meeting = meetingRows[0]
   return {
@@ -172,6 +192,14 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
     cellCheckinCount: cellCheckinCountRows[0]?.total ?? 0,
     ministryCount: ministryCountRows[0]?.total ?? 0,
     childrenCount: childrenCountRows[0]?.total ?? 0,
+    scaleNotices: scaleRows.map((row) => ({
+      id: row.id,
+      eventTitle: row.event_title,
+      departmentName: row.department_name,
+      roleName: row.role_name,
+      startsAt: iso(row.starts_at) ?? "",
+      instructions: row.instructions,
+    })),
     nextMeeting: meeting ? {
       title: meeting.title,
       cellName: meeting.cell_name,

@@ -2,11 +2,9 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { getSql } from "@/lib/db/client";
 import { createSignedUrlsByStoragePath } from "@/lib/files/server";
 import type {
-  VolunteerAvailability,
   VolunteerChatMessage,
   VolunteerDashboardData,
   VolunteerEventPlan,
-  VolunteerNotificationPreferences,
   VolunteerPortalData,
   VolunteerReportData,
   VolunteerSwapRequest,
@@ -233,9 +231,6 @@ export async function getVolunteerV2DashboardExtras(
         settings.require_swap_approval === undefined
           ? true
           : Boolean(settings.require_swap_approval),
-      reminderHours: Array.isArray(settings.reminder_hours)
-        ? settings.reminder_hours.map(Number)
-        : [72, 24, 2],
     },
     songs: songRows.map((song) => ({
       id: String(song.id),
@@ -255,38 +250,19 @@ export async function getVolunteerV2PortalExtras(
 ): Promise<
   Pick<
     VolunteerPortalData,
-    | "availability"
     | "swaps"
     | "recognitions"
-    | "notificationPreferences"
     | "eventPlans"
   >
 > {
   const sql = getSql();
   const [
-    profileRows,
-    ruleRows,
-    exceptionRows,
-    preferenceRows,
     swapRows,
     recognitionRows,
-    notificationRows,
     eventRows,
     setlistRows,
     timelineRows,
   ] = await Promise.all([
-    sql<
-      Record<string, unknown>[]
-    >`select desired_services_per_month, max_services_per_month, minimum_rest_hours from public.volunteer_profiles where id = ${volunteerId} and company_id = ${companyId}`,
-    sql<
-      Record<string, unknown>[]
-    >`select * from public.volunteer_availability_rules where volunteer_id = ${volunteerId} order by weekday, starts_at`,
-    sql<
-      Record<string, unknown>[]
-    >`select * from public.volunteer_availability_exceptions where volunteer_id = ${volunteerId} and ends_at >= now() - interval '1 day' order by starts_at`,
-    sql<
-      Record<string, unknown>[]
-    >`select * from public.volunteer_role_preferences where volunteer_id = ${volunteerId} order by role_name`,
     sql<Record<string, unknown>[]>`
       select swap.*, replacement_person.full_name as replacement_name from public.volunteer_swap_requests swap
       left join public.volunteer_profiles replacement on replacement.id = swap.replacement_volunteer_id
@@ -297,9 +273,6 @@ export async function getVolunteerV2PortalExtras(
     sql<
       Record<string, unknown>[]
     >`select * from public.volunteer_recognitions where volunteer_id = ${volunteerId} order by granted_at desc limit 50`,
-    sql<
-      Record<string, unknown>[]
-    >`select * from public.volunteer_notification_preferences where volunteer_id = ${volunteerId}`,
     sql<Record<string, unknown>[]>`
       select distinct event.id as event_id, event.title as event_title, event.starts_at,
         event.volunteer_schedule_published_at, setlist.id as setlist_id,
@@ -323,67 +296,8 @@ export async function getVolunteerV2PortalExtras(
       order by timeline.event_id, timeline.sort_order
     `,
   ]);
-  const profile = profileRows[0] ?? {};
-  const availability: VolunteerAvailability = {
-    desiredServicesPerMonth: Number(profile.desired_services_per_month ?? 2),
-    maxServicesPerMonth: Number(profile.max_services_per_month ?? 4),
-    minimumRestHours: Number(profile.minimum_rest_hours ?? 12),
-    rules: ruleRows.map((row) => ({
-      id: String(row.id),
-      weekday: Number(row.weekday),
-      available: Boolean(row.available),
-      startsAt: row.starts_at ? String(row.starts_at).slice(0, 5) : null,
-      endsAt: row.ends_at ? String(row.ends_at).slice(0, 5) : null,
-      validFrom: row.valid_from
-        ? (iso(row.valid_from as DateValue)?.slice(0, 10) ?? null)
-        : null,
-      validUntil: row.valid_until
-        ? (iso(row.valid_until as DateValue)?.slice(0, 10) ?? null)
-        : null,
-    })),
-    exceptions: exceptionRows.map((row) => ({
-      id: String(row.id),
-      startsAt: iso(row.starts_at as DateValue) ?? "",
-      endsAt: iso(row.ends_at as DateValue) ?? "",
-      available: Boolean(row.available),
-      reason: String(row.reason ?? ""),
-    })),
-    preferences: preferenceRows.map((row) => ({
-      id: String(row.id),
-      departmentId: String(row.department_id),
-      roleId: row.role_id ? String(row.role_id) : null,
-      roleName: String(row.role_name),
-      preference: Number(row.preference) as -2 | -1 | 0 | 1 | 2,
-    })),
-  };
-  const prefs = notificationRows[0] ?? {};
-  const notificationPreferences: VolunteerNotificationPreferences = {
-    scheduleEnabled:
-      prefs.schedule_enabled === undefined
-        ? true
-        : Boolean(prefs.schedule_enabled),
-    reminderEnabled:
-      prefs.reminder_enabled === undefined
-        ? true
-        : Boolean(prefs.reminder_enabled),
-    swapEnabled:
-      prefs.swap_enabled === undefined ? true : Boolean(prefs.swap_enabled),
-    chatEnabled:
-      prefs.chat_enabled === undefined ? true : Boolean(prefs.chat_enabled),
-    feedEnabled:
-      prefs.feed_enabled === undefined ? true : Boolean(prefs.feed_enabled),
-    recognitionEnabled:
-      prefs.recognition_enabled === undefined
-        ? true
-        : Boolean(prefs.recognition_enabled),
-    pushEnabled: Boolean(prefs.push_enabled),
-    whatsappEnabled: Boolean(prefs.whatsapp_enabled),
-    emailEnabled: Boolean(prefs.email_enabled),
-  };
   return {
-    availability,
     swaps: swaps(swapRows),
-    notificationPreferences,
     recognitions: recognitionRows.map((row) => ({
       id: String(row.id),
       volunteerId,

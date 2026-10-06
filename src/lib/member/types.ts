@@ -7,6 +7,14 @@ export interface MemberPortalSummary {
   cellCheckinCount: number
   ministryCount: number
   childrenCount: number
+  scaleNotices: {
+    id: string
+    eventTitle: string
+    departmentName: string
+    roleName: string
+    startsAt: string
+    instructions: string
+  }[]
   nextMeeting: {
     title: string
     cellName: string

@@ -7,27 +7,13 @@ export interface SchedulerInterval {
   roleName?: string;
 }
 
-export interface SchedulerAvailabilityRule {
-  weekday: number;
-  available: boolean;
-  startsAt: string | null;
-  endsAt: string | null;
-  validFrom: string | null;
-  validUntil: string | null;
-}
-
 export interface SchedulerCandidateInput {
   id: string;
   name: string;
   active: boolean;
   departmentIds: string[];
   roleNames: string[];
-  desiredServicesPerMonth: number;
-  maxServicesPerMonth: number;
-  minimumRestHours: number;
   preference: number;
-  availabilityRules: SchedulerAvailabilityRule[];
-  availabilityExceptions: (SchedulerInterval & { available: boolean })[];
   assignments: SchedulerInterval[];
 }
 
@@ -70,13 +56,6 @@ export function withManualSelectionRules(
   };
 }
 
-function overlaps(a: SchedulerInterval, b: SchedulerInterval) {
-  return (
-    new Date(a.startsAt).getTime() < new Date(b.endsAt).getTime() &&
-    new Date(b.startsAt).getTime() < new Date(a.endsAt).getTime()
-  );
-}
-
 function zonedParts(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -110,63 +89,11 @@ function monthKey(value: string, timezone: string) {
   return zonedParts(value, timezone).date.slice(0, 7);
 }
 
-function minutes(value: string) {
-  const [hours = 0, mins = 0] = value.split(":").map(Number);
-  return hours * 60 + mins;
-}
-
-function recurringAvailability(
-  candidate: SchedulerCandidateInput,
-  shift: SchedulerShiftInput,
-) {
-  const timezone = shift.timezone ?? "America/Sao_Paulo";
-  const start = zonedParts(shift.startsAt, timezone);
-  const day = start.weekday;
-  const date = start.date;
-  const rules = candidate.availabilityRules.filter(
-    (rule) =>
-      rule.weekday === day &&
-      (!rule.validFrom || rule.validFrom <= date) &&
-      (!rule.validUntil || rule.validUntil >= date),
-  );
-  if (rules.length === 0) return true;
-  if (rules.some((rule) => !rule.available)) return false;
-  return rules.some((rule) => {
-    if (!rule.startsAt || !rule.endsAt) return rule.available;
-    const shiftStart = start.minutes;
-    const shiftEnd = zonedParts(shift.endsAt, timezone).minutes;
-    return (
-      rule.available &&
-      shiftStart >= minutes(rule.startsAt) &&
-      shiftEnd <= minutes(rule.endsAt)
-    );
-  });
-}
-
-function restSatisfied(
-  candidate: SchedulerCandidateInput,
-  shift: SchedulerShiftInput,
-) {
-  const minimum = candidate.minimumRestHours * 60 * 60 * 1000;
-  const start = new Date(shift.startsAt).getTime();
-  const end = new Date(shift.endsAt).getTime();
-  return candidate.assignments.every((assignment) => {
-    if (["declined", "cancelled"].includes(assignment.status ?? ""))
-      return true;
-    const otherStart = new Date(assignment.startsAt).getTime();
-    const otherEnd = new Date(assignment.endsAt).getTime();
-    if (otherEnd <= start) return start - otherEnd >= minimum;
-    if (otherStart >= end) return otherStart - end >= minimum;
-    return false;
-  });
-}
-
 export function scoreVolunteerForShift(
   candidate: SchedulerCandidateInput,
   shift: SchedulerShiftInput,
 ): ScoredCandidate {
   const blockers: string[] = [];
-  const interval = { startsAt: shift.startsAt, endsAt: shift.endsAt };
   const timezone = shift.timezone ?? "America/Sao_Paulo";
   const monthAssignments = candidate.assignments.filter(
     (item) =>
@@ -186,27 +113,6 @@ export function scoreVolunteerForShift(
     )
   )
     blockers.push("Função incompatível");
-  if (
-    candidate.availabilityExceptions.some(
-      (item) => !item.available && overlaps(item, interval),
-    )
-  )
-    blockers.push("Indisponibilidade informada");
-  if (!recurringAvailability(candidate, shift))
-    blockers.push("Fora da disponibilidade recorrente");
-  if (
-    candidate.assignments.some(
-      (item) =>
-        !["declined", "cancelled"].includes(item.status ?? "") &&
-        overlaps(item, interval),
-    )
-  )
-    blockers.push("Conflito de horário");
-  if (monthAssignments.length >= candidate.maxServicesPerMonth)
-    blockers.push("Limite mensal atingido");
-  if (!restSatisfied(candidate, shift))
-    blockers.push("Descanso mínimo não atendido");
-
   if (blockers.length > 0) {
     return {
       volunteerId: candidate.id,
@@ -219,7 +125,7 @@ export function scoreVolunteerForShift(
   }
 
   const reasons: SchedulingReason[] = [
-    { code: "available", label: "Disponível", points: 100 },
+    { code: "available", label: "Cadastro ativo", points: 100 },
   ];
   if (candidate.preference !== 0)
     reasons.push({
@@ -235,17 +141,6 @@ export function scoreVolunteerForShift(
     code: "balanced_load",
     label: "Carga mensal equilibrada",
     points: balancePoints,
-  });
-  if (monthAssignments.length < candidate.desiredServicesPerMonth)
-    reasons.push({
-      code: "balanced_load",
-      label: "Abaixo da frequência desejada",
-      points: 15,
-    });
-  reasons.push({
-    code: "rest_ok",
-    label: "Descanso mínimo respeitado",
-    points: 10,
   });
   const weekendAssignments = monthAssignments.filter((item) =>
     [0, 6].includes(zonedParts(item.startsAt, timezone).weekday),

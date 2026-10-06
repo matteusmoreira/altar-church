@@ -27,7 +27,6 @@ export function volunteerPreviewData() {
       lastParticipationAt: null,
       desiredServicesPerMonth: 2,
       maxServicesPerMonth: 4,
-      minimumRestHours: 12,
       validatedAt: null,
       memberships: [
         {
@@ -292,7 +291,6 @@ export function volunteerPreviewData() {
       v2Enabled: true,
       timezone: "America/Sao_Paulo",
       requireSwapApproval: true,
-      reminderHours: [24, 2],
     },
     songs: [],
     metrics: {
@@ -309,27 +307,8 @@ export function volunteerPreviewData() {
       { ...shifts[1], assignments: [shifts[1].assignments[0]] },
     ],
     feedPosts: manager.feedPosts,
-    availability: {
-      rules: [],
-      exceptions: [],
-      preferences: [],
-      desiredServicesPerMonth: 2,
-      maxServicesPerMonth: 4,
-      minimumRestHours: 12,
-    },
     swaps: [],
     recognitions: [],
-    notificationPreferences: {
-      scheduleEnabled: true,
-      reminderEnabled: true,
-      swapEnabled: true,
-      chatEnabled: true,
-      feedEnabled: true,
-      recognitionEnabled: true,
-      pushEnabled: false,
-      whatsappEnabled: true,
-      emailEnabled: false,
-    },
     eventPlans: manager.eventPlans.filter((item) => item.eventId === "event-2"),
   };
   return { manager, portal };

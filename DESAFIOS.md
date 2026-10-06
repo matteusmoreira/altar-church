@@ -254,3 +254,11 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 
 - Deduplicação do recibo e criação da execução precisam ficar na mesma transação; marcar o recibo antes e criar depois pode perder o gatilho em uma falha. Consultas de público dentro da transação devem usar sua conexão para não bloquear o pool pequeno.
 - A confirmação do webhook agora depende da entrada durável. O novo agendamento fica pausado até GET autenticado comprovar backend/schema novos; a publicação vigente respondeu 405. Não usar o resultado de 1.500 conversas em PGlite com provedor/Auth simulados como prova de capacidade do Supabase Free ou de velocidade de entrega.
+
+## Escalas dos ministérios — 06/10/2026
+
+- O cadastro automático de voluntariado nas escalas ainda usava ON CONFLICT (person_id) sem o predicado do índice parcial vigente. Corrigido com WHERE deleted_at IS NULL; o teste ministry-scale-profile.test.mjs reproduz o erro e valida criação, reutilização, recriação após exclusão e isolamento entre igrejas em PostgreSQL local.
+- A simplificação foi ampliada a pedido do usuário: removidas as regras de disponibilidade, conflito, descanso e limite mensal, a configuração pessoal e a exigência de resposta/check-in no portal. A data e o horário da atividade continuam visíveis.
+- A publicação disponibiliza o aviso no painel do membro sem criar entregas externas. Aplicar a migration 20261006105110_volunteer_panel_only_schedules junto do código: ela desativa lembretes/ausência automática e interrompe os avisos de escala ainda não enviados. Campos e histórico antigos foram preservados no banco. Sem aplicar a migration, o worker antigo ainda pode gerar lembretes.
+- Validação local: 28 testes focados, 4 E2E de prévia em desktop/celular, typecheck, lint e build passaram. Avisos do painel foram testados em PostgreSQL isolado por igreja, pessoa, publicação, cancelamento, exclusão e término do evento.
+- Após autorização em 06/10/2026, as migrations 20261006105110 e 20261006110931 foram aplicadas no banco remoto: 98/98 migrations, zero pendentes, zero avisos externos de escala na fila e preparação automática retornando reminders=0/noShows=0. A segunda migration revoga os grants explícitos legados de anon/authenticated que CREATE OR REPLACE preservava; service_role mantém execução. Teste isolado e consulta remota confirmaram as permissões.

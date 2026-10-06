@@ -25,6 +25,7 @@ function result(error: unknown): ActionResult {
 }
 
 function refresh(ministryId: string, slug?: string | null) {
+  revalidatePath("/membro")
   revalidatePath(`/ministerios/${ministryId}`)
   if (slug) revalidatePath(`/ministerios/${slug}`)
   revalidatePath("/ministerios")
@@ -602,10 +603,9 @@ async function getMinistryShift(access: Awaited<ReturnType<typeof requireMinistr
 
 async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof requireMinistryPermission>>, shift: Awaited<ReturnType<typeof getMinistryShift>>) {
   const sql = getSql()
-  const people = await sql<{ person_id: string; person_name: string; volunteer_id: string | null; registration_status: string | null; desired_services_per_month: number | null; max_services_per_month: number | null; minimum_rest_hours: number | null }[]>`
+  const people = await sql<{ person_id: string; person_name: string; volunteer_id: string | null; registration_status: string | null }[]>`
     select membership.person_id, person.full_name as person_name, volunteer.id as volunteer_id,
-      volunteer.registration_status, volunteer.desired_services_per_month, volunteer.max_services_per_month,
-      volunteer.minimum_rest_hours
+      volunteer.registration_status
     from public.ministry_memberships membership
     join public.people person on person.id = membership.person_id
       and person.company_id = ${access.companyId} and person.is_active and person.deleted_at is null
@@ -616,28 +616,11 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
     order by person.full_name
   `
   const candidates: SchedulerCandidateInput[] = []
-  // Batch: 3 queries com IN (...) em vez de 3 por pessoa em loop (N+1 — auditoria 29/09/2026).
   const volunteerIds = people.map((person) => person.volunteer_id).filter((id): id is string => Boolean(id))
-  const [allRules, allExceptions, allHistory] = volunteerIds.length
-    ? await Promise.all([
-        sql<Record<string, unknown>[]>`select volunteer_id, weekday, available, starts_at, ends_at, valid_from, valid_until from public.volunteer_availability_rules where volunteer_id = any(${sql.array(volunteerIds)}::uuid[])`,
-        sql<Record<string, unknown>[]>`select volunteer_id, starts_at, ends_at, available from public.volunteer_availability_exceptions where volunteer_id = any(${sql.array(volunteerIds)}::uuid[])`,
-        sql<Record<string, unknown>[]>`select assignment.volunteer_id, other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = any(${sql.array(volunteerIds)}::uuid[]) and assignment.company_id = ${access.companyId}`,
-      ])
-    : [[], [], []]
-  const rulesByVolunteer = new Map<string, Record<string, unknown>[]>()
-  const exceptionsByVolunteer = new Map<string, Record<string, unknown>[]>()
+  const allHistory = volunteerIds.length
+    ? await sql<Record<string, unknown>[]>`select assignment.volunteer_id, other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = any(${sql.array(volunteerIds)}::uuid[]) and assignment.company_id = ${access.companyId}`
+    : []
   const historyByVolunteer = new Map<string, Record<string, unknown>[]>()
-  for (const row of allRules) {
-    const key = String(row.volunteer_id)
-    if (!rulesByVolunteer.has(key)) rulesByVolunteer.set(key, [])
-    rulesByVolunteer.get(key)?.push(row)
-  }
-  for (const row of allExceptions) {
-    const key = String(row.volunteer_id)
-    if (!exceptionsByVolunteer.has(key)) exceptionsByVolunteer.set(key, [])
-    exceptionsByVolunteer.get(key)?.push(row)
-  }
   for (const row of allHistory) {
     const key = String(row.volunteer_id)
     if (!historyByVolunteer.has(key)) historyByVolunteer.set(key, [])
@@ -645,8 +628,6 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
   }
   for (const person of people) {
     const volunteerId = person.volunteer_id ? String(person.volunteer_id) : null
-    const rules = volunteerId ? rulesByVolunteer.get(volunteerId) ?? [] : []
-    const exceptions = volunteerId ? exceptionsByVolunteer.get(volunteerId) ?? [] : []
     const history = volunteerId ? historyByVolunteer.get(volunteerId) ?? [] : []
     candidates.push({
       id: volunteerId ?? person.person_id,
@@ -654,18 +635,7 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
       active: true,
       departmentIds: [shift.department_id],
       roleNames: [shift.role_name],
-      desiredServicesPerMonth: Number(person.desired_services_per_month ?? 2),
-      maxServicesPerMonth: Number(person.max_services_per_month ?? 4),
-      minimumRestHours: Number(person.minimum_rest_hours ?? 12),
       preference: 0,
-      availabilityRules: rules.map((row) => ({
-        weekday: Number(row.weekday), available: Boolean(row.available),
-        startsAt: row.starts_at ? String(row.starts_at).slice(0, 5) : null,
-        endsAt: row.ends_at ? String(row.ends_at).slice(0, 5) : null,
-        validFrom: row.valid_from ? String(row.valid_from).slice(0, 10) : null,
-        validUntil: row.valid_until ? String(row.valid_until).slice(0, 10) : null,
-      })),
-      availabilityExceptions: exceptions.map((row) => ({ startsAt: String(row.starts_at), endsAt: String(row.ends_at), available: Boolean(row.available) })),
       assignments: history.map((row) => ({ startsAt: String(row.starts_at), endsAt: String(row.ends_at), status: String(row.status), roleName: String(row.role_name) })),
     })
   }
@@ -689,7 +659,7 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
       selectableManually: manual.selectableManually,
       eligible: manual.eligible,
       score: manual.score,
-      warnings: person?.volunteer_id ? manual.warnings : ["O vínculo técnico de voluntariado será criado ao selecionar."],
+      warnings: manual.warnings,
       blockers: manual.blockers,
     }
   })
@@ -712,7 +682,7 @@ async function ensureMinistryVolunteerProfile(companyId: string, personId: strin
   const rows = await sql<{ id: string }[]>`
     insert into public.volunteer_profiles (company_id, person_id, registration_status, whatsapp_enabled, email_enabled, created_by, updated_by)
     values (${companyId}, ${personId}, 'active', false, false, ${actorId}, ${actorId})
-    on conflict (person_id) do update set registration_status = 'active', deleted_at = null, updated_by = excluded.updated_by, updated_at = now()
+    on conflict (person_id) where deleted_at is null do update set registration_status = 'active', deleted_at = null, updated_by = excluded.updated_by, updated_at = now()
       where public.volunteer_profiles.company_id = excluded.company_id
     returning id
   `
@@ -826,55 +796,22 @@ export async function publishMinistryScale(input: { ministryId: string; eventId:
       order by shift.role_name
     `
     if (incomplete.length) throw new Error(`Faltam pessoas: ${incomplete.map((item) => `${item.role_name} (${item.missing})`).join(", ")}`)
-    const recipients = await sql<{ assignment_id: string; volunteer_id: string; email: string | null; phone: string; email_enabled: boolean; whatsapp_enabled: boolean; push_enabled: boolean }[]>`
-      select assignment.id as assignment_id, volunteer.id as volunteer_id, person.email, person.phone,
-        coalesce(preference.email_enabled, volunteer.email_enabled) as email_enabled,
-        coalesce(preference.whatsapp_enabled, volunteer.whatsapp_enabled) as whatsapp_enabled,
-        coalesce(preference.push_enabled, false) as push_enabled
-      from public.volunteer_assignments assignment
-      join public.volunteer_shifts shift on shift.id = assignment.shift_id
-      join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id
-        and volunteer.company_id = ${access.companyId} and volunteer.deleted_at is null
-      join public.people person on person.id = volunteer.person_id
-        and person.company_id = ${access.companyId} and person.deleted_at is null
-      left join public.volunteer_notification_preferences preference on preference.volunteer_id = volunteer.id
-      where assignment.company_id = ${access.companyId} and shift.company_id = ${access.companyId} and shift.event_id = ${eventId}
-        and assignment.status not in ('declined', 'cancelled')
-    `
     await sql.begin(async (tx) => {
       await tx`
         update public.volunteer_assignments assignment
-        set status = 'notified', notified_at = coalesce(notified_at, now()), updated_by = ${access.user.id}, updated_at = now()
+        set status = 'confirmed', notified_at = coalesce(notified_at, now()), updated_by = ${access.user.id}, updated_at = now()
         from public.volunteer_shifts shift
         where assignment.shift_id = shift.id and shift.company_id = ${access.companyId}
-          and shift.event_id = ${eventId} and assignment.status = 'proposed'
+          and shift.event_id = ${eventId} and assignment.status in ('proposed', 'notified')
       `
-      for (const recipient of recipients) {
-        const content = `Sua escala foi publicada: ${event.title} em ${new Date(event.starts_at).toLocaleString("pt-BR")}.`
-        if (recipient.whatsapp_enabled && recipient.phone) await tx`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
-          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'whatsapp', ${recipient.phone}, 'Sua escala', ${content})
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
-        `
-        if (recipient.email_enabled && recipient.email) await tx`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content)
-          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'email', ${recipient.email}, 'Sua escala publicada', ${content})
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
-        `
-        if (recipient.push_enabled) await tx`
-          insert into public.volunteer_delivery_outbox (company_id, volunteer_id, assignment_id, channel, recipient, subject, content, event_kind, payload)
-          values (${access.companyId}, ${recipient.volunteer_id}, ${recipient.assignment_id}, 'push', '', 'Nova escala', ${content}, 'schedule', ${JSON.stringify({ url: "/voluntariado", assignmentId: recipient.assignment_id })}::jsonb)
-          on conflict (assignment_id, volunteer_id, channel) where assignment_id is not null and notification_key is null do nothing
-        `
-      }
       await tx`
         update public.events set volunteer_schedule_published_at = now(), updated_by = ${access.user.id}, updated_at = now()
         where id = ${eventId} and company_id = ${access.companyId}
       `
     })
-    await writeAuditLog({ action: "ministry.scale.publish", entityTable: "events", entityId: eventId, companyId: access.companyId, metadata: { ministryId, recipients: recipients.length } })
+    await writeAuditLog({ action: "ministry.scale.publish", entityTable: "events", entityId: eventId, companyId: access.companyId, metadata: { ministryId } })
     refresh(ministryId)
-    return { ok: true, id: eventId, data: { recipients: recipients.length } }
+    return { ok: true, id: eventId, data: { published: true } }
   } catch (error) { return result(error) }
 }
 

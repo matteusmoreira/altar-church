@@ -61,8 +61,6 @@ import { publishVolunteerProgrammingEvents as server_publishVolunteerProgramming
 import { requestVolunteerSwap as server_requestVolunteerSwap } from "@/lib/volunteers/v2-actions";
 import { respondVolunteerAssignment as server_respondVolunteerAssignment } from "@/lib/volunteers/v2-actions";
 import { reviewVolunteerSwap as server_reviewVolunteerSwap } from "@/lib/volunteers/v2-actions";
-import { saveMyVolunteerAvailability as server_saveMyVolunteerAvailability } from "@/lib/volunteers/v2-actions";
-import { saveMyVolunteerNotificationPreferences as server_saveMyVolunteerNotificationPreferences } from "@/lib/volunteers/v2-actions";
 import { saveProfilePushSubscription as server_saveProfilePushSubscription } from "@/lib/volunteers/v2-actions";
 import { saveVolunteer as server_saveVolunteer } from "@/lib/volunteers/actions";
 import { saveVolunteerAssignment as server_saveVolunteerAssignment } from "@/lib/volunteers/actions";
@@ -143,14 +141,6 @@ export const respondVolunteerAssignment = previewGuard(
 export const reviewVolunteerSwap = previewGuard(
   server_reviewVolunteerSwap,
   "reviewVolunteerSwap",
-);
-export const saveMyVolunteerAvailability = previewGuard(
-  server_saveMyVolunteerAvailability,
-  "saveMyVolunteerAvailability",
-);
-export const saveMyVolunteerNotificationPreferences = previewGuard(
-  server_saveMyVolunteerNotificationPreferences,
-  "saveMyVolunteerNotificationPreferences",
 );
 export const saveProfilePushSubscription = previewGuard(
   server_saveProfilePushSubscription,
