@@ -10,7 +10,6 @@ import type {
   MinistryProfile,
   MinistryReport,
   MinistryResource,
-  MinistryOnboardingTemplate,
   MinistryScale,
   MinistryScaleAssignment,
   MinistryScalePosition,
@@ -140,9 +139,9 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
   const access = await requireMinistryPermission(ministryIdOrSlug, "ministries.dashboard.view", companyIdInput)
   const ministryId = access.ministryId
   const sql = getSql()
-  const [profile, indicators, activityRows, attendanceRows, attendanceRecordRows, members, teams, teamMemberRows, scaleRows, followUps, onboarding, onboardingTemplateRows, resources, report, people, leaderCandidates, responsibleCandidates, communications, lastCommunication] = await Promise.all([
+  const [profile, indicators, activityRows, attendanceRows, attendanceRecordRows, members, teams, teamMemberRows, scaleRows, resources, report, people, leaderCandidates, responsibleCandidates, communications, lastCommunication] = await Promise.all([
     getProfileRow(access.companyId, access.ministryId),
-    sql<{ active_members: number; pending_members: number; inactive_members: number; active_teams: number; open_team_slots: number; upcoming_activities: number; attendance_present: number; attendance_absent: number; incomplete_scales: number; open_followups: number; overdue_followups: number }[]>`
+    sql<{ active_members: number; pending_members: number; inactive_members: number; active_teams: number; open_team_slots: number; upcoming_activities: number; attendance_present: number; attendance_absent: number; incomplete_scales: number; open_followups: number }[]>`
       select
         (select count(*) from public.ministry_memberships m where m.company_id = ${access.companyId} and m.ministry_id = ${ministryId} and m.status = 'active' and m.left_at is null) as active_members,
         (select count(*) from public.ministry_memberships m where m.company_id = ${access.companyId} and m.ministry_id = ${ministryId} and m.status = 'pending') as pending_members,
@@ -153,8 +152,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         (select count(*) from public.attendance_records a where a.company_id = ${access.companyId} and a.event_type = 'ministry' and a.status = 'present' and a.deleted_at is null and a.occurred_on >= current_date - 30 and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId})) as attendance_present,
         (select count(*) from public.attendance_records a where a.company_id = ${access.companyId} and a.event_type = 'ministry' and a.status = 'absent' and a.deleted_at is null and a.occurred_on >= current_date - 30 and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId})) as attendance_absent,
         (select count(*) from public.events e where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.starts_at >= now() - interval '1 day' and e.status <> 'cancelled' and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id) and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id and (select count(*) from public.volunteer_assignments a join public.volunteer_shifts s on s.id = a.shift_id where s.event_id = e.id and a.status not in ('cancelled','declined')) < p.required_volunteers)) as incomplete_scales,
-        (select count(*) from public.person_follow_up_tasks t where t.company_id = ${access.companyId} and t.ministry_id = ${ministryId} and t.deleted_at is null and t.status in ('open','in_progress')) as open_followups,
-        (select count(*) from public.person_follow_up_tasks t where t.company_id = ${access.companyId} and t.ministry_id = ${ministryId} and t.deleted_at is null and t.status in ('open','in_progress') and t.due_at < now()) as overdue_followups
+        (select count(*) from public.person_follow_up_tasks t where t.company_id = ${access.companyId} and t.ministry_id = ${ministryId} and t.deleted_at is null and t.status in ('open','in_progress')) as open_followups
     `,
     sql<Record<string, unknown>[]>`
       select e.id, e.programming_id, e.title, e.description, e.starts_at, e.ends_at, e.location, e.status, e.recurring,
@@ -268,38 +266,6 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
       order by event.starts_at, position.sort_order, position.role_name, assigned_person.full_name
     `,
     sql<Record<string, unknown>[]>`
-      select task.id, task.person_id, person.full_name as person_name, task.title, task.notes, task.due_at, task.priority, task.status, task.origin,
-        task.responsible_profile_id, responsible.name as responsible_name
-      from public.person_follow_up_tasks task
-      join public.people person on person.id = task.person_id and person.company_id = ${access.companyId}
-      left join public.profiles responsible on responsible.id = task.responsible_profile_id
-      where task.company_id = ${access.companyId} and task.ministry_id = ${ministryId} and task.deleted_at is null
-      order by task.status = 'completed', task.due_at nulls last, task.created_at desc limit 500
-    `,
-    sql<Record<string, unknown>[]>`
-      select membership.id as membership_id, membership.person_id, person.full_name as person_name,
-        template.id as template_id, template.name as template_name,
-        count(step.id) filter (where step.deleted_at is null) as total,
-        count(onboarding.id) filter (where onboarding.completed_at is not null) as completed
-      from public.ministry_memberships membership
-      join public.people person on person.id = membership.person_id
-      left join public.ministry_onboarding_templates template on template.ministry_id = ${ministryId} and template.company_id = ${access.companyId} and template.is_active and template.deleted_at is null
-      left join public.ministry_onboarding_steps step on step.template_id = template.id and step.deleted_at is null
-      left join public.ministry_member_onboarding onboarding on onboarding.membership_id = membership.id and onboarding.step_id = step.id
-      where membership.company_id = ${access.companyId} and membership.ministry_id = ${ministryId} and membership.status = 'active'
-      group by membership.id, person.id, template.id
-      order by person.full_name limit 500
-    `,
-    sql<Record<string, unknown>[]>`
-      select template.id as template_id, template.name as template_name, template.description as template_description,
-        template.is_active as template_is_active, step.id as step_id, step.title as step_title,
-        step.description as step_description, step.sort_order, step.is_required
-      from public.ministry_onboarding_templates template
-      left join public.ministry_onboarding_steps step on step.template_id = template.id and step.deleted_at is null
-      where template.company_id = ${access.companyId} and template.ministry_id = ${ministryId} and template.deleted_at is null
-      order by template.is_active desc, template.name, step.sort_order, step.title
-    `,
-    sql<Record<string, unknown>[]>`
       select resource.id, resource.title, resource.description, resource.category, resource.file_id,
         resource.external_url, resource.visibility, resource.sort_order,
         file.original_name as file_name, file.storage_path as file_storage_path
@@ -369,11 +335,6 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     id: String(row.id), groupId: String(row.group_id), personId: String(row.person_id),
     personName: String(row.person_name ?? "Pessoa"), role: row.role as MinistryTeamMember["role"],
   }))
-  const mappedFollowUps = followUps.map((row) => ({
-    id: String(row.id), personId: String(row.person_id), personName: String(row.person_name), title: String(row.title), notes: String(row.notes ?? ""),
-    dueAt: iso(row.due_at as Date | string | null), priority: String(row.priority), status: String(row.status), origin: String(row.origin),
-    responsibleProfileId: row.responsible_profile_id ? String(row.responsible_profile_id) : null, responsibleName: row.responsible_name ? String(row.responsible_name) : null,
-  }))
   const mappedCommunications: MinistryCommunication[] = communications.map((row) => ({
     id: String(row.id), title: String(row.title), status: String(row.status), method: String(row.method),
     audienceKind: String(row.audience_kind), snapshotCount: number(row.snapshot_count), createdAt: iso(row.created_at) ?? "",
@@ -383,38 +344,17 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     personId: row.person_id ? String(row.person_id) : null, personName: String(row.person_name ?? "Pessoa"),
     occurredOn: String(row.occurred_on ?? ""), status: String(row.status ?? ""),
   }))
-  const mappedOnboarding = onboarding.map((row) => {
-    const total = number(row.total); const completed = number(row.completed)
-    return { membershipId: String(row.membership_id), personId: String(row.person_id), personName: String(row.person_name), templateId: row.template_id ? String(row.template_id) : null, templateName: row.template_name ? String(row.template_name) : null, completed, total, percent: total ? Math.round(completed / total * 100) : 0 }
-  })
-  const onboardingTemplates = new Map<string, MinistryOnboardingTemplate>()
-  for (const row of onboardingTemplateRows) {
-    const templateId = String(row.template_id)
-    const template = onboardingTemplates.get(templateId) ?? {
-      id: templateId,
-      name: String(row.template_name ?? "Checklist"),
-      description: String(row.template_description ?? ""),
-      isActive: Boolean(row.template_is_active),
-      steps: [],
-    }
-    if (row.step_id) template.steps.push({
-      id: String(row.step_id), title: String(row.step_title ?? ""), description: String(row.step_description ?? ""),
-      sortOrder: number(row.sort_order), isRequired: Boolean(row.is_required),
-    })
-    onboardingTemplates.set(templateId, template)
-  }
   const mappedActivities = activityRows.map(toActivity)
   const mappedScales = mapScaleRows(scaleRows, assignmentPhotoUrls)
   const alerts = [
     { kind: "leader_missing" as const, label: "Ministério sem líder principal", count: profile.leaderPersonId ? 0 : 1, href: "#configuracoes" },
     { kind: "team_without_leader" as const, label: "Equipe sem responsável", count: mappedTeams.filter((team) => team.isActive && !team.leaderPersonId).length, href: "#equipes" },
     { kind: "activity_without_scale" as const, label: "Atividade com escala incompleta", count: mappedActivities.filter((activity) => !activity.scaleComplete && activity.volunteerPositions > 0).length, href: "#agenda" },
-    { kind: "follow_up_overdue" as const, label: "Acompanhamentos vencidos", count: number(indicator?.overdue_followups), href: "#acompanhamentos" },
   ].filter((alert) => alert.count > 0)
   const workspace: MinistryWorkspace = {
     profile, actorRole: access.user.role, canManage: access.canManage,
     indicators: {
-      activeMembers: number(indicator?.active_members), pendingMembers: number(indicator?.pending_members), inactiveMembers: number(indicator?.inactive_members), activeTeams: number(indicator?.active_teams), openTeamSlots: number(indicator?.open_team_slots), upcomingActivities: number(indicator?.upcoming_activities), attendancePresent30d: number(indicator?.attendance_present), attendanceAbsent30d: number(indicator?.attendance_absent), incompleteScales: number(indicator?.incomplete_scales), openFollowUps: number(indicator?.open_followups), overdueFollowUps: number(indicator?.overdue_followups),
+      activeMembers: number(indicator?.active_members), pendingMembers: number(indicator?.pending_members), inactiveMembers: number(indicator?.inactive_members), activeTeams: number(indicator?.active_teams), openTeamSlots: number(indicator?.open_team_slots), upcomingActivities: number(indicator?.upcoming_activities), attendancePresent30d: number(indicator?.attendance_present), attendanceAbsent30d: number(indicator?.attendance_absent), incompleteScales: number(indicator?.incomplete_scales), openFollowUps: number(indicator?.open_followups),
     },
     activities: mappedActivities, attendance: attendanceRows.map((row) => ({ day: iso(row.day) ?? String(row.day), present: number(row.present), absent: number(row.absent), justified: number(row.justified) })), alerts,
     lastCommunication: lastCommunication[0] ? { id: lastCommunication[0].id, title: lastCommunication[0].title, status: lastCommunication[0].status, createdAt: iso(lastCommunication[0].created_at) ?? "" } : null,
@@ -427,9 +367,6 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     agenda: mappedActivities,
     attendanceRecords: mappedAttendanceRecords,
     scales: mappedScales,
-    followUps: mappedFollowUps,
-    onboarding: mappedOnboarding,
-    onboardingTemplates: [...onboardingTemplates.values()],
     communications: mappedCommunications,
     resources: resources.map((row) => ({
       id: String(row.id), title: String(row.title), description: String(row.description ?? ""),

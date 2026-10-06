@@ -180,7 +180,6 @@ export interface MinistryWorkspace {
     attendanceAbsent30d: number
     incompleteScales: number
     openFollowUps: number
-    overdueFollowUps: number
   }
   activities: MinistryActivity[]
   attendance: MinistryAttendanceSummary[]
@@ -199,33 +198,6 @@ export interface MinistryReport {
   completedFollowUps: number
   communication: { status: string; total: number }[]
   retention: { activeAt30d: number; currentActive: number; rate: number }
-}
-
-export interface MinistryOnboardingItem {
-  membershipId: string
-  personId: string
-  personName: string
-  templateId: string | null
-  templateName: string | null
-  completed: number
-  total: number
-  percent: number
-}
-
-export interface MinistryOnboardingStep {
-  id: string
-  title: string
-  description: string
-  sortOrder: number
-  isRequired: boolean
-}
-
-export interface MinistryOnboardingTemplate {
-  id: string
-  name: string
-  description: string
-  isActive: boolean
-  steps: MinistryOnboardingStep[]
 }
 
 export interface MinistryResource {
@@ -259,27 +231,10 @@ export interface MinistryWorkspaceData {
   agenda: MinistryActivity[]
   attendanceRecords: MinistryAttendanceRecord[]
   scales: MinistryScale[]
-  followUps: MinistryFollowUp[]
-  onboarding: MinistryOnboardingItem[]
-  onboardingTemplates: MinistryOnboardingTemplate[]
   resources: MinistryResource[]
   communications: MinistryCommunication[]
   report: MinistryReport
   people: MinistryAvailablePerson[]
   leaderCandidates: { id: string; fullName: string }[]
   responsibleCandidates: { id: string; fullName: string }[]
-}
-
-export interface MinistryFollowUp {
-  id: string
-  personId: string
-  personName: string
-  title: string
-  notes: string
-  dueAt: string | null
-  priority: string
-  status: string
-  origin: string
-  responsibleProfileId: string | null
-  responsibleName: string | null
 }

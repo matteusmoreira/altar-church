@@ -34,12 +34,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       ["Presença", "Status", "Total"],
       ...data.report.attendance.map((item) => ["Presença", item.status, item.total]),
       [],
-      ["Onboarding", "Pessoa", "Checklist", "Concluído", "Total", "Progresso"],
-      ...data.onboarding.map((item) => ["Onboarding", item.personName, item.templateName ?? "", item.completed, item.total, `${item.percent}%`]),
-      [],
-      ["Follow-up", "Pessoa", "Título", "Status", "Prioridade", "Prazo"],
-      ...data.followUps.map((item) => ["Follow-up", item.personName, item.title, item.status, item.priority, item.dueAt ?? ""]),
-      [],
       ["Comunicação", "Status", "Total"],
       ...data.report.communication.map((item) => ["Comunicação", item.status, item.total]),
     ]

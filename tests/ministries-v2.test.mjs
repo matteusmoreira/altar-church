@@ -36,7 +36,7 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
   const data = read("src/lib/ministries/data.ts")
   const memberData = read("src/lib/member/data.ts")
   const workspace = read("src/components/ministries/ministry-workspace.tsx")
-  for (const permission of ["ministries.members.manage", "ministries.teams.manage", "ministries.agenda.manage", "ministries.attendance.manage", "ministries.communication.send", "ministries.follow_up.manage"]) assert.match(actions, new RegExp(permission.replaceAll(".", "\\.")))
+  for (const permission of ["ministries.members.manage", "ministries.teams.manage", "ministries.agenda.manage", "ministries.attendance.manage", "ministries.communication.send"]) assert.match(actions, new RegExp(permission.replaceAll(".", "\\.")))
   assert.match(data, /getMinistryWorkspaceData/)
   assert.match(actions, /createNotificationCampaignDeliveries/)
   assert.match(actions, /afterResponse\("ministry notification outbox"/)
@@ -59,13 +59,11 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
     "volunteer_assignments",
     "rankVolunteersForShift",
   ]) assert.match(actions, new RegExp(primitive))
-  assert.match(actions, /saveMinistryOnboardingTemplate/)
   assert.match(actions, /uploadMinistryResource/)
   assert.match(read("src/lib/notifications/campaign.ts"), /membership\.left_at is null/)
   assert.match(read("src/lib/notifications/campaign.ts"), /return \{ recipientCount: people\.length, deliveryCount: inserted, personIds \}/)
   assert.match(read("src/lib/notifications/delivery.ts"), /toUazapiNumber\(delivery\.recipient\)/)
   assert.match(workspace, /Ver entregas/)
-  assert.match(actions, /Você só pode atualizar seu próprio onboarding/)
   assert.match(data, /createSignedUrlsByStoragePath/)
   assert.match(memberData, /event\.ministry_id is null or exists/)
   assert.match(workspace, /Visão geral|VisÃ£o geral/)
@@ -74,7 +72,6 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
   assert.match(workspace, /Agenda|Agenda/)
   assert.match(workspace, /Adicionar pessoa/)
   assert.match(workspace, /Pessoas específicas/)
-  assert.match(workspace, /Acompanhamentos/)
   assert.match(workspace, /Publicar escala/)
   assert.match(workspace, /Sem limite/)
   assert.match(workspace, /Registrar presença|Registrar presenÃ§a/)
@@ -91,7 +88,7 @@ test("every ministry workspace form has an explicit submit button", () => {
   const workspace = read("src/components/ministries/ministry-workspace.tsx")
   const forms = [...workspace.matchAll(/<form\b[\s\S]*?<\/form>/g)].map((match) => match[0])
 
-  assert.equal(forms.length, 11)
+  assert.equal(forms.length, 7)
   for (const form of forms) assert.match(form, /<Button\b[^>]*\btype="submit"/)
 })
 
@@ -118,13 +115,12 @@ test("ministry workspace exposes scoped deletion for every managed creation surf
     "removeMinistryScale",
     "removeMinistryAttendance",
     "removeMinistryCommunication",
-    "removeMinistryFollowUp",
   ]) assert.match(actions, new RegExp(`export async function ${action}`))
   for (const scope of ["company_id = ${access.companyId}", "ministry_id = ${ministryId}", "requireMinistryPermission"]) assert.match(actions, new RegExp(scope.replace(/[${}]/g, "\\$&")))
   assert.match(actions, /volunteer_schedule_published_at is null/)
   assert.match(actions, /status = 'canceled'/)
   assert.match(actions, /ministry_id,.*title/s)
-  assert.match(workspace, /removeMinistryActivity|removeMinistryScale|removeMinistryAttendance|removeMinistryTeam|removeMinistryCommunication|removeMinistryFollowUp/)
+  assert.match(workspace, /removeMinistryActivity|removeMinistryScale|removeMinistryAttendance|removeMinistryTeam|removeMinistryCommunication/)
   assert.match(workspace, /confirmRemoval/)
   assert.match(delivery, /status = 'processing'/)
   assert.match(migration, /add column if not exists ministry_id uuid references public\.ministries/i)

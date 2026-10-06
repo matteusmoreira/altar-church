@@ -18,7 +18,7 @@ const fixture = {
   workspace: {
     profile: { id: "ministry-demo", companyId: "church-demo", name: "Ministério de Tecnologia", slug: "tecnologia", mission: "Responsável pela tecnologia e pelo acolhimento da igreja.", description: "Descrição de exemplo", ministryType: "administration", targetAudience: "Membros", contact: "", leaderPersonId: "person-1", leaderName: "Ana", meetingDay: 0, meetingTime: "19:00", meetingLocation: "Sala de reuniões", publicJoinEnabled: true, isActive: true },
     actorRole: "admin", canManage: true,
-    indicators: { activeMembers: 2, pendingMembers: 1, inactiveMembers: 1, activeTeams: 1, openTeamSlots: 2, upcomingActivities: 1, attendancePresent30d: 0, attendanceAbsent30d: 0, incompleteScales: 1, openFollowUps: 0, overdueFollowUps: 0 },
+    indicators: { activeMembers: 2, pendingMembers: 1, inactiveMembers: 1, activeTeams: 1, openTeamSlots: 2, upcomingActivities: 1, attendancePresent30d: 0, attendanceAbsent30d: 0, incompleteScales: 1, openFollowUps: 0 },
     activities: [], attendance: [], alerts: [], lastCommunication: null,
   },
   members: [
@@ -30,8 +30,7 @@ const fixture = {
   teams: [{ id: "team-1", name: "Equipe de tecnologia com nome extenso para conferir o layout", description: "Equipe de exemplo", leaderPersonId: "person-1", leaderName: "Ana", coLeaderPersonId: null, coLeaderName: null, coordinatorPersonId: null, coordinatorName: null, meetingDay: "Domingo", meetingTime: "19:00", meetingLocation: "Sala", maxCapacity: 4, memberCount: 2, openSlots: 2, isActive: true }],
   teamMembers: [],
   agenda: [{ id: "event-1", programmingId: "activity-1", title: "Reunião da equipe de tecnologia com título longo para conferir o celular", description: "Atividade fictícia", programmingStartsAt: "2026-10-10T22:00:00Z", startsAt: "2026-10-10T22:00:00Z", endsAt: null, durationMinutes: 60, recurrenceFrequency: "none", recurrenceWeekdays: [], location: "Sala", status: "scheduled", recurring: false, attendanceCount: 0, volunteerPositions: 0, assignedVolunteers: 0, scaleComplete: false }],
-  attendanceRecords: [], scales: [], followUps: [], onboarding: [], resources: [], communications: [],
-  onboardingTemplates: [{ id: "template-1", name: "Integração na equipe", description: "Recepção dos membros", isActive: true, steps: [{ id: "step-1", title: "Conhecer a equipe", description: "Primeira reunião", sortOrder: 0, isRequired: true }] }],
+  attendanceRecords: [], scales: [], resources: [], communications: [],
   report: { membersByStatus: [], membersByMonth: [], attendance: [], teamParticipation: [], volunteerHours: 0, filledScales: 0, openFollowUps: 0, completedFollowUps: 0, communication: [], retention: { activeAt30d: 0, currentActive: 0, rate: 0 } },
   people: [], leaderCandidates: [{ id: "person-1", fullName: "Ana Maria" }], responsibleCandidates: [],
 }
@@ -52,7 +51,7 @@ try {
   await writeFile(resolve(directory, "automations-actions.js"), `export const uploadAutomationMedia = async () => ({ id: "mock-file", name: "imagem.png" });\nexport const automationMediaPreview = async () => "";`)
   await writeFile(resolve(directory, "navigation.js"), `const router = { refresh() {}, push() {} }; export const useRouter = () => router;`)
   await writeFile(resolve(directory, "loader.cjs"), `const ts = require(${JSON.stringify(resolve(root, "node_modules/typescript"))}); module.exports = function(source) { return ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText; };`)
-  await writeFile(resolve(directory, "entry.tsx"), `import React from "react"; import { createRoot } from "react-dom/client"; import { Toaster } from "sonner"; import { MinistryWorkspace } from ${JSON.stringify(resolve(root, "src/components/ministries/ministry-workspace.tsx"))}; window.mockCalls = []; window.mockFailure = false; const data = ${JSON.stringify(fixture)}; if (location.search.includes("empty")) { data.members = []; data.teams = []; data.agenda = []; data.onboardingTemplates = []; } if (location.search.includes("readonly")) data.workspace.canManage = false; createRoot(document.getElementById("root")).render(<React.StrictMode><main className="mx-auto max-w-screen-2xl p-4 md:p-8"><MinistryWorkspace data={data} /><Toaster /></main></React.StrictMode>);`)
+  await writeFile(resolve(directory, "entry.tsx"), `import React from "react"; import { createRoot } from "react-dom/client"; import { Toaster } from "sonner"; import { MinistryWorkspace } from ${JSON.stringify(resolve(root, "src/components/ministries/ministry-workspace.tsx"))}; window.mockCalls = []; window.mockFailure = false; const data = ${JSON.stringify(fixture)}; if (location.search.includes("empty")) { data.members = []; data.teams = []; data.agenda = []; } if (location.search.includes("readonly")) data.workspace.canManage = false; createRoot(document.getElementById("root")).render(<React.StrictMode><main className="mx-auto max-w-screen-2xl p-4 md:p-8"><MinistryWorkspace data={data} /><Toaster /></main></React.StrictMode>);`)
   const compiler = vendor.webpack({ mode: "development", devtool: false, entry: resolve(directory, "entry.tsx"), output: { path: directory, filename: "bundle.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], modules: [resolve(root, "node_modules")], alias: { "@/lib/ministries/actions": resolve(directory, "actions.js"), "@/lib/automations/actions": resolve(directory, "automations-actions.js"), "next/navigation": resolve(directory, "navigation.js"), "@": resolve(root, "src") } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve(directory, "loader.cjs") }] } })
   await new Promise((accept, reject) => compiler.run((error, stats) => { if (error || stats.hasErrors()) reject(error ?? new Error(stats.toString({ all: false, errors: true }))); else accept() }))
   await new Promise((accept, reject) => compiler.close((error) => error ? reject(error) : accept()))
@@ -74,7 +73,7 @@ try {
     await page.getByRole("tab", { name: "Visão geral", exact: true }).focus()
     await page.keyboard.press("ArrowRight")
     await expect(page.getByRole("tab", { name: "Pessoas", exact: true })).toHaveAttribute("aria-selected", "true")
-    const tabs = ["Visão geral", "Pessoas", "Equipes", "Agenda", "Escalas", "Comunicação", "Acompanhamentos", "Integração", "Recursos", "Relatórios", "Configurações"]
+    const tabs = ["Visão geral", "Pessoas", "Equipes", "Agenda", "Escalas", "Comunicação", "Recursos", "Relatórios", "Configurações"]
     for (const tab of tabs) {
       await page.getByRole("tab", { name: tab, exact: true }).click()
       await expect(page.getByRole("tabpanel")).toBeVisible()
@@ -127,7 +126,7 @@ try {
       await expect(page.getByRole("alertdialog")).toBeVisible()
       await page.getByRole("alertdialog").getByRole("button", { name: "Cancelar", exact: true }).click()
     }
-    const dialogs = [["Equipes", "Criar equipe"], ["Equipes", "Adicionar à equipe"], ["Agenda", "Nova atividade"], ["Escalas", "Criar escala"], ["Escalas", "Registrar presença"], ["Comunicação", "Nova comunicação"], ["Acompanhamentos", "Novo acompanhamento"], ["Integração", "Criar checklist"], ["Integração", "Atualizar etapa"], ["Recursos", "Novo recurso"]]
+    const dialogs = [["Equipes", "Criar equipe"], ["Equipes", "Adicionar à equipe"], ["Agenda", "Nova atividade"], ["Escalas", "Criar escala"], ["Escalas", "Registrar presença"], ["Comunicação", "Nova comunicação"], ["Recursos", "Novo recurso"]]
     for (const [tab, action] of dialogs) {
       await page.getByRole("tab", { name: tab, exact: true }).click()
       await page.getByRole("button", { name: action, exact: true }).first().click()
@@ -147,17 +146,6 @@ try {
     await page.getByRole("button", { name: `Editar atividade ${fixture.agenda[0].title}`, exact: true }).click()
     await expect(page.getByRole("dialog").getByRole("heading", { name: "Editar atividade" })).toBeVisible()
     await page.keyboard.press("Escape")
-    await page.getByRole("tab", { name: "Integração", exact: true }).click()
-    await page.getByRole("button", { name: "Editar checklist", exact: true }).click()
-    await expect(page.getByRole("textbox", { name: "Nome do checklist" })).toHaveValue("Integração na equipe")
-    await page.keyboard.press("Escape")
-    await page.getByRole("button", { name: "Editar etapa Conhecer a equipe", exact: true }).click()
-    await expect(page.getByRole("textbox", { name: "Título", exact: true })).toHaveValue("Conhecer a equipe")
-    await page.keyboard.press("Escape")
-    await page.getByRole("button", { name: "Adicionar etapa", exact: true }).click()
-    await page.getByRole("textbox", { name: "Título", exact: true }).fill("Boas-vindas")
-    await page.getByRole("button", { name: "Salvar etapa", exact: true }).click()
-    await expect(page.getByRole("dialog")).toHaveCount(0)
     await page.goto(url + "?empty")
     await page.getByRole("tab", { name: "Pessoas", exact: true }).click()
     await expect(page.getByText("Seu ministério ainda não tem membros")).toBeVisible()
@@ -165,11 +153,8 @@ try {
     await page.getByRole("tab", { name: "Pessoas", exact: true }).click()
     await expect(page.getByRole("button", { name: "Adicionar pessoa", exact: true })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Aprovar", exact: true })).toHaveCount(0)
-    await page.getByRole("tab", { name: "Integração", exact: true }).click()
-    await expect(page.getByRole("button", { name: "Atualizar etapa", exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Criar checklist", exact: true })).toHaveCount(0)
     assert.deepEqual(errors, [], `${name}: browser errors`)
-    console.log(`${name}: 11 tabs, responsive layout, list/grid, filters, dialogs, mocked success/error, editing and permissions passed`)
+    console.log(`${name}: 9 tabs, responsive layout, list/grid, filters, dialogs, mocked success/error, editing and permissions passed`)
     await context.close()
   }
 } finally {
