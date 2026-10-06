@@ -58,7 +58,7 @@ function toActivity(row: Record<string, unknown>): MinistryActivity {
   }
 }
 
-function mapScaleRows(rows: Record<string, unknown>[]): MinistryScale[] {
+function mapScaleRows(rows: Record<string, unknown>[], photoUrls: Map<string, string>): MinistryScale[] {
   const scales = new Map<string, MinistryScale>()
   const positions = new Map<string, MinistryScalePosition>()
 
@@ -95,6 +95,7 @@ function mapScaleRows(rows: Record<string, unknown>[]): MinistryScale[] {
         personName: String(row.assignment_person_name ?? "Pessoa"),
         volunteerId: String(row.assignment_volunteer_id),
         status: String(row.assignment_status ?? "proposed"),
+        photoUrl: row.assignment_photo_path ? photoUrls.get(String(row.assignment_photo_path)) ?? null : null,
       }
       if (!position.assignments.some((item) => item.id === assignment.id)) position.assignments.push(assignment)
     }
@@ -248,7 +249,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         shift.id as shift_id, shift.role_name as shift_role_name, shift.required_volunteers as shift_required,
         assignment.id as assignment_id, assigned_volunteer.person_id as assignment_person_id,
         assignment.volunteer_id as assignment_volunteer_id, assignment.status as assignment_status,
-        assigned_person.full_name as assignment_person_name
+        assigned_person.full_name as assignment_person_name, assignment_photo.storage_path as assignment_photo_path
       from public.events event
       left join public.volunteer_event_positions position
         on position.event_id = event.id and position.company_id = ${access.companyId}
@@ -260,6 +261,8 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         on assignment.shift_id = shift.id and assignment.company_id = ${access.companyId}
       left join public.volunteer_profiles assigned_volunteer on assigned_volunteer.id = assignment.volunteer_id
       left join public.people assigned_person on assigned_person.id = assigned_volunteer.person_id
+      left join public.app_files assignment_photo on assignment_photo.id = assigned_person.photo_file_id
+        and assignment_photo.company_id = ${access.companyId} and assignment_photo.is_active = true and assignment_photo.deleted_at is null
       where event.company_id = ${access.companyId} and event.ministry_id = ${ministryId}
         and event.deleted_at is null and event.starts_at >= now() - interval '1 day'
       order by event.starts_at, position.sort_order, position.role_name, assigned_person.full_name
@@ -342,9 +345,10 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     `,
   ])
 
-  const [memberPhotoUrls, resourceUrls] = await Promise.all([
+  const [memberPhotoUrls, resourceUrls, assignmentPhotoUrls] = await Promise.all([
     createSignedUrlsByStoragePath(members.map((row) => String(row.photo_path ?? "")).filter(Boolean)),
     createSignedUrlsByStoragePath(resources.map((row) => String(row.file_storage_path ?? "")).filter(Boolean)),
+    createSignedUrlsByStoragePath(scaleRows.map((row) => String(row.assignment_photo_path ?? "")).filter(Boolean)),
   ])
   const indicator = indicators[0]
   const mappedMembers = members.map((row) => ({
@@ -400,7 +404,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     onboardingTemplates.set(templateId, template)
   }
   const mappedActivities = activityRows.map(toActivity)
-  const mappedScales = mapScaleRows(scaleRows)
+  const mappedScales = mapScaleRows(scaleRows, assignmentPhotoUrls)
   const alerts = [
     { kind: "leader_missing" as const, label: "Ministério sem líder principal", count: profile.leaderPersonId ? 0 : 1, href: "#configuracoes" },
     { kind: "team_without_leader" as const, label: "Equipe sem responsável", count: mappedTeams.filter((team) => team.isActive && !team.leaderPersonId).length, href: "#equipes" },
