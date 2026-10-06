@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
-import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/files/server"
+import { deleteManagedFile, getOptionalFile, uploadManagedFile, createSignedUrlsByStoragePath } from "@/lib/files/server"
+import { jsonbParam } from "@/lib/db/jsonb"
+import { parseDirectMessageConfig } from "@/lib/forms/direct-message"
+import type { FormDirectMessage } from "@/lib/forms/types"
 import { createNotificationCampaignDeliveries, type NotificationAudience } from "@/lib/notifications/campaign"
 import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import { afterResponse } from "@/lib/performance/after-response"
@@ -912,7 +915,15 @@ export async function removeMinistryAttendance(input: z.input<typeof removeAtten
   } catch (error) { return result(error) }
 }
 
-const communicationSchema = z.object({ ministryId: uuid, companyId: optionalUuid, title: z.string().trim().min(2).max(200), content: z.string().trim().min(2).max(10000), method: z.enum(["push", "email", "whatsapp"]), audience: z.enum(["ministry", "team", "manual"]).default("ministry"), audienceRefId: optionalUuid, personIds: z.array(uuid).default([]), scheduledAt: z.string().datetime({ offset: true }).nullable().optional() })
+const communicationSchema = z.object({ ministryId: uuid, companyId: optionalUuid, title: z.string().trim().min(2).max(200), content: z.string().trim().min(2).max(10000), method: z.enum(["push", "email", "whatsapp"]), whatsappMessage: z.unknown().optional(), audience: z.enum(["ministry", "team", "manual"]).default("ministry"), audienceRefId: optionalUuid, personIds: z.array(uuid).default([]), scheduledAt: z.string().datetime({ offset: true }).nullable().optional() })
+
+// Texto puro fica só em content; botões/lista/carrossel exigem a estrutura completa.
+function parseInteractiveWhatsappMessage(value: unknown): FormDirectMessage | null {
+  if (value == null) return null
+  const parsed = parseDirectMessageConfig(value)
+  if (!parsed) throw new Error("Revise a mensagem do WhatsApp: preencha o texto, os botões, os itens da lista e a imagem do carrossel")
+  return parsed.type === "text" ? null : parsed
+}
 
 export async function createMinistryCommunication(input: z.input<typeof communicationSchema>): Promise<ActionResult> {
   try {
@@ -945,10 +956,11 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       audienceRefId = null
     }
     const scheduledAt = parsed.scheduledAt ? new Date(parsed.scheduledAt).toISOString() : null
+    const whatsappMessage = parsed.method === "whatsapp" ? parseInteractiveWhatsappMessage(parsed.whatsappMessage) : null
     const saved = await sql.begin(async (tx) => {
       const campaigns = await tx<{ id: string }[]>`
-        insert into public.notifications (company_id, ministry_id, title, content, method, type, target_group, scheduled_send, send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, created_by, updated_by)
-        values (${access.companyId}, ${parsed.ministryId}, ${parsed.title}, ${parsed.content}, ${parsed.method}, 'group', ${audienceRefId ?? ""}, ${Boolean(scheduledAt)}, ${scheduledAt ? scheduledAt.slice(0, 10) : null}, ${scheduledAt}, ${audience}, ${audienceRefId}, ${tx.json(personIds)}, now(), 0, ${scheduledAt ? "scheduled" : "queued"}, ${access.user.id}, ${access.user.id}) returning id
+        insert into public.notifications (company_id, ministry_id, title, content, method, type, target_group, scheduled_send, send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, whatsapp_message, created_by, updated_by)
+        values (${access.companyId}, ${parsed.ministryId}, ${parsed.title}, ${parsed.content}, ${parsed.method}, 'group', ${audienceRefId ?? ""}, ${Boolean(scheduledAt)}, ${scheduledAt ? scheduledAt.slice(0, 10) : null}, ${scheduledAt}, ${audience}, ${audienceRefId}, ${tx.json(personIds)}, now(), 0, ${scheduledAt ? "scheduled" : "queued"}, ${whatsappMessage ? jsonbParam(tx, whatsappMessage) : null}, ${access.user.id}, ${access.user.id}) returning id
       `
       const campaign = campaigns[0]
       if (!campaign) throw new Error("Campanha não foi criada")
@@ -956,11 +968,45 @@ export async function createMinistryCommunication(input: z.input<typeof communic
       await tx`update public.notifications set audience_person_ids = ${tx.json(snapshot.personIds)}, snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now() where id = ${campaign.id} and company_id = ${access.companyId}`
       return campaign.id
     })
-    await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId } })
+    await writeAuditLog({ action: "ministry.communication.create", entityTable: "notifications", entityId: saved, companyId: access.companyId, metadata: { ministryId: parsed.ministryId, audience, audienceRefId, interactive: whatsappMessage?.type ?? null } })
     afterResponse("ministry notification outbox", () => processNotificationOutbox(25, saved, access.companyId))
     refresh(parsed.ministryId)
     return { ok: true, id: saved }
   } catch (error) { return result(error) }
+}
+
+// Mídia do carrossel do ministério: mesmo contrato do upload das automações,
+// mas autorizado por ministries.communication.send (não pelo módulo Automações).
+export async function uploadMinistryCommunicationMedia(formData: FormData): Promise<{ id: string; name: string }> {
+  const ministryId = uuid.parse(String(formData.get("ministryId") ?? ""))
+  const access = await requireMinistryPermission(ministryId, "ministries.communication.send", formData.get("companyId") ? String(formData.get("companyId")) : null, { manage: true })
+  const file = getOptionalFile(formData, "file")
+  if (!file) throw new Error("Selecione um arquivo")
+  const uploaded = await uploadManagedFile({
+    file,
+    companyId: access.companyId,
+    ownerProfileId: access.user.id,
+    entityTable: "notifications",
+    purpose: "whatsapp-media",
+    visibility: "private",
+    allowedMimeTypes: new Set(["image/jpeg", "image/png", "image/webp"]),
+    maxSizeBytes: 10 * 1024 * 1024,
+  })
+  return { id: uploaded.id, name: uploaded.originalName }
+}
+
+export async function previewMinistryCommunicationMedia(input: { ministryId: string; fileId: string; companyId?: string | null }): Promise<string> {
+  const ministryId = uuid.parse(input.ministryId)
+  const fileId = uuid.parse(input.fileId)
+  const access = await requireMinistryPermission(ministryId, "ministries.communication.send", input.companyId, { manage: true })
+  const rows = await getSql()<{ storage_path: string }[]>`
+    select storage_path from public.app_files
+    where id = ${fileId} and company_id = ${access.companyId}
+      and is_active and deleted_at is null and mime_type like 'image/%'
+    limit 1
+  `
+  if (!rows[0]) return ""
+  return (await createSignedUrlsByStoragePath([String(rows[0].storage_path)], 600)).get(String(rows[0].storage_path)) ?? ""
 }
 
 export async function removeMinistryCommunication(input: { ministryId: string; communicationId: string; companyId?: string | null }): Promise<ActionResult> {

@@ -11,8 +11,8 @@ import type postgres from "postgres"
 
 type Sql = ReturnType<typeof postgres>
 
-/** Valor pronto para coluna jsonb (objeto/array real). */
-export function jsonbParam(sql: Sql, value: unknown) {
+/** Valor pronto para coluna jsonb (objeto/array real). Aceita cliente completo ou transação (sql.begin). */
+export function jsonbParam(sql: Pick<Sql, "json">, value: unknown) {
   return sql.json(value as Parameters<Sql["json"]>[0])
 }
 

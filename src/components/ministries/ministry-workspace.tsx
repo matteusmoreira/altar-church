@@ -18,9 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, publishMinistryScale, recordMinistryAttendance, removeMinistryActivity, removeMinistryAttendance, removeMinistryCommunication, removeMinistryFollowUp, removeMinistryScale, removeMinistryTeam, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryResource } from "@/lib/ministries/actions"
+import { addMinistryMember, completeMinistryFollowUp, createMinistryCommunication, generateMinistryScale, listMinistryScaleCandidates, previewMinistryCommunicationMedia, publishMinistryScale, recordMinistryAttendance, removeMinistryActivity, removeMinistryAttendance, removeMinistryCommunication, removeMinistryFollowUp, removeMinistryScale, removeMinistryTeam, removeMinistryOnboardingStep, removeMinistryOnboardingTemplate, removeMinistryResource, reviewMinistryMember, saveMinistryActivity, saveMinistryFollowUp, saveMinistryOnboardingStep, saveMinistryOnboardingTemplate, saveMinistryProfile, saveMinistryResource, saveMinistryScaleAssignment, saveMinistryScalePositions, saveMinistryTeam, saveMinistryTeamMember, setMinistryOnboardingStep, uploadMinistryCommunicationMedia, uploadMinistryResource } from "@/lib/ministries/actions"
 import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
+import { MessageEditor } from "@/components/automations/message-editor"
+import type { AutomationMessage } from "@/lib/automations/contract"
 
 type PeopleView = "list" | "grid"
 const PEOPLE_VIEW_KEY = "altar-church:ministry-people-view:v1"
@@ -39,6 +41,29 @@ function setPeopleView(value: PeopleView) {
   peopleViewFallback = value
   try { window.localStorage.setItem(PEOPLE_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
   window.dispatchEvent(new Event(PEOPLE_VIEW_EVENT))
+}
+
+type ScalesView = "list" | "grid"
+const SCALES_VIEW_KEY = "altar-church:ministry-scales-view:v1"
+const SCALES_VIEW_EVENT = "ministry-scales-view-change"
+let scalesViewFallback: ScalesView = "list"
+function subscribeScalesView(callback: () => void) {
+  window.addEventListener("storage", callback)
+  window.addEventListener(SCALES_VIEW_EVENT, callback)
+  return () => { window.removeEventListener("storage", callback); window.removeEventListener(SCALES_VIEW_EVENT, callback) }
+}
+function getScalesView(): ScalesView {
+  try { return window.localStorage.getItem(SCALES_VIEW_KEY) === "grid" ? "grid" : "list" } catch { return scalesViewFallback }
+}
+function getServerScalesView(): ScalesView { return "list" }
+function setScalesView(value: ScalesView) {
+  scalesViewFallback = value
+  try { window.localStorage.setItem(SCALES_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
+  window.dispatchEvent(new Event(SCALES_VIEW_EVENT))
+}
+
+function personInitials(name: string) {
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toLocaleUpperCase("pt-BR") || "?"
 }
 
 function WorkspaceDialog({ open, onOpenChange, title, description, pending, children }: {
@@ -199,6 +224,8 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
   const [addPeopleSearch, setAddPeopleSearch] = useState("")
   const [peopleStatus, setPeopleStatus] = useState("all")
   const peopleView = useSyncExternalStore(subscribePeopleView, getPeopleView, getServerPeopleView)
+  const scalesView = useSyncExternalStore(subscribeScalesView, getScalesView, getServerScalesView)
+  const memberPhotoById = new Map(data.members.map((member) => [member.personId, member.photoUrl]))
   const [dialog, setDialog] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ label: string; run: () => void } | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState("")
@@ -246,6 +273,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
     audienceRefId: data.teams.find((team) => team.isActive)?.id ?? "",
     personIds: [] as string[],
   })
+  const [whatsappMessage, setWhatsappMessage] = useState<AutomationMessage>({ type: "text", text: "" })
   const [followUpForm, setFollowUpForm] = useState({
     personId: activeMembers[0]?.personId ?? "",
     title: "",
@@ -321,6 +349,15 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
 
   function confirmRemoval(label: string, run: () => void) {
     setConfirmDelete({ label, run })
+  }
+
+  function uploadCommunicationMedia(form: FormData) {
+    form.set("ministryId", profile.id)
+    return uploadMinistryCommunicationMedia(form)
+  }
+
+  function loadCommunicationMediaPreview(fileId: string) {
+    return previewMinistryCommunicationMedia({ ministryId: profile.id, fileId })
   }
 
   const normalizedPeopleSearch = peopleSearch.trim().toLocaleLowerCase("pt-BR")
@@ -1461,16 +1498,24 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
             <div className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Escalas do ministério</CardTitle>
-                  <CardDescription>“Faltam pessoas” mostra exatamente quantas vagas ainda precisam ser preenchidas.</CardDescription>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle>Escalas do ministério</CardTitle>
+                      <CardDescription>Veja quem está escalado em cada função — as vagas em aberto aparecem destacadas.</CardDescription>
+                    </div>
+                    <ViewToggle value={scalesView} onChange={setScalesView} showLabel ariaLabel="Modo de visualização das escalas" className="[&_[aria-pressed=true]]:bg-primary [&_[aria-pressed=true]]:text-primary-foreground" options={[{ value: "list", label: "Lista", icon: List }, { value: "grid", label: "Grade", icon: Grid2X2 }]} />
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {data.scales.map((scale) => {
                     const missing = scale.positions.reduce((sum, position) => sum + position.missingVolunteers, 0)
+                    const assignedTotal = scale.positions.reduce((sum, position) => sum + position.assignedVolunteers, 0)
+                    const requiredTotal = scale.positions.reduce((sum, position) => sum + position.requiredVolunteers, 0)
+                    const fillPercent = requiredTotal ? Math.round((assignedTotal / requiredTotal) * 100) : 0
                     return (
-                      <div key={scale.eventId} className="rounded-xl border p-3">
+                      <div key={scale.eventId} className="rounded-xl border p-4">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
+                          <div className="min-w-0">
                             <p className="font-medium">{scale.eventTitle}</p>
                             <p className="text-xs text-muted-foreground">{formatDateTime(scale.startsAt)}</p>
                           </div>
@@ -1495,13 +1540,37 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                             )}
                           </div>
                         </div>
+                        {scale.positions.length > 0 && (
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                              <span>{assignedTotal} de {requiredTotal} {requiredTotal === 1 ? "pessoa escalada" : "pessoas escaladas"}</span>
+                              <span>{missing ? `Faltam ${missing}` : "Completa"}</span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={fillPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`Preenchimento da escala de ${scale.eventTitle}`}>
+                              <div className={`h-full rounded-full transition-all ${fillPercent === 100 ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${fillPercent}%` }} />
+                            </div>
+                          </div>
+                        )}
                         {scale.positions.length ? (
-                          <div className="mt-3 space-y-3">
+                          <div className={scalesView === "grid" ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" : "mt-4 space-y-3"} data-scales-view={scalesView}>
                             {scale.positions.map((position) => {
                               const candidateState = position.shiftId ? scaleCandidates[position.shiftId] : undefined
+                              const activeAssignments = position.assignments.filter((assignment) => !["declined", "cancelled"].includes(assignment.status))
+                              const isGrid = scalesView === "grid"
+                              const removeAssignment = (personId: string) =>
+                                run(
+                                  () =>
+                                    saveMinistryScaleAssignment({
+                                      ministryId: profile.id,
+                                      shiftId: position.shiftId!,
+                                      personId,
+                                      remove: true,
+                                    }),
+                                  "Pessoa removida da escala",
+                                )
                               return (
-                                <div key={position.id} className="rounded-lg bg-muted/40 p-3">
-                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div key={position.id} className={isGrid ? "flex min-w-0 flex-col gap-3 rounded-xl border bg-background p-4" : "rounded-xl bg-muted/40 p-3"}>
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                                     <div className="min-w-0 flex-1 break-words">
                                       <p className="font-medium">{position.roleName}</p>
                                       <p className="text-xs text-muted-foreground">
@@ -1510,71 +1579,101 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                                       {position.instructions && <p className="mt-1 text-xs text-muted-foreground">Instrução: {position.instructions}</p>}
                                     </div>
                                     {position.shiftId && scale.status !== "published" && (
-                                      <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => loadScaleCandidates(position.shiftId!)}>
+                                      <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={pending} onClick={() => loadScaleCandidates(position.shiftId!)}>
                                         {candidateState?.loading ? "Carregando..." : "Escolher pessoas"}
                                       </Button>
                                     )}
                                   </div>
-                                  {position.assignments.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {position.assignments
-                                        .filter((assignment) => !["declined", "cancelled"].includes(assignment.status))
-                                        .map((assignment) => (
-                                          <Badge key={assignment.id} variant="outline">
-                                            {assignment.personName}
+                                  {(activeAssignments.length > 0 || position.missingVolunteers > 0) && (
+                                    <div className={isGrid ? "flex flex-col gap-2" : "mt-1 flex flex-wrap gap-2"}>
+                                      {activeAssignments.map((assignment) => {
+                                        const photoUrl = assignment.photoUrl ?? memberPhotoById.get(assignment.personId) ?? null
+                                        return isGrid ? (
+                                          <div key={assignment.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border bg-muted/30 p-2">
+                                            <Avatar className="size-9 shrink-0 border border-border/60">
+                                              {photoUrl && <AvatarImage src={photoUrl} alt={assignment.personName} />}
+                                              <AvatarFallback>{personInitials(assignment.personName)}</AvatarFallback>
+                                            </Avatar>
+                                            <p className="min-w-0 flex-1 truncate text-sm">{assignment.personName}</p>
                                             <button
                                               type="button"
-                                              className="ml-1 rounded-full"
+                                              className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                                               aria-label={`Remover ${assignment.personName}`}
+                                              onClick={() => removeAssignment(assignment.personId)}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div key={assignment.id} className="flex min-w-0 items-center gap-1.5 rounded-full border bg-background py-1 pr-1.5 pl-1">
+                                            <Avatar size="sm" className="border border-border/60">
+                                              {photoUrl && <AvatarImage src={photoUrl} alt={assignment.personName} />}
+                                              <AvatarFallback>{personInitials(assignment.personName)}</AvatarFallback>
+                                            </Avatar>
+                                            <span className="max-w-36 truncate text-sm">{assignment.personName}</span>
+                                            <button
+                                              type="button"
+                                              className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                                              aria-label={`Remover ${assignment.personName}`}
+                                              onClick={() => removeAssignment(assignment.personId)}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          </div>
+                                        )
+                                      })}
+                                      {Array.from({ length: position.missingVolunteers }, (_, slotIndex) =>
+                                        isGrid ? (
+                                          <div key={`open-${slotIndex}`} className="flex items-center gap-2.5 rounded-lg border border-dashed p-2 text-muted-foreground">
+                                            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted"><Plus className="h-4 w-4" /></span>
+                                            <p className="text-xs">Vaga em aberto</p>
+                                          </div>
+                                        ) : (
+                                          <div key={`open-${slotIndex}`} className="flex items-center gap-1.5 rounded-full border border-dashed py-1 pr-3 pl-1.5 text-muted-foreground">
+                                            <span className="flex size-6 items-center justify-center rounded-full bg-muted"><Plus className="h-3 w-3" /></span>
+                                            <span className="text-xs">Vaga aberta</span>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                  {candidateState && !candidateState.loading && (
+                                    <div className="mt-3 space-y-2 border-t pt-3">
+                                      <p className="text-xs font-medium">Candidatos ativos do ministério</p>
+                                      {candidateState.items.map((candidate) => {
+                                        const photoUrl = memberPhotoById.get(candidate.personId) ?? null
+                                        return (
+                                          <div key={candidate.personId} className="flex items-center gap-2.5 rounded-lg border bg-background p-2">
+                                            <Avatar className="size-8 shrink-0 border border-border/60">
+                                              {photoUrl && <AvatarImage src={photoUrl} alt={candidate.personName} />}
+                                              <AvatarFallback>{personInitials(candidate.personName)}</AvatarFallback>
+                                            </Avatar>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="truncate text-sm">{candidate.personName}</p>
+                                              {candidate.blockers.length > 0 && <p className="text-xs text-destructive">Bloqueado: {candidate.blockers.join(", ")}</p>}
+                                              {candidate.warnings.length > 0 && <p className="text-xs text-amber-600">Atenção: {candidate.warnings.join(", ")}</p>}
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              disabled={pending || !candidate.selectableManually}
                                               onClick={() =>
                                                 run(
                                                   () =>
                                                     saveMinistryScaleAssignment({
                                                       ministryId: profile.id,
                                                       shiftId: position.shiftId!,
-                                                      personId: assignment.personId,
-                                                      remove: true,
+                                                      personId: candidate.personId,
                                                     }),
-                                                  "Pessoa removida da escala",
+                                                  "Pessoa adicionada à escala",
                                                 )
                                               }
                                             >
-                                              <X className="h-3 w-3" />
-                                            </button>
-                                          </Badge>
-                                        ))}
-                                    </div>
-                                  )}
-                                  {candidateState && !candidateState.loading && (
-                                    <div className="mt-3 space-y-2 border-t pt-3">
-                                      <p className="text-xs font-medium">Candidatos ativos do ministério</p>
-                                      {candidateState.items.map((candidate) => (
-                                        <div key={candidate.personId} className="flex flex-col gap-2 rounded-lg border bg-background p-2 sm:flex-row sm:items-center">
-                                          <div className="min-w-0 flex-1 break-words">
-                                            <p className="text-sm">{candidate.personName}</p>
-                                            {candidate.blockers.length > 0 && <p className="text-xs text-destructive">Bloqueado: {candidate.blockers.join(", ")}</p>}
-                                            {candidate.warnings.length > 0 && <p className="text-xs text-amber-600">Atenção: {candidate.warnings.join(", ")}</p>}
+                                              Escalar
+                                            </Button>
                                           </div>
-                                          <Button
-                                            type="button"
-                                            size="sm"
-                                            disabled={pending || !candidate.selectableManually}
-                                            onClick={() =>
-                                              run(
-                                                () =>
-                                                  saveMinistryScaleAssignment({
-                                                    ministryId: profile.id,
-                                                    shiftId: position.shiftId!,
-                                                    personId: candidate.personId,
-                                                  }),
-                                                "Pessoa adicionada à escala",
-                                              )
-                                            }
-                                          >
-                                            Escalar
-                                          </Button>
-                                        </div>
-                                      ))}
+                                        )
+                                      })}
                                       {candidateState.items.length === 0 && <p className="text-xs text-muted-foreground">Nenhum membro ativo disponível.</p>}
                                     </div>
                                   )}
@@ -1587,7 +1686,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         )}
                         {scale.status !== "published" && scale.positions.length > 0 && (
                           <div className="mt-3 flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm">{missing ? `Faltam pessoas: ${missing}` : "Todas as vagas estão preenchidas."}</p>
+                            <p className="text-sm">{missing ? "Complete as vagas para publicar a escala." : "Todas as vagas estão preenchidas."}</p>
                             <Button
                               type="button"
                               disabled={pending || !canManage || missing > 0}
@@ -1744,7 +1843,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
 <SectionHeader title="Comunicação" description="Prepare mensagens e acompanhe suas entregas." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("communication") }}><Plus className="h-4 w-4" />Nova comunicação</Button>}</>} />
           <WorkspaceDialog open={dialog === "communication"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Nova comunicação"} description="Escolha o canal, os destinatários e a mensagem antes de enviar para a fila." pending={pending}>
 <form
-                className="grid gap-4 lg:grid-cols-2"
+                className="space-y-4"
                 onSubmit={(event) => {
                   event.preventDefault()
                   run(
@@ -1752,8 +1851,9 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                       createMinistryCommunication({
                         ministryId: profile.id,
                         title: communicationForm.title,
-                        content: communicationForm.content,
+                        content: communicationForm.method === "whatsapp" ? whatsappMessage.text : communicationForm.content,
                         method: communicationForm.method,
+                        whatsappMessage: communicationForm.method === "whatsapp" && whatsappMessage.type !== "text" ? whatsappMessage : undefined,
                         audience: communicationForm.audience,
                         audienceRefId: communicationForm.audience === "team" ? communicationForm.audienceRefId : undefined,
                         personIds: communicationForm.audience === "manual" ? communicationForm.personIds : [],
@@ -1795,20 +1895,35 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Mensagem">
-                  <Textarea
-                    required
-                    className="min-h-28 lg:col-span-2"
-                    placeholder="Escreva a mensagem"
-                    value={communicationForm.content}
-                    onChange={(event) =>
-                      setCommunicationForm({
-                        ...communicationForm,
-                        content: event.target.value,
-                      })
-                    }
-                  />
-                </Field>
+                {communicationForm.method === "whatsapp" ? (
+                  <div className="space-y-1.5">
+                    <Label>Mensagem do WhatsApp</Label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">Monte texto com botões, lista ou carrossel; a prévia mostra como a mensagem chega no celular. Variáveis personalizam pelo nome de cada pessoa.</p>
+                    <MessageEditor
+                      value={whatsappMessage}
+                      onChange={setWhatsappMessage}
+                      allowedTypes={["text", "button", "list", "carousel"]}
+                      variableOptions={["nome", "primeiro_nome"]}
+                      onUploadFile={uploadCommunicationMedia}
+                      loadMediaUrl={loadCommunicationMediaPreview}
+                    />
+                  </div>
+                ) : (
+                  <Field label="Mensagem">
+                    <Textarea
+                      required
+                      className="min-h-28"
+                      placeholder="Escreva a mensagem"
+                      value={communicationForm.content}
+                      onChange={(event) =>
+                        setCommunicationForm({
+                          ...communicationForm,
+                          content: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                )}
                 <Field label="Quem receberá" help="Você pode escolher o ministério inteiro, uma equipe ou pessoas específicas.">
                   <Select
                     value={communicationForm.audience}
@@ -1857,7 +1972,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                   </Field>
                 )}
                 {communicationForm.audience === "manual" && (
-                  <div className="rounded-xl border p-3 lg:col-span-2">
+                  <div className="rounded-xl border p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-medium">Pessoas específicas</p>
@@ -1882,7 +1997,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                     </div>
                   </div>
                 )}
-                <Button type="submit" className="lg:col-span-2" disabled={pending || !canManage || (communicationForm.audience === "team" && !communicationForm.audienceRefId) || (communicationForm.audience === "manual" && communicationForm.personIds.length === 0)}>
+                <Button type="submit" disabled={pending || !canManage || (communicationForm.method === "whatsapp" && !whatsappMessage.text.trim()) || (communicationForm.audience === "team" && !communicationForm.audienceRefId) || (communicationForm.audience === "manual" && communicationForm.personIds.length === 0)}>
                   <Megaphone className="mr-2 h-4 w-4" />
                   Enviar para fila
                 </Button>

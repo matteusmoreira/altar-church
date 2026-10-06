@@ -63,7 +63,7 @@ test("ministries v2 server surface uses scoped actions and existing primitives",
   assert.match(actions, /uploadMinistryResource/)
   assert.match(read("src/lib/notifications/campaign.ts"), /membership\.left_at is null/)
   assert.match(read("src/lib/notifications/campaign.ts"), /return \{ recipientCount: people\.length, deliveryCount: inserted, personIds \}/)
-  assert.match(read("src/lib/notifications/delivery.ts"), /number: toUazapiNumber\(delivery\.recipient\)/)
+  assert.match(read("src/lib/notifications/delivery.ts"), /toUazapiNumber\(delivery\.recipient\)/)
   assert.match(workspace, /Ver entregas/)
   assert.match(actions, /Você só pode atualizar seu próprio onboarding/)
   assert.match(data, /createSignedUrlsByStoragePath/)

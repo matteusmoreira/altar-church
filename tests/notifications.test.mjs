@@ -26,20 +26,23 @@ async function fixture() {
     create role anon;
     create role authenticated;
     alter default privileges grant execute on functions to anon, authenticated;
-    create table notifications(id uuid primary key,company_id uuid,title text default 'Aviso',content text default 'Mensagem',status text default 'queued',deleted_at timestamptz,completed_at timestamptz,updated_at timestamptz default now());
+    create table notifications(id uuid primary key,company_id uuid,title text default 'Aviso',content text default 'Mensagem',status text default 'queued',whatsapp_message jsonb,deleted_at timestamptz,completed_at timestamptz,updated_at timestamptz default now());
     create table notification_deliveries(id uuid primary key default gen_random_uuid(),notification_id uuid,company_id uuid,person_id uuid,channel text default 'push',recipient text default 'https://push.test/device',recipient_name text default 'Membro',status text default 'pending',attempts integer default 0,next_attempt_at timestamptz default now(),created_at timestamptz default now(),updated_at timestamptz default now(),locked_at timestamptz,last_error text,provider_id text,response_status integer,sent_at timestamptz,delivered_at timestamptz);
     create table notification_push_subscriptions(id uuid primary key default gen_random_uuid(),company_id uuid,person_id uuid,endpoint text unique,p256dh text,auth_key text,user_agent text,is_active boolean,updated_at timestamptz default now());
     create table notification_channel_preferences(company_id uuid,person_id uuid,channel text,opted_out boolean);
     create table volunteer_push_subscriptions(company_id uuid,profile_id uuid,volunteer_id uuid,endpoint text,p256dh text,auth_key text,user_agent text,is_active boolean);
+    create table app_files(id uuid primary key,company_id uuid,bucket text,storage_path text,mime_type text,is_active boolean,deleted_at timestamptz);
     create table people(id uuid primary key,company_id uuid,profile_id uuid,deleted_at timestamptz,is_active boolean,status text);
     create table profiles(id uuid,company_id uuid,person_id uuid);
     create table volunteer_profiles(id uuid,company_id uuid,person_id uuid,deleted_at timestamptz);
     insert into people values('${person}','${tenant}',null,null,true,'member');
     insert into notifications(id,company_id) values('${campaign}','${tenant}');
+    create function public.get_company_uazapi_credential(p_company_id uuid) returns table (instance_id uuid, provider_instance_id text, base_url text, instance_token text) language sql as $$ select null::uuid, 'stub'::text, 'https://uazapi.test'::text, 'token-test'::text $$;
   `)
   await db.exec(readFileSync("supabase/migrations/20261005185046_notification_push_queue_recovery.sql", "utf8"))
   await db.exec(readFileSync("supabase/migrations/20261005185525_notification_worker_execute_permissions.sql", "utf8"))
   const sql = async (strings, ...values) => (await db.query(strings.reduce((query, part, index) => query + part + (index < values.length ? `$${index + 1}` : ""), ""), values)).rows
+  sql.array = (values) => values
   const sent = []
   let providerError = null
   const delivery = load("src/lib/notifications/delivery.ts", {
@@ -47,6 +50,8 @@ async function fixture() {
     "@/lib/auth/phone": { toUazapiNumber: (value) => value },
     "@/lib/delivery/retry-policy": { isPermanentProviderError: () => false },
     "web-push": { setVapidDetails() {}, async sendNotification(...args) { sent.push(args); if (providerError) throw providerError } },
+    "@/lib/forms/direct-message": load("src/lib/forms/direct-message.ts", {}),
+    "@/lib/files/server": { createSignedUrlsByStoragePath: async (paths) => new Map(paths.map((path) => [path, `https://signed.test/${path}`])) },
   })
   return { db, sql, delivery, sent, failWith: (error) => { providerError = error } }
 }
@@ -113,6 +118,64 @@ test("push dispatch sends the registered device, expires invalid endpoints and r
     assert.equal((await db.query("select is_active from notification_push_subscriptions")).rows[0].is_active, false)
   } finally {
     keys.forEach((key, index) => { if (before[index] === undefined) delete process.env[key]; else process.env[key] = before[index] })
+    await db.close()
+  }
+})
+
+test("campanha whatsapp com botões envia menu e cai para texto quando o provedor recusa", async () => {
+  const { db, delivery } = await fixture()
+  const calls = []
+  const originalFetch = global.fetch
+  global.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) })
+    const refuse = calls.length === 1
+    return { ok: !refuse, status: refuse ? 400 : 200, json: async () => ({}) }
+  }
+  try {
+    await db.query("update notifications set content='Fallback simples', whatsapp_message=$2::jsonb where id=$1", [campaign, JSON.stringify({
+      type: "button", text: "Oi {{primeiro_nome}}, tudo bem?", footer: "Igreja",
+      buttons: [{ label: "Sim", action: "reply", value: "sim" }],
+    })])
+    await db.query("insert into notification_deliveries(notification_id,company_id,channel,recipient,recipient_name) values($1,$2,'whatsapp','11987654321','Ana Silva')", [campaign, tenant])
+    assert.deepEqual(await delivery.processNotificationOutbox(25, campaign, tenant), { processed: 1, sent: 1, failed: 0, dead: 0 })
+    assert.equal(calls.length, 2)
+    assert.ok(calls[0].url.endsWith("/send/menu"))
+    assert.equal(calls[0].body.type, "button")
+    assert.equal(calls[0].body.text, "Oi Ana, tudo bem?")
+    assert.equal(calls[0].body.footerText, "Igreja")
+    assert.deepEqual(calls[0].body.choices, ["Sim|sim"])
+    assert.ok(calls[1].url.endsWith("/send/text"))
+    assert.equal(calls[1].body.text, "Fallback simples")
+  } finally {
+    global.fetch = originalFetch
+    await db.close()
+  }
+})
+
+test("campanha whatsapp de carrossel assina a mídia da própria igreja", async () => {
+  const { db, delivery } = await fixture()
+  const calls = []
+  const originalFetch = global.fetch
+  global.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) })
+    return { ok: true, status: 200, json: async () => ({ id: "msg-carousel" }) }
+  }
+  try {
+    const fileId = "50000000-0000-4000-8000-000000000001"
+    await db.query("insert into app_files(id,company_id,bucket,storage_path,mime_type,is_active) values($1,$2,'church-assets','whatsapp/cartao.png','image/png',true)", [fileId, tenant])
+    await db.query("update notifications set content='Novidades', whatsapp_message=$2::jsonb where id=$1", [campaign, JSON.stringify({
+      type: "carousel", text: "Olha as novidades, {{nome}}",
+      cards: [{ text: "Cartão 1", mediaFileId: fileId, mediaType: "image", filename: "cartao.png", buttons: [{ label: "Quero", action: "reply", value: "quero" }] }],
+    })])
+    await db.query("insert into notification_deliveries(notification_id,company_id,channel,recipient,recipient_name) values($1,$2,'whatsapp','11987654321','Ana Silva')", [campaign, tenant])
+    assert.deepEqual(await delivery.processNotificationOutbox(25, campaign, tenant), { processed: 1, sent: 1, failed: 0, dead: 0 })
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0].url.endsWith("/send/carousel"))
+    assert.equal(calls[0].body.text, "Olha as novidades, Ana Silva")
+    assert.equal(calls[0].body.carousel[0].image, "https://signed.test/whatsapp/cartao.png")
+    assert.deepEqual(calls[0].body.carousel[0].buttons, [{ id: "quero", text: "Quero", type: "REPLY" }])
+  } finally {
+    global.fetch = originalFetch
     await db.close()
   }
 })

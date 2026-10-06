@@ -154,16 +154,34 @@ function ButtonFields({
     </div>
   );
 }
+const formatOptions: [AutomationMessage["type"], string][] = [
+  ["text", "Texto"],
+  ["button", "Botões"],
+  ["list", "Lista"],
+  ["carousel", "Carrossel"],
+  ["image", "Imagem"],
+  ["video", "Vídeo"],
+  ["audio", "Áudio gravado"],
+  ["document", "Documento"],
+];
 export function MessageEditor({
   value,
   onChange,
   preview,
   variables = [],
+  allowedTypes,
+  variableOptions,
+  onUploadFile,
+  loadMediaUrl,
 }: {
   value: AutomationMessage;
   onChange: (value: AutomationMessage) => void;
   preview?: boolean;
   variables?: string[];
+  allowedTypes?: readonly AutomationMessage["type"][];
+  variableOptions?: readonly string[];
+  onUploadFile?: (form: FormData) => Promise<{ id: string; name: string }>;
+  loadMediaUrl?: (id: string) => Promise<string>;
 }) {
   const [uploading, setUploading] = useState(false);
   const mounted = useRef(true),
@@ -247,7 +265,9 @@ export function MessageEditor({
     try {
       const form = new FormData();
       form.set("file", file);
-      const result = await uploadAutomationMedia(form);
+      const result = onUploadFile
+        ? await onUploadFile(form)
+        : await uploadAutomationMedia(form);
       if (!mounted.current) return;
       const current = latest.current;
       if (current.type === "carousel" && index !== undefined)
@@ -281,16 +301,10 @@ export function MessageEditor({
             changeType(e.target.value as AutomationMessage["type"])
           }
         >
-          {[
-            ["text", "Texto"],
-            ["button", "Botões"],
-            ["list", "Lista"],
-            ["carousel", "Carrossel"],
-            ["image", "Imagem"],
-            ["video", "Vídeo"],
-            ["audio", "Áudio gravado"],
-            ["document", "Documento"],
-          ].map(([id, label]) => (
+          {(allowedTypes
+            ? formatOptions.filter(([id]) => allowedTypes.includes(id))
+            : formatOptions
+          ).map(([id, label]) => (
             <option key={id} value={id}>
               {label}
             </option>
@@ -322,11 +336,13 @@ export function MessageEditor({
         }}
       >
         <option value="">Inserir variável…</option>
-        {[...new Set([...VARIABLES, ...variables])].map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
+        {[...new Set([...(variableOptions ?? VARIABLES), ...variables])].map(
+          (v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ),
+        )}
       </select>
       {"footer" in value && (
         <label className="block text-xs">
@@ -546,6 +562,7 @@ export function MessageEditor({
                   id={card.mediaFileId}
                   name={card.filename}
                   preview={preview}
+                  loadMediaUrl={loadMediaUrl}
                 />
                 <label className="block text-xs">
                   Imagem do cartão
@@ -664,7 +681,11 @@ export function MessageEditor({
           Enviando arquivo…
         </p>
       )}
-      <MessagePreview message={value} preview={preview} />
+      <MessagePreview
+        message={value}
+        preview={preview}
+        loadMediaUrl={loadMediaUrl}
+      />
     </fieldset>
   );
 }

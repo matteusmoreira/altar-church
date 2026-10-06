@@ -7,16 +7,18 @@ export function MediaThumbnail({
   id,
   name,
   preview,
+  loadMediaUrl,
 }: {
   id: string;
   name: string;
   preview?: boolean;
+  loadMediaUrl?: (id: string) => Promise<string>;
 }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     if (!id || preview) return;
     let active = true;
-    void automationMediaPreview(id)
+    void (loadMediaUrl ?? automationMediaPreview)(id)
       .then((result) => {
         if (active) setUrl(result);
       })
@@ -24,7 +26,7 @@ export function MediaThumbnail({
     return () => {
       active = false;
     };
-  }, [id, preview]);
+  }, [id, preview, loadMediaUrl]);
   // Private storage URLs are short lived and scoped by the server to this church.
   return url ? (
     // eslint-disable-next-line @next/next/no-img-element
@@ -51,10 +53,12 @@ export function MessagePreview({
   message,
   context = example,
   preview,
+  loadMediaUrl,
 }: {
   message: AutomationMessage;
   context?: Record<string, string>;
   preview?: boolean;
+  loadMediaUrl?: (id: string) => Promise<string>;
 }) {
   const render = (s: string) => renderText(s, context);
   return (
@@ -102,6 +106,7 @@ export function MessagePreview({
                 id={card.mediaFileId}
                 name={card.filename || `Cartão ${i + 1}`}
                 preview={preview}
+                loadMediaUrl={loadMediaUrl}
               />
               <p className="break-words whitespace-pre-wrap">
                 {render(card.text)}

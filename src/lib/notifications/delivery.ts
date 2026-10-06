@@ -1,7 +1,10 @@
 import webpush from "web-push"
 import { toUazapiNumber } from "@/lib/auth/phone"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { isPermanentProviderError } from "@/lib/delivery/retry-policy"
+import { buildUazapiPayload, parseDirectMessageConfig, renderDirectMessage } from "@/lib/forms/direct-message"
+import type { FormDirectMessage } from "@/lib/forms/types"
 
 type DeliveryRow = {
   id: string
@@ -75,23 +78,66 @@ async function getUazapiCredential(companyId: string) {
   return { baseUrl: credential.base_url.replace(/\/$/, ""), token: credential.instance_token }
 }
 
-async function sendWhatsApp(delivery: DeliveryRow, content: string): Promise<ProviderResult> {
-  const credential = await getUazapiCredential(delivery.company_id)
-  const response = await fetchWithTimeout(`${credential.baseUrl}/send/text`, {
+type UazapiCredential = { baseUrl: string; token: string }
+
+async function postUazapi(credential: UazapiCredential, endpoint: string, body: Record<string, unknown>) {
+  return fetchWithTimeout(`${credential.baseUrl}${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", token: credential.token },
-    body: JSON.stringify({
-      number: toUazapiNumber(delivery.recipient),
-      text: content,
-      async: true,
-      track_source: "altar_church_notifications",
-      track_id: delivery.id,
-      linkPreview: false,
-    }),
+    body: JSON.stringify(body),
   })
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>
+}
+
+async function getCarouselMediaUrls(companyId: string, message: FormDirectMessage) {
+  if (message.type !== "carousel") return new Map<string, string>()
+  const ids = [...new Set(message.cards.map((card) => card.mediaFileId).filter(Boolean))] as string[]
+  if (ids.length === 0) return new Map<string, string>()
+  const sql = getSql()
+  const files = await sql<{ id: string; storage_path: string }[]>`
+    select id, storage_path from public.app_files
+    where company_id = ${companyId} and id = any(${sql.array(ids)}::uuid[])
+      and bucket = 'church-assets' and is_active = true and deleted_at is null
+  `
+  if (files.length === 0) return new Map<string, string>()
+  const signed = await createSignedUrlsByStoragePath(files.map((file) => file.storage_path), 3600)
+  const urls = new Map<string, string>()
+  for (const file of files) {
+    const url = signed.get(file.storage_path)
+    if (url) urls.set(file.id, url)
+  }
+  return urls
+}
+
+async function sendWhatsApp(delivery: DeliveryRow, content: string, whatsappMessage: unknown): Promise<ProviderResult> {
+  const credential = await getUazapiCredential(delivery.company_id)
+  const number = toUazapiNumber(delivery.recipient)
+  const textBody: Record<string, unknown> = {
+    number,
+    text: content,
+    async: true,
+    track_source: "altar_church_notifications",
+    track_id: delivery.id,
+    linkPreview: false,
+  }
+  const interactive = parseDirectMessageConfig(whatsappMessage)
+  if (interactive && interactive.type !== "text") {
+    const nome = delivery.recipient_name.trim()
+    const rendered = renderDirectMessage(interactive, { nome, primeiro_nome: nome.split(/\s+/)[0] ?? "" })
+    const mediaUrls = await getCarouselMediaUrls(delivery.company_id, rendered)
+    const payload = buildUazapiPayload(rendered, { number, trackId: delivery.id, mediaUrls })
+    let response = await postUazapi(credential, payload.endpoint, payload.body as Record<string, unknown>)
+    // Provedor recusou a estrutura interativa: cai para o texto simples da campanha.
+    if (response.status === 400) {
+      response = await postUazapi(credential, "/send/text", { ...textBody, track_id: `${delivery.id}:fallback` })
+    }
+    const payloadJson = await response.json().catch(() => ({})) as Record<string, unknown>
+    if (!response.ok) throw new Error(`Uazapi recusou envio: ${response.status}`)
+    return { providerId: String(payloadJson.id ?? payloadJson.messageId ?? payloadJson.key ?? ""), responseStatus: response.status }
+  }
+  const response = await postUazapi(credential, "/send/text", textBody)
+  const payloadJson = await response.json().catch(() => ({})) as Record<string, unknown>
   if (!response.ok) throw new Error(`Uazapi recusou envio: ${response.status}`)
-  return { providerId: String(payload.id ?? payload.messageId ?? payload.key ?? ""), responseStatus: response.status }
+  return { providerId: String(payloadJson.id ?? payloadJson.messageId ?? payloadJson.key ?? ""), responseStatus: response.status }
 }
 
 async function sendPush(delivery: DeliveryRow, title: string, content: string): Promise<ProviderResult> {
@@ -122,18 +168,20 @@ async function sendPush(delivery: DeliveryRow, title: string, content: string): 
   return { providerId: `webpush:${delivery.recipient}`, responseStatus: 201 }
 }
 
-async function campaignText(notificationId: string) {
-  const rows = await getSql()<{ title: string; content: string }[]>`
-    select title, content from public.notifications where id = ${notificationId} limit 1
+type CampaignRow = { title: string; content: string; whatsapp_message: unknown }
+
+async function campaignText(notificationId: string): Promise<CampaignRow> {
+  const rows = await getSql()<CampaignRow[]>`
+    select title, content, whatsapp_message from public.notifications where id = ${notificationId} limit 1
   `
   if (!rows[0]) throw new Error("Campanha não encontrada")
   return rows[0]
 }
 
-async function sendDelivery(delivery: DeliveryRow, title: string, content: string) {
-  if (delivery.channel === "email") return sendEmail(delivery, title, content)
-  if (delivery.channel === "whatsapp") return sendWhatsApp(delivery, content)
-  return sendPush(delivery, title, content)
+async function sendDelivery(delivery: DeliveryRow, campaign: CampaignRow) {
+  if (delivery.channel === "email") return sendEmail(delivery, campaign.title, campaign.content)
+  if (delivery.channel === "whatsapp") return sendWhatsApp(delivery, campaign.content, campaign.whatsapp_message)
+  return sendPush(delivery, campaign.title, campaign.content)
 }
 
 async function markFailure(delivery: DeliveryRow, error: unknown) {
@@ -227,7 +275,7 @@ export async function processNotificationOutbox(batchSize = 25, notificationId: 
         continue
       }
       const campaign = await campaignText(delivery.notification_id)
-      const result = await sendDelivery(delivery, campaign.title, campaign.content)
+      const result = await sendDelivery(delivery, campaign)
       await sql`
         update public.notification_deliveries
         set status = 'sent', provider_id = ${result.providerId}, response_status = ${result.responseStatus},
