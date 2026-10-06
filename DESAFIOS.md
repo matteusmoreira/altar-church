@@ -255,6 +255,15 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - Deduplicação do recibo e criação da execução precisam ficar na mesma transação; marcar o recibo antes e criar depois pode perder o gatilho em uma falha. Consultas de público dentro da transação devem usar sua conexão para não bloquear o pool pequeno.
 - A confirmação do webhook agora depende da entrada durável. O novo agendamento fica pausado até GET autenticado comprovar backend/schema novos; a publicação vigente respondeu 405. Não usar o resultado de 1.500 conversas em PGlite com provedor/Auth simulados como prova de capacidade do Supabase Free ou de velocidade de entrega.
 
+## Comunicação do ministério com WhatsApp interativo — 06/10/2026
+
+- O E2E isolado do ministério (`tests/e2e/ministry-layout-isolated.mjs`) monta o bundle com webpack próprio: quando o workspace importar módulos server-only novos (ex.: `@/lib/automations/actions`), adicionar alias com mock próprio no harness — o sintoma é `Can't resolve 'server-only'` e `Can't resolve 'net'` no `postgres`. Os mocks das actions do ministério são gerados por regex do import; módulos extras precisam de arquivo mock próprio (hoje `automations-actions.js`).
+- `npm test 2>&1 | tail` mascara o exit code (o pipe devolve o exit do `tail`). Guardar o log completo em arquivo e conferir o `EXIT=$?` sem pipe — a suíte rodou "verde" enganando o gate.
+- `postgres.js`: `TransactionSql` não é atribuível a `Sql` na tipagem, e `tx.json` rejeita interfaces TS (sem índice implícito). Usar `jsonbParam(tx, valor)` — o helper foi alargado para `Pick<Sql, "json">` e aceita transação de `sql.begin`.
+- A fixture de `tests/notifications.test.mjs` cria stub de `get_company_uazapi_credential` (a real exige vault + service_role), precisa da coluna `whatsapp_message` em `notifications` local e de `sql.array = (values) => values` no mock do driver.
+- Testes de voluntariado estão vermelhos no master após a simplificação de escalas de 06/10 (`volunteer-calendar`, `volunteer-programming`, preferências): contratos de UI desatualizados (`PushControls mode="volunteer"`, 3× `where assignment_id is not null` no bloco de publicação). Não são regressão da comunicação; exigem atualização dos specs ou do código de voluntariado.
+- A árvore de trabalho pode carregar mudanças de sessão paralela (ex.: `ministries/data.ts`, `ministries/types.ts` com `photoUrl` de escala + `tmp-seed-escalas-ui.*`): commitar seletivamente por caminho, nunca `git add -A`.
+
 ## Escalas dos ministérios — 06/10/2026
 
 - O cadastro automático de voluntariado nas escalas ainda usava ON CONFLICT (person_id) sem o predicado do índice parcial vigente. Corrigido com WHERE deleted_at IS NULL; o teste ministry-scale-profile.test.mjs reproduz o erro e valida criação, reutilização, recriação após exclusão e isolamento entre igrejas em PostgreSQL local.
