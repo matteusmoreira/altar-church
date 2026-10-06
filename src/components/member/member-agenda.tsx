@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useTransition, useState, useMemo } from "react"
+import { useState, useMemo } from "react"
 import {
   addDays,
   subDays,
@@ -29,29 +28,26 @@ import {
   Calendar as CalendarIcon,
   CalendarDays,
   CalendarRange,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
   ExternalLink,
   HeartHandshake,
   ListFilter,
+  LayoutGrid,
+  Flame,
   MapPin,
   Search,
   Share2,
   Sparkles,
-  Users,
   X,
   Church,
   CalendarPlus,
-  Compass,
-  Loader2,
   Info,
   Settings2,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { cancelMemberEventRsvp, rsvpMemberEvent } from "@/lib/member/portal-actions"
 import type { MemberAgendaEvent } from "@/lib/member/types"
 import { EmptyState, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
@@ -69,7 +65,7 @@ import { cn } from "@/lib/utils"
 
 // Tipos de visualização
 type ViewMode = "month" | "week" | "day" | "list"
-type CategoryFilter = "all" | "services" | "ministries" | "confirmed"
+type CategoryFilter = "all" | "services" | "ministries"
 type ScopeFilter = "selected_day" | "full_period"
 
 // Funções de formatação e utilidades
@@ -164,7 +160,6 @@ function getEventStyle(event: MemberAgendaEvent) {
 
   if (lowerType.includes("culto") || lowerType.includes("service")) {
     return {
-      dotColor: "bg-blue-500",
       badgeClass: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
       label: "Culto",
       icon: Church,
@@ -173,7 +168,6 @@ function getEventStyle(event: MemberAgendaEvent) {
 
   if (hasMinistry || lowerType.includes("minist")) {
     return {
-      dotColor: "bg-purple-500",
       badgeClass: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
       label: event.ministryName || "Ministério",
       icon: HeartHandshake,
@@ -182,7 +176,6 @@ function getEventStyle(event: MemberAgendaEvent) {
 
   if (lowerType.includes("jovens") || lowerType.includes("especial") || lowerType.includes("confer")) {
     return {
-      dotColor: "bg-amber-500",
       badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
       label: event.type || "Especial",
       icon: Sparkles,
@@ -190,7 +183,6 @@ function getEventStyle(event: MemberAgendaEvent) {
   }
 
   return {
-    dotColor: "bg-emerald-500",
     badgeClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
     label: event.type || "Evento",
     icon: CalendarDays,
@@ -207,12 +199,11 @@ function useIsMounted() {
 }
 
 export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
-  const router = useRouter()
-  const [pending, startTransition] = useTransition()
   const isMounted = useIsMounted()
 
   // Estados de navegação e filtros
   const [viewMode, setViewMode] = useState<ViewMode>("month")
+  const [eventLayout, setEventLayout] = useState<"list" | "grid">("grid")
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all")
   const [searchQuery, setSearchQuery] = useState("")
@@ -220,32 +211,6 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
   // Sub-filtros de escopo (ver apenas o dia selecionado ou todo o mês/semana)
   const [monthScope, setMonthScope] = useState<ScopeFilter>("selected_day")
   const [weekScope, setWeekScope] = useState<ScopeFilter>("full_period")
-
-  // RSVP Action
-  function submitRsvp(eventId: string, cancel = false) {
-    const formData = new FormData()
-    formData.set("eventId", eventId)
-    startTransition(async () => {
-      try {
-        const result = cancel ? await cancelMemberEventRsvp(formData) : await rsvpMemberEvent(formData)
-        if (!result.ok) {
-          toast.error(result.error ?? "Não foi possível atualizar sua presença")
-          return
-        }
-        const status = "status" in result ? result.status : null
-        toast.success(
-          cancel
-            ? "Presença cancelada com sucesso"
-            : status === "waitlisted"
-              ? "Você entrou na lista de espera"
-              : "Presença confirmada com sucesso!"
-        )
-        router.refresh()
-      } catch {
-        toast.error("Não foi possível atualizar sua presença. Verifique sua conexão e tente novamente.")
-      }
-    })
-  }
 
   // Filtragem dos eventos pela busca e categoria
   const filteredEvents = useMemo(() => {
@@ -270,9 +235,6 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
       if (categoryFilter === "ministries") {
         return Boolean(event.ministryName)
       }
-      if (categoryFilter === "confirmed") {
-        return event.myStatus === "going" || event.myStatus === "waitlisted"
-      }
 
       return true
     })
@@ -285,11 +247,6 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
       const eventDate = startOfDay(new Date(e.startsAt))
       return !isBefore(eventDate, today)
     })
-  }, [events])
-
-  // Contagem de eventos confirmados do membro
-  const myConfirmedCount = useMemo(() => {
-    return events.filter((e) => e.myStatus === "going" || e.myStatus === "waitlisted").length
   }, [events])
 
   // Navegação no tempo baseada no modo de visualização
@@ -433,10 +390,10 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               )}
-              title="Todos os eventos em lista"
+              title="Todos os eventos"
             >
               <ListFilter className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">Lista</span>
+              <span>Eventos</span>
             </button>
           </div>
         }
@@ -534,20 +491,7 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
             <HeartHandshake className="h-3 w-3" />
             <span>Ministérios</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setCategoryFilter("confirmed")}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all touch-manipulation",
-              categoryFilter === "confirmed"
-                ? "bg-emerald-600 text-white shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <CheckCircle2 className="h-3 w-3" />
-            <span>Meus RSVPs</span>
-            {myConfirmedCount > 0 && <span className="opacity-80">({myConfirmedCount})</span>}
-          </button>
+
         </div>
 
         {/* Input de Busca Rápida */}
@@ -568,6 +512,18 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
               <X className="h-3.5 w-3.5" />
             </button>
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">Visualização dos eventos</p>
+        <div className="flex gap-1 rounded-xl border border-border bg-muted/40 p-1" role="group" aria-label="Visualização dos eventos">
+          {(["list", "grid"] as const).map((layout) => (
+            <Button key={layout} type="button" size="sm" variant={eventLayout === layout ? "secondary" : "ghost"} aria-pressed={eventLayout === layout} onClick={() => setEventLayout(layout)} className="rounded-lg text-xs">
+              {layout === "list" ? <ListFilter className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+              {layout === "list" ? "Lista" : "Grade"}
+            </Button>
+          ))}
         </div>
       </div>
 
@@ -611,9 +567,14 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                       setSelectedDate(day)
                       setMonthScope("selected_day")
                     }}
+                    aria-label={`${formatFullDate(day)}: ${dayEvents.length} eventos`}
+                    aria-pressed={isSelected}
                     className={cn(
+                      hasEvents && isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                       "group relative flex min-h-[48px] flex-col items-center justify-between rounded-2xl p-1.5 transition-all touch-manipulation sm:min-h-[64px] sm:p-2",
-                      isSelected
+                      hasEvents
+                        ? "bg-orange-100 text-orange-950 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-100 dark:hover:bg-orange-900"
+                        : isSelected
                         ? "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/20 scale-[1.03]"
                         : dayIsToday
                           ? "border border-primary/50 bg-primary/5 font-bold text-primary hover:bg-primary/10"
@@ -625,38 +586,14 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                     <span
                       className={cn(
                         "text-xs sm:text-sm",
-                        isSelected && "text-primary-foreground font-bold",
-                        !isSelected && dayIsToday && "text-primary font-bold"
+                        isSelected && !hasEvents && "text-primary-foreground font-bold",
+                        !isSelected && !hasEvents && dayIsToday && "text-primary font-bold"
                       )}
                     >
                       {format(day, "d")}
                     </span>
+                    {hasEvents && <AgendaEventFlame count={dayEvents.length} />}
 
-                    {/* Indicadores de Eventos (Dots Coloridos) */}
-                    <div className="flex h-2 items-center justify-center gap-1">
-                      {hasEvents &&
-                        dayEvents.slice(0, 3).map((e, idx) => {
-                          const style = getEventStyle(e)
-                          return (
-                            <span
-                              key={idx}
-                              className={cn(
-                                "h-1.5 w-1.5 rounded-full",
-                                isSelected ? "bg-white" : style.dotColor
-                              )}
-                              title={e.title}
-                            />
-                          )
-                        })}
-                      {dayEvents.length > 3 && (
-                        <span
-                          className={cn(
-                            "h-1 w-1 rounded-full",
-                            isSelected ? "bg-white/80" : "bg-muted-foreground/60"
-                          )}
-                        />
-                      )}
-                    </div>
                   </button>
                 )
               })}
@@ -713,13 +650,11 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
             {/* Conteúdo: Dia selecionado ou Mês completo */}
             {monthScope === "selected_day" ? (
               selectedDayEvents.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
                   {selectedDayEvents.map((event) => (
                     <MemberAgendaCard
                       key={event.id}
                       event={event}
-                      pending={pending}
-                      onSubmitRsvp={submitRsvp}
                     />
                   ))}
                 </div>
@@ -767,13 +702,11 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                 </div>
               )
             ) : selectedMonthEvents.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
                 {selectedMonthEvents.map((event) => (
                   <MemberAgendaCard
                     key={event.id}
                     event={event}
-                    pending={pending}
-                    onSubmitRsvp={submitRsvp}
                   />
                 ))}
               </div>
@@ -807,9 +740,14 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                     setSelectedDate(day)
                     setWeekScope("selected_day")
                   }}
+                  aria-label={`${formatFullDate(day)}: ${dayEvents.length} eventos`}
+                  aria-pressed={isSelected}
                   className={cn(
+                    hasEvents && isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                     "flex flex-col items-center justify-center gap-1 rounded-2xl py-3 transition-all touch-manipulation sm:py-4",
-                    isSelected
+                    hasEvents
+                      ? "bg-orange-100 text-orange-950 hover:bg-orange-200 dark:bg-orange-950 dark:text-orange-100 dark:hover:bg-orange-900"
+                      : isSelected
                       ? "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/20 scale-[1.04]"
                       : dayIsToday
                         ? "border border-primary/50 bg-primary/5 font-semibold text-primary hover:bg-primary/10"
@@ -819,7 +757,7 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                   <span
                     className={cn(
                       "text-[10px] font-bold uppercase sm:text-xs",
-                      isSelected ? "text-primary-foreground/90 font-bold" : "text-muted-foreground"
+                      hasEvents ? "text-orange-800 dark:text-orange-200" : isSelected ? "text-primary-foreground/90 font-bold" : "text-muted-foreground"
                     )}
                   >
                     {format(day, "EEE", { locale: ptBR }).replace(".", "")}
@@ -827,20 +765,8 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                   <span className="text-base font-extrabold sm:text-xl">
                     {format(day, "dd")}
                   </span>
+                  {hasEvents && <AgendaEventFlame count={dayEvents.length} />}
 
-                  {/* Indicador de presença de evento */}
-                  <div className="flex h-1.5 items-center justify-center gap-1">
-                    {hasEvents ? (
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          isSelected ? "bg-white" : "bg-primary"
-                        )}
-                      />
-                    ) : (
-                      <span className="h-1.5 w-1.5 opacity-0" />
-                    )}
-                  </div>
                 </button>
               )
             })}
@@ -894,13 +820,11 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
             {/* Conteúdo: Dia selecionado ou Semana inteira */}
             {weekScope === "selected_day" ? (
               selectedDayEvents.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
                   {selectedDayEvents.map((event) => (
                     <MemberAgendaCard
                       key={event.id}
                       event={event}
-                      pending={pending}
-                      onSubmitRsvp={submitRsvp}
                     />
                   ))}
                 </div>
@@ -962,13 +886,11 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
                           )}
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-2">
+                        <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
                           {dayEvents.map((event) => (
                             <MemberAgendaCard
                               key={event.id}
                               event={event}
-                              pending={pending}
-                              onSubmitRsvp={submitRsvp}
                             />
                           ))}
                         </div>
@@ -1012,7 +934,7 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
       )}
 
       {/* ========================================================================= */}
-      {/* 3. VISÃO DIA (Day View / Timeline)                                        */}
+      {/* 3. VISÃO DIA (Day View)                                        */}
       {/* ========================================================================= */}
       {viewMode === "day" && (
         <div className="space-y-6">
@@ -1050,46 +972,10 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
             </Button>
           </div>
 
-          {/* Timeline de Horários do Dia com Alinhamento Robusto */}
+          {/* Eventos do dia */}
           {selectedDayEvents.length > 0 ? (
-            <div className="space-y-4">
-              {selectedDayEvents.map((event, index) => {
-                const eventStyle = getEventStyle(event)
-                const startTime = formatTimeOnly(event.startsAt)
-                const endTime = event.endsAt ? formatTimeOnly(event.endsAt) : null
-                const isLast = index === selectedDayEvents.length - 1
-
-                return (
-                  <div key={event.id} className="flex items-stretch gap-3 sm:gap-5">
-                    {/* Coluna da Linha do Tempo */}
-                    <div className="flex flex-col items-center">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-background shadow-xs">
-                        <span className={cn("h-2.5 w-2.5 rounded-full", eventStyle.dotColor)} />
-                      </div>
-                      {!isLast && <div className="w-0.5 flex-1 bg-primary/20 my-1" />}
-                    </div>
-
-                    {/* Conteúdo do Horário e Card */}
-                    <div className="min-w-0 flex-1 pb-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="flex items-center gap-1 text-xs font-bold text-primary sm:text-sm">
-                          <Clock className="h-3.5 w-3.5" />
-                          {startTime} {endTime ? `às ${endTime}` : ""}
-                        </span>
-                        <Badge className={cn("text-[10px]", eventStyle.badgeClass)}>
-                          {eventStyle.label}
-                        </Badge>
-                      </div>
-
-                      <MemberAgendaCard
-                        event={event}
-                        pending={pending}
-                        onSubmitRsvp={submitRsvp}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
+            <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
+              {selectedDayEvents.map((event) => <MemberAgendaCard key={event.id} event={event} />)}
             </div>
           ) : (
             <div className="rounded-3xl border border-dashed border-border/80 bg-card/40 p-6 text-center sm:p-8">
@@ -1141,13 +1027,11 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
               title="Nenhum evento encontrado com os filtros aplicados."
             />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className={cn("grid gap-4", eventLayout === "grid" && "md:grid-cols-2")} data-event-layout={eventLayout}>
               {filteredEvents.map((event) => (
                 <MemberAgendaCard
                   key={event.id}
                   event={event}
-                  pending={pending}
-                  onSubmitRsvp={submitRsvp}
                 />
               ))}
             </div>
@@ -1158,57 +1042,39 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
   )
 }
 
+function AgendaEventFlame({ count }: { count: number }) {
+  return (
+    <span className="flex items-center gap-0.5 text-orange-700 dark:text-orange-300" aria-hidden="true">
+      <Flame className="agenda-event-flame h-4 w-4 fill-orange-500 stroke-orange-700 dark:fill-orange-400 dark:stroke-orange-200 sm:h-5 sm:w-5" />
+      {count > 1 && <span className="text-[10px] font-bold">{count}</span>}
+    </span>
+  )
+}
+
 // =============================================================================
 // SUB-COMPONENTE: MemberAgendaCard (Card Moderno e Completo de Evento)
 // =============================================================================
 interface MemberAgendaCardProps {
   event: MemberAgendaEvent
-  pending: boolean
-  onSubmitRsvp: (eventId: string, cancel?: boolean) => void
 }
 
-function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProps) {
+function MemberAgendaCard({ event }: MemberAgendaCardProps) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const eventStyle = getEventStyle(event)
-  const isGoing = event.myStatus === "going"
-  const isWaitlisted = event.myStatus === "waitlisted"
   const startDate = new Date(event.startsAt)
   const formattedDate = formatFullDate(startDate)
   const startTime = formatTimeOnly(event.startsAt)
   const endTime = event.endsAt ? formatTimeOnly(event.endsAt) : null
 
-  // Cálculo da barra de ocupação
-  const occupancyPercent =
-    event.maxCapacity && event.maxCapacity > 0
-      ? Math.min(100, Math.round((event.goingCount / event.maxCapacity) * 100))
-      : null
-
-  const mapsUrl = event.location
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`
-    : null
-
   return (
     <Card className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-border/70 bg-card/90 shadow-xs transition-all duration-200 hover:border-primary/40 hover:shadow-md backdrop-blur-sm">
       <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-3">
-        {/* Linha superior: Categoria e Status do Usuário */}
+        {/* Linha superior: Categoria do evento */}
         <div className="flex flex-wrap items-start justify-between gap-2">
           <Badge className={cn("text-xs font-semibold", eventStyle.badgeClass)}>
             <eventStyle.icon className="mr-1 h-3 w-3" />
             {eventStyle.label}
           </Badge>
-
-          {/* Status do Membro em Destaque */}
-          {isGoing && (
-            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-semibold">
-              <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-              Presença confirmada
-            </Badge>
-          )}
-          {isWaitlisted && (
-            <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold">
-              Lista de espera
-            </Badge>
-          )}
         </div>
 
         {/* Título do Evento */}
@@ -1250,108 +1116,13 @@ function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProp
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate">{event.location}</span>
               </div>
-              {mapsUrl && (
-                <a
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
-                >
-                  <Compass className="h-3 w-3" />
-                  <span>Ver mapa</span>
-                </a>
-              )}
             </div>
           )}
         </div>
 
-        {/* Barra de Ocupação & Presença da Comunidade */}
-        <div className="space-y-2 rounded-2xl border border-border/50 bg-background/60 p-3">
-          <div className="flex items-center justify-between text-xs font-medium">
-            <div className="flex items-center gap-1 text-foreground">
-              <Users className="h-3.5 w-3.5 text-primary" />
-              <span>
-                {event.goingCount}
-                {event.maxCapacity !== null ? `/${event.maxCapacity}` : ""} confirmados
-              </span>
-              {event.waitlistedCount > 0 && (
-                <span className="text-muted-foreground">· {event.waitlistedCount} na espera</span>
-              )}
-            </div>
-            {occupancyPercent !== null && (
-              <span
-                className={cn(
-                  "text-[11px] font-bold",
-                  occupancyPercent >= 95
-                    ? "text-destructive"
-                    : occupancyPercent >= 75
-                      ? "text-amber-500"
-                      : "text-emerald-500"
-                )}
-              >
-                {occupancyPercent}% vagas
-              </span>
-            )}
-          </div>
-
-          {/* Barra de progresso visual quando houver capacidade máxima */}
-          {occupancyPercent !== null && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all duration-300",
-                  occupancyPercent >= 95
-                    ? "bg-destructive"
-                    : occupancyPercent >= 75
-                      ? "bg-amber-500"
-                      : "bg-primary"
-                )}
-                style={{ width: `${occupancyPercent}%` }}
-              />
-            </div>
-          )}
-
-          {/* Nomes de pessoas confirmadas */}
-          <p className="line-clamp-1 text-[11px] text-muted-foreground">
-            {event.confirmedPeople.length > 0
-              ? `Confirmados: ${event.confirmedPeople.join(", ")}`
-              : "Seja o primeiro a confirmar presença!"}
-          </p>
-        </div>
-
-        {/* Linha de Ações: RSVP, Adicionar ao Calendário, Compartilhar, Link Externo */}
+        {/* Ações do evento */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          {/* Botão de RSVP Principal */}
           <div className="flex flex-wrap items-center gap-2">
-            {event.canRsvp && (
-              <>
-                {isGoing || isWaitlisted ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => onSubmitRsvp(event.id, true)}
-                    className="rounded-xl text-xs font-semibold hover:border-destructive/40 hover:text-destructive touch-manipulation"
-                  >
-                    {pending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <X className="mr-1 h-3.5 w-3.5" />}
-                    Cancelar presença
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => onSubmitRsvp(event.id)}
-                    className="rounded-xl text-xs font-semibold shadow-xs touch-manipulation"
-                  >
-                    {pending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
-                    Aceitar e confirmar presença
-                  </Button>
-                )}
-              </>
-            )}
-
             {/* Link Externo se houver */}
             {event.externalLink && (
               <Button
@@ -1422,7 +1193,6 @@ function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProp
             <div className="space-y-2 rounded-xl bg-muted/40 p-3 text-sm">
               <p className="flex items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />{formattedDate} às {startTime}{endTime ? ` – ${endTime}` : ""}</p>
               <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" />{event.location || "Local não informado"}</p>
-              {mapsUrl && <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-primary underline">Ver mapa</a>}
               {event.externalLink && <a href={event.externalLink} target="_blank" rel="noopener noreferrer" className="block text-primary underline">Transmissão / Link</a>}
             </div>
             <section className="space-y-2">
@@ -1436,15 +1206,6 @@ function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProp
                   {item.instructions && <p className="whitespace-pre-wrap">{item.instructions}</p>}
                 </div>
               )) : <p className="text-sm text-muted-foreground">Nenhuma escala publicada para esta atividade.</p>}
-            </section>
-            <section className="space-y-2 text-sm">
-              <h3 className="font-semibold">Presença na atividade</h3>
-              <p>{event.goingCount} confirmados{event.maxCapacity ? ` · Limite de ${event.maxCapacity} pessoas` : " · Sem limite de vagas"}{event.waitlistedCount > 0 ? ` · ${event.waitlistedCount} na espera` : ""}</p>
-              <p className="text-muted-foreground">{event.confirmedPeople.length ? event.confirmedPeople.join(", ") : "Ninguém confirmou presença ainda."}</p>
-              <p className="font-medium">{isGoing ? "Sua presença está confirmada." : isWaitlisted ? "Você está na lista de espera." : "Sua presença ainda não está confirmada."}</p>
-              {event.canRsvp && <Button type="button" className="w-full sm:w-auto" disabled={pending} variant={isGoing || isWaitlisted ? "outline" : "default"} onClick={() => onSubmitRsvp(event.id, isGoing || isWaitlisted)}>
-                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{isGoing || isWaitlisted ? "Cancelar presença" : "Confirmar presença"}
-              </Button>}
             </section>
             {event.canManageMinistry && event.ministryId && <Button variant="outline" className="w-full" render={<Link href={`/membro/ministerios/${event.ministryId}`} />} nativeButton={false}>
               <Settings2 className="h-4 w-4" />Configurar ministério e agenda

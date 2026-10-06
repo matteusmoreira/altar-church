@@ -428,3 +428,17 @@
   display: none !important;
 }
 
+
+@keyframes agenda-flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-4deg); }
+  50% { transform: scale(1.12) rotate(4deg); }
+}
+
+.agenda-event-flame {
+  transform-origin: center bottom;
+  animation: agenda-flame-flicker 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agenda-event-flame { animation: none; }
+}
