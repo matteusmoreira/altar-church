@@ -33,6 +33,8 @@ function refresh(ministryId: string, slug?: string | null) {
   if (slug) revalidatePath(`/ministerios/${slug}`)
   revalidatePath("/ministerios")
   revalidatePath("/membro/ministerios")
+  revalidatePath(`/membro/ministerios/${ministryId}`)
+  if (slug) revalidatePath(`/membro/ministerios/${slug}`)
   revalidatePath("/membro/agenda")
   revalidatePath("/membro/voluntariado")
 }

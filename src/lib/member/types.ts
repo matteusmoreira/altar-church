@@ -62,6 +62,9 @@ export interface MemberAgendaEvent {
   description: string
   type: string
   ministryName: string | null
+  ministryId: string | null
+  canManageMinistry: boolean
+  scale: { id: string; role: string; instructions: string; startsAt: string; endsAt: string | null; personName: string | null; status: string | null; isMine: boolean }[]
   startsAt: string
   endsAt: string | null
   location: string

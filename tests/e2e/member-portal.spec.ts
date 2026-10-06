@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test"
+import { randomUUID } from "node:crypto"
+import postgres from "postgres"
 import { expectNoDevError, gotoAuthenticated } from "./helpers/auth"
 import { readE2EAccounts } from "./helpers/accounts"
 const e2e = readE2EAccounts()
@@ -93,7 +95,33 @@ for (const persona of ["volunteer", "ministryLeaderVolunteer"] as const) {
 for (const persona of ["ministryLeader", "ministryLeaderVolunteer"] as const) {
   const account = e2e.portalAccounts?.[persona]
   test.describe(`configuracao ministerio ${persona}`, () => {
-    test.use({ storageState: personaStorage[persona] })
+    test.use({ storageState: { cookies: [], origins: [] } })
+    const ministryId = randomUUID()
+    let sql: ReturnType<typeof postgres> | undefined
+    let companyId: string | undefined
+    test.beforeAll(async () => {
+      if (!account) return
+      if (!process.env.POSTGRES_URL) throw new Error("POSTGRES_URL necessário para o fixture")
+      sql = postgres(process.env.POSTGRES_URL, { max: 1, prepare: false })
+      const [person] = await sql<{ company_id: string; person_id: string | null }[]>`select c.id as company_id,p.person_id from companies c
+        join profiles p on p.company_id=c.id and lower(p.email)=lower(${account.email})
+        where c.legacy_id=${e2e.companyLegacyId} and c.status='test' and c.active=true`
+      if (!person?.person_id) throw new Error("Líder precisa estar vinculado a uma pessoa do tenant de teste")
+      companyId = person.company_id
+      await sql`insert into ministries(id,company_id,name) values(${ministryId},${companyId},${`Ministério E2E ${ministryId.slice(0, 8)}`})`
+      await sql`insert into ministry_memberships(company_id,ministry_id,person_id,role,status)
+        values(${companyId},${ministryId},${person.person_id},'leader','active')`
+    })
+    test.afterAll(async () => {
+      if (sql) {
+        if (companyId) {
+          await sql`delete from automation_events where company_id=${companyId} and context->>'source_id' in
+            (select id::text from ministry_memberships where ministry_id=${ministryId} and company_id=${companyId})`
+          await sql`delete from ministries where id=${ministryId} and company_id=${companyId}`
+        }
+        await sql.end({ timeout: 3 })
+      }
+    })
 
     test(`${persona} configura somente ministério próprio`, async ({ page }) => {
       test.skip(!account, `Conta E2E ${persona} não configurada`)
@@ -101,13 +129,11 @@ for (const persona of ["ministryLeader", "ministryLeaderVolunteer"] as const) {
       await gotoAuthenticated(page, account, "/membro")
       await page.goto("/membro/ministerios", { waitUntil: "domcontentloaded" })
       await page.getByRole("button", { name: "Configurar ministério" }).first().click()
-      const dialog = page.getByRole("dialog", { name: "Configurar ministério" })
-      await expect(dialog).toBeVisible()
-      await expect(dialog.getByLabel("Responsável")).toHaveCount(0)
-      await expect(dialog.getByRole("button", { name: /Excluir/ })).toHaveCount(0)
-      await dialog.getByLabel("Contato").fill(`E2E ${persona}`)
-      await dialog.getByRole("button", { name: "Salvar" }).click()
-      await expect(page.getByText("Configurações salvas")).toBeVisible()
+      await expect(page).toHaveURL(/\/membro\/ministerios\/[^/]+/)
+      await expect(page.getByRole("tab", { name: "Configurações" })).toHaveAttribute("aria-selected", "true")
+      await expect(page.getByRole("button", { name: "Salvar configurações" })).toBeVisible()
+      await expect(page.getByRole("tab", { name: "Agenda", exact: true })).toBeVisible()
+      await expect(page.getByRole("tab", { name: "Escalas", exact: true })).toBeVisible()
     })
   })
 }

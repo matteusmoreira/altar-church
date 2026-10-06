@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useTransition, useState, useMemo } from "react"
 import {
@@ -45,6 +46,8 @@ import {
   CalendarPlus,
   Compass,
   Loader2,
+  Info,
+  Settings2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -61,6 +64,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 // Tipos de visualização
@@ -222,20 +226,24 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
     const formData = new FormData()
     formData.set("eventId", eventId)
     startTransition(async () => {
-      const result = cancel ? await cancelMemberEventRsvp(formData) : await rsvpMemberEvent(formData)
-      if (!result.ok) {
-        toast.error(result.error ?? "Não foi possível atualizar sua presença")
-        return
+      try {
+        const result = cancel ? await cancelMemberEventRsvp(formData) : await rsvpMemberEvent(formData)
+        if (!result.ok) {
+          toast.error(result.error ?? "Não foi possível atualizar sua presença")
+          return
+        }
+        const status = "status" in result ? result.status : null
+        toast.success(
+          cancel
+            ? "Presença cancelada com sucesso"
+            : status === "waitlisted"
+              ? "Você entrou na lista de espera"
+              : "Presença confirmada com sucesso!"
+        )
+        router.refresh()
+      } catch {
+        toast.error("Não foi possível atualizar sua presença. Verifique sua conexão e tente novamente.")
       }
-      const status = "status" in result ? result.status : null
-      toast.success(
-        cancel
-          ? "Presença cancelada com sucesso"
-          : status === "waitlisted"
-            ? "Você entrou na lista de espera"
-            : "Presença confirmada com sucesso!"
-      )
-      router.refresh()
     })
   }
 
@@ -1160,6 +1168,7 @@ interface MemberAgendaCardProps {
 }
 
 function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const eventStyle = getEventStyle(event)
   const isGoing = event.myStatus === "going"
   const isWaitlisted = event.myStatus === "waitlisted"
@@ -1360,6 +1369,9 @@ function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProp
 
           {/* Ações Secundárias: Adicionar à Agenda e Compartilhar */}
           <div className="flex items-center gap-1">
+            <Button type="button" variant="outline" size="sm" className="rounded-xl text-xs" onClick={() => setDetailsOpen(true)} aria-label={`Ver detalhes de ${event.title}`}>
+              <Info className="mr-1 h-4 w-4" />Detalhes
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 className="inline-flex h-8 items-center gap-1 rounded-xl border border-border/60 bg-muted/40 px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground touch-manipulation"
@@ -1399,6 +1411,47 @@ function MemberAgendaCard({ event, pending, onSubmitRsvp }: MemberAgendaCardProp
           </div>
         </div>
       </CardContent>
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader className="pr-7">
+            <DialogTitle>{event.title}</DialogTitle>
+            <DialogDescription>{event.ministryName || eventStyle.label}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 break-words">
+            <p className="whitespace-pre-wrap text-sm">{event.description || "Nenhuma descrição informada."}</p>
+            <div className="space-y-2 rounded-xl bg-muted/40 p-3 text-sm">
+              <p className="flex items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />{formattedDate} às {startTime}{endTime ? ` – ${endTime}` : ""}</p>
+              <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" />{event.location || "Local não informado"}</p>
+              {mapsUrl && <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-primary underline">Ver mapa</a>}
+              {event.externalLink && <a href={event.externalLink} target="_blank" rel="noopener noreferrer" className="block text-primary underline">Transmissão / Link</a>}
+            </div>
+            <section className="space-y-2">
+              <h3 className="font-semibold">Escala e funções</h3>
+              {event.scale.length ? event.scale.map((item) => (
+                <div key={item.id} className={cn("space-y-1 rounded-xl border p-3 text-sm", item.isMine && "border-primary bg-primary/5")}>
+                  <p className="font-semibold">{item.role}{item.isMine ? " · Sua função" : ""}</p>
+                  <p>{item.personName || "Vaga ainda sem pessoa definida"}</p>
+                  {item.status && <p className="text-xs text-muted-foreground">{({ proposed: "Escalado", notified: "Aguardando resposta", confirmed: "Confirmado na escala", checked_in: "Check-in realizado", checked_out: "Serviço concluído", no_show: "Ausência registrada" } as Record<string, string>)[item.status] || "Escalado"}</p>}
+                  <p className="text-xs text-muted-foreground">{formatTimeOnly(item.startsAt)}{item.endsAt ? ` – ${formatTimeOnly(item.endsAt)}` : ""}</p>
+                  {item.instructions && <p className="whitespace-pre-wrap">{item.instructions}</p>}
+                </div>
+              )) : <p className="text-sm text-muted-foreground">Nenhuma escala publicada para esta atividade.</p>}
+            </section>
+            <section className="space-y-2 text-sm">
+              <h3 className="font-semibold">Presença na atividade</h3>
+              <p>{event.goingCount} confirmados{event.maxCapacity ? ` · Limite de ${event.maxCapacity} pessoas` : " · Sem limite de vagas"}{event.waitlistedCount > 0 ? ` · ${event.waitlistedCount} na espera` : ""}</p>
+              <p className="text-muted-foreground">{event.confirmedPeople.length ? event.confirmedPeople.join(", ") : "Ninguém confirmou presença ainda."}</p>
+              <p className="font-medium">{isGoing ? "Sua presença está confirmada." : isWaitlisted ? "Você está na lista de espera." : "Sua presença ainda não está confirmada."}</p>
+              {event.canRsvp && <Button type="button" className="w-full sm:w-auto" disabled={pending} variant={isGoing || isWaitlisted ? "outline" : "default"} onClick={() => onSubmitRsvp(event.id, isGoing || isWaitlisted)}>
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{isGoing || isWaitlisted ? "Cancelar presença" : "Confirmar presença"}
+              </Button>}
+            </section>
+            {event.canManageMinistry && event.ministryId && <Button variant="outline" className="w-full" render={<Link href={`/membro/ministerios/${event.ministryId}`} />} nativeButton={false}>
+              <Settings2 className="h-4 w-4" />Configurar ministério e agenda
+            </Button>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

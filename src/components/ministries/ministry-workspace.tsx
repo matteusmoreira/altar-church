@@ -193,7 +193,7 @@ function roleLabel(role: string) {
   return role === "leader" ? "Líder" : role === "coordinator" ? "Coordenador" : "Membro"
 }
 
-export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
+export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPortal = false }: { data: MinistryWorkspaceData; initialTab?: string; memberPortal?: boolean }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const { workspace } = data
@@ -202,7 +202,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
   const isAdmin = ["superadmin", "admin", "pastor"].includes(workspace.actorRole)
   const activeMembers = data.members.filter((member) => member.status === "active")
 
-  const [activeTab, setActiveTab] = useState("visao-geral")
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [peopleSearch, setPeopleSearch] = useState("")
   const [addPeopleSearch, setAddPeopleSearch] = useState("")
   const [peopleStatus, setPeopleStatus] = useState("all")
@@ -403,7 +403,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
           <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{profile.name}</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{profile.mission || profile.description || "Centro operacional do ministério."}</p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/ministerios")}>
+        <Button variant="outline" onClick={() => router.push(memberPortal ? "/membro/ministerios" : "/ministerios")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
         </Button>
@@ -2223,7 +2223,7 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                         toast.success("Configurações salvas")
                         const newSlug = (result.data as { slug?: string } | undefined)?.slug
                         if (newSlug && newSlug !== profile.slug) {
-                          router.replace(`/ministerios/${newSlug}`)
+                          router.replace(`${memberPortal ? "/membro/ministerios" : "/ministerios"}/${newSlug}`)
                         } else {
                           router.refresh()
                         }

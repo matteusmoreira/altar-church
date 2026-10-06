@@ -44,6 +44,8 @@ export async function rsvpMemberEvent(formData: FormData) {
       const existing = await tx<{ id: string; status: "going" | "waitlisted" | "canceled" }[]>`
         select id, status from public.member_event_rsvps
         where event_id = ${eventId} and person_id = ${personId} and company_id = ${companyId}
+        order by (status <> 'canceled') desc, updated_at desc, id
+        limit 1
         for update
       `
       const goingRows = await tx<{ member_count: number; guest_count: number }[]>`

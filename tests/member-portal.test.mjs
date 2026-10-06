@@ -40,7 +40,7 @@ test("ministry membership contract is tenant-scoped, audited and approval based"
   assert.match(migration, /profile\.company_id = ministry_memberships\.company_id/)
   assert.match(actions, /ministry\.membership\.request/)
   assert.match(actions, /requireMemberContext/)
-  assert.match(actions, /leader_person_id = \$\{personId\}/)
+  assert.match(actions, /requireMinistryPermission\(membership\.ministry_id/)
 })
 
 test("assigning a ministry leader grants membership and linked leader access", () => {

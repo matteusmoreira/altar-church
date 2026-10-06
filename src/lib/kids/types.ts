@@ -568,6 +568,7 @@ export interface GuardianChildItem {
   health: KidHealthIndicators
   healthDetails: KidHealthDetails
   consents: KidConsentType[]
+  consentGrantedAt?: Partial<Record<KidConsentType, string>>
   guardians: KidGuardianItem[]
   activeAttendance: GuardianActiveAttendance | null
   photoUrl: string | null

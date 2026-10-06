@@ -11,13 +11,6 @@ import { requireMinistryPermission } from "@/lib/ministries/access"
 
 type Result = { ok: boolean; error?: string }
 const ministrySchema = z.object({ ministryId: z.string().uuid() })
-const ownMinistrySettingsSchema = z.object({
-  ministryId: z.string().uuid(),
-  name: z.string().trim().min(2, "Nome obrigatório").max(120),
-  description: z.string().trim().max(2000).default(""),
-  contact: z.string().trim().max(200).default(""),
-  isActive: z.boolean(),
-})
 const reviewSchema = z.object({
   membershipId: z.string().uuid(),
   decision: z.enum(["approve", "reject", "remove"]),
@@ -96,51 +89,11 @@ export async function cancelMinistryMembershipRequest(input: z.input<typeof mini
   }
 }
 
-export async function updateOwnMinistrySettings(
-  input: z.input<typeof ownMinistrySettingsSchema>,
-): Promise<Result> {
-  try {
-    const parsed = ownMinistrySettingsSchema.parse(input)
-    const { user, companyId, personId } = await requireMemberContext()
-    const rows = await getSql()<{ id: string }[]>`
-      update public.ministries
-      set name = ${parsed.name},
-          description = ${parsed.description},
-          contact = ${parsed.contact},
-          is_active = ${parsed.isActive},
-          updated_by = ${user.id}
-      where id = ${parsed.ministryId}
-        and company_id = ${companyId}
-        and leader_person_id = ${personId}
-        and deleted_at is null
-      returning id
-    `
-    if (!rows[0]) throw new Error("Você só pode configurar ministérios que lidera")
-    await writeAuditLog({
-      action: "ministry.self.settings.update",
-      entityTable: "ministries",
-      entityId: parsed.ministryId,
-      companyId,
-      metadata: {
-        fields: ["name", "description", "contact", "is_active"],
-        isActive: parsed.isActive,
-      },
-    })
-    revalidatePath("/membro")
-    revalidatePath("/membro/ministerios")
-    revalidatePath("/ministerios")
-    return { ok: true }
-  } catch (error) {
-    return errorResult(error)
-  }
-}
-
 export async function reviewMinistryMembership(input: z.input<typeof reviewSchema>): Promise<Result> {
   try {
     const parsed = reviewSchema.parse(input)
     const user = await getCurrentUser()
     if (!user?.churchId) throw new Error("Acesso negado")
-    if (!["superadmin", "admin", "pastor"].includes(user.role) && user.role !== "ministry_leader") throw new Error("Acesso negado")
     const sql = getSql()
     const memberships = await sql<{ id: string; ministry_id: string; status: string }[]>`
       select membership.id, membership.ministry_id, membership.status
@@ -176,6 +129,7 @@ export async function reviewMinistryMembership(input: z.input<typeof reviewSchem
       metadata: { ministryId: membership.ministry_id, status },
     })
     revalidatePath("/ministerios")
+    revalidatePath(`/membro/ministerios/${membership.ministry_id}`)
     revalidatePath("/membro")
     revalidatePath("/membro/ministerios")
     return { ok: true }

@@ -229,6 +229,9 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     description: string
     type: string
     ministry_name: string | null
+    ministry_id: string | null
+    can_manage_ministry: boolean
+    scale: MemberAgendaEvent["scale"]
     starts_at: DateValue
     ends_at: DateValue | null
     location: string
@@ -241,6 +244,32 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     registration_enabled: boolean
   }[]>`
     select event.id, event.title, event.description, event.type, ministry.name as ministry_name,
+      event.ministry_id,
+      (ministry.leader_person_id = ${personId} or exists (
+        select 1 from public.ministry_memberships manager
+        where manager.company_id = ${companyId} and manager.ministry_id = event.ministry_id
+          and manager.person_id = ${personId} and manager.status = 'active' and manager.left_at is null
+          and manager.role in ('leader', 'coordinator')
+      )) as can_manage_ministry,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', shift.id::text || ':' || coalesce(assignment.id::text, 'vacant'),
+          'role', shift.role_name, 'instructions', coalesce(position.instructions, ''),
+          'startsAt', shift.starts_at, 'endsAt', shift.ends_at,
+          'personName', assigned_person.full_name, 'status', assignment.status,
+          'isMine', coalesce(volunteer.person_id = ${personId}, false)
+        ) order by shift.starts_at, shift.role_name, assigned_person.full_name)
+        from public.volunteer_shifts shift
+        join public.volunteer_schedules schedule on schedule.id = shift.schedule_id and schedule.company_id = ${companyId}
+        left join public.volunteer_event_positions position on position.id = shift.event_position_id and position.company_id = ${companyId}
+        left join public.volunteer_assignments assignment on assignment.shift_id = shift.id
+          and assignment.company_id = ${companyId} and assignment.status not in ('cancelled', 'declined')
+        left join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id and volunteer.company_id = ${companyId}
+        left join public.people assigned_person on assigned_person.id = volunteer.person_id
+          and assigned_person.company_id = ${companyId} and assigned_person.deleted_at is null
+        where shift.event_id = event.id and shift.company_id = ${companyId}
+          and (event.volunteer_schedule_published_at is not null or schedule.status = 'published')
+      ), '[]'::jsonb) as scale,
       event.starts_at, event.ends_at,
       event.location, event.online_link, event.max_capacity,
       count(rsvp.id) filter (where rsvp.status = 'going')::integer as going_count,
@@ -257,7 +286,12 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     left join public.member_event_rsvps rsvp on rsvp.event_id = event.id and rsvp.company_id = ${companyId}
     left join public.people person
       on person.id = rsvp.person_id and person.company_id = ${companyId} and person.deleted_at is null
-    left join public.member_event_rsvps own on own.event_id = event.id and own.person_id = ${personId} and own.company_id = ${companyId}
+    left join lateral (
+      select status from public.member_event_rsvps
+      where event_id = event.id and person_id = ${personId} and company_id = ${companyId}
+      order by (status <> 'canceled') desc, updated_at desc, id
+      limit 1
+    ) own on true
     where event.company_id = ${companyId} and event.deleted_at is null
       and event.status not in ('canceled', 'cancelled', 'draft')
       and (event.ministry_id is null or exists (
@@ -266,7 +300,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
           and membership.person_id = ${personId} and membership.status = 'active' and membership.left_at is null
       ))
       and event.starts_at >= now() - interval '60 days'
-    group by event.id, ministry.name, own.status
+    group by event.id, ministry.id, ministry.name, own.status
     order by event.starts_at
     limit 300
   `
@@ -276,11 +310,14 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     description: row.description,
     type: row.type,
     ministryName: row.ministry_name,
+    ministryId: row.ministry_id,
+    canManageMinistry: Boolean(row.can_manage_ministry),
+    scale: row.scale ?? [],
     startsAt: iso(row.starts_at) ?? "",
     endsAt: iso(row.ends_at),
     location: row.location,
     externalLink: row.online_link,
-    maxCapacity: row.max_capacity,
+    maxCapacity: row.max_capacity && row.max_capacity > 0 ? row.max_capacity : null,
     goingCount: Number(row.going_count ?? 0),
     waitlistedCount: Number(row.waitlisted_count ?? 0),
     confirmedPeople: row.confirmed_people ?? [],
@@ -351,7 +388,7 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
       count(active_member.id) filter (where active_member.status = 'active')::integer as member_count,
       own.id as membership_id, own.role as membership_role, own.status as membership_status,
       ministry.is_active,
-      ministry.leader_person_id = ${personId} as can_manage,
+      (ministry.leader_person_id = ${personId} or (own.status = 'active' and own.left_at is null and own.role in ('leader', 'coordinator'))) as can_manage,
       coalesce((select count(step.id)::integer from public.ministry_onboarding_templates template join public.ministry_onboarding_steps step on step.template_id = template.id and step.deleted_at is null where template.ministry_id = ministry.id and template.company_id = ${companyId} and template.is_active and template.deleted_at is null), 0) as onboarding_total,
       coalesce((select count(onboarding.id)::integer from public.ministry_member_onboarding onboarding join public.ministry_onboarding_steps step on step.id = onboarding.step_id and step.deleted_at is null join public.ministry_onboarding_templates template on template.id = step.template_id and template.is_active and template.deleted_at is null where onboarding.membership_id = own.id and onboarding.completed_at is not null), 0) as onboarding_completed
     from public.ministries ministry

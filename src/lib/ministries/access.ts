@@ -35,7 +35,13 @@ export async function resolveMinistryAccess(ministryIdOrSlug: string, companyIdI
           where lower(slug) = lower(${cleanedIdentifier}) and company_id = ${companyId} and deleted_at is null
           limit 1
         `,
-    sql<{ person_id: string | null }[]>`select person_id from public.profiles where id = ${user.id} limit 1`,
+    sql<{ person_id: string | null }[]>`
+      select coalesce(person.id, profile.person_id) as person_id
+      from public.profiles profile
+      left join public.people person on person.profile_id = profile.id
+        and person.company_id = ${companyId} and person.deleted_at is null
+      where profile.id = ${user.id} and profile.company_id = ${companyId} limit 1
+    `,
   ])
   if (!ministryRows[0]) throw new Error("Ministério não encontrado")
   const ministryId = ministryRows[0].id
@@ -71,7 +77,10 @@ export async function requireMinistryPermission(
   options: { manage?: boolean } = {},
 ) {
   const access = await resolveMinistryAccess(ministryId, companyIdInput)
-  await requirePermission(permission, access.companyId)
+  // Liderança é vinculada ao ministério, inclusive quando o perfil usa outro papel do portal.
+  if (!(access.canManage && permission.startsWith("ministries."))) {
+    await requirePermission(permission, access.companyId)
+  }
   if (options.manage && !access.canManage) throw new Error("Acesso de gestão negado")
   return access
 }

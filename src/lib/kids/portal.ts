@@ -183,6 +183,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
     has_special_needs: boolean | null
     details_encrypted: string | null
     granted_consents: string[] | null
+    consent_granted_at: Partial<Record<KidConsentType, string>> | null
     guardians: unknown
     attendance_id: string | null
     session_id: string | null
@@ -208,7 +209,9 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       hp.has_allergy, hp.has_dietary_restriction, hp.has_medication, hp.has_special_needs,
       hp.details_encrypted,
       (select array_agg(consent.consent_type) from public.kid_consents consent
-        where consent.kid_id = kid.id and consent.status = 'granted') as granted_consents,
+        where consent.kid_id = kid.id and consent.company_id = kid.company_id and consent.status = 'granted') as granted_consents,
+      (select jsonb_object_agg(consent.consent_type, consent.granted_at) from public.kid_consents consent
+        where consent.kid_id = kid.id and consent.company_id = kid.company_id and consent.status = 'granted') as consent_granted_at,
       coalesce((
         select jsonb_agg(jsonb_build_object(
           'id', guardian.id,
@@ -369,6 +372,7 @@ export async function getGuardianPortalData(): Promise<GuardianPortalData> {
       },
       healthDetails: details,
       consents: (row.granted_consents ?? []) as KidConsentType[],
+      consentGrantedAt: row.consent_granted_at ?? {},
       guardians: toGuardianItem(row.guardians, photoUrls, customValues),
       activeAttendance: row.attendance_id
         ? {

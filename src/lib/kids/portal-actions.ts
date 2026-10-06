@@ -378,28 +378,15 @@ export async function updateGuardianConsents(input: z.input<typeof kidConsentUpd
     const sql = getSql()
 
     await sql.begin(async (tx) => {
+      // Serialize confirmations for this child and preserve every existing acceptance.
+      await tx`select id from public.kid_profiles where id = ${parsed.kidId} and company_id = ${companyId} for update`
       for (const type of CONSENT_TYPES) {
-        const wanted = parsed.consents.includes(type)
-        const current = await tx<{ id: string; version: string }[]>`
-          select id, version from public.kid_consents
-          where kid_id = ${parsed.kidId} and company_id = ${companyId} and consent_type = ${type} and status = 'granted'
-          limit 1
+        if (!parsed.consents.includes(type)) continue
+        await tx`
+          insert into public.kid_consents (company_id, kid_id, consent_type, version, status, source, actor_profile_id)
+          values (${companyId}, ${parsed.kidId}, ${type}, ${KIDS_CONSENT_VERSION}, 'granted', 'portal', ${user.id})
+          on conflict (kid_id, consent_type) where status = 'granted' do nothing
         `
-        const currentRow = current[0]
-        if (wanted && currentRow?.version === KIDS_CONSENT_VERSION) continue
-        if (currentRow) {
-          await tx`
-            update public.kid_consents
-            set status = 'revoked', revoked_at = now(), actor_profile_id = ${user.id}
-            where id = ${currentRow.id}
-          `
-        }
-        if (wanted) {
-          await tx`
-            insert into public.kid_consents (company_id, kid_id, consent_type, version, status, source, actor_profile_id)
-            values (${companyId}, ${parsed.kidId}, ${type}, ${KIDS_CONSENT_VERSION}, 'granted', 'portal', ${user.id})
-          `
-        }
       }
     })
 

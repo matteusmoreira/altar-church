@@ -1,5 +1,21 @@
 # Revisão: agenda de ministérios no Portal do Membro
 
+## Atualização — 06/10/2026
+
+- Botão com ícone de informações abre um modal responsivo com descrição completa, horário, local, links, participantes e escala publicada. Funções, instruções, horários e pessoas escaladas ficam visíveis, com destaque para a própria função. Escalas em rascunho permanecem ocultas.
+- Capacidade zero é apresentada como sem limite, eliminando o indicador `0/0`.
+- Líderes e coordenadores ativos abrem a mesma gestão de ministério do administrador em `/membro/ministerios/[id]`, inicialmente em Configurações. A autorização continua restrita ao ministério vinculado; responsável principal e controles administrativos mantêm suas permissões existentes.
+- O formulário reduzido e sua ação de servidor foram substituídos pela gestão existente. A navegação permanece no portal após salvar ou voltar.
+- RSVP prioriza a inscrição ativa quando há histórico cancelado; a leitura da agenda seleciona uma única inscrição própria, evitando cartões e contagens duplicados. Falhas de conexão na ação exibem feedback.
+
+Validação desta atualização:
+
+- 21 testes focados passaram, incluindo PostgreSQL PGlite isolado para escala, instruções, rascunhos, confirmação idempotente, capacidade, espera, promoção, cancelamento, reconfirmação e isolamento de acesso.
+- TypeScript, lint dos arquivos alterados e build de produção passaram.
+- Consulta real da agenda e confirmação/cancelamento no banco remoto passaram em transação integralmente revertida, sem persistir presença ou automação.
+- Playwright autenticado em tenant `status='test'`: agenda em 360 px, confirmação/cancelamento/reconfirmação e persistência após reload passaram; os dois perfis de líder abriram Configurações, Agenda e Escalas na nova rota. Fixtures de evento e ministério são temporários e removidos após os testes.
+- Nenhuma migration necessária. A aplicação ainda precisa ser publicada para refletir esta atualização no site.
+
 ## História
 
 O administrador cria uma atividade na Agenda de um Ministério. A ocorrência materializada deve aparecer apenas para membros ativos desse ministério, com descrição, data, local, pessoas confirmadas e ação para confirmar ou cancelar a própria presença.

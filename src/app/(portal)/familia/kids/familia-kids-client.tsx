@@ -20,9 +20,8 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
-  Volume2,
 } from "lucide-react"
-import { requestNotificationPermission, triggerKidsAlert } from "@/lib/kids/notifications"
+import { triggerKidsAlert } from "@/lib/kids/notifications"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -186,6 +185,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   )
   const [isAddressExpanded, setIsAddressExpanded] = useState(!hasGuardianAddress)
   const [guardianCustomValues, setGuardianCustomValues] = useState(data.guardianCustomValues.filter((value) => data.customFields.some((field) => field.id === value.fieldId && field.targets.includes("guardian"))))
+  const [expandedChildren, setExpandedChildren] = useState<Record<string, boolean>>({})
+  const [isChatExpanded, setIsChatExpanded] = useState(false)
   const [chatReplies, setChatReplies] = useState<Record<string, string>>({})
   const [newChatBody, setNewChatBody] = useState("")
   const [newChatKidId, setNewChatKidId] = useState(data.children[0]?.kidId ?? "")
@@ -222,7 +223,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
               action: {
                 label: "Ver no Chat",
                 onClick: () => {
-                  document.getElementById("chat-kids-section")?.scrollIntoView({ behavior: "smooth" })
+                  setIsChatExpanded(true)
+                document.getElementById("chat-kids-section")?.scrollIntoView({ behavior: "smooth" })
                 },
               },
             })
@@ -239,8 +241,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   }, [data.conversations, router])
 
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [data.conversations])
+    if (isChatExpanded) chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [data.conversations, isChatExpanded])
 
   async function run<T extends { ok: boolean; error?: string }>(action: () => Promise<T>, success: string, after?: (result: T) => void) {
     setPending(true)
@@ -320,7 +322,8 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
   }
 
   async function toggleConsent(child: GuardianChildItem, type: KidConsentType, granted: boolean) {
-    const consents = granted ? [...child.consents, type] : child.consents.filter((item) => item !== type)
+    if (!granted || child.consents.includes(type)) return
+    const consents = [...child.consents, type]
     await run(() => updateGuardianConsents({ kidId: child.kidId, consents }), "Consentimentos atualizados")
   }
 
@@ -402,17 +405,6 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
     )
   }
 
-  async function testAlertFeedback() {
-    await requestNotificationPermission()
-    triggerKidsAlert(
-      "Alerta de teste: seu celular tocará e vibrará assim durante o culto quando a equipe do Kids mandar uma mensagem!",
-      "Teste de Alerta Kids",
-    )
-    toast.success("Alerta testado com sucesso!", {
-      description: "Som e vibração acionados no seu aparelho. O volume e vibracall estão funcionando.",
-    })
-  }
-
   async function sendFirstChatMessage() {
     const body = newChatBody.trim()
     if (!body) return
@@ -487,6 +479,7 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
               size="sm"
               variant="destructive"
               onClick={() => {
+                setIsChatExpanded(true)
                 document.getElementById("chat-kids-section")?.scrollIntoView({ behavior: "smooth" })
               }}
             >
@@ -646,13 +639,22 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
                 {child.health.hasDietaryRestriction && <Badge variant="destructive">RESTRIÇÃO</Badge>}
                 {child.health.hasMedication && <Badge variant="destructive">MEDICAÇÃO</Badge>}
                 {child.health.hasSpecialNeeds && <Badge variant="destructive">ATENÇÃO</Badge>}
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEditChild(child)}>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`Editar ${child.fullName}`} onClick={() => startEditChild(child)}>
                   <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="icon" className="h-8 w-8"
+                  aria-label={`${expandedChildren[child.kidId] ? "Recolher" : "Expandir"} ${child.fullName}`}
+                  aria-expanded={Boolean(expandedChildren[child.kidId])}
+                  aria-controls={`child-details-${child.kidId}`}
+                  onClick={() => setExpandedChildren((current) => ({ ...current, [child.kidId]: !current[child.kidId] }))}
+                >
+                  {expandedChildren[child.kidId] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent id={`child-details-${child.kidId}`} hidden={!expandedChildren[child.kidId]}>
             {child.activeAttendance && (
               <div className="mb-4 space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -693,12 +695,19 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
               <TabsContent value="consents" className="space-y-2 pt-3">
                 {CONSENT_TYPES.map((type) => (
                   <label key={type} className="flex items-center justify-between gap-2 rounded-md border border-border/50 p-3 text-sm">
-                    <span>{CONSENT_LABELS[type]} <span className="text-xs text-muted-foreground">(v1.0)</span></span>
+                    <span>
+                      {CONSENT_LABELS[type]} <span className="text-xs text-muted-foreground">(v1.0)</span>
+                      {child.consents.includes(type) && (
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Confirmado{child.consentGrantedAt?.[type] ? ` em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(child.consentGrantedAt[type]!))}` : ""}
+                        </span>
+                      )}
+                    </span>
                     <input
                       type="checkbox"
                       className="h-5 w-5"
                       checked={child.consents.includes(type)}
-                      disabled={pending}
+                      disabled={pending || child.consents.includes(type)}
                       onChange={(event) => void toggleConsent(child, type, event.target.checked)}
                     />
                   </label>
@@ -929,35 +938,15 @@ export function FamiliaKidsClient({ data, embedded = false }: { data: GuardianPo
             </CardDescription>
           </div>
           <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs h-8 gap-1.5 shrink-0"
-            onClick={() => void testAlertFeedback()}
-            title="Testar alerta de som e vibração no celular"
+            type="button" variant="ghost" size="icon" className="shrink-0"
+            aria-label={isChatExpanded ? "Recolher chat com o Kids" : "Expandir chat com o Kids"}
+            aria-expanded={isChatExpanded} aria-controls="chat-kids-content"
+            onClick={() => setIsChatExpanded((current) => !current)}
           >
-            <Volume2 className="h-3.5 w-3.5 text-primary" />
-            <span className="hidden sm:inline">Testar som e vibração</span>
-            <span className="sm:hidden">Testar som</span>
+            {isChatExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg bg-primary/5 border border-primary/20 p-2.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <BellRing className="h-3.5 w-3.5 text-primary shrink-0" />
-              Alerta sonoro e vibração ativos no celular se a equipe chamar você no culto.
-            </span>
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              className="text-xs h-auto p-0 text-primary font-medium"
-              onClick={() => void testAlertFeedback()}
-            >
-              Testar
-            </Button>
-          </div>
-
+        <CardContent id="chat-kids-content" hidden={!isChatExpanded} className="space-y-4">
           {data.conversations.length === 0 ? (
             <div className="rounded-lg border border-border/60 p-4 space-y-3">
               <p className="text-sm text-muted-foreground">
