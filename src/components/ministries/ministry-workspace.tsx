@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft, Grid2X2, List, Activity, AlertTriangle, BarChart3, Check, ClipboardCheck, Clock3, Download, FileText, HeartHandshake, Megaphone, Pencil, Plus, Save, Search, Settings2, Trash2, UserMinus, UserPlus, Users, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -599,12 +600,18 @@ export function MinistryWorkspace({ data }: { data: MinistryWorkspaceData }) {
                 <div className={peopleView === "grid" ? "grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"} data-people-view={peopleView}>
 {filteredMembers.map((member) => (
                   <div key={member.id} className={peopleView === "grid" ? "flex min-w-0 flex-col gap-4 rounded-xl border bg-background p-4" : "flex min-w-0 flex-col gap-3 rounded-xl border p-4 md:flex-row md:items-center"}>
-                    <div className="min-w-0 flex-1 break-words">
-                      <p className="font-medium">{member.personName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[member.email, member.phone].filter(Boolean).join(" · ") || "Sem contato"}
-                      </p><p className="mt-1 text-xs text-muted-foreground">{member.teamNames.length ? member.teamNames.join(", ") : "Sem equipe"}
-                      </p>
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <Avatar className={peopleView === "grid" ? "size-12 shrink-0 border border-border/60" : "size-10 shrink-0 border border-border/60"}>
+                        {member.photoUrl && <AvatarImage src={member.photoUrl} alt={member.personName} />}
+                        <AvatarFallback>{member.personName.trim().split(/\s+/).slice(0, 2).map((name) => name[0]).join("").toLocaleUpperCase("pt-BR") || "?"}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1 break-words">
+                        <p className="font-medium">{member.personName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[member.email, member.phone].filter(Boolean).join(" · ") || "Sem contato"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">{member.teamNames.length ? member.teamNames.join(", ") : "Sem equipe"}</p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={member.status === "active" ? "default" : member.status === "pending" ? "outline" : "secondary"}>{member.status === "active" ? roleLabel(member.role) : MEMBER_STATUS_LABELS[member.status]}</Badge>

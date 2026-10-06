@@ -196,15 +196,18 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     `,
     sql<Record<string, unknown>[]>`
       select membership.id, membership.person_id, person.full_name as person_name, coalesce(person.email, '') as email, person.phone,
+        person_photo.storage_path as photo_path,
         membership.role, membership.status, membership.joined_at, membership.left_at,
         array_remove(array_agg(distinct team.name) filter (where team.id is not null), null) as team_names,
         exists (select 1 from public.profiles profile where profile.person_id = membership.person_id and profile.active) as has_portal
       from public.ministry_memberships membership
       join public.people person on person.id = membership.person_id and person.company_id = ${access.companyId} and person.deleted_at is null
+      left join public.app_files person_photo on person_photo.id = person.photo_file_id
+        and person_photo.company_id = ${access.companyId} and person_photo.is_active = true and person_photo.deleted_at is null
       left join public.group_members gm on gm.person_id = membership.person_id and gm.company_id = ${access.companyId} and gm.status = 'active'
       left join public.groups team on team.id = gm.group_id and team.ministry_id = ${ministryId} and team.type = 'ministry' and team.deleted_at is null
       where membership.company_id = ${access.companyId} and membership.ministry_id = ${ministryId}
-      group by membership.id, person.id
+      group by membership.id, person.id, person_photo.storage_path
       order by case membership.status when 'pending' then 1 when 'active' then 2 else 3 end, person.full_name
       limit 1000
     `,
@@ -339,9 +342,14 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     `,
   ])
 
+  const [memberPhotoUrls, resourceUrls] = await Promise.all([
+    createSignedUrlsByStoragePath(members.map((row) => String(row.photo_path ?? "")).filter(Boolean)),
+    createSignedUrlsByStoragePath(resources.map((row) => String(row.file_storage_path ?? "")).filter(Boolean)),
+  ])
   const indicator = indicators[0]
   const mappedMembers = members.map((row) => ({
     id: String(row.id), personId: String(row.person_id), personName: String(row.person_name), email: String(row.email ?? ""), phone: String(row.phone ?? ""),
+    photoUrl: row.photo_path ? memberPhotoUrls.get(String(row.photo_path)) ?? null : null,
     role: row.role as MinistryMember["role"], status: row.status as MinistryMember["status"], joinedAt: iso(row.joined_at as Date | string | null), leftAt: iso(row.left_at as Date | string | null),
     teamNames: Array.isArray(row.team_names) ? row.team_names.map(String) : [], hasPortal: Boolean(row.has_portal),
   }))
@@ -391,7 +399,6 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     })
     onboardingTemplates.set(templateId, template)
   }
-  const resourceUrls = await createSignedUrlsByStoragePath(resources.map((row) => String(row.file_storage_path ?? "")).filter(Boolean))
   const mappedActivities = activityRows.map(toActivity)
   const mappedScales = mapScaleRows(scaleRows)
   const alerts = [

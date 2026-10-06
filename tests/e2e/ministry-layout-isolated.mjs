@@ -36,6 +36,10 @@ const fixture = {
   people: [], leaderCandidates: [{ id: "person-1", fullName: "Ana Maria" }], responsibleCandidates: [],
 }
 fixture.people = fixture.members.map((member) => ({ id: member.personId, fullName: member.personName, email: member.email, phone: member.phone, membershipStatus: member.status, membershipRole: member.role }))
+fixture.members[0].photoUrl = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#2454ab"/><text x="40" y="48" text-anchor="middle" fill="white" font-size="26">AM</text></svg>')
+fixture.members[1].photoUrl = "/missing-photo.png"
+fixture.members[2].photoUrl = null
+fixture.members[3].photoUrl = null
 fixture.people.push({ id: "person-5", fullName: "Elisa Nova", email: "elisa@example.invalid", phone: "", membershipStatus: null, membershipRole: null })
 
 let browser
@@ -112,6 +116,9 @@ try {
     await page.getByRole("textbox", { name: "Buscar membros" }).fill("")
     for (const view of ["Lista", "Grade"]) {
       await page.getByRole("button", { name: view, exact: true }).click()
+      await expect(page.getByRole("img", { name: "Ana Maria", exact: true })).toBeVisible()
+      await expect(page.getByText("BC", { exact: true })).toBeVisible()
+      await expect(page.getByText("CS", { exact: true })).toBeVisible()
       await expect(page.getByRole("button", { name: "Aprovar", exact: true })).toBeVisible()
       await expect(page.getByRole("button", { name: "Rejeitar", exact: true })).toBeVisible()
       await expect(page.getByRole("button", { name: "Reativar", exact: true })).toBeVisible()

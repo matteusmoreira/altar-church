@@ -32,6 +32,7 @@ export interface MinistryMember {
   id: string
   personId: string
   personName: string
+  photoUrl: string | null
   email: string
   phone: string
   role: MinistryMembershipRole
