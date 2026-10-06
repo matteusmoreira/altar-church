@@ -4,14 +4,16 @@ import test from "node:test"
 
 const read = (path) => readFileSync(path, "utf8").replace(/\s+/g, " ")
 
-test("volunteer preferences use Portuguese labels and explicit save feedback", () => {
+test("avisos de escala ficam no painel do membro e preferências de notificação foram aposentadas", () => {
+  const route = read("src/app/api/v1/volunteers/notification-preferences/route.ts")
+  assert.match(route, /requireApiUser/)
+  assert.match(route, /status: 410/)
+  assert.match(route, /Os avisos de escala são exibidos no painel do membro e não exigem configuração\./)
+  const member = read("src/components/member/member-dashboard.tsx")
+  assert.match(member, /Avisos de escala/)
+  assert.match(member, /Você foi escalado/)
   const ui = read("src/app/(dashboard)/voluntariado/volunteer-v2-workspace.tsx")
-  for (const label of ["Escalas", "Lembretes", "Trocas", "Mensagens do chat", "Atualizações", "Reconhecimentos", "Notificações push", "WhatsApp", "E-mail"]) {
-    assert.match(ui, new RegExp(label))
-  }
-  assert.match(ui, /Salvando\.\.\./)
-  assert.match(ui, /Preferências salvas\./)
-  assert.match(ui, /aria-busy=\{saving\}/)
+  assert.doesNotMatch(ui, /Preferências de notificação/)
 })
 
 test("manual selector exposes profile photo, responsive dialog, pending state and fallback", () => {

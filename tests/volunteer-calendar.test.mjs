@@ -39,12 +39,13 @@ test("interface PushControls no voluntariado disponibiliza dropdown com escopos 
   assert.match(ui, /function PushControls/);
   assert.match(ui, /mode = "manager"/);
   assert.match(ui, /<PushControls mode="manager" \/>/);
-  assert.match(ui, /<PushControls mode="volunteer" \/>/);
   assert.match(ui, /Adicionar calendário/);
   assert.match(ui, /Baixar arquivo \(\.ics\)/);
   assert.match(ui, /Google Agenda/);
   assert.match(ui, /Copiar link de assinatura/);
   assert.match(ui, /anchor\.download = filename/);
+  assert.match(ui, /Minha escala pessoal \(\.ics\)/);
+  assert.match(ui, /anchor\.download = "minha-escala\.ics"/);
   assert.doesNotMatch(ui, /<Link[^>]*href=["']\/api\/v1\/volunteers\/calendar["']/);
 });
 

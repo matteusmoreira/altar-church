@@ -52,15 +52,19 @@ test("wizard requires teams and keeps publishing explicit", () => {
   assert.match(workspace, /Nova escala/);
 });
 
-test("manual schedule UI hides technical score and publication matches partial outbox index", () => {
+test("manual schedule UI hides technical score and publication keeps notices panel-only", () => {
   const actions = read("src/lib/volunteers/v2-actions.ts");
   const workspace = read("src/app/(dashboard)/voluntariado/volunteer-v2-workspace.tsx");
   const publishBlock = actions.slice(
     actions.indexOf("export async function publishVolunteerEventSchedule("),
     actions.indexOf("const eventPlanSchema"),
   );
-  assert.equal((publishBlock.match(/where assignment_id is not null/g) ?? []).length, 3);
   assert.match(publishBlock, /Preencha todas as vagas antes de publicar/);
+  assert.doesNotMatch(publishBlock, /volunteer_delivery_outbox/);
+  assert.match(
+    read("supabase/migrations/20261006105110_volunteer_panel_only_schedules.sql"),
+    /'reminders', 0, 'noShows', 0/,
+  );
   assert.match(workspace, /Escolher pessoas/);
   assert.match(read("src/app/(dashboard)/voluntariado/components/escala-culto-drawer.tsx"), /Sugerir pessoas/);
   assert.match(workspace, /Rascunho — ainda não avisado/);
