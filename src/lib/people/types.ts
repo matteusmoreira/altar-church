@@ -34,6 +34,7 @@ export interface PeopleListFilters {
 
 export interface PersonListItem {
   id: string
+  slug?: string
   companyId: string
   congregationId: string | null
   congregationName: string | null
@@ -122,6 +123,7 @@ export interface PersonEnrolledJourney {
 export interface PersonLinkedChild {
   kidId: string
   personId: string
+  personSlug?: string
   fullName: string
   firstName: string
   lastName: string
@@ -280,6 +282,7 @@ export interface PersonFollowUpTrigger {
 
 export interface DuplicatePersonSummary {
   id: string
+  slug?: string
   fullName: string
   email: string | null
   phone: string
@@ -358,6 +361,7 @@ export interface PeopleDashboardData {
 
 export interface BirthdayPerson {
   id: string
+  slug?: string
   fullName: string
   birthDate: string
   day: number
@@ -507,6 +511,7 @@ export interface DuplicateCandidateActionInput {
 }
 
 export interface PeopleActionResult {
+  slug?: string
   ok: boolean
   id?: string
   error?: string

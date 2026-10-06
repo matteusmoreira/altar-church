@@ -68,7 +68,7 @@ export function EventCreateForm({
       if (event) toast.success("Evento atualizado")
       else toast.success("Evento criado com sucesso")
       if (event) router.refresh()
-      else if (result.id) router.push(`/eventos/${result.id}`)
+      else if (result.id) router.push(`/eventos/${result.slug || result.id}`)
     })
   }
 

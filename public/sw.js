@@ -130,7 +130,7 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       data: { url: data.url || "/voluntariado" },
-      tag: data.assignmentId ? `assignment-${data.assignmentId}` : undefined,
+      tag: data.tag || (data.assignmentId ? `assignment-${data.assignmentId}` : undefined),
     }),
   );
 });
@@ -143,7 +143,7 @@ self.addEventListener("notificationclick", (event) => {
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clients) => {
         const opened = clients.find(
-          (client) => new URL(client.url).pathname === target,
+          (client) => client.url === new URL(target, self.location.origin).href,
         );
         return opened ? opened.focus() : self.clients.openWindow(target);
       }),

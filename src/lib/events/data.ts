@@ -22,6 +22,7 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
   const rows = await getSql()<{
     token: string
     company_slug: string
+    public_slug: string
     church_name: string
     title: string
     description: string
@@ -39,7 +40,7 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
     going_count: number | string
     waitlisted_count: number | string
   }[]>`
-    select event.public_token as token, company.slug as company_slug, company.name as church_name,
+    select event.public_token as token, event.public_slug, company.slug as company_slug, company.name as church_name,
       event.title, event.description, event.type, event.starts_at, event.ends_at, event.location,
       event.banner_url, event.is_online, event.online_link, event.registration_enabled, event.max_capacity,
       registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
@@ -65,6 +66,7 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
   const maxCapacity = Number(row.max_capacity ?? 0)
   return {
     token: row.token,
+    publicPath: `/eventos/publico/${row.company_slug}/${row.public_slug}`,
     companySlug: row.company_slug,
     churchName: row.church_name,
     title: row.title,
@@ -86,6 +88,17 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
   }
 }
 
+export async function getPublicEventBySlug(companySlug: string, eventSlug: string): Promise<EventPublicData | null> {
+  if (![companySlug, eventSlug].every(value => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value))) return null
+  const rows = await getSql()<{ public_token: string }[]>`
+    select event.public_token from public.events event
+    join public.companies company on company.id = event.company_id and company.active and company.status = 'active'
+    where company.slug = ${companySlug} and event.public_slug = ${eventSlug}
+      and event.is_public and event.status = 'published' and event.deleted_at is null limit 1
+  `
+  return rows[0] ? getPublicEventByToken(rows[0].public_token) : null
+}
+
 export async function getPublicEventRegistration(tokenInput: string): Promise<EventPublicRegistration | null> {
   const token = safeToken(tokenInput)
   if (!token) return null
@@ -94,12 +107,15 @@ export async function getPublicEventRegistration(tokenInput: string): Promise<Ev
     confirmation_token: string
     event_token: string
     event_title: string
+    company_slug: string
+    public_slug: string
     full_name: string
     email: string
     phone: string
     status: EventPublicRegistration["status"]
   }[]>`
     select guest.id, guest.confirmation_token, event.public_token as event_token, event.title as event_title,
+      (select slug from public.companies where id = event.company_id) as company_slug, event.public_slug,
       guest.full_name, guest.email, guest.phone, guest.status
     from public.event_guest_registrations guest
     join public.events event on event.id = guest.event_id and event.deleted_at is null
@@ -111,6 +127,7 @@ export async function getPublicEventRegistration(tokenInput: string): Promise<Ev
     id: row.id,
     token: row.confirmation_token,
     eventToken: row.event_token,
+    eventPublicPath: `/eventos/publico/${row.company_slug}/${row.public_slug}`,
     eventTitle: row.event_title,
     fullName: row.full_name,
     email: row.email,

@@ -1,0 +1,9 @@
+.git
+node_modules
+.next
+.codex-local
+.env*
+playwright/.auth
+docs/testing/*.local.md
+test-results
+playwright-report

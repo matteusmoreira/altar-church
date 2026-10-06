@@ -1,4 +1,5 @@
 export type EventPublicData = {
+  publicPath: string
   token: string
   companySlug: string
   churchName: string
@@ -24,6 +25,7 @@ export type EventPublicRegistration = {
   id: string
   token: string
   eventToken: string
+  eventPublicPath?: string
   eventTitle: string
   fullName: string
   email: string

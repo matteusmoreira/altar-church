@@ -609,6 +609,7 @@ function toSessionClassrooms(value: unknown): KidSessionClassroomItem[] {
     const item = row as Record<string, unknown>
     return {
       id: String(item.id),
+      slug: String(item.slug ?? ""),
       classroomId: String(item.classroomId),
       name: String(item.name ?? ""),
       congregationId: item.congregationId ? String(item.congregationId) : null,
@@ -670,6 +671,7 @@ const SESSION_SELECT = `
     coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', sc.id,
+        'slug', sc.slug,
         'classroomId', sc.classroom_id,
         'name', classroom.name,
         'congregationId', classroom.congregation_id,

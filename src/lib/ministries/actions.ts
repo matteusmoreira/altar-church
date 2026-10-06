@@ -28,6 +28,8 @@ function result(error: unknown): ActionResult {
 }
 
 function refresh(ministryId: string, slug?: string | null) {
+  revalidatePath("/ministerios/[id]", "page")
+  revalidatePath("/membro/ministerios/[id]", "page")
   revalidatePath("/membro")
   revalidatePath(`/ministerios/${ministryId}`)
   if (slug) revalidatePath(`/ministerios/${slug}`)
@@ -110,6 +112,8 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
       `
     }
     await writeAuditLog({ action: "ministry.profile.update", entityTable: "ministries", entityId: parsed.ministryId, companyId: access.companyId, metadata: { isAdmin, slug: finalSlug } })
+    const [savedRoute] = await sql<{ slug: string }[]>`select slug from public.ministries where id = ${parsed.ministryId} and company_id = ${access.companyId}`
+    finalSlug = savedRoute?.slug ?? finalSlug
     refresh(parsed.ministryId, finalSlug)
     return { ok: true, id: parsed.ministryId, data: { slug: finalSlug } }
   } catch (error) { return result(error) }

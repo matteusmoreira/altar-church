@@ -44,7 +44,7 @@ export function EventDetailClient({ event, volunteerTemplates, ministries, forms
 
   return (
     <div className="space-y-6">
-      <PageHeader title={event.title} description={event.description || "Sem descrição"} back={{ href: "/eventos", label: "Eventos" }} badge={<><Badge>{statusLabels[event.status]}</Badge>{event.isOnline && <Badge variant="outline"><Globe className="mr-1 h-3 w-3" />Online</Badge>}{event.ministryName && <Badge variant="outline">{event.ministryName}</Badge>}</>} actions={<EventActions eventId={event.id} eventTitle={event.title} status={event.status} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />} />
+      <PageHeader title={event.title} description={event.description || "Sem descrição"} back={{ href: "/eventos", label: "Eventos" }} badge={<><Badge>{statusLabels[event.status]}</Badge>{event.isOnline && <Badge variant="outline"><Globe className="mr-1 h-3 w-3" />Online</Badge>}{event.ministryName && <Badge variant="outline">{event.ministryName}</Badge>}</>} actions={<EventActions eventId={event.id} eventSlug={event.slug} eventTitle={event.title} status={event.status} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Inscritos</p><p className="mt-1 text-2xl font-semibold">{event.goingCount}{event.maxCapacity > 0 ? <span className="text-sm font-normal text-muted-foreground"> / {event.maxCapacity}</span> : null}</p><p className="text-xs text-muted-foreground">{event.waitlistedCount} na lista de espera</p></CardContent></Card>

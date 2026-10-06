@@ -37,6 +37,7 @@ export interface MemberPortalSummary {
 
 export interface MemberMinistryItem {
   id: string
+  slug?: string
   name: string
   description: string
   contact: string
@@ -63,6 +64,7 @@ export interface MemberAgendaEvent {
   type: string
   ministryName: string | null
   ministryId: string | null
+  ministrySlug?: string | null
   canManageMinistry: boolean
   scale: { id: string; role: string; instructions: string; startsAt: string; endsAt: string | null; personName: string | null; status: string | null; isMine: boolean }[]
   startsAt: string

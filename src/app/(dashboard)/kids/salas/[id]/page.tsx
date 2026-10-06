@@ -1,12 +1,17 @@
+import { resolveEntityRoute, canonicalEntityPath, type RouteSearchParams } from "@/lib/navigation/entity-slugs"
+import { notFound, redirect } from "next/navigation"
 import { Baby } from "lucide-react"
 import { requireDashboardModuleAccess } from "@/lib/auth/page-access"
 import { getKidRoomPanelData } from "@/lib/kids/data"
 import type { KidRoomPanelData } from "@/lib/kids/types"
 import { SalaClient } from "./sala-client"
 
-export default async function KidRoomPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function KidRoomPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RouteSearchParams> }) {
   await requireDashboardModuleAccess({ moduleId: "kids", permission: "kids.room.view" })
-  const { id } = await params
+  const { id: identifier } = await params
+  const route = await resolveEntityRoute("rooms", identifier)
+  if (!route) notFound()
+  const id = route.id
 
   let data: KidRoomPanelData | null = null
   try {
@@ -29,5 +34,6 @@ export default async function KidRoomPage({ params }: { params: Promise<{ id: st
     )
   }
 
+  if (identifier !== route.slug) redirect(canonicalEntityPath("/kids/salas", route.slug, await searchParams))
   return <SalaClient data={data} />
 }

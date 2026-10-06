@@ -298,8 +298,8 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         and profile.role in ('superadmin', 'admin', 'pastor', 'ministry_leader', 'volunteer')
       order by person.full_name limit 500
     `,
-    sql<{ id: string; title: string; status: string; method: string; audience_kind: string; snapshot_count: number; created_at: Date | string }[]>`
-      select id, title, status, method, audience_kind, snapshot_count, created_at
+    sql<{ id: string; slug: string; title: string; status: string; method: string; audience_kind: string; snapshot_count: number; created_at: Date | string }[]>`
+      select id, slug, title, status, method, audience_kind, snapshot_count, created_at
       from public.notifications
       where company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
       order by created_at desc limit 100
@@ -336,7 +336,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
     personName: String(row.person_name ?? "Pessoa"), role: row.role as MinistryTeamMember["role"],
   }))
   const mappedCommunications: MinistryCommunication[] = communications.map((row) => ({
-    id: String(row.id), title: String(row.title), status: String(row.status), method: String(row.method),
+    id: String(row.id), slug: String(row.slug ?? ""), title: String(row.title), status: String(row.status), method: String(row.method),
     audienceKind: String(row.audience_kind), snapshotCount: number(row.snapshot_count), createdAt: iso(row.created_at) ?? "",
   }))
   const mappedAttendanceRecords: MinistryAttendanceRecord[] = attendanceRecordRows.map((row) => ({

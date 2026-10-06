@@ -26,7 +26,7 @@ test("agenda shows published roles and instructions, highlights own assignment a
     create table events(id uuid primary key,company_id uuid,ministry_id uuid,title text,description text,type text,
       starts_at timestamptz,ends_at timestamptz,location text,online_link text,max_capacity int,status text,
       deleted_at timestamptz,registration_enabled boolean,volunteer_schedule_published_at timestamptz);
-    create table ministries(id uuid primary key,company_id uuid,name text,leader_person_id uuid,deleted_at timestamptz);
+    create table ministries(id uuid primary key,company_id uuid,name text,leader_person_id uuid,deleted_at timestamptz,slug text);
     create table ministry_memberships(company_id uuid,ministry_id uuid,person_id uuid,status text,role text,left_at timestamptz);
     create table member_event_rsvps(id uuid,company_id uuid,event_id uuid,person_id uuid,status text,updated_at timestamptz);
     create table people(id uuid,company_id uuid,full_name text,deleted_at timestamptz);
@@ -38,7 +38,7 @@ test("agenda shows published roles and instructions, highlights own assignment a
   `)
   const companyId = randomUUID(), personId = randomUUID(), eventId = randomUUID(), ministryId = randomUUID()
   const shift = randomUUID(), schedule = randomUUID(), position = randomUUID(), volunteer = randomUUID()
-  await db.query("insert into ministries values($1,$2,'Tecnologia',$3,null)", [ministryId,companyId,personId])
+  await db.query("insert into ministries values($1,$2,'Tecnologia',$3,null,'tecnologia')", [ministryId,companyId,personId])
   await db.query("insert into ministry_memberships values($1,$2,$3,'active','leader',null)", [companyId,ministryId,personId])
   await db.query("insert into events values($1,$2,$3,'Palestra','Descrição completa','meeting',now(),now()+interval '1 hour','Sala 1','',0,'published',null,true,null)", [eventId,companyId,ministryId])
   await db.query("insert into people values($1,$2,'Maria',null)", [personId,companyId])
@@ -54,6 +54,7 @@ test("agenda shows published roles and instructions, highlights own assignment a
   })
   let events = await data.listMemberAgenda()
   assert.equal(events.length, 1); assert.equal(events[0].myStatus, 'going'); assert.equal(events[0].goingCount, 1)
+  assert.equal(events[0].ministrySlug, 'tecnologia')
   assert.equal(events[0].maxCapacity, null); assert.deepEqual(events[0].scale, [])
   await db.query("update events set volunteer_schedule_published_at=now() where id=$1", [eventId])
   events = await data.listMemberAgenda()

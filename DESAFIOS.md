@@ -271,3 +271,11 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - A publicação disponibiliza o aviso no painel do membro sem criar entregas externas. Aplicar a migration 20261006105110_volunteer_panel_only_schedules junto do código: ela desativa lembretes/ausência automática e interrompe os avisos de escala ainda não enviados. Campos e histórico antigos foram preservados no banco. Sem aplicar a migration, o worker antigo ainda pode gerar lembretes.
 - Validação local: 28 testes focados, 4 E2E de prévia em desktop/celular, typecheck, lint e build passaram. Avisos do painel foram testados em PostgreSQL isolado por igreja, pessoa, publicação, cancelamento, exclusão e término do evento.
 - Após autorização em 06/10/2026, as migrations 20261006105110 e 20261006110931 foram aplicadas no banco remoto: 98/98 migrations, zero pendentes, zero avisos externos de escala na fila e preparação automática retornando reminders=0/noShows=0. A segunda migration revoga os grants explícitos legados de anon/authenticated que CREATE OR REPLACE preservava; service_role mantém execução. Teste isolado e consulta remota confirmaram as permissões.
+
+
+## Slugs persistidos e publicação isolada — 06/10/2026
+
+- Em worktrees Windows, uma junção de node_modules para outro checkout ultrapassa a raiz do Turbopack. Instalar dependências no próprio worktree e executar build/typecheck com Node 24.
+- O dry-run da Vercel incluiu sessões playwright/.auth e o documento local de contas. A .vercelignore agora exclui credenciais, sessões e logs locais; conferir a lista files do dry-run antes de enviar.
+- O preview automático desta branch falhou por ausência de NEXT_PUBLIC_SUPABASE_URL no ambiente Preview. O deploy de produção usa as variáveis de Production; não enviar .env.local para contornar a configuração.
+- A suíte geral mantém duas falhas anteriores à mudança: conciliação de identidades Auth (ready/completed) e uma expectativa estática antiga de confirmedPeople.join na agenda. Os testes específicos dos slugs e da agenda com a coluna ministry.slug passam.

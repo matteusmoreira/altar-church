@@ -28,7 +28,7 @@ async function fixture() {
     alter default privileges grant execute on functions to anon, authenticated;
     create table notifications(id uuid primary key,company_id uuid,title text default 'Aviso',content text default 'Mensagem',status text default 'queued',whatsapp_message jsonb,deleted_at timestamptz,completed_at timestamptz,updated_at timestamptz default now());
     create table notification_deliveries(id uuid primary key default gen_random_uuid(),notification_id uuid,company_id uuid,person_id uuid,channel text default 'push',recipient text default 'https://push.test/device',recipient_name text default 'Membro',status text default 'pending',attempts integer default 0,next_attempt_at timestamptz default now(),created_at timestamptz default now(),updated_at timestamptz default now(),locked_at timestamptz,last_error text,provider_id text,response_status integer,sent_at timestamptz,delivered_at timestamptz);
-    create table notification_push_subscriptions(id uuid primary key default gen_random_uuid(),company_id uuid,person_id uuid,endpoint text unique,p256dh text,auth_key text,user_agent text,is_active boolean,updated_at timestamptz default now());
+    create table notification_push_subscriptions(id uuid primary key default gen_random_uuid(),company_id uuid,person_id uuid,profile_id uuid,endpoint text unique,p256dh text,auth_key text,user_agent text,is_active boolean,updated_at timestamptz default now());
     create table notification_channel_preferences(company_id uuid,person_id uuid,channel text,opted_out boolean);
     create table volunteer_push_subscriptions(company_id uuid,profile_id uuid,volunteer_id uuid,endpoint text,p256dh text,auth_key text,user_agent text,is_active boolean);
     create table app_files(id uuid primary key,company_id uuid,bucket text,storage_path text,mime_type text,is_active boolean,deleted_at timestamptz);
@@ -205,7 +205,11 @@ test("push registration requires a live person in the authenticated tenant", asy
     assert.equal((await db.query("select person_id from notification_push_subscriptions")).rows[0].person_id, person)
     await db.exec("update people set deleted_at=now()")
     await assert.rejects(() => preferences.saveMyNotificationPushSubscription(input), /pessoa ativa/)
-    assert.equal((await preferences.saveMyNotificationPushSubscription(input, false)).ok, false)
+    assert.equal((await preferences.saveMyNotificationPushSubscription(input, false)).ok, true)
+    const profileDevice = (await db.query("select person_id,profile_id,company_id from notification_push_subscriptions")).rows[0]
+    assert.equal(profileDevice.person_id, null)
+    assert.equal(profileDevice.company_id, tenant)
+    assert.ok(profileDevice.profile_id, "profile-only chat device remains bound to its authenticated profile")
     await db.exec(`update people set deleted_at=null,company_id='${otherTenant}'`)
     await assert.rejects(() => preferences.saveMyNotificationPushSubscription(input), /pessoa ativa/)
   } finally { await db.close() }

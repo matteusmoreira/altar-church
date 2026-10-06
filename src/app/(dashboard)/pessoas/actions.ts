@@ -177,6 +177,7 @@ export async function savePersonPhoto(formData: FormData) {
     }
 
     revalidatePath("/pessoas")
+    revalidatePath("/pessoas/[id]", "page")
     revalidatePath(`/pessoas/${personId}`)
     revalidatePath("/kids")
     revalidatePath("/kids/recepcao")

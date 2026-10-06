@@ -89,6 +89,8 @@ function startsAtFromDate(date: string) {
 }
 
 function refreshMinistryPaths(slug?: string | null, id?: string | null) {
+  revalidatePath("/ministerios/[id]", "page")
+  revalidatePath("/membro/ministerios/[id]", "page")
   revalidatePath("/ministerios")
   if (slug) revalidatePath(`/ministerios/${slug}`)
   if (id) revalidatePath(`/ministerios/${id}`)
@@ -125,30 +127,15 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
       if (!leaderRows[0]) throw new Error("Lider nao encontrado nesta igreja")
     }
 
-    let baseSlug = parsed.slug ? normalizeMinistrySlug(parsed.slug) : slugifyMinistry(parsed.name)
-    if (!baseSlug) baseSlug = "ministerio"
-
-    let candidateSlug = baseSlug
-    let attempt = 1
-    while (true) {
-      const existingRows = await sql<{ id: string }[]>`
-        select id from public.ministries
-        where company_id = ${companyId}
-          and slug = ${candidateSlug}
-          and (${parsed.id}::uuid is null or id <> ${parsed.id})
-          and deleted_at is null
-        limit 1
-      `
-      if (!existingRows[0]) break
-      attempt++
-      candidateSlug = `${baseSlug}-${attempt}`
-    }
-    const finalSlug = candidateSlug
+    const [current] = parsed.id ? await sql<{ slug: string }[]>`
+      select slug from public.ministries where id = ${parsed.id} and company_id = ${companyId} and deleted_at is null
+    ` : []
+    let finalSlug = parsed.slug ? normalizeMinistrySlug(parsed.slug) : current?.slug || slugifyMinistry(parsed.name)
 
     let ministryId = parsed.id
 
     if (parsed.id) {
-      const rows = await sql<{ id: string }[]>`
+      const rows = await sql<{ id: string; slug: string }[]>`
         update public.ministries
         set name = ${parsed.name},
             slug = ${finalSlug},
@@ -161,11 +148,12 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
         where id = ${parsed.id}
           and company_id = ${companyId}
           and deleted_at is null
-        returning id
+        returning id, slug
       `
       ministryId = rows[0]?.id ?? null
+      finalSlug = rows[0]?.slug ?? finalSlug
     } else {
-      const rows = await sql<{ id: string }[]>`
+      const rows = await sql<{ id: string; slug: string }[]>`
         insert into public.ministries (
           company_id,
           name,
@@ -188,9 +176,10 @@ export async function saveMinistry(input: SaveMinistryInput): Promise<PastoralAc
           ${user.id},
           ${user.id}
         )
-        returning id
+        returning id, slug
       `
       ministryId = rows[0]?.id ?? null
+      finalSlug = rows[0]?.slug ?? finalSlug
     }
 
     if (!ministryId) {

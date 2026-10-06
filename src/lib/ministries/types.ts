@@ -215,6 +215,7 @@ export interface MinistryResource {
 
 export interface MinistryCommunication {
   id: string
+  slug?: string
   title: string
   status: string
   method: string

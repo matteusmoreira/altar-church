@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoLightbox } from "@/components/ui/photo-lightbox"
 import { usePermission } from "@/lib/permissions"
-import { maskPhone } from "@/lib/kids/security"
+import { maskPhone } from "@/lib/kids/format"
 import { callKidGuardian, resolveKidIncident, saveKidIncident, saveKidLessonReport } from "@/lib/kids/actions"
 import type { KidIncidentSeverity, KidRoomPanelData } from "@/lib/kids/types"
 

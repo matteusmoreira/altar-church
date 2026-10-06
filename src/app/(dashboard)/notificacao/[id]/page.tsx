@@ -1,3 +1,5 @@
+import { resolveEntityRoute, canonicalEntityPath, type RouteSearchParams } from "@/lib/navigation/entity-slugs"
+import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Send, TriangleAlert } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -27,11 +29,15 @@ async function retryDeliveryForm(formData: FormData) {
   return retryNotificationDeliveryAction(formData)
 }
 
-export default async function NotificationDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function NotificationDetailsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RouteSearchParams> }) {
+  const { id: identifier } = await params
+  const route = await resolveEntityRoute("notifications", identifier)
+  if (!route) notFound()
+  const id = route.id
   const data = await getNotificationDetails(id)
   const sent = data.deliveries.filter((delivery) => delivery.status === "sent").length
   const failed = data.deliveries.filter((delivery) => delivery.status === "failed" || delivery.status === "dead").length
+  if (identifier !== route.slug) redirect(canonicalEntityPath("/notificacao", route.slug, await searchParams))
   return (
     <div className="space-y-6">
       <QueueRefresh enabled={['queued', 'processing', 'scheduled'].includes(data.status)} />

@@ -23,6 +23,7 @@ import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
 import { MessageEditor } from "@/components/automations/message-editor"
 import type { AutomationMessage } from "@/lib/automations/contract"
+import { MinistryChat, MinistryChatBadge } from "./ministry-chat"
 
 type PeopleView = "list" | "grid"
 const PEOPLE_VIEW_KEY = "altar-church:ministry-people-view:v1"
@@ -458,6 +459,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
             <Megaphone />
             Comunicação
           </TabsTrigger>
+          <TabsTrigger value="chat">Chat <MinistryChatBadge ministryId={profile.id} /></TabsTrigger>
           <TabsTrigger value="recursos">
             <FileText />
             Recursos
@@ -472,6 +474,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="chat"><MinistryChat key={profile.id} ministryId={profile.id} name={profile.name} /></TabsContent>
         <TabsContent value="visao-geral" className="space-y-4">
 <SectionHeader title="Visão geral" description="Acompanhe as atividades e a participação do ministério." />
           <div className="grid grid-cols-1 gap-4">
@@ -1974,7 +1977,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                     <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>
                       {COMMUNICATION_STATUS_LABELS[communication.status] ?? communication.status}
                     </Badge>
-                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/notificacao/${communication.id}`)}>
+                    <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/notificacao/${communication.slug || communication.id}`)}>
                       Ver entregas
                     </Button>
                     {canManage && (

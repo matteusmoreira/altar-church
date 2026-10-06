@@ -26,6 +26,9 @@ import type {
 
 interface EventRow {
   id: string
+  slug: string
+  public_slug: string
+  company_slug?: string
   company_id: string
   title: string
   description: string
@@ -77,6 +80,7 @@ export interface EventListFilters {
 }
 
 export interface EventListItem extends ChurchEvent {
+  publicPath?: string
   publicToken: string | null
   ministryId: string | null
   ministryName: string
@@ -241,6 +245,7 @@ interface AnnouncementRow {
 
 interface NotificationRow {
   id: string
+  slug: string
   company_id: string
   title: string
   content: string
@@ -445,6 +450,7 @@ function toStringRecord(value: unknown): Record<string, string> {
 function toEvent(row: EventRow): ChurchEvent {
   return {
     id: row.id,
+    slug: row.slug,
     churchId: row.company_id,
     title: row.title,
     description: row.description,
@@ -481,6 +487,7 @@ function toEventListItem(row: EventRow): EventListItem {
     attendance: Number(row.present_count ?? row.attendance_count ?? 0),
     ministryId: row.ministry_id ?? null,
     publicToken: row.public_token ?? null,
+    publicPath: row.company_slug && row.public_slug ? `/eventos/publico/${row.company_slug}/${row.public_slug}` : undefined,
     ministryName: row.ministry_name ?? "",
     programmingId: row.programming_id ?? null,
     volunteerTemplateId: row.volunteer_template_id ?? null,
@@ -623,6 +630,7 @@ function toAnnouncement(row: AnnouncementRow): Announcement {
 function toNotification(row: NotificationRow): Notification {
   return {
     id: row.id,
+    slug: row.slug,
     churchId: row.company_id,
     title: row.title,
     content: row.content,
@@ -826,7 +834,7 @@ export async function listEvents(
   // Agregacoes via LEFT JOIN + GROUP BY em vez de 7 subselects correlacionados
   // por linha (auditoria 29/09/2026: 6 subselects x 500 eventos).
   const rows = await sql<EventRow[]>`
-    select event.*,
+    select event.*, (select slug from public.companies where id = event.company_id) as company_slug,
            programming.recurrence_frequency,
            programming.recurrence_weekdays,
            programming.recurrence_until,
@@ -919,7 +927,7 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
   await requirePermission("events.view", companyId)
   const sql = getSql()
   const eventRows = await sql<EventRow[]>`
-    select event.*, registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
+    select event.*, (select slug from public.companies where id = event.company_id) as company_slug, registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
            programming.recurrence_frequency, programming.recurrence_weekdays, programming.recurrence_until, programming.recurrence_needs_review,
            ministry.name as ministry_name, volunteer_template.name as volunteer_template_name,
            (select count(*)::integer from public.member_event_rsvps rsvp where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
@@ -1247,7 +1255,7 @@ export async function listNotifications(companyIdInput?: string | null): Promise
 
   const sql = getSql()
   const rows = await sql<NotificationRow[]>`
-    select campaign.id, campaign.company_id, campaign.title, campaign.content, campaign.method,
+    select campaign.id, campaign.slug, campaign.company_id, campaign.title, campaign.content, campaign.method,
            campaign.type, campaign.target_group, campaign.scheduled_send, campaign.send_date,
            campaign.status, campaign.created_at, campaign.audience_kind, campaign.snapshot_count,
            count(delivery.id)::int as delivery_total,

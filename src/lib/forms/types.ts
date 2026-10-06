@@ -185,6 +185,7 @@ export interface PublicFormData {
 }
 
 export type FormsActionResult = {
+  slug?: string
   ok: boolean
   id?: string
   data?: unknown

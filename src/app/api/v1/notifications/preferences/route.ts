@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     await requireSession(request)
     const body = await request.json() as { channel?: string; optedOut?: boolean; subscription?: unknown }
     if (body.subscription) {
-      return NextResponse.json({ data: await saveMyNotificationPushSubscription(body.subscription) })
+      return NextResponse.json({ data: await saveMyNotificationPushSubscription(body.subscription, false) })
     }
     if (!body.channel || typeof body.optedOut !== "boolean") {
       return NextResponse.json({ error: { code: "VALIDATION", message: "channel e optedOut são obrigatórios" } }, { status: 400 })

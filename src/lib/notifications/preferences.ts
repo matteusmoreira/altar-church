@@ -44,9 +44,9 @@ export async function getMyNotificationPreferences() {
 }
 
 export async function getMyNotificationPushConfig() {
-  const { personId } = await ownPerson()
+  await ownPerson()
   const configured = Boolean(process.env.VAPID_SUBJECT && process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
-  return { publicKey: configured ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY : null, canSubscribe: Boolean(personId) }
+  return { publicKey: configured ? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY : null, canSubscribe: true }
 }
 
 export async function saveMyNotificationPreference(channelInput: string, optedOut: boolean) {
@@ -73,17 +73,14 @@ export async function saveMyNotificationPreference(channelInput: string, optedOu
 export async function saveMyNotificationPushSubscription(input: unknown, requirePerson = true) {
   const parsed = subscriptionSchema.parse(input)
   const { user, companyId, personId } = await ownPerson()
-  if (!personId) {
-    if (requirePerson) throw new Error("Conta sem pessoa ativa vinculada. Atualize o vínculo em Pessoas antes de ativar o push.")
-    return { ok: false }
-  }
+  if (!personId && requirePerson) throw new Error("Conta sem pessoa ativa vinculada. Atualize o vínculo em Pessoas antes de ativar o push.")
   await getSql()`
     insert into public.notification_push_subscriptions (
-      company_id, person_id, endpoint, p256dh, auth_key, user_agent, is_active
+      company_id, person_id, profile_id, endpoint, p256dh, auth_key, user_agent, is_active
     )
-    values (${companyId}, ${personId}, ${parsed.endpoint}, ${parsed.p256dh}, ${parsed.auth}, ${parsed.userAgent}, true)
+    values (${companyId}, ${personId}, ${user.id}, ${parsed.endpoint}, ${parsed.p256dh}, ${parsed.auth}, ${parsed.userAgent}, true)
     on conflict (endpoint)
-    do update set company_id = excluded.company_id, person_id = excluded.person_id,
+    do update set company_id = excluded.company_id, person_id = excluded.person_id, profile_id = excluded.profile_id,
       p256dh = excluded.p256dh, auth_key = excluded.auth_key, user_agent = excluded.user_agent,
       is_active = true, updated_at = now()
   `

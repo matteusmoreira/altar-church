@@ -4,6 +4,7 @@ import { processKidDeliveryOutbox, reconcileKidWhatsApp } from "@/lib/kids/deliv
 import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import { processFormWhatsappOutbox } from "@/lib/forms/direct-delivery"
 import { processVolunteerChatPushOutbox } from "@/lib/volunteers/chat-delivery"
+import { processMinistryChatPush } from "@/lib/ministries/chat-push"
 
 /**
  * Cron / worker entrypoint.
@@ -33,15 +34,16 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const batchSize = Number((body as { batchSize?: number }).batchSize ?? 25)
     const safeBatchSize = Number.isFinite(batchSize) ? Math.min(Math.max(batchSize, 1), 100) : 25
-    const [integrations, kidsReconcile, kidsDispatch, volunteerChat, notifications, formWhatsapp] = await Promise.all([
+    const [integrations, kidsReconcile, kidsDispatch, volunteerChat, notifications, formWhatsapp, ministryChat] = await Promise.all([
       processIntegrationOutbox(safeBatchSize),
       reconcileKidWhatsApp(safeBatchSize),
       processKidDeliveryOutbox(safeBatchSize),
       processVolunteerChatPushOutbox(safeBatchSize),
       processNotificationOutbox(safeBatchSize),
       processFormWhatsappOutbox(safeBatchSize),
+      processMinistryChatPush(safeBatchSize),
     ])
-    return NextResponse.json({ data: { integrations, kids: { reconcile: kidsReconcile, dispatch: kidsDispatch }, volunteerChat, notifications, formWhatsapp } })
+    return NextResponse.json({ data: { integrations, kids: { reconcile: kidsReconcile, dispatch: kidsDispatch }, volunteerChat, notifications, formWhatsapp, ministryChat } })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro no dispatch"
     return NextResponse.json(

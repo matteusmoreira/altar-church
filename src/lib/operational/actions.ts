@@ -15,6 +15,7 @@ import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import type { Permission } from "@/lib/types"
 
 type ActionResult = {
+  slug?: string
   ok: boolean
   id?: string
   error?: string
@@ -362,6 +363,11 @@ async function attachOperationalMediaFile(
 }
 
 function refresh(paths: string[]) {
+  if (paths.some(path => path.startsWith("/eventos"))) {
+    revalidatePath("/eventos/[id]", "page")
+    revalidatePath("/eventos/publico/[token]/[eventSlug]", "page")
+  }
+  if (paths.some(path => path.startsWith("/notificacao"))) revalidatePath("/notificacao/[id]", "page")
   for (const path of paths) {
     revalidatePath(path)
   }
@@ -606,7 +612,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       if (!communication.ok) console.warn("[events.save] comunicação de alteração não enfileirada", communication.error)
     }
     refresh(["/eventos", "/relatorios", "/dashboard"])
-    return { ok: true, id: savedId }
+    const [savedRoute] = await sql<{ slug: string }[]>`select slug from public.events where id = ${savedId} and company_id = ${companyId}`
+    return { ok: true, id: savedId, slug: savedRoute?.slug }
   } catch (error) {
     console.error("[events.save] failed", {
       stage,
@@ -647,7 +654,7 @@ export async function duplicateEvent(formData: FormData): Promise<ActionResult> 
     const sourceId = uuid(formData, "id")
     if (!sourceId) throw new Error("Evento inválido")
     const { user, companyId } = await actionContext(formData, "events.create")
-    const rows = await getSql()<{ id: string }[]>`
+    const rows = await getSql()<{ id: string; slug: string }[]>`
       insert into public.events (
         company_id, title, description, type, starts_at, ends_at, location, banner_url,
         max_capacity, registration_enabled, is_public, is_online, online_link,
@@ -658,12 +665,12 @@ export async function duplicateEvent(formData: FormData): Promise<ActionResult> 
              volunteer_template_id, ministry_id, registration_form_id, 'draft', false, ${user.id}, ${user.id}
       from public.events
       where id = ${sourceId} and company_id = ${companyId} and deleted_at is null
-      returning id
+      returning id, slug
     `
     if (!rows[0]?.id) throw new Error("Evento não encontrado")
     await audit("event.duplicate", "events", rows[0].id, companyId, { sourceEventId: sourceId })
     refresh(["/eventos", "/dashboard"])
-    return { ok: true, id: rows[0].id }
+    return { ok: true, id: rows[0].id, slug: rows[0].slug }
   } catch (error) {
     return toErrorResult(error)
   }
@@ -1086,7 +1093,7 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
     const scheduled = Boolean(scheduledAt)
     const sendDate = scheduledAt ? scheduledAt.slice(0, 10) : optionalText(formData, "sendDate")
     const rows = await getSql().begin(async (tx) => {
-      const campaigns = await tx<{ id: string }[]>`
+      const campaigns = await tx<{ id: string; slug: string }[]>`
         insert into public.notifications (
           company_id, title, content, method, type, target_group, scheduled_send,
           send_date, scheduled_at, audience_kind, audience_ref_id, audience_person_ids,
@@ -1097,7 +1104,7 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
           ${audienceRefId ?? ""}, ${scheduled}, ${sendDate}, ${scheduledAt}, ${audience}, ${audienceRefId},
           ${tx.json(personIds)}, now(), 0, ${scheduled ? "scheduled" : "queued"}, ${user.id}, ${user.id}
         )
-        returning id
+        returning id, slug
       `
       const campaign = campaigns[0]
       if (!campaign?.id) throw new Error("Campanha não foi criada")
@@ -1115,12 +1122,12 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
         set snapshot_count = ${snapshot.deliveryCount}, snapshot_at = now(), updated_at = now()
         where id = ${campaign.id} and company_id = ${companyId}
       `
-      return { id: campaign.id, snapshot }
+      return { id: campaign.id, slug: campaign.slug, snapshot }
     })
     await audit("notification.create", "notifications", rows.id, companyId)
     if (!scheduled) afterResponse("notification campaign", () => processNotificationOutbox(25, rows.id, companyId))
     refresh(["/notificacao", "/dashboard"])
-    return { ok: true, id: rows.id }
+    return { ok: true, id: rows.id, slug: rows.slug }
   } catch (error) {
     return toErrorResult(error)
   }

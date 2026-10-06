@@ -598,7 +598,9 @@ export async function getPublicFormData(
       f.updated_at
     from public.forms f
     where f.company_id = ${company.id}
-      and f.slug = ${formSlug}
+      and (f.slug = ${formSlug} or exists (select 1 from route_private.slug_reservations reservation
+        where reservation.company_id = f.company_id and reservation.kind = 'forms'
+          and reservation.entity_id = f.id and reservation.slug = ${formSlug}))
       and f.status = 'published'
       and f.is_active = true
       and f.deleted_at is null

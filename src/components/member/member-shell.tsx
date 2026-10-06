@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Baby, CalendarCheck2, CalendarDays, HeartHandshake, Home, LogOut, Network, Settings2 } from "lucide-react"
+import { Baby, CalendarCheck2, CalendarDays, HeartHandshake, Home, LogOut, MessageCircle, Network, Settings2 } from "lucide-react"
 import { signOutMember } from "@/lib/member/actions"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -11,11 +11,14 @@ import { Button } from "@/components/ui/button"
 import { WhatsappPendingBanner } from "@/components/auth/whatsapp-pending-banner"
 import { ChurchLogo } from "@/components/layout/church-logo"
 import { KidsAlertListener } from "@/components/kids/kids-alert-listener"
+import { MinistryChatBadge } from "@/components/ministries/ministry-chat"
+import { MinistryChatSummaryProvider } from "@/components/ministries/chat-client"
 
 const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
   { href: "/membro/celulas", label: "Células", icon: Network },
   { href: "/membro/ministerios", label: "Ministérios", icon: HeartHandshake },
+  { href: "/membro/chats", label: "Chats", icon: MessageCircle },
   { href: "/membro/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/membro/kids", label: "Kids", icon: Baby },
 ]
@@ -48,7 +51,7 @@ export function MemberShell({
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-background">
+    <MinistryChatSummaryProvider><div className="relative min-h-dvh overflow-x-hidden bg-background">
       <div className="pointer-events-none fixed inset-x-0 top-0 -z-0 h-72 bg-[radial-gradient(circle_at_18%_0%,oklch(0.65_0.18_250/0.18),transparent_48%),radial-gradient(circle_at_88%_12%,oklch(0.7_0.13_205/0.12),transparent_42%)]" />
       <header className="sticky top-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4">
@@ -97,7 +100,7 @@ export function MemberShell({
                   active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                 )}
               >
-                <item.icon className="h-5 w-5" />
+                <span className="relative"><item.icon className="h-5 w-5" />{item.href === "/membro/chats" && <span className="absolute -right-3 -top-2"><MinistryChatBadge /></span>}</span>
                 <span className="max-w-full truncate">{item.label}</span>
               </Link>
             )
@@ -120,10 +123,11 @@ export function MemberShell({
             >
               <item.icon className="h-4 w-4" />
               {item.label}
+              {item.href === "/membro/chats" && <MinistryChatBadge />}
             </Link>
           )
         })}
       </nav>
-    </div>
+    </div></MinistryChatSummaryProvider>
   )
 }

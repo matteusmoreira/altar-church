@@ -85,6 +85,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${ministry.onboardingPercent}%` }} /></div>
                   </div>
                 ) : null}
+                {ministry.membershipStatus === "active" && <Button render={<Link href={`/membro/chats?ministry=${ministry.id}`} />} nativeButton={false} variant="outline" className="w-full">Abrir chat</Button>}
                 {ministry.membershipRole === "leader" || ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
                   <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={() => run(ministry.id, true)}>
                     Cancelar solicitação
@@ -100,7 +101,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     type="button"
                     variant="outline"
                     className="w-full"
-                    render={<Link href={`/membro/ministerios/${ministry.id}`} />}
+                    render={<Link href={`/membro/ministerios/${ministry.slug || ministry.id}`} />}
                     nativeButton={false}
                   >
                     <Settings2 className="mr-2 h-4 w-4" />
