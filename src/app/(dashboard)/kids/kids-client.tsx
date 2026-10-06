@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Loader2, Pencil, Plus, Settings2, Trash2, UserPlus, Users } from "lucide-react"
+import { Baby, DoorOpen, Eye, Grid2X2, HeartPulse, List, Loader2, Pencil, Plus, Search, Settings2, Trash2, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { PhotoCapture } from "@/components/kids/photo-capture"
@@ -18,6 +19,7 @@ import { AddressFields } from "@/components/kids/address-fields"
 import { CustomFieldInputs } from "@/components/kids/custom-field-inputs"
 import { CustomFieldBuilder } from "@/components/kids/custom-field-builder"
 import { EMPTY_KID_ADDRESS } from "@/lib/kids/form-model"
+import { KID_OVERVIEW_SEARCH_LIMIT } from "@/lib/kids/types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +39,7 @@ import {
   fetchKidHealthDetails,
   loadKidsCommunicationData,
   loadKidsFamiliesPage,
+  loadKidsOverviewFiltered,
   loadKidsReportsData,
   loadKidsSessionsData,
   saveKid,
@@ -48,6 +51,7 @@ import {
 } from "@/lib/kids/actions"
 import { saveKidsPersonPhoto } from "@/lib/kids/photo-actions"
 import type {
+  KidAgeBand,
   KidConsentType,
   KidLabelPaper,
   KidListItem,
@@ -89,6 +93,15 @@ const RELATIONSHIP_LABELS: Record<KidRelationship, string> = {
 }
 
 const WEEKDAY_LABELS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
+
+const OVERVIEW_AGE_BAND_OPTIONS: { value: KidAgeBand; label: string }[] = [
+  { value: "0-1", label: "Bebês (0–1 ano)" },
+  { value: "2-3", label: "2 a 3 anos" },
+  { value: "4-6", label: "4 a 6 anos" },
+  { value: "7-9", label: "7 a 9 anos" },
+  { value: "10-12", label: "10 a 12 anos" },
+  { value: "13+", label: "13 anos ou mais" },
+]
 
 function showResult(result: { ok: boolean; error?: string }) {
   if (!result.ok) toast.error(result.error ?? "Não foi possível concluir")
@@ -326,6 +339,16 @@ export function KidsClient({
   const children = familyPageData?.children ?? data.children
   const familyPage = familyPageData?.page ?? data.familyPage
 
+  const [overviewQuery, setOverviewQuery] = useState("")
+  const [overviewAgeBand, setOverviewAgeBand] = useState<KidAgeBand | "">("")
+  const [overviewResults, setOverviewResults] = useState<KidListItem[] | null>(null)
+  const [overviewSearching, setOverviewSearching] = useState(false)
+  const overviewSearchSeq = useRef(0)
+  const overviewFilterActive = overviewQuery.trim().length > 0 || overviewAgeBand !== ""
+  const overviewActiveResults = overviewFilterActive ? overviewResults : null
+  const overviewChildren = overviewActiveResults ?? data.children.slice(0, 8)
+  const overviewIsSearching = overviewFilterActive && overviewSearching
+
   async function refreshSessionsData() {
     setLoadingTab("sessoes")
     try {
@@ -402,6 +425,38 @@ export function KidsClient({
     }, 300)
     return () => { active = false; window.clearTimeout(timer) }
   }, [activeGuardianIndex, childForm.guardians])
+
+  // Busca da visão geral com debounce — só ativa com pelo menos um filtro preenchido.
+  // "Inativo" é derivado no render (overviewActiveResults); aqui só invalida buscas em voo.
+  useEffect(() => {
+    const query = overviewQuery.trim()
+    if (!query && overviewAgeBand === "") {
+      overviewSearchSeq.current += 1
+      return
+    }
+    const seq = ++overviewSearchSeq.current
+    const timer = window.setTimeout(() => {
+      setOverviewSearching(true)
+      void loadKidsOverviewFiltered({ query: query || undefined, ageBand: overviewAgeBand || undefined }).then((result) => {
+        if (overviewSearchSeq.current !== seq) return
+        setOverviewSearching(false)
+        if (result.ok && result.children) setOverviewResults(result.children)
+        else toast.error(result.error ?? "Não foi possível buscar crianças")
+      })
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [overviewQuery, overviewAgeBand])
+
+  // Com as abas em 1 coluna o formulário fica acima da lista: rolar até ele ao editar.
+  useEffect(() => {
+    if (!childForm.id) return
+    document.getElementById("kid-child-form-card")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [childForm.id])
+
+  useEffect(() => {
+    if (!classroomForm.id) return
+    document.getElementById("kid-classroom-form-card")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [classroomForm.id])
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string, after?: () => void) {
     setPending(true)
@@ -674,7 +729,12 @@ export function KidsClient({
             <CardHeader className="flex flex-row items-start justify-between gap-3">
               <div>
                 <CardTitle>Crianças cadastradas</CardTitle>
-                <CardDescription>Cadastros mais recentes do ministério infantil.</CardDescription>
+                <CardDescription className="flex items-center gap-1.5">
+                  {overviewIsSearching && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {overviewActiveResults
+                    ? `${overviewActiveResults.length} resultado(s)${overviewActiveResults.length >= KID_OVERVIEW_SEARCH_LIMIT ? " — refine a busca para ver mais" : ""}`
+                    : "Cadastros mais recentes do ministério infantil."}
+                </CardDescription>
               </div>
               <ViewToggle
                 value={overviewMode}
@@ -686,15 +746,39 @@ export function KidsClient({
                 ]}
               />
             </CardHeader>
-            <CardContent className={overviewMode === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
-              {children.length === 0 && (
-                <EmptyState
-                  icon={Baby}
-                  title="Nenhuma criança cadastrada"
-                  description="Comece pela aba Famílias para cadastrar a primeira criança e seus responsáveis."
-                />
-              )}
-              {children.slice(0, 8).map((child) => (
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={overviewQuery}
+                    onChange={(event) => setOverviewQuery(event.target.value)}
+                    placeholder="Buscar por criança ou responsável..."
+                    className="pl-9"
+                    aria-label="Buscar crianças por nome ou responsável"
+                  />
+                </div>
+                <Select value={overviewAgeBand || "all"} onValueChange={(value) => setOverviewAgeBand(value === "all" ? "" : value as KidAgeBand)}>
+                  <SelectTrigger className="w-full sm:w-52" aria-label="Filtrar por idade">
+                    <SelectValue placeholder="Todas as idades" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as idades</SelectItem>
+                    {OVERVIEW_AGE_BAND_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className={overviewMode === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
+                {overviewChildren.length === 0 && (
+                  <EmptyState
+                    icon={Baby}
+                    title={overviewFilterActive ? "Nenhum resultado" : "Nenhuma criança cadastrada"}
+                    description={overviewFilterActive ? "Ajuste a busca ou o filtro de idade para encontrar." : "Comece pela aba Famílias para cadastrar a primeira criança e seus responsáveis."}
+                  />
+                )}
+                {overviewChildren.map((child) => (
                 <div key={child.id} className={`gap-2 rounded-lg border border-border/60 p-3 ${overviewMode === "grid" ? "flex min-h-28 flex-col justify-between" : "flex flex-wrap items-center justify-between"}`}>
                   <div className="flex items-center gap-3">
                     {child.photoUrl ? (
@@ -725,6 +809,7 @@ export function KidsClient({
                   <div className="flex flex-wrap items-center gap-1">
                     {child.isVisitor && <Badge variant="secondary">Visitante</Badge>}
                     {child.health.hasAllergy && <Badge variant="destructive">ALERGIA</Badge>}
+                    {child.health.hasDietaryRestriction && <Badge variant="destructive">RESTRIÇÃO</Badge>}
                     {child.health.hasMedication && <Badge variant="destructive">MEDICAÇÃO</Badge>}
                     {child.health.hasSpecialNeeds && <Badge variant="destructive">ATENÇÃO</Badge>}
                     <Button type="button" variant="ghost" size="icon-sm" onClick={() => openFamilyDetails(child)} aria-label={`Ver família de ${child.fullName}`} title="Ver todas as informações da família">
@@ -733,13 +818,14 @@ export function KidsClient({
                   </div>
                 </div>
               ))}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="familias" className="mt-0 grid gap-6 lg:grid-cols-2">
+        <TabsContent value="familias" className="mt-0 space-y-6">
           {canManageChildren && (
-            <Card className="glass h-fit">
+            <Card id="kid-child-form-card" className="glass scroll-mt-4">
               <CardHeader>
                 <CardTitle>{childForm.id ? "Editar criança" : "Nova criança"}</CardTitle>
                 <CardDescription>Dados essenciais, saúde, consentimentos e responsáveis.</CardDescription>
@@ -1029,7 +1115,7 @@ export function KidsClient({
             </CardHeader>
             <CardContent className="space-y-2">
               {children.length === 0 && (
-                <EmptyState icon={Users} title="Nenhuma família" description="Cadastre a primeira criança ao lado." />
+                <EmptyState icon={Users} title="Nenhuma família" description="Cadastre a primeira criança no formulário acima." />
               )}
               {children.map((child) => (
                 <div key={child.id} className="rounded-lg border border-border/60 p-3">
@@ -1097,9 +1183,9 @@ export function KidsClient({
           </Card>
         </TabsContent>
 
-        <TabsContent value="salas" className="mt-0 grid gap-6 lg:grid-cols-2">
+        <TabsContent value="salas" className="mt-0 space-y-6">
           {canManageClasses && (
-            <Card className="glass h-fit">
+            <Card id="kid-classroom-form-card" className="glass scroll-mt-4">
               <CardHeader>
                 <CardTitle>{classroomForm.id ? "Editar sala" : "Nova sala"}</CardTitle>
                 <CardDescription>Faixa etária em anos, capacidade e localização.</CardDescription>

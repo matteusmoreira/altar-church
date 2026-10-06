@@ -10,7 +10,9 @@ import { parseJsonbObject } from "@/lib/db/jsonb"
 import { EMPTY_KID_ADDRESS } from "./form-model"
 import { listKidCustomFields, listPersonKidCustomValues } from "./custom-fields"
 import { assertKidsLeaderScope } from "./access"
+import { KID_OVERVIEW_SEARCH_LIMIT } from "./types"
 import type {
+  KidAgeBand,
   KidAttendanceItem,
   KidClassroomItem,
   KidClassroomRuleItem,
@@ -232,6 +234,124 @@ function toSettings(row: SettingsRow): KidSettingsItem {
   }
 }
 
+/** Limites em meses completos de cada faixa etária (idade = anos*12 + meses). */
+const KID_AGE_BAND_MONTHS: Record<KidAgeBand, { min: number; max: number | null }> = {
+  "0-1": { min: 0, max: 23 },
+  "2-3": { min: 24, max: 47 },
+  "4-6": { min: 48, max: 83 },
+  "7-9": { min: 84, max: 119 },
+  "10-12": { min: 120, max: 155 },
+  "13+": { min: 156, max: null },
+}
+
+function ageMonthsSql() {
+  const sql = getSql()
+  return sql`(date_part('year', age(p.birth_date))::int * 12 + date_part('month', age(p.birth_date))::int)`
+}
+
+interface KidRowsOptions {
+  limit: number
+  offset: number
+  query?: string
+  ageBand?: KidAgeBand
+}
+
+/** Lista paginada de crianças com filtros opcionais por nome (criança ou responsável) e faixa etária. */
+async function queryKidRows(resolvedCompanyId: string, options: KidRowsOptions): Promise<KidRow[]> {
+  const sql = getSql()
+  const query = options.query?.trim()
+  const band = options.ageBand ? KID_AGE_BAND_MONTHS[options.ageBand] : null
+  return sql<KidRow[]>`
+    select
+      kp.id,
+      kp.person_id,
+      kp.status,
+      kp.is_visitor,
+      kp.notes,
+      kp.created_at,
+      p.first_name,
+      p.last_name,
+      p.full_name,
+      p.birth_date,
+      p.congregation_id,
+      child_photo.storage_path as photo_path,
+      congregation.name as congregation_name,
+      hp.has_allergy,
+      hp.has_dietary_restriction,
+      hp.has_medication,
+      hp.has_special_needs,
+      coalesce((
+        select array_agg(consent.consent_type)
+        from public.kid_consents consent
+        where consent.kid_id = kp.id and consent.status = 'granted'
+      ), '{}'::text[]) as granted_consents,
+      coalesce((
+        select jsonb_agg(jsonb_build_object(
+          'id', guardian.id,
+          'personId', guardian.person_id,
+          'profileId', guardian.profile_id,
+          'name', guardian_person.full_name,
+          'phone', guardian_person.phone,
+          'email', guardian_person.email,
+          'relationship', guardian.relationship,
+          'isPrimary', guardian.is_primary,
+          'canCheckin', guardian.can_checkin,
+          'canCheckout', guardian.can_checkout,
+          'isEmergencyContact', guardian.is_emergency_contact,
+          'whatsappEnabled', guardian.whatsapp_enabled,
+          'emailEnabled', guardian.email_enabled
+          , 'postalCode', guardian_person.postal_code
+          , 'street', guardian_person.address
+          , 'addressNumber', guardian_person.address_number
+          , 'addressComplement', guardian_person.address_complement
+          , 'neighborhood', guardian_person.neighborhood
+          , 'city', guardian_person.city
+          , 'state', guardian_person.state
+          , 'country', guardian_person.country
+          , 'photoPath', guardian_photo.storage_path
+        ) order by guardian.is_primary desc, guardian_person.full_name)
+        from public.kid_guardians guardian
+        join public.people guardian_person
+          on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
+        left join public.app_files guardian_photo on guardian_photo.id = guardian_person.photo_file_id and guardian_photo.is_active = true and guardian_photo.deleted_at is null
+        where guardian.kid_id = kp.id and guardian.deleted_at is null
+      ), '[]'::jsonb) as guardians
+    from public.kid_profiles kp
+    join public.people p on p.id = kp.person_id and p.deleted_at is null
+    left join public.congregations congregation on congregation.id = p.congregation_id
+    left join public.app_files child_photo on child_photo.id = p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
+    left join public.kid_health_profiles hp on hp.kid_id = kp.id and hp.deleted_at is null
+    where kp.company_id = ${resolvedCompanyId}
+      and kp.deleted_at is null
+      ${query ? sql`and (public.kids_normalize_name(p.full_name) like public.kids_normalize_name(${`%${query}%`}) or exists (
+        select 1
+        from public.kid_guardians guardian
+        join public.people guardian_person on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
+        where guardian.kid_id = kp.id
+          and guardian.deleted_at is null
+          and public.kids_normalize_name(guardian_person.full_name) like public.kids_normalize_name(${`%${query}%`})
+      ))` : sql``}
+      ${band ? (band.max == null
+        ? sql`and p.birth_date is not null and ${ageMonthsSql()} >= ${band.min}`
+        : sql`and p.birth_date is not null and ${ageMonthsSql()} between ${band.min} and ${band.max}`)
+      : sql``}
+    order by p.first_name, p.full_name
+    limit ${options.limit} offset ${options.offset}
+  `
+}
+
+/** Monta KidListItem[] reutilizando a resolução de fotos e valores custom. */
+async function toKidListItems(rows: KidRow[]): Promise<KidListItem[]> {
+  const photoPaths = rows.flatMap((row) => [
+    row.photo_path ?? "",
+    ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
+  ])
+  const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
+  const personIds = rows.flatMap((row) => [row.person_id, ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).personId ?? "")) : [])]).filter(Boolean)
+  const customValues = await listPersonKidCustomValues(personIds)
+  return rows.map((row) => toKid(row, photoUrls, customValues))
+}
+
 export async function getKidsDashboardData(companyIdInput?: string | null, familyPageInput = 0): Promise<KidsDashboardData> {
   const resolvedCompanyId = await companyId(companyIdInput)
   await requirePermission("kids.view", resolvedCompanyId)
@@ -240,71 +360,7 @@ export async function getKidsDashboardData(companyIdInput?: string | null, famil
   const familyPageSize = 25
 
   const [kidRows, classroomRows, settingsRows, congregationRows, ministryRows, metricRows, customFields] = await Promise.all([
-    sql<KidRow[]>`
-      select
-        kp.id,
-        kp.person_id,
-        kp.status,
-        kp.is_visitor,
-        kp.notes,
-        kp.created_at,
-        p.first_name,
-        p.last_name,
-        p.full_name,
-        p.birth_date,
-        p.congregation_id,
-        child_photo.storage_path as photo_path,
-        congregation.name as congregation_name,
-        hp.has_allergy,
-        hp.has_dietary_restriction,
-        hp.has_medication,
-        hp.has_special_needs,
-        coalesce((
-          select array_agg(consent.consent_type)
-          from public.kid_consents consent
-          where consent.kid_id = kp.id and consent.status = 'granted'
-        ), '{}'::text[]) as granted_consents,
-        coalesce((
-          select jsonb_agg(jsonb_build_object(
-            'id', guardian.id,
-            'personId', guardian.person_id,
-            'profileId', guardian.profile_id,
-            'name', guardian_person.full_name,
-            'phone', guardian_person.phone,
-            'email', guardian_person.email,
-            'relationship', guardian.relationship,
-            'isPrimary', guardian.is_primary,
-            'canCheckin', guardian.can_checkin,
-            'canCheckout', guardian.can_checkout,
-            'isEmergencyContact', guardian.is_emergency_contact,
-            'whatsappEnabled', guardian.whatsapp_enabled,
-            'emailEnabled', guardian.email_enabled
-            , 'postalCode', guardian_person.postal_code
-            , 'street', guardian_person.address
-            , 'addressNumber', guardian_person.address_number
-            , 'addressComplement', guardian_person.address_complement
-            , 'neighborhood', guardian_person.neighborhood
-            , 'city', guardian_person.city
-            , 'state', guardian_person.state
-            , 'country', guardian_person.country
-            , 'photoPath', guardian_photo.storage_path
-          ) order by guardian.is_primary desc, guardian_person.full_name)
-          from public.kid_guardians guardian
-          join public.people guardian_person
-            on guardian_person.id = guardian.person_id and guardian_person.deleted_at is null
-          left join public.app_files guardian_photo on guardian_photo.id = guardian_person.photo_file_id and guardian_photo.is_active = true and guardian_photo.deleted_at is null
-          where guardian.kid_id = kp.id and guardian.deleted_at is null
-        ), '[]'::jsonb) as guardians
-      from public.kid_profiles kp
-      join public.people p on p.id = kp.person_id and p.deleted_at is null
-      left join public.congregations congregation on congregation.id = p.congregation_id
-      left join public.app_files child_photo on child_photo.id = p.photo_file_id and child_photo.is_active = true and child_photo.deleted_at is null
-      left join public.kid_health_profiles hp on hp.kid_id = kp.id and hp.deleted_at is null
-      where kp.company_id = ${resolvedCompanyId}
-        and kp.deleted_at is null
-      order by p.first_name, p.full_name
-      limit ${familyPageSize} offset ${familyPage * familyPageSize}
-    `,
+    queryKidRows(resolvedCompanyId, { limit: familyPageSize, offset: familyPage * familyPageSize }),
     sql<ClassroomRow[]>`
       select
         classroom.id,
@@ -405,17 +461,11 @@ export async function getKidsDashboardData(companyIdInput?: string | null, famil
     childrenWithHealthAlerts: Number(metricRow?.children_with_health_alerts ?? 0),
   }
 
-  const photoPaths = kidRows.flatMap((row) => [
-    row.photo_path ?? "",
-    ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).photoPath ?? "")) : []),
-  ])
-  const photoUrls = await createSignedUrlsByStoragePath(photoPaths)
-  const personIds = kidRows.flatMap((row) => [row.person_id, ...(Array.isArray(row.guardians) ? row.guardians.map((guardian) => String((guardian as Record<string, unknown>).personId ?? "")) : [])]).filter(Boolean)
-  const customValues = await listPersonKidCustomValues(personIds)
+  const children = await toKidListItems(kidRows)
 
   return {
     metrics,
-    children: kidRows.map((row) => toKid(row, photoUrls, customValues)),
+    children,
     familyPage,
     familyPageSize,
     classrooms: classroomRows.map(toClassroom),
@@ -424,6 +474,21 @@ export async function getKidsDashboardData(companyIdInput?: string | null, famil
     ministries: ministryRows.map((row) => ({ id: row.id, name: row.name, leaderPersonId: row.leader_person_id })),
     customFields,
   }
+}
+
+/** Busca da visão geral: nome da criança ou do responsável + faixa etária. Exige pelo menos um filtro. */
+export async function searchKidsOverview(companyIdInput: string | null | undefined, filters: { query?: string; ageBand?: KidAgeBand }): Promise<KidListItem[]> {
+  const resolvedCompanyId = await companyId(companyIdInput)
+  await requirePermission("kids.view", resolvedCompanyId)
+  const query = filters.query?.trim() ?? ""
+  if (!query && !filters.ageBand) return []
+  const rows = await queryKidRows(resolvedCompanyId, {
+    limit: KID_OVERVIEW_SEARCH_LIMIT,
+    offset: 0,
+    query: query || undefined,
+    ageBand: filters.ageBand,
+  })
+  return toKidListItems(rows)
 }
 
 /** Detalhes clínicos decifrados — somente para quem tem kids.health.view. Nunca logar. */

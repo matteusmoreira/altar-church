@@ -54,11 +54,12 @@ import {
   buildGuardianCalledPayload,
   buildIncidentCreatedPayload,
 } from "./events"
-import { getKidHealthDetails, getKidsCommunicationData, getKidsDashboardData, getKidsReportsData, getKidsSessionsData, resolveKidEffectiveSettings, listKidConversationsForGuardian, listKidConversationsForStaff } from "./data"
+import { getKidHealthDetails, getKidsCommunicationData, getKidsDashboardData, getKidsReportsData, getKidsSessionsData, resolveKidEffectiveSettings, listKidConversationsForGuardian, listKidConversationsForStaff, searchKidsOverview } from "./data"
 import { splitFullName } from "./form-model"
 import { listKidCustomFields, saveKidCustomValues, validateKidCustomValues } from "./custom-fields"
 import { assertKidsLeaderScope } from "./access"
 import type {
+  KidAgeBand,
   KidCheckinCandidate,
   KidConsentType,
   KidEditData,
@@ -1229,6 +1230,22 @@ export async function loadKidsFamiliesPage(input: unknown): Promise<{ ok: boolea
     await context("kids.view")
     const data = await getKidsDashboardData(undefined, page)
     return { ok: true, children: data.children, page: data.familyPage, pageSize: data.familyPageSize }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
+  }
+}
+
+const kidOverviewFilterSchema = z.object({
+  query: z.string().trim().max(120).optional(),
+  ageBand: z.enum(["0-1", "2-3", "4-6", "7-9", "10-12", "13+"] as const satisfies readonly KidAgeBand[]).optional(),
+})
+
+/** Busca da visão geral do Kids por nome (criança ou responsável) e faixa etária. */
+export async function loadKidsOverviewFiltered(input: unknown): Promise<{ ok: boolean; children?: KidListItem[]; error?: string }> {
+  try {
+    const filters = kidOverviewFilterSchema.parse(input)
+    await context("kids.view")
+    return { ok: true, children: await searchKidsOverview(undefined, filters) }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Erro inesperado" }
   }

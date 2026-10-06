@@ -256,6 +256,12 @@ export interface KidListItem {
   customValues: KidCustomFieldValue[]
 }
 
+/** Faixas etárias do filtro da visão geral do Kids (anos completos). */
+export type KidAgeBand = "0-1" | "2-3" | "4-6" | "7-9" | "10-12" | "13+"
+
+/** Limite de resultados da busca da visão geral. */
+export const KID_OVERVIEW_SEARCH_LIMIT = 50
+
 export interface KidPersonSuggestion {
   personId: string
   fullName: string
