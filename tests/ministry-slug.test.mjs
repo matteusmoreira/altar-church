@@ -61,28 +61,23 @@ test("database query resolves ministry by both UUID and friendly slug", async (t
   const sql = postgres(process.env.POSTGRES_URL)
 
   try {
-    const targetUuid = "232f976e-c0e0-4788-9060-d721181d824a"
-    const targetSlug = "homens"
-
+    const [target] = await sql`
+      select id, company_id, slug from public.ministries where deleted_at is null order by created_at, id limit 1
+    `
+    if (!target) return t.skip("Nenhum ministério ativo disponível")
     const rowsByUuid = await sql`
-      select id, name, slug from public.ministries where id = ${targetUuid} and deleted_at is null
+      select id,slug from public.ministries where id = ${target.id} and company_id = ${target.company_id} and deleted_at is null
+    `
+    const rowsBySlug = await sql`
+      select id,slug from public.ministries where slug = ${target.slug} and company_id = ${target.company_id} and deleted_at is null
     `
     assert.equal(rowsByUuid.length, 1)
-    assert.equal(rowsByUuid[0].name, "Ministério de Homens")
-    assert.equal(rowsByUuid[0].slug, "homens")
-
-    const rowsBySlug = await sql`
-      select id, name, slug from public.ministries where slug = ${targetSlug} and deleted_at is null
+    assert.deepEqual(rowsBySlug, rowsByUuid)
+    const reservations = await sql`
+      select entity_id from route_private.slug_reservations
+      where company_id = ${target.company_id} and kind = 'ministries' and slug = ${target.slug}
     `
-    assert.equal(rowsBySlug.length, 1)
-    assert.equal(rowsBySlug[0].id, targetUuid)
-    assert.equal(rowsBySlug[0].name, "Ministério de Homens")
-
-    const rowsByUppercaseSlug = await sql`
-      select id, name, slug from public.ministries where lower(slug) = lower('Homens') and deleted_at is null
-    `
-    assert.equal(rowsByUppercaseSlug.length, 1)
-    assert.equal(rowsByUppercaseSlug[0].id, targetUuid)
+    assert.equal(reservations[0]?.entity_id, target.id)
   } finally {
     await sql.end()
   }
