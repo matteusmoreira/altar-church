@@ -12,7 +12,7 @@ function load(path, bindings) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const loadedModule = { exports: {} }
-  new Function("require", "module", "exports", source)((name) => name in bindings ? bindings[name] : require(name), loadedModule, loadedModule.exports)
+  new Function("require", "module", "exports", source)((name) => name in bindings ? bindings[name] : name === "@/lib/types" ? load("src/lib/types.ts", {}) : require(name), loadedModule, loadedModule.exports)
   return loadedModule.exports
 }
 const tag = (db) => async (strings, ...params) => {

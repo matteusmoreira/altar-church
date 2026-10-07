@@ -10,7 +10,7 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { jsonbParam } from "@/lib/db/jsonb"
 import { createClient } from "@/lib/supabase/server"
 import { afterResponse } from "@/lib/performance/after-response"
-import { hasPermission, type Permission, type User } from "@/lib/types"
+import { hasAnyRole, hasPermission, type Permission, type User } from "@/lib/types"
 import type { IntegrationEventType } from "@/lib/integrations/types"
 import {
   KIDS_CONSENT_VERSION,
@@ -127,7 +127,7 @@ async function contextAny(permissions: Permission[]) {
   const companyId = requireUserCompanyId(user)
   await assertKidsLeaderScope(user, companyId)
   await requireCompanyAccess(companyId)
-  if (!permissions.some((permission) => hasPermission(user.role, permission))) {
+  if (!permissions.some((permission) => hasPermission(user, permission))) {
     throw new Error("Acesso negado")
   }
   return { user, companyId }
@@ -216,9 +216,13 @@ function timeNowPtBr(): string {
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date())
 }
 
+function isRoomVolunteer(user: User) {
+  return hasAnyRole(user, ["volunteer"]) && !hasAnyRole(user, ["superadmin", "admin", "pastor"])
+}
+
 /** Voluntário só atua em crianças da sala atribuída na sessão. */
 async function assertVolunteerAttendanceAccess(user: User, companyId: string, attendanceId: string) {
-  if (user.role !== "volunteer") return
+  if (!isRoomVolunteer(user)) return
   const sql = getSql()
   const rows = await sql<{ id: string }[]>`
     select assignment.id
@@ -1839,7 +1843,7 @@ export async function checkinKid(input: z.input<typeof kidCheckinSchema>): Promi
         const effectiveCapacity = classroom.capacity_override ?? classroom.capacity
         let capacityOverride = false
         if (occupied >= effectiveCapacity) {
-          if (!settings.allowCapacityOverride || !hasPermission(user.role, "kids.sessions.manage")) {
+          if (!settings.allowCapacityOverride || !hasPermission(user, "kids.sessions.manage")) {
             throw new Error(`Sala ${classroom.name} está lotada (${occupied}/${effectiveCapacity})`)
           }
           if (parsed.overrideReason.trim().length < 5) {
@@ -2549,7 +2553,7 @@ export async function moveKidRoom(input: unknown): Promise<KidsActionResult> {
         where session_classroom_id = ${classroom.id} and status in ('checked_in', 'checkout_requested')
       `
       const effectiveCapacity = classroom.capacity_override ?? classroom.capacity
-      if (Number(occupiedRows[0]?.count ?? 0) >= effectiveCapacity && !hasPermission(user.role, "kids.sessions.manage")) {
+      if (Number(occupiedRows[0]?.count ?? 0) >= effectiveCapacity && !hasPermission(user, "kids.sessions.manage")) {
         throw new Error(`Sala ${classroom.name} está lotada`)
       }
 
@@ -2582,7 +2586,7 @@ export async function saveKidIncident(input: z.input<typeof kidIncidentSchema>):
   try {
     const parsed = kidIncidentSchema.parse(input)
     const { user, companyId } = await contextAny(["kids.room.view", "kids.checkin.create"])
-    if (user.role === "volunteer" && !parsed.sessionClassroomId) {
+    if (isRoomVolunteer(user) && !parsed.sessionClassroomId) {
       throw new Error("Voluntário deve informar a sala do incidente")
     }
     const sql = getSql()
@@ -2655,7 +2659,7 @@ export async function saveKidLessonReport(input: z.input<typeof kidLessonReportS
     const sql = getSql()
 
     // Voluntário só registra relatório da sala atribuída.
-    if (user.role === "volunteer") {
+    if (isRoomVolunteer(user)) {
       if (!parsed.sessionClassroomId) throw new Error("Voluntário deve informar a sala")
       const assignment = await sql<{ id: string }[]>`
         select id from public.kid_staff_assignments

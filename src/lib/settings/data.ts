@@ -21,6 +21,7 @@ export interface SettingsProfile {
   name: string
   email: string
   role: UserRole
+  roles: UserRole[]
   active: boolean
   createdAt: string
   cellIds: string[]
@@ -53,6 +54,7 @@ interface ProfileRow {
   name: string
   email: string
   role: UserRole
+  roles: UserRole[]
   active: boolean
   created_at: Date | string
   cell_ids: string[]
@@ -90,6 +92,7 @@ function toProfile(row: ProfileRow): SettingsProfile {
     name: row.name,
     email: row.email,
     role: row.role,
+    roles: row.roles ?? [row.role],
     active: row.active,
     createdAt: toIso(row.created_at),
     cellIds: row.cell_ids ?? [],
@@ -120,6 +123,7 @@ export async function getSettingsData(): Promise<SettingsData> {
           p.name,
           p.email,
           p.role,
+          p.roles,
           p.active,
           p.created_at,
           array(select g.id::text from public.groups g where g.company_id = p.company_id
@@ -139,6 +143,7 @@ export async function getSettingsData(): Promise<SettingsData> {
           p.name,
           p.email,
           p.role,
+          p.roles,
           p.active,
           p.created_at,
           array(select g.id::text from public.groups g where g.company_id = p.company_id

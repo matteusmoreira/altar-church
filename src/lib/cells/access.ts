@@ -3,6 +3,7 @@ import "server-only"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { hasAnyRole } from "@/lib/types"
 import type { Permission, User } from "@/lib/types"
 
 export type CellContext = {
@@ -32,12 +33,12 @@ export async function requireCellPermission(permission: Permission, companyIdInp
 }
 
 export function isCellAdministrator(user: User) {
-  return user.role === "superadmin" || user.role === "admin"
+  return hasAnyRole(user, ["superadmin", "admin"])
 }
 
 export async function canManageCell(context: CellContext, groupId: string) {
   if (isCellAdministrator(context.user)) return true
-  if (!context.personId || !["cell_supervisor", "cell_leader"].includes(context.user.role)) return false
+  if (!context.personId || !hasAnyRole(context.user, ["cell_supervisor", "cell_leader"])) return false
   const rows = await getSql()<{ allowed: boolean }[]>`
     select exists(
       select 1 from public.groups cell
@@ -46,8 +47,8 @@ export async function canManageCell(context: CellContext, groupId: string) {
         and cell.type = 'cell'
         and cell.deleted_at is null
         and (
-          (${context.user.role} = 'cell_supervisor' and cell.coordinator_person_id = ${context.personId})
-          or (${context.user.role} = 'cell_leader' and cell.leader_person_id = ${context.personId})
+          (${(context.user.roles ?? [context.user.role]).includes('cell_supervisor')} and cell.coordinator_person_id = ${context.personId})
+          or (${(context.user.roles ?? [context.user.role]).includes('cell_leader')} and cell.leader_person_id = ${context.personId})
         )
     ) as allowed
   `
@@ -60,7 +61,7 @@ export async function requireManagedCell(context: CellContext, groupId: string) 
 
 export async function requireCellLeaderContext() {
   const context = await getCellContext()
-  if (context.user.role !== "cell_leader" || !context.personId) {
+  if (!hasAnyRole(context.user, ["cell_leader"]) || !context.personId) {
     throw new Error("Acesso restrito ao líder de célula")
   }
   await requirePermission("cells.leader.manage", context.companyId)
@@ -68,7 +69,7 @@ export async function requireCellLeaderContext() {
 }
 
 export async function requireOwnedLeaderCell(context: CellContext, groupId: string) {
-  if (context.user.role !== "cell_leader" || !context.personId) {
+  if (!hasAnyRole(context.user, ["cell_leader"]) || !context.personId) {
     throw new Error("Acesso restrito ao líder de célula")
   }
   const rows = await getSql()<{ id: string }[]>`

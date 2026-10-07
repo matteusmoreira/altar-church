@@ -187,8 +187,8 @@ function Editor({
     future = useRef<FlowDefinition[]>([]);
   const [canvasState, setCanvasState] = useState<Record<string, Pick<CanvasNode, "measured" | "dragging">>>({});
   const [dragging, setDragging] = useState(false);
-  const canEdit = hasPermission(workspace.role, "automations.edit"),
-    canPublish = hasPermission(workspace.role, "automations.publish");
+  const canEdit = hasPermission(workspace.roles ?? [workspace.role], "automations.edit"),
+    canPublish = hasPermission(workspace.roles ?? [workspace.role], "automations.publish");
   const issues = useMemo(() => validateFlow(definition), [definition]),
     active = definition.nodes.find((n) => n.id === selected);
   const commit = useCallback(

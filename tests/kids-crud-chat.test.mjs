@@ -32,7 +32,7 @@ test("Kids guardian unlink is soft, audited and preserves the last guardian", ()
 })
 
 test("Kids leader access is linked to the configured ministry", () => {
-  assert.match(access, /user\.role !== "ministry_leader"/)
+  assert.match(access, /\(user\.roles \?\? \[user\.role\]\)\.includes\("ministry_leader"\)/)
   assert.match(access, /ministry\.leader_person_id = profile\.person_id/)
   assert.match(access, /settings\.ministry_id = ministry\.id/)
   assert.match(migration, /kids_can_manage/)

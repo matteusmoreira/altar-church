@@ -1,4 +1,6 @@
-"use server";
+"use server"
+
+import { hasAnyRole } from "@/lib/types";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -114,7 +116,7 @@ async function assertManagerDepartments(
   departmentIds: string[],
 ) {
   if (!user) throw new Error("Acesso negado");
-  if (["superadmin", "admin", "pastor"].includes(user.role)) return;
+  if (hasAnyRole(user, ["superadmin", "admin", "pastor"])) return;
   const uniqueIds = [...new Set(departmentIds)];
   if (uniqueIds.length === 0)
     throw new Error("Acesso departamental obrigatório");

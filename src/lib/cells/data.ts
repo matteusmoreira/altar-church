@@ -1,5 +1,6 @@
 import "server-only"
 
+import { hasAnyRole } from "@/lib/types"
 import { hasPermission } from "@/lib/types"
 import { getCellContext, isCellAdministrator, requireCellPermission } from "./access"
 import { getSql } from "@/lib/db/client"
@@ -23,8 +24,8 @@ const iso = (value: DateValue | null | undefined) => value instanceof Date ? val
 
 export async function getCellFeaturesData(): Promise<CellFeaturesData> {
   const baseContext = await getCellContext()
-  const leader = baseContext.user.role === "cell_leader"
-  const manager = hasPermission(baseContext.user.role, "cells.view") && ["superadmin", "admin", "cell_supervisor"].includes(baseContext.user.role)
+  const leader = hasAnyRole(baseContext.user, ["cell_leader"])
+  const manager = hasPermission(baseContext.user, "cells.view") && hasAnyRole(baseContext.user, ["superadmin", "admin", "cell_supervisor"])
   const canPublishToAll = isCellAdministrator(baseContext.user)
   const operationsManager = manager || leader
   const context = leader
@@ -38,9 +39,9 @@ export async function getCellFeaturesData(): Promise<CellFeaturesData> {
     ? await sql<{ id: string; name: string; cell_photo_url?: string | null; meeting_day?: string | null; meeting_time?: string | null; meeting_location?: string | null; neighborhood?: string | null; city?: string | null; description?: string | null }[]>`
         select id, name, cell_photo_url, meeting_day, meeting_time::text as meeting_time, meeting_location, neighborhood, city, description from public.groups cell
         where cell.company_id = ${context.companyId} and cell.type = 'cell' and cell.deleted_at is null
-          and (${context.user.role} not in ('cell_supervisor', 'cell_leader')
-            or (${context.user.role} = 'cell_supervisor' and cell.coordinator_person_id = ${context.personId})
-            or (${context.user.role} = 'cell_leader' and cell.leader_person_id = ${context.personId}))
+          and (${(context.user.roles ?? [context.user.role]).some(role => ['admin', 'superadmin'].includes(role))}
+            or (${(context.user.roles ?? [context.user.role]).includes('cell_supervisor')} and cell.coordinator_person_id = ${context.personId})
+            or (${(context.user.roles ?? [context.user.role]).includes('cell_leader')} and cell.leader_person_id = ${context.personId}))
         order by name
       `
     : leader

@@ -31,7 +31,7 @@ export async function requireDashboardModuleAccess(input: DashboardModuleAccessI
   }
 
   const { permission } = input
-  if (permission && !hasPermission(user.role, permission)) {
+  if (permission && !hasPermission(user, permission)) {
     redirect("/dashboard?access=denied")
   }
 

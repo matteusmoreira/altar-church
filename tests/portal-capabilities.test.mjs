@@ -26,13 +26,13 @@ test("leader opens the existing scoped ministry workspace from the portal", () =
   assert.match(page, /requireMemberContext/)
   assert.match(page, /requireMinistryPermission[\s\S]*manage: true/)
   assert.match(page, /initialTab="configuracoes" memberPortal/)
-  assert.match(actions, /const isAdmin = \["superadmin", "admin", "pastor"\]/)
+  assert.match(actions, /const isAdmin = hasAnyRole\(access\.user, \["superadmin", "admin", "pastor"\]/)
   assert.match(actions, /if \(isAdmin\) \{[\s\S]*set leader_person_id/)
 })
 
 test("ministry leader has portal permissions, not administrative dashboard permissions", () => {
   const types = read("src/lib/types.ts")
-  const leaderBlock = types.match(/ministry_leader:\s*\[([\s\S]*?)\n\s*\],\n\s*cell_supervisor:/)?.[1] ?? ""
+  const leaderBlock = types.match(/ministry_leader:\s*\[([\s\S]*?)\r?\n\s*\],\r?\n\s*cell_supervisor:/)?.[1] ?? ""
 
   assert.match(leaderBlock, /ministries\.self\.view/)
   assert.match(leaderBlock, /kids\.guardian\.self/)

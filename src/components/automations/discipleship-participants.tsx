@@ -11,8 +11,8 @@ export async function DiscipleshipParticipants() {
   const user = await getCurrentUser();
   if (
     !user ||
-    !hasPermission(user.role, "automations.tasks") ||
-    !hasPermission(user.role, "content.edit")
+    !hasPermission(user, "automations.tasks") ||
+    !hasPermission(user, "content.edit")
   )
     return null;
   const company = requireUserCompanyId(user),

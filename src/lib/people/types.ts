@@ -56,6 +56,7 @@ export interface PersonListItem {
   country: string
   accessProfile: string | null
   profileId: string | null
+  accessRoles?: PersonAccessRole[]
   accessRole: PersonAccessRole | null
   accessActive: boolean | null
   lastLoginAt: string | null
@@ -492,6 +493,7 @@ export interface SavePersonInput {
   isActive?: boolean
   inviteAccess?: boolean
   accessRole?: PersonAccessRole
+  accessRoles?: PersonAccessRole[]
   temporaryPassword?: string
   cellIds?: string[]
 }
@@ -500,6 +502,7 @@ export interface InvitePersonAccessInput {
   personId: string
   companyId?: string | null
   role: PersonAccessRole
+  roles?: PersonAccessRole[]
   temporaryPassword: string
   cellIds?: string[]
 }

@@ -132,9 +132,9 @@ export function AutomationWorkspace({
       people: { id: string; name: string; reason: string }[];
       selected: string[];
     } | null>(null);
-  const edit = hasPermission(workspace.role, "automations.edit"),
-    operate = hasPermission(workspace.role, "automations.operate"),
-    tasks = hasPermission(workspace.role, "automations.tasks");
+  const edit = hasPermission(workspace.roles ?? [workspace.role], "automations.edit"),
+    operate = hasPermission(workspace.roles ?? [workspace.role], "automations.operate"),
+    tasks = hasPermission(workspace.roles ?? [workspace.role], "automations.tasks");
   async function action(fn: () => Promise<unknown>, success?: string) {
     if (preview) {
       toast.info("Esta prévia não grava nem envia mensagens");
@@ -854,7 +854,7 @@ export function AutomationWorkspace({
               </select>
               <Button
                 disabled={
-                  !hasPermission(workspace.role, "automations.publish") ||
+                  !hasPermission(workspace.roles ?? [workspace.role], "automations.publish") ||
                   !instance ||
                   busy
                 }

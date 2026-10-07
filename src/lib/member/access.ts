@@ -13,7 +13,7 @@ export function isPortalRole(role: UserRole) {
 
 export async function requireMemberContext() {
   const user = await requireUser()
-  if (!isPortalRole(user.role)) redirect("/dashboard")
+  if (!(user.roles ?? [user.role]).some(isPortalRole)) redirect("/dashboard")
   if (!user.churchId) redirect("/login")
 
   const rows = await getSql()<{ person_id: string | null }[]>`

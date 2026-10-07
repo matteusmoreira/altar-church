@@ -1,3 +1,4 @@
+import { hasAnyRole } from "@/lib/types"
 import type { NextRequest } from "next/server"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     const scope = request.nextUrl.searchParams.get("scope")
 
     const selfContext = await getVolunteerSelfContext()
-    const isManager = ["superadmin", "admin", "pastor", "ministry_leader", "cell_supervisor"].includes(user.role)
+    const isManager = hasAnyRole(user, ["superadmin", "admin", "pastor", "ministry_leader", "cell_supervisor"])
     const wantsChurch = scope === "church" || (!scope && isManager && !selfContext)
 
     const nowIso = new Date().toISOString()

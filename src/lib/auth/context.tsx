@@ -132,7 +132,7 @@ export function AuthProvider({
   const hasRole = useCallback(
     (roles: UserRole[]) => {
       if (!user) return false;
-      return roles.includes(user.role);
+      return (user.roles ?? [user.role]).some((role) => roles.includes(role));
     },
     [user],
   );

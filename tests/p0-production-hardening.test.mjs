@@ -80,7 +80,7 @@ test("P1 adds reusable server-side dashboard route access guard", () => {
   assert.match(source, /moduleId/)
   assert.match(source, /permission/)
   assert.match(source, /getCompanyEnabledModuleIds/)
-  assert.match(source, /hasPermission\(user\.role, permission\)/)
+  assert.match(source, /hasPermission\(user, permission\)/)
   assert.match(source, /redirect\("\/dashboard\?access=module-inactive"\)/)
   assert.match(source, /redirect\("\/dashboard\?access=denied"\)/)
 })

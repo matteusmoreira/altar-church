@@ -221,10 +221,10 @@ export function AutomationTestPanel({
                           !instanceId ||
                           preview ||
                           !hasPermission(
-                            workspace.role,
+                            workspace.roles ?? [workspace.role],
                             "communication.send",
                           ) ||
-                          !hasPermission(workspace.role, "automations.operate")
+                          !hasPermission(workspace.roles ?? [workspace.role], "automations.operate")
                         }
                         onClick={() => void send(index)}
                       >

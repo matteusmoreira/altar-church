@@ -33,7 +33,7 @@ test("saved and previously double-encoded drafts load with their original blocks
     },
     "@/lib/auth/permissions": { requirePermission: async () => {}, writeAuditLog: async () => {} },
     "@/lib/admin/data": { getCompanyEnabledModuleIds: async () => ["automations"] },
-    "@/lib/types": { hasPermission: () => true },
+    "@/lib/types": { hasPermission: () => true, hasAnyRole: (user, roles) => (user.roles ?? [user.role]).some(role => roles.includes(role)) },
     "@/lib/files/server": {},
     "./ai": {},
     "./openrouter-config": { getOpenRouterApiKey: async () => "" },

@@ -1,4 +1,6 @@
-"use server";
+"use server"
+
+import { hasAnyRole } from "@/lib/types";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -77,7 +79,7 @@ async function context(permission: Permission, departmentId?: string) {
   if (!user) throw new Error("Acesso negado");
   const companyId = requireUserCompanyId(user);
   await requirePermission(permission, companyId);
-  if (["superadmin", "admin", "pastor"].includes(user.role)) return { user, companyId };
+  if (hasAnyRole(user, ["superadmin", "admin", "pastor"])) return { user, companyId };
   const rows = await getSql()<{ allowed: boolean }[]>`
     select exists(
       select 1 from public.volunteer_department_access access
@@ -408,7 +410,7 @@ export async function deleteVolunteerProgramming(programmingIdInput: string): Pr
   try {
     const programmingId = uuid.parse(programmingIdInput);
     const { user, companyId } = await context("schedules.edit");
-    if (!["superadmin", "admin"].includes(user.role))
+    if (!hasAnyRole(user, ["superadmin", "admin"]))
       throw new Error("Somente administrador pode excluir programação");
     const sql = getSql();
     const rows = await sql<{ id: string }[]>`

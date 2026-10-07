@@ -1,5 +1,7 @@
 "use client"
 
+import { AccessRolePicker } from "@/components/shared/access-role-picker"
+
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -259,7 +261,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
   const canInviteAccess = hasRole(["superadmin", "admin", "pastor"])
   const [inviteOpen, setInviteOpen] = useState(false)
   const [isInviting, setIsInviting] = useState(false)
-  const [accessRole, setAccessRole] = useState<PersonAccessRole>(person.accessRole ?? "member")
+  const [accessRoles, setAccessRoles] = useState<PersonAccessRole[]>(person.accessRoles?.length ? person.accessRoles : [person.accessRole ?? "member"])
   const [cellIds, setCellIds] = useState<string[]>(person.cellIds)
   const [temporaryPassword, setTemporaryPassword] = useState("")
   const [kidEditChild, setKidEditChild] = useState<PersonLinkedChild | null>(null)
@@ -340,7 +342,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
       toast.error("Senha temporária deve ter no mínimo 8 caracteres")
       return
     }
-    if (accessRole === "cell_leader" && cellIds.length === 0) {
+    if (accessRoles.includes("cell_leader") && cellIds.length === 0) {
       toast.error("Selecione ao menos uma célula para o líder")
       return
     }
@@ -349,9 +351,10 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
     const result = await invitePersonAccess({
       personId: person.id,
       companyId: person.companyId,
-      role: accessRole,
+      role: accessRoles[0] ?? "member",
+      roles: accessRoles,
       temporaryPassword,
-      cellIds: accessRole === "cell_leader" ? cellIds : [],
+      cellIds: accessRoles.includes("cell_leader") ? cellIds : [],
     })
     setIsInviting(false)
 
@@ -510,7 +513,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
             <TabsList className="w-full justify-start overflow-x-auto h-auto p-1 bg-muted/40 gap-1">
               <TabsTrigger value="perfil" className="gap-1.5 py-2">
                 <UserRound className="h-4 w-4" />
-                <span>Perfil</span>
+                <span>Perfis</span>
               </TabsTrigger>
               <TabsTrigger value="kids" className="gap-1.5 py-2">
                 <Baby className="h-4 w-4" />
@@ -1361,9 +1364,9 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
                 <span className="font-medium">{infoValue(person.email)}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Perfil</span>
+                <span className="text-muted-foreground">Perfis</span>
                 <span className="font-medium">
-                  {person.accessRole ? accessRoleLabels[person.accessRole] : "-"}
+                  {person.accessRole ? (person.accessRoles ?? [person.accessRole]).map((role) => accessRoleLabels[role]).join(", ") : "-"}
                 </span>
               </div>
               {person.hasSystemAccess ? (
@@ -1387,7 +1390,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
                   className="mt-2 w-full"
                   variant={person.hasSystemAccess ? "outline" : "default"}
                   onClick={() => {
-                    setAccessRole(person.accessRole ?? "member")
+                    setAccessRoles(person.accessRoles?.length ? person.accessRoles : [person.accessRole ?? "member"])
                     setCellIds(person.cellIds)
                     setTemporaryPassword("")
                     setInviteOpen(true)
@@ -1455,10 +1458,10 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
                 <span className="font-medium">{formatDocument(person.document)}</span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Perfil de acesso</span>
+                <span className="text-muted-foreground">Perfis de acesso</span>
                 <span className="font-medium">
                   {person.accessRole
-                    ? accessRoleLabels[person.accessRole]
+                    ? (person.accessRoles ?? [person.accessRole]).map((role) => accessRoleLabels[role]).join(", ")
                     : infoValue(person.accessProfile)}
                 </span>
               </div>
@@ -1483,22 +1486,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
               <Input value={person.email ?? ""} disabled placeholder="Sem e-mail" />
             </div>
             <div className="grid gap-2">
-              <Label>Perfil de acesso</Label>
-              <Select
-                value={accessRole}
-                onValueChange={(value) => value && setAccessRole(value as PersonAccessRole)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(accessRoleLabels) as PersonAccessRole[]).map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {accessRoleLabels[role]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AccessRolePicker value={accessRoles} labels={accessRoleLabels} onChange={setAccessRoles} />
             </div>
             <div className="grid gap-2">
               <Label>Senha temporária</Label>
@@ -1510,7 +1498,7 @@ export function MemberDetailClient({ person, cells,  canManageKids }: MemberDeta
                 placeholder="Mínimo 8 caracteres"
               />
             </div>
-            {accessRole === "cell_leader" ? (
+            {accessRoles.includes("cell_leader") ? (
               <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3">
                 <Label>Células do líder *</Label>
                 <p className="text-xs text-muted-foreground">Selecione uma ou mais células que esta pessoa poderá gerenciar.</p>

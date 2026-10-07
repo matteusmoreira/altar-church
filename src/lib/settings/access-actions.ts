@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { hasAnyRole } from "@/lib/types"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
@@ -9,11 +10,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin"
 import { accessSchema, assertAccessTarget, type SaveAccessInput } from "./access-schema"
 
 type Result = { ok: boolean; error?: string }
-type Profile = { id: string; role: string; auth_user_id: string | null; person_id: string | null; email: string; active: boolean }
+type Profile = { id: string; role: string; roles: string[]; auth_user_id: string | null; person_id: string | null; email: string; active: boolean }
 
 async function context() {
   const actor = await getCurrentUser()
-  if (!actor?.churchId || actor.role !== "admin") throw new Error("Apenas o administrador da igreja pode gerenciar acessos neste painel")
+  if (!actor?.churchId || !hasAnyRole(actor, ["admin"])) throw new Error("Apenas o administrador da igreja pode gerenciar acessos neste painel")
   await requirePermission("settings.manage_settings", actor.churchId)
   const auth = createSupabaseAdminClient()
   if (!auth) throw new Error("A gestão de acessos precisa ser configurada no servidor")
@@ -31,16 +32,19 @@ export async function saveChurchAccess(input: SaveAccessInput): Promise<Result> 
   try {
     const { actor, companyId, auth } = await context()
     const parsed = accessSchema.parse(input)
+    const roles = [...new Set(parsed.roles ?? [parsed.role])]
+    parsed.role = roles[0]
+    parsed.roles = roles
     const db = getSql()
     let profileId = parsed.id
     await db.begin(async (tx) => {
       // Serialize church edits, including administrator protection and duplicate checks.
       await tx`select id from public.companies where id = ${companyId} for update`
       const authorized = await tx<{ id: string }[]>`select id from public.profiles
-        where id = ${actor.id} and company_id = ${companyId} and role = 'admin' and active = true and deleted_at is null`
+        where id = ${actor.id} and company_id = ${companyId} and 'admin' = any(roles) and active = true and deleted_at is null`
       if (!authorized.length) throw new Error("Seu acesso de administrador não está mais ativo")
       const existing = parsed.id ? (await tx<Profile[]>`
-        select id, role, auth_user_id, person_id, email, active from public.profiles
+        select id, role, roles, auth_user_id, person_id, email, active from public.profiles
         where id = ${parsed.id} and company_id = ${companyId} and deleted_at is null for update
       `)[0] : null
       if (parsed.id && !existing) throw new Error("Acesso não encontrado nesta igreja")
@@ -51,7 +55,7 @@ export async function saveChurchAccess(input: SaveAccessInput): Promise<Result> 
         and (${parsed.id ?? null}::uuid is null or id <> ${parsed.id ?? null}) limit 1
       `
       if (duplicate.length) throw new Error("Este e-mail já possui um cadastro. Use outro e-mail")
-      const cellIds = parsed.role === "cell_leader" ? [...new Set(parsed.cellIds)] : []
+      const cellIds = roles.includes("cell_leader") ? [...new Set(parsed.cellIds)] : []
       if (cellIds.length) {
         const cells = await tx<{ id: string }[]>`select id from public.groups
           where company_id = ${companyId} and id = any(${cellIds}::uuid[])
@@ -70,11 +74,11 @@ export async function saveChurchAccess(input: SaveAccessInput): Promise<Result> 
       }
       if (existing) {
         await tx`update public.profiles set name = ${parsed.name}, email = ${parsed.email},
-          role = ${parsed.role}, active = ${parsed.active}, auth_user_id = ${authId}
+          role = ${parsed.role}, roles = ${roles}::text[], active = ${parsed.active}, auth_user_id = ${authId}
           where id = ${existing.id} and company_id = ${companyId}`
       } else {
-        const rows = await tx<{ id: string }[]>`insert into public.profiles (company_id, auth_user_id, name, email, role, active)
-          values (${companyId}, ${authId}, ${parsed.name}, ${parsed.email}, ${parsed.role}, ${parsed.active}) returning id`
+        const rows = await tx<{ id: string }[]>`insert into public.profiles (company_id, auth_user_id, name, email, role, roles, active)
+          values (${companyId}, ${authId}, ${parsed.name}, ${parsed.email}, ${parsed.role}, ${roles}::text[], ${parsed.active}) returning id`
         profileId = rows[0].id
       }
       let personId = existing?.person_id
@@ -98,7 +102,7 @@ export async function saveChurchAccess(input: SaveAccessInput): Promise<Result> 
         last_name = ${parsed.name.split(" ").slice(1).join(" ")}, email = ${parsed.email}, updated_at = now()
         where id = ${personId} and company_id = ${companyId}`
       await tx`update public.profiles set person_id = ${personId} where id = ${profileId!} and company_id = ${companyId}`
-      if (parsed.role === "cell_leader" || existing?.role === "cell_leader") {
+      if (roles.includes("cell_leader") || existing?.roles.includes("cell_leader")) {
         await tx`select public.sync_cell_leader_assignments(${companyId}, ${personId}, ${cellIds}::uuid[])`
       }
       await tx`update public.companies set user_count = (select count(*) from public.profiles
@@ -114,7 +118,7 @@ export async function saveChurchAccess(input: SaveAccessInput): Promise<Result> 
     })
     committed = true
     await writeAuditLog({ action: parsed.id ? "access.update" : "access.create", entityTable: "profiles",
-      entityId: profileId, companyId, metadata: { role: parsed.role, active: parsed.active, passwordChanged: Boolean(parsed.password) } })
+      entityId: profileId, companyId, metadata: { roles, active: parsed.active, passwordChanged: Boolean(parsed.password) } })
     revalidatePath("/configuracoes")
     revalidatePath("/", "layout")
     return { ok: true }
@@ -134,9 +138,9 @@ export async function deleteChurchAccess(profileId: string): Promise<Result> {
     const deleted = await db.begin(async (tx) => {
       await tx`select id from public.companies where id = ${companyId} for update`
       const authorized = await tx<{ id: string }[]>`select id from public.profiles
-        where id = ${actor.id} and company_id = ${companyId} and role = 'admin' and active = true and deleted_at is null`
+        where id = ${actor.id} and company_id = ${companyId} and 'admin' = any(roles) and active = true and deleted_at is null`
       if (!authorized.length) throw new Error("Seu acesso de administrador não está mais ativo")
-      const target = (await tx<Profile[]>`select id, role, auth_user_id, person_id, email, active
+      const target = (await tx<Profile[]>`select id, role, roles, auth_user_id, person_id, email, active
         from public.profiles where id = ${id} and company_id = ${companyId} and deleted_at is null for update`)[0]
       if (!target) throw new Error("Acesso não encontrado nesta igreja")
       assertAccessTarget(actor.id, target)

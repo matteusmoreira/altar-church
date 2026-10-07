@@ -53,6 +53,7 @@ interface PersonRow {
   country: string
   access_profile: string | null
   profile_id: string | null
+  access_roles: PersonAccessRole[] | null
   access_role: PersonAccessRole | null
   access_active: boolean | null
   last_login_at: Date | string | null
@@ -319,6 +320,7 @@ function toPerson(row: PersonRow, photoUrl?: string | null): PersonListItem {
     accessProfile: row.access_profile,
     profileId: row.profile_id,
     accessRole: row.access_role,
+    accessRoles: row.access_roles ?? (row.access_role ? [row.access_role] : []),
     accessActive: row.access_active,
     lastLoginAt: row.last_login_at ? toIso(row.last_login_at) : null,
     hasSystemAccess: Boolean(row.profile_id),
@@ -428,6 +430,7 @@ export async function getPersonDetail(personId: string, companyIdInput?: string 
         p.access_profile,
         p.profile_id,
         pr.role as access_role,
+        pr.roles as access_roles,
         pr.active as access_active,
         au.last_sign_in_at as last_login_at,
         person_photo.storage_path as photo_path,
@@ -1044,6 +1047,7 @@ export async function listPeopleForCompany(companyId: string, filters: PeopleLis
         p.access_profile,
         p.profile_id,
         pr.role as access_role,
+        pr.roles as access_roles,
         pr.active as access_active,
         au.last_sign_in_at as last_login_at,
         person_photo.storage_path as photo_path,

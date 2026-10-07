@@ -279,3 +279,8 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - O dry-run da Vercel incluiu sessões playwright/.auth e o documento local de contas. A .vercelignore agora exclui credenciais, sessões e logs locais; conferir a lista files do dry-run antes de enviar.
 - O preview automático desta branch falhou por ausência de NEXT_PUBLIC_SUPABASE_URL no ambiente Preview. O deploy de produção usa as variáveis de Production; não enviar .env.local para contornar a configuração.
 - A suíte geral mantém duas falhas anteriores à mudança: conciliação de identidades Auth (ready/completed) e uma expectativa estática antiga de confirmedPeople.join na agenda. Os testes específicos dos slugs e da agenda com a coluna ministry.slug passam.
+
+## Perfis de acesso múltiplos — 07/10/2026
+
+- `20261007174338_multiple_access_roles.sql` aplicada e verificada: 102 migrations, 15 acessos preservados. `profiles.roles` contém os perfis selecionados; `role` continua como principal ordenado para leitores legados. Permissões e verificações de liderança devem considerar a lista completa, mantendo os vínculos de célula/ministério e as restrições de sala do Kids.
+- Os testes de migração executam os gatilhos completos em PostgreSQL isolado e comprovam que remover uma liderança preserva as outras. Os formulários foram verificados por navegador autenticado em igreja `status='test'`, em desktop e mobile. A publicação da interface permanece pendente. Na regressão geral, `tests/member-portal.test.mjs` ainda exige `event.confirmedPeople.join`, ausente também no componente da revisão HEAD anterior; é uma asserção antiga da agenda, fora desta alteração.

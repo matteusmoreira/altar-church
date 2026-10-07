@@ -141,6 +141,7 @@ export interface User {
   email: string
   name: string
   role: UserRole
+  roles?: UserRole[]
   avatar?: string
   churchId?: string
   createdAt: string
@@ -523,9 +524,17 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
 }
 
-export function hasPermission(role: UserRole, permission: Permission): boolean {
-  if (role === "superadmin") return true
-  return ROLE_PERMISSIONS[role].includes(permission)
+export function userRoles(user: Pick<User, "role" | "roles">): UserRole[] {
+  return user.roles?.length ? user.roles : [user.role]
+}
+
+export function hasAnyRole(user: Pick<User, "role" | "roles">, roles: readonly string[]): boolean {
+  return userRoles(user).some((role) => roles.includes(role))
+}
+
+export function hasPermission(subject: UserRole | readonly UserRole[] | Pick<User, "role" | "roles">, permission: Permission): boolean {
+  const roles: readonly UserRole[] = typeof subject === "string" ? [subject] : Array.isArray(subject) ? subject : userRoles(subject as User)
+  return roles.some((role) => role === "superadmin" || ROLE_PERMISSIONS[role]?.includes(permission))
 }
 
 export interface ChurchInfo {

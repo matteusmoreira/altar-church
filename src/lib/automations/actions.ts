@@ -1,4 +1,6 @@
-"use server";
+"use server"
+
+import { hasAnyRole } from "@/lib/types";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -38,7 +40,7 @@ export async function saveAutomationTemplate(input: {
   const name = z.string().trim().min(3).max(160).parse(input.name);
   const definition = flowSchema.parse(input.definition);
   const revision = z.number().int().nonnegative().parse(input.revision);
-  assertDefinitionPermissions(user.role, definition);
+  assertDefinitionPermissions(user.roles ?? [user.role], definition);
   const sql = getSql();
   const rows = revision === 0
     ? await sql`insert into public.automation_templates(company_id,template_id,name,definition) values(${companyId},${input.id},${name},${sql.json(definition)}::jsonb) on conflict do nothing returning revision`
@@ -105,7 +107,7 @@ export async function reconcileAutomationRegistration(id: string) {
     const [run] = await tx`select r.*,v.definition,f.status as flow_status from public.automation_runs r join public.automation_versions v on v.id=r.version_id and v.company_id=r.company_id join public.automation_flows f on f.id=r.flow_id and f.company_id=r.company_id where r.id=${id} and r.company_id=${companyId} for update of r`;
     if (!run || run.status !== "review" || run.flow_status !== "active") throw new Error("Cadastro precisa estar em revisão e o fluxo ativo");
     const definition = parseStoredFlowDefinition(run.definition);
-    assertDefinitionPermissions(user.role, definition);
+    assertDefinitionPermissions(user.roles ?? [user.role], definition);
     if (!definition.nodes.some(n => n.id === run.node_id && n.kind === "register_person")) throw new Error("Esta execução não aguarda revisão de cadastro");
     const [record] = await tx`select * from public.automation_registrations where run_id=${id} and node_id=${run.node_id} and company_id=${companyId} for update`;
     if (!record || record.status === "failed") throw new Error("Cadastro sem progresso recuperável; revise os dados antes de reiniciar");
@@ -142,7 +144,7 @@ export async function sendAutomationDraftTest(input: {
   const { user, companyId } = await automationAccess("automations.operate");
   await automationAccess("communication.send");
   const definition = flowSchema.parse(input.definition);
-  assertDefinitionPermissions(user.role, definition);
+  assertDefinitionPermissions(user.roles ?? [user.role], definition);
   const node = definition.nodes.find(
     (n) => n.id === input.nodeId && n.kind === "whatsapp",
   );
@@ -225,7 +227,7 @@ export async function saveAutomation(input: {
   const { user, companyId } = await automationAccess("automations.edit");
   const definition = flowSchema.parse(input.definition),
     name = z.string().trim().min(3).max(160).parse(input.name);
-  assertDefinitionPermissions(user.role, definition);
+  assertDefinitionPermissions(user.roles ?? [user.role], definition);
   const sql = getSql(),
     body = sql.json(definition);
   const rows = input.id
@@ -255,7 +257,7 @@ export async function publishAutomation(id: string, revision: number) {
     if (!flow || flow.revision !== revision)
       throw new Error("Salve a versão atual antes de publicar");
     const definition = parseStoredFlowDefinition(flow.draft);
-    assertDefinitionPermissions(user.role, definition);
+    assertDefinitionPermissions(user.roles ?? [user.role], definition);
     const issues = validateFlow(definition);
     if (issues.length)
       throw new Error(
@@ -386,7 +388,7 @@ export async function setAutomationStatus(
 export async function simulateAutomation(definition: FlowDefinition) {
   const { user, companyId } = await automationAccess(),
     parsed = flowSchema.parse(definition);
-  assertDefinitionPermissions(user.role, parsed);
+  assertDefinitionPermissions(user.roles ?? [user.role], parsed);
   const filter =
     parsed.nodes.find((n) => n.kind === "trigger")?.config.filter ?? {};
   const people = await selectAudience(companyId, filter),
@@ -446,7 +448,7 @@ export async function saveAutomationSettings(input: {
 }) {
   const { user, companyId } = await automationAccess("automations.edit"),
     sql = getSql();
-  if (!["superadmin", "admin", "pastor"].includes(user.role))
+  if (!hasAnyRole(user, ["superadmin", "admin", "pastor"]))
     throw new Error("Somente administração pode alterar estas configurações");
   if (
     (input.models !== undefined || input.budget !== undefined) &&
@@ -508,7 +510,7 @@ export async function operateAutomationTask(
       await tx`select * from public.automation_tasks where id=${uuid.parse(id)} and company_id=${companyId} for update`;
     if (
       !task ||
-      (!["admin", "pastor", "superadmin"].includes(user.role) &&
+      (!hasAnyRole(user, ["admin", "pastor", "superadmin"]) &&
         task.responsible_id !== user.id)
     )
       throw new Error("Tarefa não disponível para seu perfil");

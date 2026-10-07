@@ -79,9 +79,9 @@ export async function listCellHealth(cellIdInput?: string | null): Promise<CellH
     left join public.cell_health_settings setting on setting.group_id = cell.id and setting.company_id = ${context.companyId}
     where cell.company_id = ${context.companyId} and cell.type = 'cell' and cell.deleted_at is null
       and (${cellId}::uuid is null or cell.id = ${cellId}::uuid)
-      and (${context.user.role} not in ('cell_supervisor', 'cell_leader')
-        or (${context.user.role} = 'cell_supervisor' and cell.coordinator_person_id = ${context.personId})
-        or (${context.user.role} = 'cell_leader' and cell.leader_person_id = ${context.personId}))
+      and (${(context.user.roles ?? [context.user.role]).some(role => ['admin', 'superadmin'].includes(role))}
+        or (${(context.user.roles ?? [context.user.role]).includes('cell_supervisor')} and cell.coordinator_person_id = ${context.personId})
+        or (${(context.user.roles ?? [context.user.role]).includes('cell_leader')} and cell.leader_person_id = ${context.personId}))
     order by cell.name
   `
   return rows.map((row) => {

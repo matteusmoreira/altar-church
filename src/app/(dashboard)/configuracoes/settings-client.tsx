@@ -155,7 +155,7 @@ export function SettingsClient({
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>E-mail</TableHead>
-                    <TableHead>Função</TableHead>
+                    <TableHead>Perfis</TableHead>
                     <TableHead>Empresa</TableHead>
                     <TableHead>Criado em</TableHead>
                     <TableHead>Ativo</TableHead>
@@ -168,9 +168,9 @@ export function SettingsClient({
                       <TableCell className="font-medium text-sm">{profile.name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{profile.email}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={roleColors[profile.role]}>
-                          {roleLabels[profile.role]}
-                        </Badge>
+                        <div className="flex flex-wrap gap-1">{profile.roles.map((role) => <Badge key={role} variant="outline" className={roleColors[role]}>
+                          {roleLabels[role]}
+                        </Badge>)}</div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{profile.companyName ?? "Global"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{formatDate(profile.createdAt)}</TableCell>

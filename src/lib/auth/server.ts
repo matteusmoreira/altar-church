@@ -13,6 +13,7 @@ interface ProfileRow {
   name: string
   email: string
   role: UserRole
+  roles: UserRole[]
   active: boolean
   avatar_url: string | null
   created_at: Date
@@ -24,6 +25,7 @@ function toUser(profile: ProfileRow): User {
     email: profile.email,
     name: profile.name,
     role: profile.role,
+    roles: profile.roles,
     avatar: profile.avatar_url ?? undefined,
     churchId: profile.company_id ?? undefined,
     createdAt: profile.created_at.toISOString(),
@@ -51,6 +53,7 @@ async function getProfileForAuthUser(authUserId: string, email?: string | null, 
       p.name,
       p.email,
       p.role,
+      p.roles,
       p.active,
       p.avatar_url,
       p.created_at

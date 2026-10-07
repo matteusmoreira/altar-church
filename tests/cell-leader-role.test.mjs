@@ -9,7 +9,7 @@ test("cell leader is portal-only and has limited permissions", () => {
   const access = read("src/lib/member/access.ts")
   const dashboardLayout = read("src/app/(dashboard)/layout.tsx")
 
-  const roleBlock = types.match(/cell_leader:\s*\[([\s\S]*?)\n\s*\],\n\s*communication:/)?.[1] ?? ""
+  const roleBlock = types.match(/cell_leader:\s*\[([\s\S]*?)\r?\n\s*\],\r?\n\s*communication:/)?.[1] ?? ""
   assert.match(access, /"cell_leader"/)
   assert.match(roleBlock, /cells\.leader\.manage/)
   assert.doesNotMatch(roleBlock, /members\.view|cells\.view|cells\.edit|cells\.delete|groups\.edit/)
@@ -76,7 +76,7 @@ test("people forms carry leader cell assignments", () => {
   assert.match(list, /formOptions\.cells\.map/)
   assert.match(list, /if \(person\.cellIds\.length > 0\) return accessRoleLabels\.cell_leader/)
   assert.match(detail, /setCellIds\(person\.cellIds\)/)
-  assert.match(detail, /cellIds: accessRole === "cell_leader" \? cellIds : \[\]/)
+  assert.match(detail, /cellIds: accessRoles\.includes\("cell_leader"\) \? cellIds : \[\]/)
 })
 
 test("admin and leader cell forms share fields while leader searches supervisor", () => {

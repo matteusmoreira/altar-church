@@ -1,3 +1,4 @@
+import { hasAnyRole } from "@/lib/types"
 import "server-only"
 
 import { requirePermission } from "@/lib/auth/permissions"
@@ -956,7 +957,7 @@ export async function getKidRoomPanelData(sessionClassroomId: string, companyIdI
   const sc = scRows[0]
   if (!sc || sc.company_id !== resolvedCompanyId) throw new Error("Sala não encontrada")
 
-  const isStaff = ["superadmin", "admin", "pastor", "ministry_leader"].includes(user.role)
+  const isStaff = hasAnyRole(user, ["superadmin", "admin", "pastor", "ministry_leader"])
   if (!isStaff) {
     const assignment = await sql<{ id: string }[]>`
       select id from public.kid_staff_assignments

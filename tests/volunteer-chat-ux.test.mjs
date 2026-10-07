@@ -50,7 +50,7 @@ test("admin can permanently delete one event schedule while preserving event", (
   const actions = read("src/lib/volunteers/v2-actions.ts")
   const ui = read("src/app/(dashboard)/voluntariado/components/escala-culto-drawer.tsx")
   assert.match(actions, /deleteVolunteerEventSchedule/)
-  assert.match(actions, /\["superadmin", "admin"\]\.includes\(user\.role\)/)
+  assert.match(actions, /hasAnyRole\(user, \["superadmin", "admin"\]\)/)
   assert.match(actions, /delete from public\.volunteer_shifts/)
   assert.match(actions, /update public\.events set volunteer_schedule_published_at = null/)
   assert.doesNotMatch(actions, /delete from public\.events/)

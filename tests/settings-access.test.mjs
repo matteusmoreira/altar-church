@@ -49,6 +49,8 @@ test("church access operations against isolated PostgreSQL with simulated Auth",
     .split("create or replace function public.sync_cell_leader_assignments(")[1]
     .split("revoke all on function")[0]
     .replace(/^/, "create or replace function public.sync_cell_leader_assignments("))
+  await db.exec("create role anon; create role authenticated;")
+  await db.exec(source("supabase/migrations/20261007174338_multiple_access_roles.sql").split("create or replace function public.sync_cell_group_leader_member()")[0])
   const church = randomUUID(), other = randomUUID(), actorId = randomUUID()
   await db.query("insert into companies(id) values ($1), ($2)", [church, other])
   await db.query("insert into profiles(id,company_id,name,email,role) values ($1,$2,'Admin','admin@example.test','admin')", [actorId, church])
@@ -81,6 +83,7 @@ test("church access operations against isolated PostgreSQL with simulated Auth",
     "@/lib/db/client": { getSql: () => sql },
     "@/lib/supabase/admin": { createSupabaseAdminClient: () => ({ auth: { admin } }) },
     "./access-schema": schema,
+    "@/lib/types": load("src/lib/types.ts"),
   })
   const input = { name: "Maria Silva", email: "maria@example.test", role: "member", active: true, password: "password123" }
   let profile
@@ -134,6 +137,25 @@ test("church access operations against isolated PostgreSQL with simulated Auth",
     assert.equal((await db.query("select leader_person_id from groups where id=$1", [cell])).rows[0].leader_person_id, profile.person_id)
     assert.deepEqual(await actions.saveChurchAccess({ ...edit, role: "member", cellIds: [] }), { ok: true })
     assert.equal((await db.query("select leader_person_id from groups where id=$1", [cell])).rows[0].leader_person_id, null)
+  })
+  await t.test("combines profiles and removes only the deselected profile", async () => {
+    const cell = randomUUID()
+    await db.query("insert into groups(id,company_id,type,is_active) values ($1,$2,'cell',true)", [cell, church])
+    const edit = { ...input, id: profile.id, email: "maria.souza@example.test", password: "", roles: ["ministry_leader", "cell_leader"], cellIds: [cell] }
+    assert.deepEqual(await actions.saveChurchAccess(edit), { ok: true })
+    let saved = (await db.query("select role,roles from profiles where id=$1", [profile.id])).rows[0]
+    assert.deepEqual(saved.roles, ["cell_leader", "ministry_leader"])
+    const permissions = load("src/lib/types.ts")
+    assert.equal(permissions.hasPermission(saved, "cells.leader.manage"), true)
+    assert.equal(permissions.hasPermission(saved, "ministries.members.manage"), true)
+    assert.equal(permissions.hasPermission(saved, "finance.view"), false)
+    assert.deepEqual(await actions.saveChurchAccess({ ...edit, roles: ["ministry_leader"], cellIds: [] }), { ok: true })
+    saved = (await db.query("select roles from profiles where id=$1", [profile.id])).rows[0]
+    assert.deepEqual(saved.roles, ["ministry_leader"])
+    assert.equal((await db.query("select leader_person_id from groups where id=$1", [cell])).rows[0].leader_person_id, null)
+    assert.equal((await actions.saveChurchAccess({ ...edit, roles: [] })).ok, false)
+    assert.equal((await actions.saveChurchAccess({ ...edit, roles: ["member", "superadmin"] })).ok, false)
+    assert.equal((await actions.saveChurchAccess({ ...edit, id: actorId, email: "admin@example.test", roles: ["admin", "finance"] })).ok, false)
   })
   await t.test("Auth update rejection rolls back profile and person edits", async () => {
     const before = (await db.query("select name,email from profiles where id=$1", [profile.id])).rows[0]

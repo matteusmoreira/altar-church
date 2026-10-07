@@ -62,7 +62,7 @@ test("portal roles cannot enter the administrative dashboard and legacy family p
   const memberAccess = read("src/lib/member/access.ts")
   assert.match(dashboardLayout, /isPortalRole\(user\.role\)[\s\S]*redirect\("\/membro"\)/)
   assert.match(familyPage, /redirect\("\/membro\/kids"\)/)
-  assert.match(memberAccess, /!isPortalRole\(user\.role\)/)
+  assert.match(memberAccess, /\(user\.roles \?\? \[user\.role\]\)\.some\(isPortalRole\)/)
 })
 
 test("member ministry agenda exposes description, confirmed people and tenant-scoped RSVP", () => {

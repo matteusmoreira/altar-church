@@ -1,5 +1,7 @@
 "use server"
 
+import { hasAnyRole } from "@/lib/types"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
@@ -131,7 +133,7 @@ export async function deleteCellStudy(studyIdInput: string, companyIdInput?: str
 
     if (administrator) {
       await requirePermission("cells.study.manage", context.companyId)
-    } else if (context.user.role === "cell_leader") {
+    } else if (hasAnyRole(context.user, ["cell_leader"])) {
       await requirePermission("cells.leader.manage", context.companyId)
     } else {
       throw new Error("Acesso restrito à administração ou ao líder da célula")
@@ -508,7 +510,7 @@ export async function uploadCellPhoto(formData: FormData): Promise<CellActionRes
 
     const context = await getCellContext(companyIdInput)
     const isAdmin = isCellAdministrator(context.user)
-    const isLeader = context.user.role === "cell_leader"
+    const isLeader = hasAnyRole(context.user, ["cell_leader"])
 
     if (!isAdmin && !isLeader) {
       await requirePermission("cells.edit", context.companyId)
@@ -571,7 +573,7 @@ export async function removeCellPhoto(cellIdInput: string): Promise<CellActionRe
     const cellId = uuid.parse(cellIdInput)
     const context = await getCellContext()
     const isAdmin = isCellAdministrator(context.user)
-    const isLeader = context.user.role === "cell_leader"
+    const isLeader = hasAnyRole(context.user, ["cell_leader"])
 
     if (!isAdmin && !isLeader) {
       await requirePermission("cells.edit", context.companyId)

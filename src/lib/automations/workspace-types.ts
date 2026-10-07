@@ -14,7 +14,7 @@ export type FlowItem = {
 export type Workspace = {
   companyId: string;
   userId: string;
-  role: UserRole;
+  role: UserRole; roles?: UserRole[];
   flows: FlowItem[];
   templates?: { id: string; name: string; definition: FlowDefinition; revision: number; deleted_at: string | null }[];
   runs: {

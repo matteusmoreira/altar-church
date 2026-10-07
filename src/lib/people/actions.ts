@@ -8,6 +8,8 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { hasAnyRole } from "@/lib/types"
+import { assertAccessTarget } from "@/lib/settings/access-schema"
 import type { User } from "@/lib/types"
 import type {
   BirthdayPerson,
@@ -88,6 +90,7 @@ const personSchema = z.object({
   isActive: z.boolean().optional().default(true),
   inviteAccess: z.boolean().optional().default(false),
   accessRole: accessRoleSchema.optional(),
+  accessRoles: z.array(accessRoleSchema).min(1, "Selecione ao menos um perfil de acesso").max(9).optional(),
   temporaryPassword: z.string().optional(),
   cellIds: z.array(z.string().uuid()).optional().default([]),
 })
@@ -96,6 +99,7 @@ const invitePersonAccessSchema = z.object({
   personId: z.string().uuid(),
   companyId: nullableUuidSchema,
   role: accessRoleSchema,
+  roles: z.array(accessRoleSchema).min(1, "Selecione ao menos um perfil de acesso").max(9).optional(),
   temporaryPassword: z.string().min(8, "Senha deve ter no mínimo 8 caracteres"),
   cellIds: z.array(z.string().uuid()).optional().default([]),
 })
@@ -127,7 +131,7 @@ function toErrorResult(error: unknown): PeopleActionResult {
 }
 
 function assertCanInviteAccess(user: User) {
-  if (!["superadmin", "admin", "pastor"].includes(user.role)) {
+  if (!hasAnyRole(user, ["superadmin", "admin", "pastor"])) {
     throw new Error("Apenas admin ou pastor podem convidar acesso ao sistema")
   }
 }
@@ -181,8 +185,8 @@ async function refreshCompanyUserCount(companyId: string) {
   `
 }
 
-async function validateCellLeaderCells(companyId: string, role: PersonAccessRole, cellIds: string[]) {
-  if (role !== "cell_leader") return []
+async function validateCellLeaderCells(companyId: string, role: PersonAccessRole | PersonAccessRole[], cellIds: string[]) {
+  if (!(Array.isArray(role) ? role : [role]).includes("cell_leader")) return []
   const uniqueCellIds = [...new Set(cellIds)]
   if (uniqueCellIds.length === 0) {
     throw new Error("Selecione ao menos uma célula para o líder")
@@ -278,6 +282,7 @@ async function provisionPersonAccess(input: {
   role: PersonAccessRole
   temporaryPassword: string
   actorProfileId: string
+  roles?: PersonAccessRole[]
 }) {
   const sql = getSql()
   const people = await sql<{
@@ -300,10 +305,12 @@ async function provisionPersonAccess(input: {
   if (!person) {
     throw new Error("Pessoa não encontrada")
   }
+  const effectiveRoles: PersonAccessRole[] = person.person_type === "visitor" || person.person_type === "attendee"
+    ? ["member"] : [...new Set(input.roles ?? [input.role])]
   const effectiveRole: PersonAccessRole =
     person.person_type === "visitor" || person.person_type === "attendee"
       ? "member"
-      : input.role
+      : effectiveRoles[0]
 
   const email = person.email?.trim().toLowerCase() ?? ""
   if (!email) {
@@ -315,8 +322,9 @@ async function provisionPersonAccess(input: {
     company_id: string | null
     auth_user_id: string | null
     role: string
+    roles: PersonAccessRole[]
   }[]>`
-    select id, company_id, auth_user_id, role
+    select id, company_id, auth_user_id, role, roles
     from public.profiles
     where lower(email) = ${email}
     limit 1
@@ -326,6 +334,8 @@ async function provisionPersonAccess(input: {
   if (profileByEmail?.company_id && profileByEmail.company_id !== input.companyId) {
     throw new Error("Este e-mail já está vinculado a outra igreja")
   }
+
+  if (profileByEmail) assertAccessTarget(input.actorProfileId, profileByEmail, { role: effectiveRole, roles: effectiveRoles, active: true })
 
   const authUserId = await ensureAuthUserWithPassword({
     email,
@@ -347,14 +357,15 @@ async function provisionPersonAccess(input: {
           name = ${person.full_name},
           email = ${email},
           role = ${effectiveRole},
+          roles = ${effectiveRoles}::text[],
           person_id = ${person.id},
           active = true
       where id = ${profileId}
     `
   } else {
     const rows = await sql<{ id: string }[]>`
-      insert into public.profiles (company_id, auth_user_id, person_id, name, email, role, active)
-      values (${input.companyId}, ${authUserId}, ${person.id}, ${person.full_name}, ${email}, ${effectiveRole}, true)
+      insert into public.profiles (company_id, auth_user_id, person_id, name, email, role, roles, active)
+      values (${input.companyId}, ${authUserId}, ${person.id}, ${person.full_name}, ${email}, ${effectiveRole}, ${effectiveRoles}::text[], true)
       returning id
     `
     profileId = rows[0]?.id ?? null
@@ -395,6 +406,7 @@ async function provisionPersonAccess(input: {
     metadata: {
       profileId,
       role: effectiveRole,
+      roles: effectiveRoles,
       email,
       authUserLinked: Boolean(authUserId),
     },
@@ -406,6 +418,8 @@ async function provisionPersonAccess(input: {
     wasReset,
     role: effectiveRole,
     previousRole: profileByEmail?.role ?? null,
+    previousRoles: profileByEmail?.roles ?? [],
+    roles: effectiveRoles,
   }
 }
 
@@ -432,7 +446,7 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
       if (!parsed.temporaryPassword || parsed.temporaryPassword.length < 8) {
         throw new Error("Senha deve ter no mínimo 8 caracteres")
       }
-      await validateCellLeaderCells(companyId, parsed.accessRole, parsed.cellIds)
+      await validateCellLeaderCells(companyId, parsed.accessRoles ?? parsed.accessRole, parsed.cellIds)
     }
 
     const fullName = parsed.fullName || [parsed.firstName, parsed.lastName].filter(Boolean).join(" ")
@@ -567,12 +581,13 @@ export async function savePerson(input: SavePersonInput): Promise<PeopleActionRe
         personId,
         companyId,
         role: parsed.accessRole,
+        roles: parsed.accessRoles,
         temporaryPassword: parsed.temporaryPassword,
         actorProfileId: user.id,
       })
-      if (provisioned.role === "cell_leader") {
+      if (provisioned.roles.includes("cell_leader")) {
         await syncCellLeaderAssignments(companyId, personId, parsed.cellIds)
-      } else if (provisioned.previousRole === "cell_leader") {
+      } else if (provisioned.previousRoles.includes("cell_leader")) {
         await syncCellLeaderAssignments(companyId, personId, [])
       }
     }
@@ -623,18 +638,19 @@ export async function invitePersonAccess(input: InvitePersonAccessInput): Promis
     const { user, companyId } = await resolveActionCompanyId(parsed.companyId)
     assertCanInviteAccess(user)
     await requirePermission("members.edit", companyId)
-    const cellIds = await validateCellLeaderCells(companyId, parsed.role, parsed.cellIds)
+    const cellIds = await validateCellLeaderCells(companyId, parsed.roles ?? parsed.role, parsed.cellIds)
 
     const result = await provisionPersonAccess({
       personId: parsed.personId,
       companyId,
       role: parsed.role,
+      roles: parsed.roles,
       temporaryPassword: parsed.temporaryPassword,
       actorProfileId: user.id,
     })
-    if (result.role === "cell_leader") {
+    if (result.roles.includes("cell_leader")) {
       await syncCellLeaderAssignments(companyId, result.personId, cellIds)
-    } else if (result.previousRole === "cell_leader") {
+    } else if (result.previousRoles.includes("cell_leader")) {
       await syncCellLeaderAssignments(companyId, result.personId, [])
     }
 

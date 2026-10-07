@@ -33,9 +33,9 @@ export default async function EventsPage({ searchParams }: { searchParams?: Prom
     listEventForms(),
     listVolunteerTemplatesForEvents(),
   ])
-  const canCreate = hasPermission(user.role, "events.create")
-  const canEdit = hasPermission(user.role, "events.edit")
-  const canDelete = hasPermission(user.role, "events.delete")
+  const canCreate = hasPermission(user, "events.create")
+  const canEdit = hasPermission(user, "events.edit")
+  const canDelete = hasPermission(user, "events.delete")
   const published = events.filter((event) => event.status === "published").length
   const upcoming = events.filter((event) => event.status === "published" && new Date(event.startDate) >= new Date()).length
   const registrations = events.reduce((total, event) => total + event.goingCount, 0)

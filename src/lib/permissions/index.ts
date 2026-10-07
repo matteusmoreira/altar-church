@@ -4,7 +4,7 @@ import { hasPermission, type Permission } from "@/lib/types"
 export function usePermission(permission: Permission) {
   const { user } = useAuth()
   if (!user) return false
-  return hasPermission(user.role, permission)
+  return hasPermission(user, permission)
 }
 
 export function useRequirePermission(permission: Permission) {

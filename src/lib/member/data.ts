@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db/client"
 import { requireMemberContext } from "./access"
 import { sanitizeCellNoticeHtml } from "@/lib/cells/rich-content"
 import type { MemberAgendaEvent, MemberMinistryItem, MemberPortalCapabilities, MemberPortalSummary, MemberProfile, MinistryMembershipAdminItem } from "./types"
+import { hasAnyRole } from "@/lib/types"
 import type { User } from "@/lib/types"
 
 type DateValue = Date | string
@@ -425,7 +426,7 @@ export async function listMemberMinistries(): Promise<MemberMinistryItem[]> {
 }
 
 export async function listManagedMinistryMemberships(user: User): Promise<MinistryMembershipAdminItem[]> {
-  if (!user.churchId || !["superadmin", "admin", "pastor"].includes(user.role)) return []
+  if (!user.churchId || !hasAnyRole(user, ["superadmin", "admin", "pastor"])) return []
   const rows = await getSql()<{
     id: string
     ministry_id: string

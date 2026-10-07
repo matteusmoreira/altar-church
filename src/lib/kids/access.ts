@@ -5,7 +5,7 @@ import type { User } from "@/lib/types"
 
 /** Restringe o papel genérico ministry_leader ao ministério configurado no Kids. */
 export async function assertKidsLeaderScope(user: User, companyId: string) {
-  if (user.role !== "ministry_leader") return
+  if (!(user.roles ?? [user.role]).includes("ministry_leader") || (user.roles ?? [user.role]).some(role => ["admin", "pastor", "superadmin"].includes(role))) return
   const rows = await getSql()<{ allowed: boolean }[]>`
     select exists (
       select 1

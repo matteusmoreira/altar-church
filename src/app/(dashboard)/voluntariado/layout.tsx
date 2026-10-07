@@ -5,7 +5,7 @@ import { hasPermission } from "@/lib/types"
 
 export default async function VolunteerLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
-  if (hasPermission(user.role, "volunteers.view")) {
+  if (hasPermission(user, "volunteers.view")) {
     await requireDashboardModuleAccess({ moduleId: "volunteers", permission: "volunteers.view" })
     return children
   }

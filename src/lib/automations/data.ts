@@ -1,3 +1,4 @@
+import { hasAnyRole } from "@/lib/types"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getCompanyEnabledModuleIds } from "@/lib/admin/data";
@@ -56,7 +57,7 @@ export function definitionPermissions(
   return [...permissions];
 }
 export function assertDefinitionPermissions(
-  role: UserRole,
+  role: UserRole | readonly UserRole[],
   definition: FlowDefinition,
 ) {
   if (definitionPermissions(definition).some((p) => !hasPermission(role, p)))
@@ -149,7 +150,7 @@ export async function getAutomationWorkspace() {
   ] = await Promise.all([
     sql`select id,name,description,draft,revision,status,published_version_id,updated_at from public.automation_flows where company_id=${companyId} and status<>'archived' order by updated_at desc`,
     sql`select r.id,r.flow_id,r.node_id,(select n->>'kind' from jsonb_array_elements(v.definition->'nodes') n where n->>'id'=r.node_id limit 1) as node_kind,r.status,r.last_error,r.due_at,r.created_at,p.full_name as person_name,f.name as flow_name from public.automation_runs r join public.automation_flows f on f.id=r.flow_id join public.automation_versions v on v.id=r.version_id and v.company_id=r.company_id left join public.people p on p.id=r.person_id and p.company_id=r.company_id where r.company_id=${companyId} and r.history_cleared_at is null order by r.created_at desc limit 150`,
-    sql`select t.*,p.full_name as person_name,pr.name as responsible_name from public.automation_tasks t left join public.people p on p.id=t.person_id and p.company_id=t.company_id left join public.profiles pr on pr.id=t.responsible_id and pr.company_id=t.company_id where t.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=t.run_id and r.company_id=t.company_id and r.history_cleared_at is null) and (${["superadmin", "admin", "pastor"].includes(user.role)} or t.responsible_id=${user.id}) order by t.created_at desc limit 150`,
+    sql`select t.*,p.full_name as person_name,pr.name as responsible_name from public.automation_tasks t left join public.people p on p.id=t.person_id and p.company_id=t.company_id left join public.profiles pr on pr.id=t.responsible_id and pr.company_id=t.company_id where t.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=t.run_id and r.company_id=t.company_id and r.history_cleared_at is null) and (${hasAnyRole(user, ["superadmin", "admin", "pastor"])} or t.responsible_id=${user.id}) order by t.created_at desc limit 150`,
     sql`select company_id,timezone,quiet_start::text,quiet_end::text,allowed_models,monthly_budget_usd,knowledge from public.automation_settings where company_id=${companyId}`,
     sql`select kind,source_id,snapshot,archived_at from public.automation_legacy_archive where company_id=${companyId} order by archived_at desc limit 500`,
     sql`select id,name,status from public.uazapi_instances where company_id=${companyId} and active order by name`,
@@ -161,12 +162,12 @@ export async function getAutomationWorkspace() {
     sql`select id,run_id,node_id,status,last_error,chat_id,receipts from public.automation_deliveries where company_id=${companyId} and run_id in (select id from public.automation_runs where company_id=${companyId} and history_cleared_at is null) order by created_at desc limit 300`,
     sql`select i.interest,p.full_name as person_name,i.created_at from public.automation_interests i join public.people p on p.id=i.person_id and p.company_id=i.company_id where i.company_id=${companyId} and exists(select 1 from public.automation_runs r where r.id=i.run_id and r.company_id=i.company_id and r.history_cleared_at is null) order by i.created_at desc limit 150`,
     sql`select id,name from public.congregations where company_id=${companyId} and deleted_at is null order by name`,
-    hasPermission(user.role, "ministries.view")
+    hasPermission(user, "ministries.view")
       ? sql`select id,name from public.ministries where company_id=${companyId} and deleted_at is null order by name`
       : [],
     sql`select id,description as name from public.person_activities where company_id=${companyId} and deleted_at is null order by description`,
-    hasPermission(user.role, "forms.view") ? sql`select id,slug,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
-    hasPermission(user.role, "crm.view") ? sql`select id,name from public.crm_stages where company_id=${companyId} and deleted_at is null order by sort_order,created_at` : [],
+    hasPermission(user, "forms.view") ? sql`select id,slug,title as name,(create_person or create_account_after_submit) as creates_person from public.forms where company_id=${companyId} and deleted_at is null order by title` : [],
+    hasPermission(user, "crm.view") ? sql`select id,name from public.crm_stages where company_id=${companyId} and deleted_at is null order by sort_order,created_at` : [],
     sql`select template_id as id,name,definition,revision,deleted_at from public.automation_templates where company_id=${companyId}`,
   ]);
   return JSON.parse(
@@ -174,6 +175,7 @@ export async function getAutomationWorkspace() {
       companyId,
       userId: user.id,
       role: user.role,
+      roles: user.roles ?? [user.role],
       flows: flows.map((flow) => ({
         ...flow,
         draft: parseStoredFlowDefinition(flow.draft),

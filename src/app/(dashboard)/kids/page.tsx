@@ -9,15 +9,15 @@ export default async function KidsPage() {
   const user = await requireDashboardModuleAccess({ moduleId: "kids", permission: "kids.view" })
   const data = await getKidsDashboardData()
   const capabilities: KidsCapabilities = {
-    view: hasPermission(user.role, "kids.view"),
-    manageChildren: hasPermission(user.role, "kids.children.manage"),
-    manageGuardians: hasPermission(user.role, "kids.guardians.manage"),
-    manageClasses: hasPermission(user.role, "kids.classes.manage"),
-    manageSessions: hasPermission(user.role, "kids.sessions.manage"),
-    viewHealth: hasPermission(user.role, "kids.health.view"),
-    communicate: hasPermission(user.role, "kids.communicate"),
-    viewReports: hasPermission(user.role, "kids.reports.view"),
-    manageSettings: hasPermission(user.role, "kids.settings.manage"),
+    view: hasPermission(user, "kids.view"),
+    manageChildren: hasPermission(user, "kids.children.manage"),
+    manageGuardians: hasPermission(user, "kids.guardians.manage"),
+    manageClasses: hasPermission(user, "kids.classes.manage"),
+    manageSessions: hasPermission(user, "kids.sessions.manage"),
+    viewHealth: hasPermission(user, "kids.health.view"),
+    communicate: hasPermission(user, "kids.communicate"),
+    viewReports: hasPermission(user, "kids.reports.view"),
+    manageSettings: hasPermission(user, "kids.settings.manage"),
   }
   return <KidsClient data={data} capabilities={capabilities} securityStatus={getKidsSecurityStatus()} />
 }

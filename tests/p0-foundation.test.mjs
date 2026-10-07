@@ -27,7 +27,7 @@ test("server permission helper blocks unauthorized users and exposes audit loggi
   assert.match(source, /export async function requirePermission/)
   assert.match(source, /export async function requireCompanyAccess/)
   assert.match(source, /export async function writeAuditLog/)
-  assert.match(source, /hasPermission\(user\.role, permission\)/)
+  assert.match(source, /hasPermission\(user, permission\)/)
   assert.match(source, /Acesso negado/)
   assert.match(source, /insert into public\.audit_logs/)
 })

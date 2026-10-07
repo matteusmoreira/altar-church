@@ -1,5 +1,7 @@
 "use server"
 
+import { hasAnyRole } from "@/lib/types"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { writeAuditLog } from "@/lib/auth/permissions"
@@ -52,7 +54,7 @@ export async function saveMinistryProfile(input: z.input<typeof profileSchema>):
     const parsed = profileSchema.parse(input)
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.dashboard.view", parsed.companyId, { manage: true })
     const sql = getSql()
-    const isAdmin = ["superadmin", "admin", "pastor"].includes(access.user.role)
+    const isAdmin = hasAnyRole(access.user, ["superadmin", "admin", "pastor"])
     if (isAdmin && parsed.leaderPersonId) {
       const leaderRows = await sql<{ id: string }[]>`
         select id from public.people

@@ -1,4 +1,6 @@
-"use server";
+"use server"
+
+import { hasAnyRole } from "@/lib/types";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -738,7 +740,7 @@ export async function sendVolunteerShiftMessage(
         join public.people identity on identity.id = volunteer.person_id
           and (profile.person_id = identity.id or identity.profile_id = profile.id)
         where assignment.shift_id = shift.id and assignment.status not in ('declined', 'cancelled')) as is_participant,
-        (${["superadmin", "admin", "pastor"].includes(user.role)} or exists(
+        (${hasAnyRole(user, ["superadmin", "admin", "pastor"])} or exists(
           select 1 from public.volunteer_department_access manager_access
           where manager_access.company_id = shift.company_id
             and manager_access.department_id = shift.department_id
@@ -859,7 +861,7 @@ export async function markVolunteerShiftConversationRead(
     if (!rows[0]) return { ok: true, id: shiftId };
     if (!rows[0].is_participant) {
       await requirePermission("volunteer_chat.manage", companyId);
-      if (!["superadmin", "admin", "pastor"].includes(user.role)) {
+      if (!hasAnyRole(user, ["superadmin", "admin", "pastor"])) {
         const access = await sql<{ allowed: boolean }[]>`
           select exists(select 1 from public.volunteer_department_access
             where company_id = ${companyId}::uuid
@@ -890,7 +892,7 @@ export async function deleteVolunteerEventSchedule(
     if (!user) throw new Error("Acesso negado");
     const companyId = requireUserCompanyId(user);
     await requirePermission("schedules.edit", companyId);
-    if (!["superadmin", "admin"].includes(user.role))
+    if (!hasAnyRole(user, ["superadmin", "admin"]))
       throw new Error("Somente administrador pode excluir escala");
     const sql = getSql();
     const rows = await sql<{ event_title: string; shift_count: number; was_published: boolean }[]>`
@@ -996,7 +998,7 @@ export async function grantVolunteerRecognition(
     );
     if (
       memberships.length === 0 &&
-      !["superadmin", "admin", "pastor"].includes(access.user.role)
+      !hasAnyRole(access.user, ["superadmin", "admin", "pastor"])
     )
       throw new Error("Acesso negado");
     for (const membership of memberships.slice(1))
@@ -1593,7 +1595,7 @@ export async function softDeleteVolunteer(
     );
     if (
       row.department_ids.length === 0 &&
-      !["superadmin", "admin", "pastor"].includes(access.user.role)
+      !hasAnyRole(access.user, ["superadmin", "admin", "pastor"])
     ) {
       throw new Error("Voluntário sem departamento exige administrador");
     }
@@ -1601,7 +1603,7 @@ export async function softDeleteVolunteer(
       access = await managerContext("volunteers.edit", departmentId, row.company_id);
     }
     const { user, companyId } = access;
-    if (!["superadmin", "admin"].includes(user.role))
+    if (!hasAnyRole(user, ["superadmin", "admin"]))
       throw new Error("Somente administrador pode excluir voluntário");
     await sql.begin(async (tx) => {
       await tx`update public.volunteer_profiles set registration_status = 'inactive', deleted_at = now(), updated_by = ${user.id} where id = ${volunteerId} and company_id = ${companyId}`;
@@ -1626,7 +1628,7 @@ export async function softDeleteVolunteerDepartment(
   try {
     const departmentId = uuid.parse(departmentIdInput);
     const { user, companyId } = await managerContext("volunteers.edit", departmentId);
-    if (!["superadmin", "admin"].includes(user.role))
+    if (!hasAnyRole(user, ["superadmin", "admin"]))
       throw new Error("Somente administrador pode excluir equipe");
     const sql = getSql();
     const departments = await sql<{ id: string }[]>`

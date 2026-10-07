@@ -25,5 +25,5 @@ export default async function EventDetailPage({ params, searchParams }: { params
     throw error
   })
   if (identifier !== route.slug) redirect(canonicalEntityPath("/eventos", route.slug, await searchParams))
-  return <EventDetailClient event={event} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} report={report} resources={resources} canEdit={hasPermission(user.role, "events.edit")} canCreate={hasPermission(user.role, "events.create")} canDelete={hasPermission(user.role, "events.delete")} canExport={hasPermission(user.role, "reports.export")} />
+  return <EventDetailClient event={event} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} report={report} resources={resources} canEdit={hasPermission(user, "events.edit")} canCreate={hasPermission(user, "events.create")} canDelete={hasPermission(user, "events.delete")} canExport={hasPermission(user, "reports.export")} />
 }

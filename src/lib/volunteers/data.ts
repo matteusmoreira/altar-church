@@ -1,3 +1,4 @@
+import { hasAnyRole } from "@/lib/types"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
@@ -421,7 +422,7 @@ export async function getVolunteerDashboardData(companyIdInput?: string | null, 
     occurrencesByProgramming.set(programmingId, current)
   }
   return {
-    canAdminDelete: ["superadmin", "admin"].includes(user.role),
+    canAdminDelete: hasAnyRole(user, ["superadmin", "admin"]),
     volunteers: volunteerRows.map((row) => ({
       ...toVolunteer(row),
       memberships: membershipsByVolunteer.get(String(row.id)) ?? [],

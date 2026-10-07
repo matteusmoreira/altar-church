@@ -1,6 +1,7 @@
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { hasAnyRole } from "@/lib/types"
 import type { Permission, User } from "@/lib/types"
 
 const ADMIN_ROLES = new Set(["superadmin", "admin", "pastor"])
@@ -47,7 +48,7 @@ export async function resolveMinistryAccess(ministryIdOrSlug: string, companyIdI
   const ministryId = ministryRows[0].id
   const ministrySlug = ministryRows[0].slug
   const personId = profileRows[0]?.person_id ?? null
-  const isAdmin = ADMIN_ROLES.has(user.role)
+  const isAdmin = hasAnyRole(user, [...ADMIN_ROLES])
   const memberships = personId
     ? await sql<{ role: "member" | "leader" | "coordinator" }[]>`
         select role from public.ministry_memberships
@@ -86,5 +87,5 @@ export async function requireMinistryPermission(
 }
 
 export function isMinistryAdmin(user: User) {
-  return ADMIN_ROLES.has(user.role)
+  return hasAnyRole(user, [...ADMIN_ROLES])
 }

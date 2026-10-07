@@ -34,7 +34,7 @@ export async function requireCompanyAccess(companyId?: string | null) {
 export async function requirePermission(permission: Permission, companyId?: string | null) {
   const user = await requireCompanyAccess(companyId)
 
-  if (!hasPermission(user.role, permission)) {
+  if (!hasPermission(user, permission)) {
     throw new Error("Acesso negado")
   }
 

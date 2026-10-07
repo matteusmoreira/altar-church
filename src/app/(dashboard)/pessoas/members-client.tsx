@@ -1,5 +1,7 @@
 "use client"
 
+import { AccessRolePicker } from "@/components/shared/access-role-picker"
+
 import Link from "next/link"
 import { FormEvent, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
@@ -150,6 +152,7 @@ interface PersonFormState {
   internalNotes: string
   inviteAccess: boolean
   accessRole: PersonAccessRole
+  accessRoles: PersonAccessRole[]
   cellIds: string[]
   temporaryPassword: string
   hasSystemAccess: boolean
@@ -261,6 +264,7 @@ const emptyForm: PersonFormState = {
   internalNotes: "",
   inviteAccess: false,
   accessRole: "member",
+  accessRoles: ["member"],
   cellIds: [],
   temporaryPassword: "",
   hasSystemAccess: false,
@@ -337,6 +341,7 @@ function personToForm(person: PersonListItem): PersonFormState {
     internalNotes: "",
     inviteAccess: false,
     accessRole: person.accessRole ?? "member",
+    accessRoles: person.accessRoles?.length ? person.accessRoles : [person.accessRole ?? "member"],
     cellIds: person.cellIds,
     temporaryPassword: "",
     hasSystemAccess: person.hasSystemAccess,
@@ -760,7 +765,7 @@ export function MembersClient({
       }
     }
 
-    if (formData.inviteAccess && formData.accessRole === "cell_leader" && formData.cellIds.length === 0) {
+    if (formData.inviteAccess && !["visitor", "attendee"].includes(formData.personType) && formData.accessRoles.includes("cell_leader") && formData.cellIds.length === 0) {
       toast.error("Selecione ao menos uma célula para o líder")
       return
     }
@@ -794,9 +799,10 @@ export function MembersClient({
       isActive: formData.isActive,
       internalNotes: formData.internalNotes,
       inviteAccess: formData.inviteAccess,
-      accessRole: formData.inviteAccess ? formData.accessRole : undefined,
+      accessRole: formData.inviteAccess ? (formData.accessRoles[0] ?? "member") : undefined,
+      accessRoles: formData.inviteAccess ? (["visitor", "attendee"].includes(formData.personType) ? ["member"] : formData.accessRoles) : undefined,
       temporaryPassword: formData.inviteAccess ? formData.temporaryPassword : undefined,
-      cellIds: formData.inviteAccess && formData.accessRole === "cell_leader" ? formData.cellIds : [],
+      cellIds: formData.inviteAccess && !["visitor", "attendee"].includes(formData.personType) && formData.accessRoles.includes("cell_leader") ? formData.cellIds : [],
     })
       if (!result.ok) {
         toast.error(result.error ?? "Não foi possível salvar a pessoa")
@@ -2361,25 +2367,9 @@ export function MembersClient({
                 {formData.inviteAccess ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="grid gap-2">
-                      <Label>Perfil de acesso</Label>
-                      <Select
-                        value={formData.accessRole}
+                      <AccessRolePicker value={formData.personType === "visitor" || formData.personType === "attendee" ? ["member"] : formData.accessRoles} labels={accessRoleLabels}
                         disabled={formData.personType === "visitor" || formData.personType === "attendee"}
-                        onValueChange={(value) =>
-                          value && setFormData({ ...formData, accessRole: value as PersonAccessRole })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(Object.keys(accessRoleLabels) as PersonAccessRole[]).map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {accessRoleLabels[role]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(accessRoles) => setFormData({ ...formData, accessRoles })} />
                       {formData.personType === "visitor" || formData.personType === "attendee" ? (
                         <p className="text-xs text-muted-foreground">
                           Visitante e frequentador usam Portal do Membro.
@@ -2415,7 +2405,7 @@ export function MembersClient({
                         </Button>
                       </div>
                     </div>
-                    {formData.accessRole === "cell_leader" ? (
+                    {formData.accessRoles.includes("cell_leader") ? (
                       <div className="space-y-2 rounded-lg border border-primary/20 bg-background/60 p-3 sm:col-span-2">
                         <Label>Células do líder *</Label>
                         <p className="text-xs text-muted-foreground">Selecione uma ou mais células que esta pessoa poderá gerenciar.</p>

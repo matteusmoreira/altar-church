@@ -1,5 +1,7 @@
 "use server"
 
+import { hasAnyRole } from "@/lib/types"
+
 import { revalidatePath } from "next/cache"
 import type postgres from "postgres"
 import { z } from "zod"
@@ -38,7 +40,7 @@ function providerConfig() {
 
 async function assertChurchAdmin() {
   const user = await getCurrentUser()
-  if (!user || !["admin", "superadmin"].includes(user.role)) {
+  if (!user || !hasAnyRole(user, ["admin", "superadmin"])) {
     throw new Error("Somente administradores da igreja podem gerenciar instâncias WhatsApp")
   }
   return { user, companyId: requireUserCompanyId(user) }

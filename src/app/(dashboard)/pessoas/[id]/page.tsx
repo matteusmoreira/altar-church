@@ -38,7 +38,7 @@ export default async function MemberDetailPage({
       person={person}
       cells={formOptions.cells}
       responsibleOptions={responsibleOptions}
-      canManageKids={hasPermission(user.role, "kids.children.manage")}
+      canManageKids={hasPermission(user, "kids.children.manage")}
     />
   )
 }

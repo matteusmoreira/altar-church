@@ -1,3 +1,4 @@
+import { hasAnyRole } from "@/lib/types"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getSql } from "@/lib/db/client"
@@ -17,7 +18,7 @@ interface InstanceRow {
 
 export async function getUazapiInstancesData(): Promise<UazapiInstancesData | null> {
   const user = await getCurrentUser()
-  if (!user || !["admin", "superadmin"].includes(user.role)) return null
+  if (!user || !hasAnyRole(user, ["admin", "superadmin"])) return null
 
   const companyId = requireUserCompanyId(user)
   const sql = getSql()
