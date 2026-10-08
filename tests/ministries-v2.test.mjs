@@ -88,7 +88,7 @@ test("every ministry workspace form has an explicit submit button", () => {
   const workspace = read("src/components/ministries/ministry-workspace.tsx")
   const forms = [...workspace.matchAll(/<form\b[\s\S]*?<\/form>/g)].map((match) => match[0])
 
-  assert.equal(forms.length, 7)
+  assert.equal(forms.length, 8)
   for (const form of forms) assert.match(form, /<Button\b[^>]*\btype="submit"/)
 })
 

@@ -1,9 +1,9 @@
 "use client"
 
-import { Children, useId, cloneElement, isValidElement, useState, useSyncExternalStore, useTransition, type ReactNode } from "react"
+import { Children, useEffect, useId, cloneElement, isValidElement, useState, useSyncExternalStore, useTransition, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Grid2X2, List, Activity, AlertTriangle, BarChart3, Check, ClipboardCheck, Download, FileText, HeartHandshake, Megaphone, Pencil, Plus, Save, Search, Settings2, Trash2, UserMinus, UserPlus, Users, X } from "lucide-react"
+import { ArrowLeft, Grid2X2, List, Activity, BarChart3, Check, ClipboardCheck, Download, FileText, HeartHandshake, Megaphone, Pencil, Plus, Save, Search, Settings2, Trash2, UserMinus, UserPlus, Users, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,11 @@ import type { ActionResult } from "@/lib/ministries/actions"
 import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/ministries/types"
 import { MessageEditor } from "@/components/automations/message-editor"
 import type { AutomationMessage } from "@/lib/automations/contract"
+import { MinistryOverview } from "./ministry-overview"
+import { MinistryFollowUps, MinistryPersonDetails, MinistryReports } from "./ministry-management-panels"
+import { useWorkspaceNavigation } from "./workspace-navigation"
+import { loadMinistryManagement, loadMinistryScaleSources, copyMinistryScale } from "@/lib/ministries/management-actions"
+import type { MinistryManagementData } from "@/lib/ministries/management-contract"
 import { MinistryChat, MinistryChatBadge } from "./ministry-chat"
 
 type PeopleView = "list" | "grid"
@@ -61,6 +66,44 @@ function setScalesView(value: ScalesView) {
   scalesViewFallback = value
   try { window.localStorage.setItem(SCALES_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
   window.dispatchEvent(new Event(SCALES_VIEW_EVENT))
+}
+
+type TeamsView = "list" | "grid"
+const TEAMS_VIEW_KEY = "altar-church:ministry-teams-view:v1"
+const TEAMS_VIEW_EVENT = "ministry-teams-view-change"
+let teamsViewFallback: TeamsView = "list"
+function subscribeTeamsView(callback: () => void) {
+  window.addEventListener("storage", callback)
+  window.addEventListener(TEAMS_VIEW_EVENT, callback)
+  return () => { window.removeEventListener("storage", callback); window.removeEventListener(TEAMS_VIEW_EVENT, callback) }
+}
+function getTeamsView(): TeamsView {
+  try { return window.localStorage.getItem(TEAMS_VIEW_KEY) === "grid" ? "grid" : "list" } catch { return teamsViewFallback }
+}
+function getServerTeamsView(): TeamsView { return "list" }
+function setTeamsView(value: TeamsView) {
+  teamsViewFallback = value
+  try { window.localStorage.setItem(TEAMS_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
+  window.dispatchEvent(new Event(TEAMS_VIEW_EVENT))
+}
+
+type AgendaView = "list" | "grid"
+const AGENDA_VIEW_KEY = "altar-church:ministry-agenda-view:v1"
+const AGENDA_VIEW_EVENT = "ministry-agenda-view-change"
+let agendaViewFallback: AgendaView = "list"
+function subscribeAgendaView(callback: () => void) {
+  window.addEventListener("storage", callback)
+  window.addEventListener(AGENDA_VIEW_EVENT, callback)
+  return () => { window.removeEventListener("storage", callback); window.removeEventListener(AGENDA_VIEW_EVENT, callback) }
+}
+function getAgendaView(): AgendaView {
+  try { return window.localStorage.getItem(AGENDA_VIEW_KEY) === "grid" ? "grid" : "list" } catch { return agendaViewFallback }
+}
+function getServerAgendaView(): AgendaView { return "list" }
+function setAgendaView(value: AgendaView) {
+  agendaViewFallback = value
+  try { window.localStorage.setItem(AGENDA_VIEW_KEY, value) } catch { /* Keep the preference for this session when storage is unavailable. */ }
+  window.dispatchEvent(new Event(AGENDA_VIEW_EVENT))
 }
 
 function personInitials(name: string) {
@@ -203,12 +246,34 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
   const isAdmin = ["superadmin", "admin", "pastor"].includes(workspace.actorRole)
   const activeMembers = data.members.filter((member) => member.status === "active")
 
-  const [activeTab, setActiveTab] = useState(initialTab)
-  const [peopleSearch, setPeopleSearch] = useState("")
+  const navigation = useWorkspaceNavigation(initialTab)
+  const { query, update, navigate } = navigation
+  const activeTab = navigation.activeTab === "acompanhamentos" && !canManage ? "visao-geral" : navigation.activeTab
+  const setActiveTab = (tab: string) => navigate(tab)
+  const peopleSearch = query.get("peopleSearch") || ""
+  const setPeopleSearch = (value: string) => update({ peopleSearch: value }, true)
+  const [management, setManagement] = useState<MinistryManagementData | null>(null)
+  const [managementError, setManagementError] = useState("")
+  const [managementVersion, setManagementVersion] = useState(0)
+  const [copySources, setCopySources] = useState<{ id: string; title: string; startsAt: string }[]>([])
+  const [copySource, setCopySource] = useState("")
+  const [copyTarget, setCopyTarget] = useState("")
+  useEffect(() => {
+    let active = true
+    void loadMinistryManagement(profile.id).then(result => {
+      if (!active) return
+      if (result.ok) { setManagement(result.data as MinistryManagementData); setManagementError("") }
+      else setManagementError(result.error || "Não foi possível carregar os dados de gestão")
+    }).catch(() => { if (active) setManagementError("Não foi possível carregar os dados de gestão") })
+    return () => { active = false }
+  }, [profile.id, data, managementVersion])
   const [addPeopleSearch, setAddPeopleSearch] = useState("")
-  const [peopleStatus, setPeopleStatus] = useState("all")
+  const peopleStatus = query.get("peopleStatus") || "all"
+  const setPeopleStatus = (value: string) => update({ peopleStatus: value })
   const peopleView = useSyncExternalStore(subscribePeopleView, getPeopleView, getServerPeopleView)
   const scalesView = useSyncExternalStore(subscribeScalesView, getScalesView, getServerScalesView)
+  const teamsView = useSyncExternalStore(subscribeTeamsView, getTeamsView, getServerTeamsView)
+  const agendaView = useSyncExternalStore(subscribeAgendaView, getAgendaView, getServerAgendaView)
   const memberPhotoById = new Map(data.members.map((member) => [member.personId, member.photoUrl]))
   const [dialog, setDialog] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<{ label: string; run: () => void } | null>(null)
@@ -319,7 +384,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
 
   const normalizedPeopleSearch = peopleSearch.trim().toLocaleLowerCase("pt-BR")
   const normalizedAddPeopleSearch = addPeopleSearch.trim().toLocaleLowerCase("pt-BR")
-  const filteredMembers = data.members.filter((member) => (peopleStatus === "all" || member.status === peopleStatus) && (!normalizedPeopleSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedPeopleSearch)))
+  const filteredMembers = data.members.filter((member) => (!query.get("person") || member.personId === query.get("person")) && (peopleStatus === "all" || member.status === peopleStatus) && (!normalizedPeopleSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedPeopleSearch)))
   const normalizedCommunicationSearch = communicationSearch.trim().toLocaleLowerCase("pt-BR")
   const communicationPeople = activeMembers.filter((member) => !normalizedCommunicationSearch || `${member.personName} ${member.email} ${member.phone}`.toLocaleLowerCase("pt-BR").includes(normalizedCommunicationSearch))
   const setWeekday = (day: number) =>
@@ -410,29 +475,16 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <Stat label="Membros ativos" value={workspace.indicators.activeMembers} />
-        <Stat label="Pendentes" value={workspace.indicators.pendingMembers} tone="amber-600" />
-        <Stat label="Equipes" value={workspace.indicators.activeTeams} />
-        <Stat label="Vagas" value={workspace.indicators.openTeamSlots} tone="blue-600" />
-        <Stat label="Próximas atividades" value={workspace.indicators.upcomingActivities} />
-        <Stat label="Presença 30d" value={workspace.indicators.attendancePresent30d} tone="green-600" />
-        <Stat label="Escalas incompletas" value={workspace.indicators.incompleteScales} tone="amber-600" />
-        <Stat label="Acompanhamentos abertos" value={workspace.indicators.openFollowUps} tone="violet-600" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {[
+          { label: "Membros ativos", value: workspace.indicators.activeMembers, tab: "pessoas", filters: { peopleStatus: "active" } },
+          { label: "Próximas atividades", value: workspace.indicators.upcomingActivities, tab: "agenda", filters: {} },
+          { label: "Escalas incompletas", value: workspace.indicators.incompleteScales, tab: "escalas", filters: { scaleStatus: "incomplete" } },
+          { label: "Solicitações pendentes", value: workspace.indicators.pendingMembers, tab: "pessoas", filters: { peopleStatus: "pending" } },
+        ].map(item => <button key={item.label} type="button" className="rounded-xl text-left focus-visible:outline-2 focus-visible:outline-primary" onClick={() => navigate(item.tab, { scaleStatus: "", peopleSearch: "", ...item.filters } as Record<string, string>)}><Stat label={item.label} value={item.value} /></button>)}
       </div>
 
-      {workspace.alerts.length > 0 && (
-        <div className="grid grid-cols-1 gap-2">
-          {workspace.alerts.map((alert) => (
-            <button key={alert.kind} type="button" onClick={() => setActiveTab(alert.href.replace(/^#/, ""))} className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-left text-sm">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-              <span className="flex-1">{alert.label}</span>
-              <Badge variant="outline">{alert.count}</Badge>
-            </button>
-          ))}
-        </div>
-      )}
-
+      {(query.get("event") || query.get("team") || query.get("person") || query.get("scaleStatus") || query.get("detail")) && <Button variant="outline" size="sm" onClick={() => update({ event: "", team: "", person: "", detail: "", scaleStatus: "" })}>Mostrar todos os itens</Button>}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList aria-label="Gestão do ministério" className="w-full flex-nowrap justify-start overflow-x-auto rounded-xl border bg-muted/50 p-1 [&_[role=tab]]:min-h-11 [&_[role=tab]]:px-3">
           <TabsTrigger value="visao-geral">
@@ -455,6 +507,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
             <ClipboardCheck />
             Escalas
           </TabsTrigger>
+          {canManage && <TabsTrigger value="acompanhamentos"><HeartHandshake />Acompanhamentos</TabsTrigger>}
           <TabsTrigger value="comunicacao">
             <Megaphone />
             Comunicação
@@ -476,52 +529,12 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
 
         <TabsContent value="chat"><MinistryChat key={profile.id} ministryId={profile.id} name={profile.name} /></TabsContent>
         <TabsContent value="visao-geral" className="space-y-4">
-<SectionHeader title="Visão geral" description="Acompanhe as atividades e a participação do ministério." />
-          <div className="grid grid-cols-1 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Próximas atividades</CardTitle>
-                <CardDescription>Atividades do ministério e situação da escala.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {workspace.activities.length ? (
-                  workspace.activities.slice(0, 8).map((activity) => (
-                    <div key={activity.id} className="flex items-center gap-3 rounded-xl border p-3">
-                      <div className="min-w-0 flex-1 break-words">
-                        <p className="font-medium">{activity.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDateTime(activity.startsAt)} · {activity.location || "Local não informado"}
-                        </p>
-                      </div>
-                      <Badge variant={activity.scaleComplete ? "default" : "destructive"}>{activity.volunteerPositions ? `${activity.assignedVolunteers}/${activity.volunteerPositions}` : "Sem escala"}</Badge>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState icon={Activity} className="py-8" title="Nenhuma atividade cadastrada" description="Organize os próximos encontros na Agenda do ministério." action={<Button variant="outline" onClick={() => setActiveTab("agenda")}>Ver Agenda</Button>} />
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Presença — últimos 30 dias</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {workspace.attendance.length ? (
-                  workspace.attendance.slice(-10).map((day) => (
-                    <div key={day.day} className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="w-24 text-muted-foreground">{new Date(day.day).toLocaleDateString("pt-BR")}</span>
-                      <span className="text-green-600">{day.present} presentes</span>
-                      <span className="text-red-600">{day.absent} ausentes</span>
-                      <span className="text-amber-600">{day.justified} justificadas</span>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState icon={ClipboardCheck} className="py-8" title="Sem registros de presença" description="As presenças registradas nas atividades aparecerão aqui." action={canManage ? <Button variant="outline" onClick={() => setActiveTab("escalas")}>Ver Escalas</Button> : undefined} />
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          <MinistryOverview data={data} management={management} error={managementError} navigate={navigate} action={dialog => { const tab = { person: "pessoas", activity: "agenda", scale: "escalas", communication: "comunicacao" }[dialog]; if (tab) navigate(tab); if (dialog === "activity") setActivityForm({ id: "", title: "", description: "", startsAt: "", durationMinutes: "60", kind: "meeting", location: "", recurrenceFrequency: "none", recurrenceWeekdays: [] }); setDialog(dialog) }} editTeam={editTeam} retry={() => setManagementVersion(value => value + 1)} />
         </TabsContent>
+        {canManage && <TabsContent value="acompanhamentos" className="space-y-4">
+          {managementError ? <div role="alert"><p>{managementError}</p><Button variant="outline" onClick={() => setManagementVersion(value => value + 1)}>Tentar novamente</Button></div> : management ? <MinistryFollowUps ministryId={profile.id} members={data.members} management={management} query={query} update={update} refresh={() => { setManagementVersion(value => value + 1); router.refresh() }} /> : <p role="status">Carregando acompanhamentos…</p>}
+        </TabsContent>}
+        {canManage && query.get("detail") && data.members.find(member => member.personId === query.get("detail")) && <MinistryPersonDetails key={query.get("detail")} ministryId={profile.id} member={data.members.find(member => member.personId === query.get("detail"))!} management={management} close={() => update({ detail: "" })} />}
 
         <TabsContent value="pessoas" className="space-y-4">
 <SectionHeader title="Pessoas" description="Gerencie os membros e as solicitações de participação." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("person") }}><Plus className="h-4 w-4" />Adicionar pessoa</Button>}</>} />
@@ -604,6 +617,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={member.status === "active" ? "default" : member.status === "pending" ? "outline" : "secondary"}>{member.status === "active" ? roleLabel(member.role) : MEMBER_STATUS_LABELS[member.status]}</Badge>
                       {member.hasPortal && <Badge variant="outline">Portal</Badge>}
+                      {canManage && <Button size="sm" variant="outline" onClick={() => update({ detail: member.personId })}>Ver detalhes</Button>}
                       {member.status === "pending" && canManage && (
                         <>
                           <Button
@@ -891,25 +905,28 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
 </WorkspaceDialog>
             <div className="space-y-4">
               <Card>
-                <CardHeader>
-                  <CardTitle>Equipes do ministério</CardTitle>
-                  <CardDescription>0 de capacidade significa “Sem limite”. Inativar a equipe preserva o histórico.</CardDescription>
+                <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-1.5">
+                    <CardTitle>Equipes do ministério</CardTitle>
+                    <CardDescription>0 de capacidade significa “Sem limite”. Inativar a equipe preserva o histórico.</CardDescription>
+                  </div>
+                  <ViewToggle value={teamsView} onChange={setTeamsView} showLabel ariaLabel="Modo de visualização das equipes" className="[&_[aria-pressed=true]]:bg-primary [&_[aria-pressed=true]]:text-primary-foreground" options={[{ value: "list", label: "Lista", icon: List }, { value: "grid", label: "Grade", icon: Grid2X2 }]} />
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  {data.teams.map((team) => {
+                <CardContent className={teamsView === "grid" && data.teams.length > 0 ? "grid grid-cols-1 items-start gap-3 md:grid-cols-2 2xl:grid-cols-3" : "space-y-3"} data-teams-view={teamsView}>
+                  {data.teams.filter(team => !query.get("team") || team.id === query.get("team")).map((team) => {
                     const teamMembers = data.teamMembers.filter((member) => member.groupId === team.id)
                     return (
-                      <div key={team.id} className="rounded-xl border p-3">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div key={team.id} className="min-w-0 rounded-xl border p-3">
+                        <div className={teamsView === "grid" ? "flex flex-col gap-3" : "flex flex-col gap-3 md:flex-row md:items-start md:justify-between"}>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-medium">{team.name}</p>
+                              <p className="min-w-0 break-words font-medium">{team.name}</p>
                               <Badge variant={team.isActive ? "default" : "secondary"}>{team.isActive ? "Ativa" : "Inativa"}</Badge>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 break-words text-xs text-muted-foreground">
                               Líder: {team.leaderName || "não definido"} · Co-líder: {team.coLeaderName || "não definido"} · Coordenador: {team.coordinatorName || "não definido"}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="break-words text-xs text-muted-foreground">
                               {team.meetingDay || "Dia não informado"}
                               {team.meetingTime ? ` às ${toTimeInput(team.meetingTime)}` : ""} · {team.meetingLocation || "Local não informado"}
                             </p>
@@ -917,7 +934,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                               {team.memberCount}/{team.maxCapacity ? team.maxCapacity : "Sem limite"} pessoas
                             </p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button type="button" size="sm" variant="outline" disabled={!canManage} onClick={() => editTeam(team)}>
                               <Pencil className="mr-1 h-3.5 w-3.5" />
                               Editar
@@ -1245,13 +1262,16 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
 
 </WorkspaceDialog>
             <Card>
-              <CardHeader>
-                <CardTitle>Agenda do ministério</CardTitle>
-                <CardDescription>As ocorrências materializadas ficam disponíveis para presença e escala.</CardDescription>
+              <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0 space-y-1.5">
+                  <CardTitle>Agenda do ministério</CardTitle>
+                  <CardDescription>As ocorrências materializadas ficam disponíveis para presença e escala.</CardDescription>
+                </div>
+                <ViewToggle value={agendaView} onChange={setAgendaView} showLabel ariaLabel="Modo de visualização da agenda" className="[&_[aria-pressed=true]]:bg-primary [&_[aria-pressed=true]]:text-primary-foreground" options={[{ value: "list", label: "Lista", icon: List }, { value: "grid", label: "Grade", icon: Grid2X2 }]} />
               </CardHeader>
-              <CardContent className="space-y-2">
-                {data.agenda.map((activity) => (
-                  <div key={activity.id} className="flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center">
+              <CardContent className={agendaView === "grid" && data.agenda.length > 0 ? "grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3" : "space-y-2"} data-agenda-view={agendaView}>
+                {data.agenda.filter(activity => !query.get("event") || activity.id === query.get("event")).map((activity) => (
+                  <div key={activity.id} className={agendaView === "grid" ? "flex min-w-0 flex-col items-start gap-3 rounded-xl border p-3" : "flex min-w-0 flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center"}>
                     <div className="min-w-0 flex-1 break-words">
                       <p className="font-medium">{activity.title}</p>
                       <p className="mt-1 text-sm text-muted-foreground">{activity.description || "Sem descrição"}</p>
@@ -1259,6 +1279,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                         {formatDateTime(activity.startsAt)} · {activity.location || "Sem local"}
                       </p>
                     </div>
+                    <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => navigate("escalas", { event: activity.id })}>Ver escala</Button>{canManage && <Button size="sm" variant="outline" onClick={() => { navigate("escalas", { event: activity.id }); setAttendanceForm(current => ({ ...current, eventId: activity.id })); setDialog("attendance") }}>Registrar presença</Button>}</div>
                     <Badge variant={activity.volunteerPositions ? (activity.scaleComplete ? "default" : "destructive") : "outline"}>{activity.volunteerPositions ? `${activity.assignedVolunteers}/${activity.volunteerPositions} pessoas` : "Sem funções"}</Badge>
                     {canManage && (
                       <div className="flex gap-1">
@@ -1293,7 +1314,14 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
         </TabsContent>
 
         <TabsContent value="escalas" className="space-y-4">
-<SectionHeader title="Escalas" description="Distribua as funções e acompanhe a presença nas atividades." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("attendance") }}><Plus className="h-4 w-4" />Registrar presença</Button>}{canManage && <Button type="button" disabled={pending} onClick={() => { setDialog("scale") }}><Plus className="h-4 w-4" />Criar escala</Button>}</>} />
+<SectionHeader title="Escalas" description="Distribua as funções e acompanhe a presença nas atividades." action={<>{canManage && <Button type="button" disabled={pending} onClick={() => { setAttendanceForm(current => ({ ...current, eventId: query.get("event") || current.eventId })); setDialog("attendance") }}><Plus className="h-4 w-4" />Registrar presença</Button>}{canManage && <Button type="button" disabled={pending} onClick={() => { setScaleEventId(query.get("event") || scaleEventId); setDialog("scale") }}><Plus className="h-4 w-4" />Criar escala</Button>}</>} />
+          {canManage && <Button variant="outline" onClick={() => { setCopyTarget(query.get("event") || ""); setDialog("copy-scale"); startTransition(async () => { const result = await loadMinistryScaleSources(profile.id); if (!result.ok) toast.error(result.error); else { const sources = result.data as typeof copySources; setCopySources(sources); setCopySource(sources[0]?.id || "") } }) }}>Copiar escala anterior</Button>}
+          <WorkspaceDialog open={dialog === "copy-scale"} onOpenChange={open => { if (!open && !pending) setDialog(null) }} title="Copiar escala" description="Copia funções e pessoas para um rascunho. Escolha um destino sem escala, em um mês ainda não publicado." pending={pending}>
+            <form className="space-y-4" onSubmit={event => { event.preventDefault(); run(async () => { const result = await copyMinistryScale({ ministryId: profile.id, sourceEventId: copySource, targetEventId: copyTarget }); if (result.ok) { const copied = result.data as { omitted: string[] }; if (copied.omitted.length) toast.warning(`Revise as vagas. Pessoas não copiadas: ${copied.omitted.join(", ")}`, { duration: 10000 }); navigate("escalas", { event: copyTarget }) } return result }, "Escala copiada como rascunho") }}>
+              <div><Label htmlFor="copy-source">Escala de origem</Label><select id="copy-source" className="h-10 w-full rounded-md border bg-background px-3" value={copySource} onChange={event => setCopySource(event.target.value)} required><option value="">Selecione</option>{copySources.map(scale => <option key={scale.id} value={scale.id}>{scale.title} · {formatDateTime(scale.startsAt)}</option>)}</select></div>
+              <div><Label htmlFor="copy-target">Atividade de destino</Label><select id="copy-target" className="h-10 w-full rounded-md border bg-background px-3" value={copyTarget} onChange={event => setCopyTarget(event.target.value)} required><option value="">Selecione</option>{data.scales.filter(scale => !scale.positions.length && !scale.publishedAt && scale.eventId !== copySource).map(scale => <option key={scale.eventId} value={scale.eventId}>{scale.eventTitle} · {formatDateTime(scale.startsAt)}</option>)}</select></div><p className="text-sm text-muted-foreground">{pending ? "Carregando escalas…" : !copySources.length ? "Nenhuma escala anterior disponível para copiar." : "Até 100 escalas recentes disponíveis. Revise o rascunho antes de publicar."}</p><Button type="submit" disabled={pending || !copySource || !copyTarget}>{pending ? "Copiando…" : "Copiar para rascunho"}</Button>
+            </form>
+          </WorkspaceDialog>
           <div className="grid grid-cols-1 gap-4">
             <WorkspaceDialog open={dialog === "scale"} onOpenChange={(open) => { if (!pending && !open) setDialog(null) }} title={"Criar escala"} description="Fluxo simples: escolha a atividade, cadastre as funções, escolha pessoas e publique." pending={pending}>
 
@@ -1458,7 +1486,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {data.scales.map((scale) => {
+                  {data.scales.filter(scale => (!query.get("event") || scale.eventId === query.get("event")) && (!query.get("scaleStatus") || scale.status === query.get("scaleStatus"))).map((scale) => {
                     const missing = scale.positions.reduce((sum, position) => sum + position.missingVolunteers, 0)
                     const assignedTotal = scale.positions.reduce((sum, position) => sum + position.assignedVolunteers, 0)
                     const requiredTotal = scale.positions.reduce((sum, position) => sum + position.requiredVolunteers, 0)
@@ -1602,6 +1630,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                                             <div className="min-w-0 flex-1">
                                               <p className="truncate text-sm">{candidate.personName}</p>
                                               {candidate.blockers.length > 0 && <p className="text-xs text-destructive">Bloqueado: {candidate.blockers.join(", ")}</p>}
+                                              <p className="text-xs text-muted-foreground">{candidate.recentScales ?? 0} escalas nos últimos 30 dias · {candidate.lastParticipation ? `Última: ${formatDateTime(candidate.lastParticipation)}` : "Sem participação anterior"}</p>
                                               {candidate.warnings.length > 0 && <p className="text-xs text-amber-600">Atenção: {candidate.warnings.join(", ")}</p>}
                                             </div>
                                             <Button
@@ -1971,9 +2000,10 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                     <div className="min-w-0 flex-1 break-words">
                       <p className="truncate font-medium">{communication.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {communication.method.toUpperCase()} · {communication.snapshotCount} destinatário(s) · {new Date(communication.createdAt).toLocaleString("pt-BR")}
+                        Público: {communication.audienceKind === "team" ? communication.audienceName || "Equipe selecionada" : communication.audienceKind === "manual" ? "Pessoas selecionadas" : "Ministério"} · {communication.method.toUpperCase()} · {communication.snapshotCount} destinatário(s) · {new Date(communication.createdAt).toLocaleString("pt-BR")}
                       </p>
                     </div>
+                    <p className="text-xs text-muted-foreground">{communication.deliveryResults ? `${communication.deliveryResults.sent} enviados · ${communication.deliveryResults.delivered} entregas confirmadas · ${communication.deliveryResults.failed} falhas · ${communication.deliveryResults.pending} pendentes` : "Resultados de entrega indisponíveis"}</p>
                     <Badge variant={communication.status === "completed" ? "default" : communication.status === "failed" ? "destructive" : "secondary"}>
                       {COMMUNICATION_STATUS_LABELS[communication.status] ?? communication.status}
                     </Badge>
@@ -2019,6 +2049,11 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                     if (file) {
                       const formData = new FormData(form)
                       formData.set("ministryId", profile.id)
+                      formData.set("title", resourceForm.title)
+                      formData.set("description", resourceForm.description)
+                      formData.set("category", resourceForm.category)
+                      formData.set("visibility", resourceForm.visibility)
+                      formData.set("sortOrder", resourceForm.sortOrder)
                       runFormData(formData, "Recurso publicado")
                     } else {
                       run(
@@ -2153,42 +2188,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
           </div>
         </TabsContent>
 
-        <TabsContent value="relatorios" className="space-y-4">
-<SectionHeader title="Relatórios" description="Consulte os indicadores e a participação por equipe." />
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <Stat label="Horas voluntárias" value={Math.round(data.report.volunteerHours)} tone="blue-600" />
-            <Stat label="Escalas publicadas" value={data.report.filledScales} tone="green-600" />
-            <Stat label="Retenção 30d" value={data.report.retention.rate} tone="violet-600" />
-            <Stat label="Acompanhamentos concluídos" value={data.report.completedFollowUps} tone="green-600" />
-            <Stat label="Comunicações" value={data.report.communication.reduce((total, item) => total + item.total, 0)} tone="violet-600" />
-          </div>
-          <Card className="mt-4">
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>Participação por equipe</CardTitle>
-                <div className="flex gap-2">
-                  <Button render={<a href={`/api/ministerios/${profile.id}/export?format=xls`} download />} nativeButton={false} size="sm" variant="outline">
-                    <Download className="mr-1 h-4 w-4" />
-                    Excel
-                  </Button>
-                  <Button render={<a href={`/api/ministerios/${profile.id}/export?format=csv`} download />} nativeButton={false} size="sm" variant="outline">
-                    <Download className="mr-1 h-4 w-4" />
-                    CSV
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {data.report.teamParticipation.map((team) => (
-                <div key={team.teamId} className="flex justify-between rounded-xl border p-3">
-                  <span>{team.teamName}</span>
-                  <strong>{team.total}</strong>
-                </div>
-              ))}
-              {data.report.teamParticipation.length === 0 && <p className="text-sm text-muted-foreground">Sem participação registrada.</p>}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <TabsContent value="relatorios" className="space-y-4"><MinistryReports ministryId={profile.id} initial={{ ...data.report, timezone: management?.timezone || data.report.timezone }} query={query} update={update} /></TabsContent>
 
         <TabsContent value="configuracoes" className="space-y-4">
 <SectionHeader title="Configurações" description="Atualize as informações e as preferências do ministério." />

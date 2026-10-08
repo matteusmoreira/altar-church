@@ -90,7 +90,7 @@ export async function listMinistryChat(identifier: string, before?: string | nul
   } catch { throw badRequest("Paginação inválida") }
   const sql = getSql()
   // Snapshot batches refresh loaded history, including edits/deletions/reactions.
-  const [rows, pins, settings, ministry] = await Promise.all([
+  const [rows, pins, settings, ministry, unread] = await Promise.all([
     sql<{ id: string; created_at: Date }[]>`
       select id, created_at from public.ministry_chat_messages where ministry_id = ${access.ministryId}
         and (${cursor?.at ?? null}::timestamptz is null or (created_at, id) < (${cursor?.at ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
@@ -100,6 +100,11 @@ export async function listMinistryChat(identifier: string, before?: string | nul
     sql<{ id: string }[]>`select id from public.ministry_chat_messages where ministry_id = ${access.ministryId} and pinned_at is not null and deleted_at is null order by pinned_at desc limit 5`,
     sql<{ muted: boolean; push_enabled: boolean }[]>`select muted, push_enabled from public.ministry_chat_reads where ministry_id = ${access.ministryId} and profile_id = ${access.user.id}`,
     sql<{ name: string }[]>`select name from public.ministries where id = ${access.ministryId}`,
+    sql<{ id: string }[]>`select m.id from public.ministry_chat_messages m
+      left join public.ministry_chat_reads r on r.ministry_id=m.ministry_id and r.profile_id=${access.user.id}
+      where m.ministry_id=${access.ministryId} and m.deleted_at is null and m.sender_profile_id<>${access.user.id}
+        and (r.last_read_at is null or (m.created_at,m.id)>(r.last_read_at,r.last_read_id))
+      order by m.created_at,m.id limit 1`,
   ])
   const limit = snapshotIds ? 100 : 50
   const page = rows.slice(0, limit)
@@ -108,6 +113,7 @@ export async function listMinistryChat(identifier: string, before?: string | nul
   return {
     messages: all.filter(row => page.some(item => item.id === row.id)), pinned: pins.map(pin => all.find(row => row.id === pin.id)!).filter(Boolean),
     nextCursor: rows.length > limit && oldest ? { at: iso(oldest.created_at)!, id: oldest.id } : null,
+    firstUnreadId: unread[0]?.id ?? null,
     actorId: access.user.id, canManage: access.canManage, muted: settings[0]?.muted ?? false,
     pushEnabled: settings[0]?.push_enabled ?? !["superadmin", "admin", "pastor"].includes(access.user.role), ministryName: ministry[0].name,
   }
@@ -226,6 +232,39 @@ export async function commandMinistryChat(identifier: string, input: unknown) {
   const access = await requireChatAccess(identifier)
   const data = chatCommandSchema.parse(input)
   const sql = getSql()
+  if (data.action === "clear") {
+    if (!access.canManage) throw forbidden()
+    const paths = await sql.begin(async tx => {
+      await tx`select id from public.ministries where id = ${access.ministryId} and company_id = ${access.companyId} for update`
+      const allowed = await tx<{ allowed: boolean }[]>`
+        select private.ministry_chat_profile_access(p.id, ${access.ministryId}::uuid) and
+          (coalesce(p.roles, array[p.role]) && array['superadmin','admin','pastor']::text[] or exists (
+            select 1 from public.ministry_memberships mm join public.people person on person.id = mm.person_id
+            where mm.ministry_id = ${access.ministryId} and mm.company_id = ${access.companyId}
+              and mm.status = 'active' and mm.left_at is null and mm.role in ('leader','coordinator')
+              and person.company_id = ${access.companyId} and person.is_active and person.deleted_at is null and person.status <> 'inactive'
+              and (person.profile_id = p.id or person.id = p.person_id)
+          )) as allowed from public.profiles p where p.id = ${access.user.id}
+      `
+      if (!allowed[0]?.allowed) throw forbidden()
+      const files = await tx<{ storage_path: string }[]>`
+        select storage_path from public.ministry_chat_attachments
+        where ministry_id = ${access.ministryId} and company_id = ${access.companyId} and message_id is not null
+      `
+      await tx`delete from public.ministry_chat_messages where ministry_id = ${access.ministryId} and company_id = ${access.companyId}`
+      await tx`update public.ministry_chat_reads set last_read_at = null, last_read_id = null
+        where ministry_id = ${access.ministryId} and company_id = ${access.companyId}`
+      return files.map(file => file.storage_path)
+    })
+    if (paths.length) afterResponse("ministry chat cleared attachments", async () => {
+      for (let index = 0; index < paths.length; index += 100) {
+        const result = await storage().remove(paths.slice(index, index + 100))
+        if (result.error) throw new Error("Falha ao remover arquivos do chat limpo")
+      }
+    })
+    await writeAuditLog({ action: "ministry.chat.clear", companyId: access.companyId, entityTable: "ministries", entityId: access.ministryId })
+    return { ok: true }
+  }
   if (data.action === "preferences") {
     const defaultPush = !["superadmin", "admin", "pastor"].includes(access.user.role)
     await sql`insert into public.ministry_chat_reads(company_id, ministry_id, profile_id, muted, push_enabled)

@@ -48,6 +48,8 @@ test("chat do ministério: duas sessões, moderação, anexos e perda de acesso"
     const admin = profiles.find(profile => profile.email.toLowerCase() === accounts.accounts.admin.email.toLowerCase())!
     expect(member?.person_id).toBeTruthy(); expect(otherMember?.person_id).toBeTruthy()
     expect(member.company_id).toBe(admin.company_id); expect(otherMember.company_id).toBe(admin.company_id)
+    const companies = await sql<{ status: string }[]>`select status from public.companies where id=${admin.company_id}`
+    expect(companies[0]?.status, "E2E deve usar somente uma igreja de teste").toBe("test")
     const ministries = await sql<{ id: string }[]>`insert into public.ministries(company_id,name,slug,created_by,updated_by)
       values (${admin.company_id},${name},${name},${admin.id},${admin.id}),(${admin.company_id},${`${name}-private`},${`${name}-private`},${admin.id},${admin.id}) returning id`
     ministryId = ministries[0].id; otherId = ministries[1].id
@@ -176,6 +178,65 @@ test("chat do ministério: duas sessões, moderação, anexos e perda de acesso"
     }
     if (ministryId || otherId) await sql`delete from public.ministries where id=any(${[ministryId,otherId].filter(Boolean)}::uuid[])`
     await Promise.all([memberContext.close(),peerContext.close(),adminContext.close()])
+    await sql.end()
+  }
+})
+
+test("limpeza do chat: botão, confirmação e permissão em produção", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000)
+  test.skip(!process.env.POSTGRES_URL, "DB E2E não configurado")
+  const sql = postgres(process.env.POSTGRES_URL!, { max: 1, prepare: false })
+  const adminContext = await browser.newContext({ baseURL, viewport: { width: 1366, height: 900 } })
+  const memberContext = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } })
+  let ministryId = ""
+  try {
+    await authenticate(adminContext, accounts.accounts.admin, baseURL!)
+    await authenticate(memberContext, accounts.accounts.member, baseURL!)
+    const profiles = await sql<{ id: string; company_id: string; person_id: string; email: string }[]>`
+      select p.id,p.company_id,coalesce(person.id,p.person_id) person_id,p.email from public.profiles p
+      left join public.people person on person.profile_id=p.id and person.company_id=p.company_id and person.deleted_at is null
+      where lower(p.email)=any(${[accounts.accounts.admin.email.toLowerCase(), accounts.accounts.member.email.toLowerCase()]}) and p.active and p.deleted_at is null
+    `
+    const admin = profiles.find(p => p.email.toLowerCase() === accounts.accounts.admin.email.toLowerCase())!
+    const member = profiles.find(p => p.email.toLowerCase() === accounts.accounts.member.email.toLowerCase())!
+    expect(member.company_id).toBe(admin.company_id)
+    const companies = await sql<{ status: string }[]>`select status from public.companies where id=${admin.company_id}`
+    expect(companies[0]?.status, "E2E deve usar somente uma igreja de teste").toBe("test")
+    const name = e2eRunPrefix("chat-clear")
+    const ministries = await sql<{ id: string }[]>`insert into public.ministries(company_id,name,slug,created_by,updated_by)
+      values(${admin.company_id},${name},${name},${admin.id},${admin.id}) returning id`
+    ministryId = ministries[0].id
+    await sql`insert into public.ministry_memberships(company_id,ministry_id,person_id,role,status)
+      values(${admin.company_id},${ministryId},${member.person_id},'member','active')`
+    await sql`insert into public.ministry_chat_reads(company_id,ministry_id,profile_id,push_enabled)
+      values(${admin.company_id},${ministryId},${member.id},false)`
+    await sql`insert into public.ministry_chat_messages(company_id,ministry_id,sender_profile_id,client_id,body)
+      values(${admin.company_id},${ministryId},${member.id},${randomUUID()},'Mensagem para validar a limpeza')`
+    const manager = await adminContext.newPage(), participant = await memberContext.newPage()
+    await manager.goto(`/ministerios/${ministryId}?tab=chat`)
+    await manager.getByRole("tab", { name: "Chat", exact: true }).click()
+    await participant.goto(`/membro/chats?ministry=${ministryId}`)
+    await expect(participant.getByRole("log")).toContainText("Mensagem para validar a limpeza")
+    await expect(participant.getByRole("button", { name: "Limpar todo o chat", exact: true })).toHaveCount(0)
+    expect((await participant.request.patch(`/api/v1/ministries/${ministryId}/chat`, { data: { action: "clear" } })).status()).toBe(403)
+    const clear = manager.getByRole("button", { name: "Limpar todo o chat", exact: true })
+    await expect(clear).toBeVisible()
+    await manager.setViewportSize({ width: 390, height: 844 })
+    await expect(clear).toBeVisible()
+    await clear.click()
+    await expect(manager.getByRole("dialog")).toContainText("Esta ação não pode ser desfeita")
+    await manager.getByRole("dialog").getByRole("button", { name: "Cancelar", exact: true }).click()
+    await expect(manager.getByRole("log")).toContainText("Mensagem para validar a limpeza")
+    await clear.click()
+    await manager.getByRole("dialog").getByRole("button", { name: "Confirmar limpeza", exact: true }).click()
+    await expect(manager.getByRole("dialog")).toHaveCount(0)
+    await expect(manager.getByRole("log").locator("article")).toHaveCount(0)
+    await expect(participant.getByRole("log").locator("article")).toHaveCount(0, { timeout: 25_000 })
+    await expect(clear).toBeDisabled()
+    expect((await sql<{ n: number }[]>`select count(*)::int n from public.ministry_chat_messages where ministry_id=${ministryId}`)[0].n).toBe(0)
+  } finally {
+    if (ministryId) await sql`delete from public.ministries where id=${ministryId}`
+    await Promise.all([adminContext.close(), memberContext.close()])
     await sql.end()
   }
 })

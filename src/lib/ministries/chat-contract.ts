@@ -23,6 +23,7 @@ export const chatSendSchema = z.object({
 }).refine(data => data.body.length > 0 || data.attachmentIds.length > 0, "Escreva uma mensagem ou escolha um anexo")
 .refine(data => new Set(data.attachmentIds).size === data.attachmentIds.length, "Anexos duplicados")
 export const chatCommandSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("clear") }),
   z.object({ action: z.literal("edit"), messageId: z.string().uuid(), body: z.string().trim().max(5000) }),
   z.object({ action: z.literal("delete"), messageId: z.string().uuid() }),
   z.object({ action: z.literal("react"), messageId: z.string().uuid(), emoji: z.enum(CHAT_EMOJIS), active: z.boolean() }),
@@ -40,6 +41,7 @@ export interface MinistryChatMessage {
   attachments: MinistryChatAttachment[]; reactions: { emoji: string; count: number; mine: boolean }[]
 }
 export interface MinistryChatPage {
+  firstUnreadId?: string | null
   messages: MinistryChatMessage[]; pinned: MinistryChatMessage[]; nextCursor: ChatCursor | null
   actorId: string; canManage: boolean; muted: boolean; pushEnabled: boolean; ministryName: string
 }

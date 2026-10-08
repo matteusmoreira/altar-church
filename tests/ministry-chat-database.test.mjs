@@ -27,7 +27,7 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
   const db = new PGlite()
   const sql = sqlAdapter(db)
   const storedFiles = new Map()
-  globalThis.__ministryChatTest = { sql, actor: { id: ids.member, role: "member", churchId: ids.church }, storedFiles }
+  globalThis.__ministryChatTest = { sql, actor: { id: ids.member, role: "member", churchId: ids.church }, storedFiles, cleanup: [], audits: [] }
   try {
     await db.exec(`
       create role anon; create role authenticated; create role service_role bypassrls;
@@ -35,7 +35,7 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
       grant usage on schema auth to authenticated;
       create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
       create table companies(id uuid primary key);
-      create table profiles(id uuid primary key,auth_user_id uuid,company_id uuid,name text,role text,active boolean default true,deleted_at timestamptz,person_id uuid,avatar_url text);
+      create table profiles(id uuid primary key,auth_user_id uuid,company_id uuid,name text,role text,roles text[],active boolean default true,deleted_at timestamptz,person_id uuid,avatar_url text);
       create table people(id uuid primary key,profile_id uuid,company_id uuid,is_active boolean default true,status text default 'active',deleted_at timestamptz,photo_file_id uuid);
       create table ministries(id uuid primary key,company_id uuid,name text,slug text,is_active boolean default true,deleted_at timestamptz);
       create table ministry_memberships(ministry_id uuid,company_id uuid,person_id uuid,role text,status text,left_at timestamptz);
@@ -60,10 +60,10 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
       export const getSql = () => globalThis.__ministryChatTest.sql;
       export const getCurrentUser = async () => globalThis.__ministryChatTest.actor;
       export const requireUserCompanyId = user => user.churchId;
-      export const writeAuditLog = async () => {};
+      export const writeAuditLog = async input => { globalThis.__ministryChatTest.audits.push(input) };
       export const createSignedUrlsByStoragePath = async () => new Map();
       export const consumeRateLimit = async () => ({allowed:true});
-      export const afterResponse = () => {};
+      export const afterResponse = (label, task) => { if(label === 'ministry chat cleared attachments') globalThis.__ministryChatTest.cleanup.push(task) };
       export const processMinistryChatPush = async () => {};
       export const createSupabaseAdminClient = () => ({storage:{from:() => ({
         createSignedUploadUrl:async()=>({data:{token:'test'}}),
@@ -73,7 +73,7 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
       export const resolveMinistryAccess = async id => {
         const user = globalThis.__ministryChatTest.actor;
         const rows = await globalThis.__ministryChatTest.sql\`select role from ministry_memberships where ministry_id=\${id} and person_id=\${user.id} and status='active'\`;
-        return { user, companyId:user.churchId, ministryId:id, canManage:user.role==='admin'||rows[0]?.role==='leader' };
+        return { user, companyId:user.churchId, ministryId:id, canManage:user.role==='admin'||['leader','coordinator'].includes(rows[0]?.role) };
       };
     `)
     const imports = Object.fromEntries(["@/lib/auth/server", "@/lib/auth/permissions", "@/lib/db/client", "@/lib/supabase/admin", "@/lib/files/server", "@/lib/security/rate-limit", "@/lib/performance/after-response", "./access", "./chat-push"].map(name => [name, stubs]))
@@ -86,8 +86,10 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
     for (const key of ["outsider", "foreign", "pending", "inactive"]) { as(key); await assert.rejects(api.listMinistryChat(ids.ministry), /acesso/); await assert.rejects(api.sendMinistryChat(ids.ministry, { clientId: randomUUID(), body: "Ataque" }), /acesso/) }
     as("member"); await assert.rejects(api.listMinistryChat(ids.otherMinistry), /acesso/)
     as("peer"); assert.equal((await api.listMinistryChats())[0].unread, 1)
+    assert.equal((await api.listMinistryChat(ids.ministry)).firstUnreadId, first.id)
     await api.commandMinistryChat(ids.ministry, { action: "read", messageId: first.id })
     assert.equal((await api.listMinistryChats())[0].unread, 0)
+    assert.equal((await api.listMinistryChat(ids.ministry)).firstUnreadId, null)
     await assert.rejects(api.commandMinistryChat(ids.ministry, { action: "edit", messageId: first.id, body: "Ataque" }), /negado/)
     await assert.rejects(api.commandMinistryChat(ids.ministry, { action: "delete", messageId: first.id }), /negado/)
     await assert.rejects(api.commandMinistryChat(ids.ministry, { action: "pin", messageId: first.id, pinned: true }), /negado/)
@@ -182,6 +184,53 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
     await assert.rejects(db.query("select * from ministry_chat_push_outbox"), /permission denied/)
     await assert.rejects(db.query("select private.ministry_chat_profile_access($1,$2)", [ids.admin, ids.ministry]), /permission denied/)
     await db.exec("reset role")
+    // Clear all pages, including replies/tombstones, without affecting another ministry/church.
+    as("member"); await api.sendMinistryChat(ids.ministry, { clientId: randomUUID(), body: "Aviso pendente" })
+    as("peer"); await api.commandMinistryChat(ids.ministry, { action: "preferences", muted: true, pushEnabled: true })
+    const foreignMessage = randomUUID()
+    await db.query("insert into ministry_chat_messages(id,company_id,ministry_id,sender_profile_id,client_id,body) values($1,$2,$3,$4,$5,'Outra igreja')", [foreignMessage, ids.otherChurch, ids.foreignMinistry, ids.foreign, randomUUID()])
+    for (const key of ["member", "peer", "outsider", "foreign", "pending", "inactive"]) {
+      as(key); await assert.rejects(api.commandMinistryChat(ids.ministry, { action: "clear" }), /negado|acesso/)
+    }
+    as("leader"); await assert.rejects(api.commandMinistryChat(ids.otherMinistry, { action: "clear" }), /acesso/)
+    const begin = sql.begin
+    sql.begin = async callback => {
+      await db.query("update ministry_memberships set role='member' where person_id=$1", [ids.leader])
+      return begin(callback)
+    }
+    await assert.rejects(api.commandMinistryChat(ids.ministry, { action: "clear" }), /negado/)
+    sql.begin = begin
+    await db.query("update ministry_memberships set role='leader' where person_id=$1", [ids.leader])
+    assert.ok((await api.listMinistryChat(ids.ministry)).messages.length > 0, "recheck leadership inside the transaction before deletion")
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
+    const cleared = await api.listMinistryChat(ids.ministry)
+    assert.deepEqual(cleared.messages, []); assert.deepEqual(cleared.pinned, []); assert.equal(cleared.nextCursor, null)
+    for (const table of ["ministry_chat_messages", "ministry_chat_attachments", "ministry_chat_reactions", "ministry_chat_push_outbox"]) {
+      assert.equal((await db.query(`select count(*)::int n from ${table} where ministry_id=$1`, [ids.ministry])).rows[0].n, 0)
+    }
+    const preferences = (await db.query("select * from ministry_chat_reads where ministry_id=$1 and profile_id=$2", [ids.ministry, ids.peer])).rows[0]
+    assert.equal(preferences.muted, true); assert.equal(preferences.push_enabled, true)
+    assert.equal(preferences.last_read_at, null); assert.equal(preferences.last_read_id, null)
+    assert.equal((await db.query("select count(*)::int n from ministry_chat_messages where id in ($1,$2)", [other.id, foreignMessage])).rows[0].n, 2)
+    await assert.rejects(api.downloadChatFile(ids.ministry, upload.id, null), /não encontrado/)
+    assert.equal(globalThis.__ministryChatTest.cleanup.length, 1)
+    await globalThis.__ministryChatTest.cleanup[0]()
+    assert.equal(storedFiles.has(upload.path), false)
+    assert.ok(globalThis.__ministryChatTest.audits.some(log => log.action === "ministry.chat.clear" && log.entityId === ids.ministry))
+    as("member"); await api.sendMinistryChat(ids.ministry, { clientId: randomUUID(), body: "Conversa nova" })
+    as("admin"); assert.equal((await api.listMinistryChat(ids.ministry)).messages[0].body, "Conversa nova")
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
+    assert.equal((await api.listMinistryChat(ids.ministry)).messages.length, 0)
+    await db.query("update ministry_memberships set role='coordinator' where person_id=$1", [ids.peer])
+    as("peer"); assert.equal((await api.listMinistryChat(ids.ministry)).canManage, true)
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
+    as("admin")
+    await db.query("update profiles set role='pastor',roles=array['pastor']::text[] where id=$1", [ids.admin])
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
+    await db.query("update profiles set role='member',roles=array['member','admin']::text[] where id=$1", [ids.admin])
+    await db.query("insert into ministry_memberships values($1,$2,$3,'member','active',null)", [ids.ministry, ids.church, ids.admin])
+    await api.commandMinistryChat(ids.ministry, { action: "clear" })
     await db.query("update ministry_memberships set status='inactive',left_at=now() where person_id=$1", [ids.member])
     as("member"); await assert.rejects(api.listMinistryChat(ids.ministry), /acesso/)
     await db.exec(`set role authenticated; select set_config('test.uid','${ids.member}',false)`)

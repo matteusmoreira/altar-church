@@ -139,6 +139,8 @@ export interface MinistryScaleCandidate {
   score: number
   warnings: string[]
   blockers: string[]
+  recentScales: number
+  lastParticipation: string | null
 }
 
 export interface MinistryAttendanceSummary {
@@ -188,6 +190,8 @@ export interface MinistryWorkspace {
 }
 
 export interface MinistryReport {
+  period: { from: string; to: string }
+  timezone: string
   membersByStatus: { status: string; total: number }[]
   membersByMonth: { month: string; total: number }[]
   attendance: { status: string; total: number }[]
@@ -214,6 +218,8 @@ export interface MinistryResource {
 }
 
 export interface MinistryCommunication {
+  audienceName?: string | null
+  deliveryResults?: { sent: number; delivered: number; failed: number; pending: number } | null
   id: string
   slug?: string
   title: string

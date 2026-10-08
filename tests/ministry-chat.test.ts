@@ -21,6 +21,7 @@ test("uploads enforce both MIME/extension, size and actual content signature", (
   assert.equal(validChatSignature(new TextEncoder().encode("OggS"), "audio/ogg"), true)
 })
 test("reactions and mutations only accept known commands", () => {
+  assert.equal(chatCommandSchema.safeParse({ action: "clear" }).success, true)
   assert.equal(chatCommandSchema.safeParse({ action: "react", messageId: id, emoji: "💣", active: true }).success, false)
   assert.equal(chatCommandSchema.safeParse({ action: "react", messageId: id, emoji: "🙏", active: true }).success, true)
   assert.equal(chatCommandSchema.safeParse({ action: "read", messageId: "wrong" }).success, false)

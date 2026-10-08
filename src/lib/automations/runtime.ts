@@ -196,7 +196,7 @@ export async function collectAutomationStarts(now = new Date()) {
         else if (
           ["content.published", "congregation.updated"].includes(event.type)
         )
-          personIds = (await selectAudience(flow.company_id, c.filter)).map(
+          personIds = (await selectAudience(flow.company_id, c.filter, undefined, tx)).map(
             (p) => p.id,
           );
         if (event.type === "finance.updated") {
@@ -204,7 +204,7 @@ export async function collectAutomationStarts(now = new Date()) {
         }
         // Unknown guests and finance records without a verified person never expand to all members.
         for (const personId of personIds) {
-          const [p] = await selectAudience(flow.company_id, c.filter, personId);
+          const [p] = await selectAudience(flow.company_id, c.filter, personId, tx);
           if (!p) continue;
           await tx`insert into public.automation_runs(company_id,flow_id,version_id,person_id,event_key,node_id,context,ancestry) values(${flow.company_id},${flow.id},${flow.published_version_id},${personId},${`event:${event.id}:${personId}`},${root.id},${JSON.stringify({ ...personContext(p), ...event.context })}::jsonb,${tx.array([flow.id])}::uuid[]) on conflict(company_id,flow_id,event_key) do nothing`;
         }

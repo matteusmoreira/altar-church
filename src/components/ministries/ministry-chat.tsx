@@ -36,12 +36,15 @@ export function MinistryChat({ ministryId, name }: { ministryId: string; name: s
   const [editing, setEditing] = useState<MinistryChatMessage | null>(null)
   const [editBody, setEditBody] = useState("")
   const [deleting, setDeleting] = useState<MinistryChatMessage | null>(null)
+  const [clearing, setClearing] = useState(false)
   const [sending, setSending] = useState(false)
   const [commandBusy, setCommandBusy] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [showPush, setShowPush] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null)
+  const unreadCaptured = useRef(false)
   const [newMessages, setNewMessages] = useState(false)
   const scroll = useRef<HTMLDivElement>(null)
   const uploadInput = useRef<HTMLInputElement>(null)
@@ -82,6 +85,7 @@ export function MinistryChat({ ministryId, name }: { ministryId: string; name: s
         }
         if (!mounted.current) return
         const changed = old && result.messages.at(-1)?.id !== old.messages.at(-1)?.id
+        if (!unreadCaptured.current) { unreadCaptured.current = true; setFirstUnreadId(result.firstUnreadId ?? null) }
         pageRef.current = result
         setPage(result); setError(""); setDenied(false)
         if (nearBottom) requestAnimationFrame(toBottom)
@@ -205,6 +209,24 @@ export function MinistryChat({ ministryId, name }: { ministryId: string; name: s
     } catch (error) { toast.error(error instanceof Error ? error.message : "Não foi possível carregar o histórico") }
     finally { if (mounted.current) setLoadingOlder(false) }
   }
+  async function jumpToMessage(id: string) {
+    if (loadingOlder) return
+    setLoadingOlder(true)
+    try {
+      while (mounted.current && !pageRef.current?.messages.some(message => message.id === id) && pageRef.current?.nextCursor) {
+        const cursor = pageRef.current.nextCursor
+        const result = await chatRequest<MinistryChatPage>(`${endpoint}?before=${encodeURIComponent(JSON.stringify(cursor))}`, "GET", undefined, abort.current?.signal)
+        const existing = pageRef.current
+        if (!mounted.current || !existing) return
+        if (result.nextCursor?.id === cursor.id) throw new Error("Não foi possível avançar no histórico")
+        const next = { ...existing, messages: [...result.messages.filter(message => !existing.messages.some(item => item.id === message.id)), ...existing.messages], nextCursor: result.nextCursor }
+        pageRef.current = next; setPage(next)
+      }
+      if (!pageRef.current?.messages.some(message => message.id === id)) { toast.error("Mensagem não disponível no histórico"); return }
+      requestAnimationFrame(() => { scroll.current?.querySelector(`[data-message-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }) })
+    } catch(error) { if (mounted.current) toast.error(error instanceof Error ? error.message : "Não foi possível abrir a mensagem") }
+    finally { if (mounted.current) setLoadingOlder(false) }
+  }
   async function startRecording() {
     if (!("MediaRecorder" in window) || !navigator.mediaDevices?.getUserMedia) { toast.error("Gravação indisponível neste navegador. Você pode anexar um áudio gravado"); return }
     if (files.length >= 5) { toast.error("Remova um anexo antes de gravar o áudio"); return }
@@ -251,14 +273,16 @@ export function MinistryChat({ ministryId, name }: { ministryId: string; name: s
     <header className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
       <div className="flex min-w-0 items-center gap-3"><div className="rounded-xl bg-primary/10 p-2.5 text-primary"><MessageCircle className="h-5 w-5" /></div><div className="min-w-0"><h2 className="truncate font-semibold">{name}</h2><p className="text-xs text-muted-foreground">Conversa interna do ministério</p></div></div>
       <div className="flex flex-wrap gap-2">
+        {page?.canManage && <Button variant="outline" size="sm" className="text-destructive" disabled={commandBusy || sending || loadingOlder || !page.messages.length} onClick={() => setClearing(true)}><Trash2 className="h-4 w-4" />Limpar todo o chat</Button>}
         <Button variant="outline" size="sm" onClick={() => setShowPush(!showPush)}><Bell className="h-4 w-4" />Notificações</Button>
         {page && <Button variant="ghost" size="sm" disabled={commandBusy} onClick={() => void command({ action: "preferences", muted: !page.muted })}>{page.muted ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}{page.muted ? "Reativar avisos" : "Silenciar"}</Button>}
       </div>
     </header>
     {showPush && <div className="space-y-3 border-b p-4"><PushActivation />{page && <Button variant="outline" disabled={commandBusy} onClick={() => void command({ action: "preferences", pushEnabled: !page.pushEnabled })}>{page.pushEnabled ? "Desativar push deste ministério" : "Receber push deste ministério"}</Button>}</div>}
-    {page && page.pinned.length > 0 && <div className="space-y-2 border-b bg-muted/30 p-3" aria-label="Mensagens fixadas"><p className="flex items-center gap-2 text-xs font-semibold"><Pin className="h-3.5 w-3.5" />Fixadas</p>{page.pinned.map(message => <div key={message.id} className="flex items-center gap-2"><p className="min-w-0 flex-1 truncate text-sm"><span className="font-semibold">{message.senderName}: </span>{message.body || "Anexo"}</p>{page.canManage && <Button variant="ghost" size="icon" aria-label="Desafixar mensagem" disabled={commandBusy} onClick={() => void command({ action: "pin", messageId: message.id, pinned: false })}><X className="h-4 w-4" /></Button>}</div>)}</div>}
+    {page && page.pinned.length > 0 && <div className="space-y-2 border-b bg-muted/30 p-3" aria-label="Mensagens fixadas"><p className="flex items-center gap-2 text-xs font-semibold"><Pin className="h-3.5 w-3.5" />Fixadas</p>{page.pinned.map(message => <div key={message.id} className="flex items-center gap-2"><button type="button" disabled={loadingOlder} className="min-w-0 flex-1 truncate text-left text-sm hover:underline" aria-label={`Abrir mensagem fixada de ${message.senderName}`} onClick={() => void jumpToMessage(message.id)}><span className="font-semibold">{message.senderName}: </span>{message.body || "Anexo"}</button>{page.canManage && <Button variant="ghost" size="icon" aria-label="Desafixar mensagem" disabled={commandBusy} onClick={() => void command({ action: "pin", messageId: message.id, pinned: false })}><X className="h-4 w-4" /></Button>}</div>)}</div>}
     <div ref={scroll} className="h-[min(55dvh,560px)] min-h-72 space-y-4 overflow-y-auto overscroll-contain p-3 sm:p-5" role="log" aria-label="Mensagens" aria-relevant="additions">
       {!page && !error && <p role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Carregando conversa…</p>}
+      {firstUnreadId && <div className="mb-2 text-center"><Button variant="outline" size="sm" disabled={loadingOlder} onClick={() => void jumpToMessage(firstUnreadId)}>{loadingOlder ? "Abrindo histórico…" : "Ir à primeira mensagem não lida"}</Button></div>}
       {page?.nextCursor && <div className="text-center"><Button variant="outline" size="sm" disabled={loadingOlder} onClick={() => void older(page.nextCursor!)}>{loadingOlder ? "Carregando…" : "Carregar mensagens anteriores"}</Button></div>}
       {page?.messages.length === 0 && <div className="py-16 text-center"><MessageCircle className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="font-medium">A conversa começa aqui</p><p className="mt-1 text-sm text-muted-foreground">Envie uma mensagem para o seu ministério.</p></div>}
       {page?.messages.map(message => {
@@ -306,5 +330,6 @@ export function MinistryChat({ ministryId, name }: { ministryId: string; name: s
     </form>}
     <Dialog open={Boolean(editing)} onOpenChange={open => { if (!open && !commandBusy) setEditing(null) }}><DialogContent><DialogHeader><DialogTitle>Editar mensagem</DialogTitle><DialogDescription>O histórico indicará que a mensagem foi editada.</DialogDescription></DialogHeader><Textarea aria-label="Texto da mensagem" value={editBody} maxLength={5000} onChange={event => setEditBody(event.target.value)} /><DialogFooter><Button disabled={commandBusy} onClick={() => { if (editing) void command({ action: "edit", messageId: editing.id, body: editBody }).then(ok => { if (ok) setEditing(null) }) }}>Salvar</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={Boolean(deleting)} onOpenChange={open => { if (!open && !commandBusy) setDeleting(null) }}><DialogContent><DialogHeader><DialogTitle>Excluir mensagem?</DialogTitle><DialogDescription>A mensagem será substituída por “Mensagem removida” e seus anexos ficarão indisponíveis.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" disabled={commandBusy} onClick={() => setDeleting(null)}>Cancelar</Button><Button variant="destructive" disabled={commandBusy} onClick={() => { if (deleting) void command({ action: "delete", messageId: deleting.id }).then(ok => { if (ok) setDeleting(null) }) }}>Excluir</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={clearing} onOpenChange={open => { if (!commandBusy) setClearing(open) }}><DialogContent><DialogHeader><DialogTitle>Limpar todo o chat?</DialogTitle><DialogDescription>Todas as mensagens, respostas, reações, mensagens fixadas e anexos de {name} serão removidos para todos os participantes. Esta ação não pode ser desfeita.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" disabled={commandBusy} onClick={() => setClearing(false)}>Cancelar</Button><Button variant="destructive" disabled={commandBusy || sending || loadingOlder} onClick={() => void command({ action: "clear" }).then(ok => { if (ok) { setClearing(false); setReply(null); setEditing(null); setDeleting(null); clientId.current = null; toast.success("Chat limpo para todos os participantes") } })}>{commandBusy ? "Limpando…" : "Confirmar limpeza"}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }

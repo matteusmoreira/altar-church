@@ -1,6 +1,7 @@
 import { requireCompanyAccess, requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import type {
   MinistriesListResult,
   MinistryListItem,
@@ -207,13 +208,23 @@ export async function listMinistries(filters: PastoralListFilters = {}): Promise
 export async function listMinistryLeaderCandidates(companyIdInput?: string | null) {
   const companyId = await resolveCompanyId(companyIdInput)
   await requirePermission("ministries.view", companyId)
-  const rows = await getSql()<{ id: string; full_name: string }[]>`
-    select id, full_name from public.people
-    where company_id = ${companyId} and deleted_at is null and is_active = true
-    order by full_name
+  const rows = await getSql()<{ id: string; full_name: string; photo_storage_path: string | null }[]>`
+    select p.id, p.full_name, f.storage_path as photo_storage_path
+    from public.people p
+    left join public.app_files f on f.id = p.photo_file_id
+      and f.company_id = p.company_id and f.is_active = true and f.deleted_at is null
+    where p.company_id = ${companyId} and p.deleted_at is null and p.is_active = true
+    order by p.full_name
     limit 500
   `
-  return rows.map((row) => ({ id: row.id, fullName: row.full_name }))
+  const photoUrls = await createSignedUrlsByStoragePath(
+    rows.flatMap((row) => row.photo_storage_path ? [row.photo_storage_path] : [])
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    photoUrl: row.photo_storage_path ? photoUrls.get(row.photo_storage_path) ?? null : null,
+  }))
 }
 
 export async function listProgrammings(filters: PastoralListFilters = {}): Promise<ProgrammingsListResult> {

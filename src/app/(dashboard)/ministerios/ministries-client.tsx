@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -55,7 +56,7 @@ import type { MinistryMembershipAdminItem } from "@/lib/member/types"
 interface MinistriesClientProps {
   ministriesResult: MinistriesListResult
   filters: PastoralListFilters
-  leaderCandidates: { id: string; fullName: string }[]
+  leaderCandidates: { id: string; fullName: string; photoUrl: string | null }[]
   memberships?: MinistryMembershipAdminItem[]
   initialTab?: string
 }
@@ -517,11 +518,23 @@ export function MinistriesClient({
               />
             </div>
             <div className="grid gap-2">
-              <Label>Líder vinculado</Label>
+              <Label htmlFor="ministry-leader">Líder vinculado</Label>
               <Select value={formData.leaderPersonId} onValueChange={(value) => setFormData({ ...formData, leaderPersonId: value ?? "" })}>
-                <SelectTrigger><SelectValue placeholder="Selecione uma pessoa" /></SelectTrigger>
+                <SelectTrigger id="ministry-leader" className="md:h-10"><SelectValue placeholder="Selecione uma pessoa" /></SelectTrigger>
                 <SelectContent>
-                  {leaderCandidates.map((person) => <SelectItem key={person.id} value={person.id}>{person.fullName}</SelectItem>)}
+                  {leaderCandidates.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Avatar key={person.id} size="sm" aria-hidden="true">
+                          {person.photoUrl && <AvatarImage src={person.photoUrl} alt="" />}
+                          <AvatarFallback>
+                            {person.fullName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="truncate">{person.fullName}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

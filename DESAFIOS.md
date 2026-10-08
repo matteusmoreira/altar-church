@@ -1,5 +1,9 @@
 # Desafios conhecidos
 
+## Avatar em seleção de pessoas — 08/10/2026
+
+- O Avatar do Base UI pode manter o estado de imagem carregada ao trocar a pessoa selecionada por outra sem foto. Usar `key={person.id}` no Avatar para remontá-lo e exibir as iniciais; validar a troca de uma pessoa com foto para outra sem foto.
+
 ## Notificações e push — 05/10/2026
 
 - O cron genérico de integrações via Edge Function não consome `notification_deliveries`. O backend publicado de notificações respondeu HTTP 500 por segredo ausente; a publicação está bloqueada por token Vercel 403 e conector sem reautenticação. `scripts/setup-notification-cron.mjs` instala o cron dedicado somente após provar `dryRun` e `pushConfigured`; relatório em `docs/incidents/2026-10-05-notifications-push.md`.
@@ -284,3 +288,25 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 
 - `20261007174338_multiple_access_roles.sql` aplicada e verificada: 102 migrations, 15 acessos preservados. `profiles.roles` contém os perfis selecionados; `role` continua como principal ordenado para leitores legados. Permissões e verificações de liderança devem considerar a lista completa, mantendo os vínculos de célula/ministério e as restrições de sala do Kids.
 - Os testes de migração executam os gatilhos completos em PostgreSQL isolado e comprovam que remover uma liderança preserva as outras. Os formulários foram verificados por navegador autenticado em igreja `status='test'`, em desktop e mobile. A publicação da interface permanece pendente. Na regressão geral, `tests/member-portal.test.mjs` ainda exige `event.confirmedPeople.join`, ausente também no componente da revisão HEAD anterior; é uma asserção antiga da agenda, fora desta alteração.
+
+## Consumo Vercel e pipeline PostgreSQL — 08/10/2026
+
+- O cron de automações era marcado como succeeded porque pg_net só enfileira HTTP; o endpoint estava retornando 504 em praticamente todas as chamadas de um minuto, mesmo sem fluxos ativos. Consultar métricas da Vercel e net._http_response além de cron.job_run_details. A migration 20261008174420 mantém o cron ativo e evita HTTP quando não há trabalho durável.
+- As notas anteriores sobre max_pipeline tratavam dois problemas distintos: zero evita o travamento das consultas avulsas concorrentes em Supavisor, mas postgres.js 3.4.9 precisa de um para reservar sql.begin. O cliente usa agora pool sem pipeline para consultas avulsas e pool exclusivo para transações, criado sob demanda. O padrão permite até duas conexões por pool. A regressão cobre consultas avulsas aquecidas, transações e consultas simultâneas em porta 6543, com commit e rollback.
+- O relatório docs/VERCEL-CONSUMO-2026-10-08.md documenta a medição e a publicação. O worker passou de aproximadamente 60 segundos/504 a 177 ms/200 no probe autenticado de produção; a economia mensal ainda exige uma janela real de uso.
+
+## Botão de limpeza do chat e publicação — 08/10/2026
+
+- A limpeza estava apenas no checkout local e ficou fora do deploy isolado da otimização Vercel. Publicada em `dpl_CroTNrU8xRCgLgcA9cgLs6CMCpQ2`, READY e promovido a `altarchurch.com.br`, preservando as três alterações de automações/banco já publicadas. Mantida a permissão `canManage` para administradores, pastores, líderes e coordenadores do próprio ministério; a revalidação transacional considera todos os perfis de acesso.
+- Os quatro testes de contrato/banco, TypeScript e lint passaram. O E2E focado em produção passou em igreja `status='test'`: botão visível em desktop/mobile para administrador, oculto para integrante, PATCH sem permissão retorna 403, cancelar preserva as mensagens e confirmar limpa também a outra sessão. A suíte ampla do chat falhou antes da limpeza na expectativa do botão “Novas mensagens”; essa verificação de rolagem não comprova regressão na limpeza e continua pendente.
+
+## Upload de recursos do ministério — 08/10/2026
+
+- Os campos controlados do formulário de recursos não tinham `name`; `new FormData(form)` enviava o arquivo sem título, descrição, categoria e visibilidade. A validação rejeitava `title: null` antes de acessar o Storage. O envio agora copia os metadados do estado para o FormData, preservando a visibilidade escolhida.
+- O E2E isolado reproduziu os campos nulos antes da correção e passou em desktop/mobile depois, verificando os metadados e o arquivo recebidos pela action simulada. Typecheck e lint passaram. Esse teste não comprova gravação no Storage remoto nem publicação em produção.
+
+## Gestão de ministérios — 08/10/2026
+
+- Normalizar `due_at::text` para ISO antes de devolver acompanhamentos à interface. A forma textual do PostgreSQL não passa na validação de `datetime({ offset: true })` ao reutilizar o objeto para iniciar/concluir/reabrir um caso. O teste deve salvar novamente o objeto retornado pela consulta real.
+- A cópia reutiliza o calendário mensal compartilhado. Mês publicado não pode receber novos rascunhos: o painel de membros também aceita `schedule.status = published`. Não remover esse bloqueio sem revisar a visibilidade de rascunhos.
+- Para E2E via pooler, usar `max_pipeline: 0` nas consultas e iniciar servidor de produção novo após rebuild. O runner da gestão identifica a igreja pela conta E2E e verifica `status = test`, sem fallback para a primeira igreja.

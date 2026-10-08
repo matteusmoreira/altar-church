@@ -1,3 +1,4 @@
+import { reportPeriod, reportPeriodSchema } from "./management-contract"
 import { getSql } from "@/lib/db/client"
 import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { requireMinistryPermission } from "./access"
@@ -148,10 +149,10 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         (select count(*) from public.ministry_memberships m where m.company_id = ${access.companyId} and m.ministry_id = ${ministryId} and m.status in ('inactive','rejected')) as inactive_members,
         (select count(*) from public.groups g where g.company_id = ${access.companyId} and g.ministry_id = ${ministryId} and g.type = 'ministry' and g.is_active and g.deleted_at is null) as active_teams,
         (select coalesce(sum(greatest(g.max_capacity - (select count(*) from public.group_members gm where gm.group_id = g.id and gm.status = 'active'), 0)), 0) from public.groups g where g.company_id = ${access.companyId} and g.ministry_id = ${ministryId} and g.type = 'ministry' and g.is_active and g.deleted_at is null) as open_team_slots,
-        (select count(*) from public.events e where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.starts_at >= now() - interval '1 day' and e.status <> 'cancelled') as upcoming_activities,
+        (select count(*) from public.events e where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.starts_at >= now() and e.status <> 'cancelled') as upcoming_activities,
         (select count(*) from public.attendance_records a where a.company_id = ${access.companyId} and a.event_type = 'ministry' and a.status = 'present' and a.deleted_at is null and a.occurred_on >= current_date - 30 and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId})) as attendance_present,
         (select count(*) from public.attendance_records a where a.company_id = ${access.companyId} and a.event_type = 'ministry' and a.status = 'absent' and a.deleted_at is null and a.occurred_on >= current_date - 30 and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId})) as attendance_absent,
-        (select count(*) from public.events e where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.starts_at >= now() - interval '1 day' and e.status <> 'cancelled' and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id) and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id and (select count(*) from public.volunteer_assignments a join public.volunteer_shifts s on s.id = a.shift_id where s.event_id = e.id and a.status not in ('cancelled','declined')) < p.required_volunteers)) as incomplete_scales,
+        (select count(*) from public.events e where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.starts_at >= now() and e.status <> 'cancelled' and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id) and exists (select 1 from public.volunteer_event_positions p where p.event_id = e.id and (select count(*) from public.volunteer_assignments a join public.volunteer_shifts s on s.id = a.shift_id where s.event_id = e.id and s.event_position_id = p.id and s.company_id = ${access.companyId} and a.company_id = ${access.companyId} and a.status not in ('cancelled','declined')) < p.required_volunteers)) as incomplete_scales,
         (select count(*) from public.person_follow_up_tasks t where t.company_id = ${access.companyId} and t.ministry_id = ${ministryId} and t.deleted_at is null and t.status in ('open','in_progress')) as open_followups
     `,
     sql<Record<string, unknown>[]>`
@@ -166,7 +167,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         on programming.id = e.programming_id and programming.company_id = ${access.companyId}
           and programming.ministry_id = ${ministryId} and programming.deleted_at is null
       where e.company_id = ${access.companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null
-        and e.starts_at >= now() - interval '1 day' and e.status <> 'cancelled'
+        and e.starts_at >= now() and e.status <> 'cancelled'
       order by e.starts_at asc limit 20
     `,
     sql<{ day: Date | string; present: number; absent: number; justified: number }[]>`
@@ -275,7 +276,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         and (resource.visibility in ('members','public') or ${access.canManage})
       order by resource.sort_order, resource.title
     `,
-    getMinistryReportRows(access.companyId, ministryId),
+    Promise.resolve({ period: reportPeriod(), timezone: "America/Sao_Paulo", membersByStatus: [], membersByMonth: [], attendance: [], teamParticipation: [], volunteerHours: 0, filledScales: 0, openFollowUps: 0, completedFollowUps: 0, communication: [], retention: { activeAt30d: 0, currentActive: 0, rate: 0 } } satisfies MinistryReport),
     sql<{ id: string; full_name: string; email: string; phone: string; membership_status: string | null; membership_role: string | null }[]>`
       select person.id, person.full_name, coalesce(person.email, '') as email, person.phone,
         membership.status as membership_status, membership.role as membership_role
@@ -298,11 +299,18 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         and profile.role in ('superadmin', 'admin', 'pastor', 'ministry_leader', 'volunteer')
       order by person.full_name limit 500
     `,
-    sql<{ id: string; slug: string; title: string; status: string; method: string; audience_kind: string; snapshot_count: number; created_at: Date | string }[]>`
-      select id, slug, title, status, method, audience_kind, snapshot_count, created_at
-      from public.notifications
-      where company_id = ${access.companyId} and ministry_id = ${ministryId} and deleted_at is null
-      order by created_at desc limit 100
+    sql<{ id: string; slug: string; title: string; status: string; method: string; audience_kind: string; snapshot_count: number; created_at: Date | string; delivery_total: number; sent: number; delivered: number; failed: number; pending: number; audience_name: string | null }[]>`
+      select n.id,n.slug,n.title,n.status,n.method,n.audience_kind,n.snapshot_count,n.created_at,
+        g.name as audience_name,d.delivery_total,d.sent,d.delivered,d.failed,d.pending
+      from public.notifications n
+      left join public.groups g on g.id=n.audience_ref_id and g.company_id=n.company_id and g.ministry_id=${ministryId}
+      left join lateral (select count(*)::int as delivery_total,count(*) filter(where status='sent')::int as sent,
+        count(*) filter(where delivered_at is not null)::int as delivered,
+        count(*) filter(where status in ('failed','dead'))::int as failed,
+        count(*) filter(where status in ('pending','processing'))::int as pending
+        from public.notification_deliveries where notification_id=n.id and company_id=n.company_id) d on true
+      where n.company_id = ${access.companyId} and n.ministry_id = ${ministryId} and n.deleted_at is null
+      order by n.created_at desc limit 100
     `,
     sql<{ id: string; title: string; status: string; created_at: Date | string }[]>`
       select id, title, status, created_at from public.notifications
@@ -337,6 +345,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
   }))
   const mappedCommunications: MinistryCommunication[] = communications.map((row) => ({
     id: String(row.id), slug: String(row.slug ?? ""), title: String(row.title), status: String(row.status), method: String(row.method),
+    audienceName: row.audience_name, deliveryResults: row.delivery_total ? { sent: row.sent, delivered: row.delivered, failed: row.failed, pending: row.pending } : null,
     audienceKind: String(row.audience_kind), snapshotCount: number(row.snapshot_count), createdAt: iso(row.created_at) ?? "",
   }))
   const mappedAttendanceRecords: MinistryAttendanceRecord[] = attendanceRecordRows.map((row) => ({
@@ -387,28 +396,31 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
   }
 }
 
-async function getMinistryReportRows(companyId: string, ministryId: string): Promise<MinistryReport> {
+async function getMinistryReportRows(companyId: string, ministryId: string, requested?: { from: string; to: string }): Promise<MinistryReport> {
   const sql = getSql()
+  const zones = await sql<{ timezone: string }[]>`select timezone from public.church_profiles where company_id = ${companyId}`
+  const timezone = zones[0]?.timezone || "America/Sao_Paulo"
+  const period = reportPeriodSchema.parse(requested ?? reportPeriod(30, timezone))
   const [status, months, attendance, teams, hours, scales, followUps, communication, retention] = await Promise.all([
     sql<{ status: string; total: number }[]>`select status, count(*) as total from public.ministry_memberships where company_id = ${companyId} and ministry_id = ${ministryId} group by status order by status`,
     sql<{ month: string; total: number }[]>`select to_char(date_trunc('month', coalesce(joined_at, requested_at)), 'YYYY-MM') as month, count(*) as total from public.ministry_memberships where company_id = ${companyId} and ministry_id = ${ministryId} group by 1 order by 1 desc limit 24`,
-    sql<{ status: string; total: number }[]>`select a.status, count(*) as total from public.attendance_records a where a.company_id = ${companyId} and a.event_type = 'ministry' and a.deleted_at is null and exists (select 1 from public.events e where e.id = a.event_ref_id and e.ministry_id = ${ministryId}) group by a.status`,
+    sql<{ status: string; total: number }[]>`select a.status, count(*) as total from public.attendance_records a where a.company_id = ${companyId} and a.event_type = 'ministry' and a.deleted_at is null and a.occurred_on between ${period.from}::date and ${period.to}::date and exists (select 1 from public.events e where e.id = a.event_ref_id and e.company_id = ${companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null) group by a.status`,
     sql<{ team_id: string; team_name: string; total: number }[]>`select g.id as team_id, g.name as team_name, count(*) filter (where gm.status = 'active') as total from public.groups g left join public.group_members gm on gm.group_id = g.id where g.company_id = ${companyId} and g.ministry_id = ${ministryId} and g.type = 'ministry' and g.deleted_at is null group by g.id order by g.name`,
-    sql<{ total: number }[]>`select coalesce(sum(extract(epoch from (s.ends_at - s.starts_at)) / 3600), 0) as total from public.volunteer_shifts s join public.events e on e.id = s.event_id where s.company_id = ${companyId} and e.ministry_id = ${ministryId} and s.ends_at is not null`,
-    sql<{ total: number }[]>`select count(*) from public.events e where e.company_id = ${companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.volunteer_schedule_published_at is not null`,
-    sql<{ status: string; total: number }[]>`select status, count(*) as total from public.person_follow_up_tasks where company_id = ${companyId} and ministry_id = ${ministryId} and deleted_at is null group by status`,
-    sql<{ status: string; total: number }[]>`select status, count(*) as total from public.notifications where company_id = ${companyId} and audience_kind = 'ministry' and audience_ref_id = ${ministryId} and deleted_at is null group by status`,
+    sql<{ total: number }[]>`select coalesce(sum(extract(epoch from (s.ends_at - s.starts_at)) / 3600), 0) as total from public.volunteer_shifts s join public.events e on e.id = s.event_id where s.company_id = ${companyId} and e.ministry_id = ${ministryId} and e.company_id = ${companyId} and e.deleted_at is null and e.status <> 'cancelled' and s.ends_at is not null and (s.starts_at at time zone ${timezone})::date between ${period.from}::date and ${period.to}::date`,
+    sql<{ total: number }[]>`select count(*) as total from public.events e where e.company_id = ${companyId} and e.ministry_id = ${ministryId} and e.deleted_at is null and e.volunteer_schedule_published_at is not null and (e.starts_at at time zone ${timezone})::date between ${period.from}::date and ${period.to}::date`,
+    sql<{ status: string; total: number }[]>`select status, count(*) as total from public.person_follow_up_tasks where company_id = ${companyId} and ministry_id = ${ministryId} and deleted_at is null and (coalesce(completed_at,created_at) at time zone ${timezone})::date between ${period.from}::date and ${period.to}::date group by status`,
+    sql<{ status: string; total: number }[]>`select status, count(*) as total from public.notifications where company_id = ${companyId} and ministry_id = ${ministryId} and deleted_at is null and (created_at at time zone ${timezone})::date between ${period.from}::date and ${period.to}::date group by status`,
     sql<{ active_at_30d: number; current_active: number }[]>`select count(*) filter (where status = 'active' and left_at is null and coalesce(joined_at, requested_at) <= now() - interval '30 days') as active_at_30d, count(*) filter (where status = 'active' and left_at is null) as current_active from public.ministry_memberships where company_id = ${companyId} and ministry_id = ${ministryId}`,
   ])
   const get = (rows: { total: number }[]) => number(rows[0]?.total)
   const currentActive = number(retention[0]?.current_active)
   const activeAt30d = number(retention[0]?.active_at_30d)
-  return { membersByStatus: status.map((row) => ({ status: row.status, total: number(row.total) })), membersByMonth: months.map((row) => ({ month: row.month, total: number(row.total) })), attendance: attendance.map((row) => ({ status: row.status, total: number(row.total) })), teamParticipation: teams.map((row) => ({ teamId: row.team_id, teamName: row.team_name, total: number(row.total) })), volunteerHours: get(hours), filledScales: get(scales), openFollowUps: number(followUps.filter((row) => row.status === "open" || row.status === "in_progress").reduce((sum, row) => sum + number(row.total), 0)), completedFollowUps: number(followUps.filter((row) => row.status === "completed").reduce((sum, row) => sum + number(row.total), 0)), communication: communication.map((row) => ({ status: row.status, total: number(row.total) })), retention: { activeAt30d, currentActive, rate: currentActive ? Math.round(activeAt30d / currentActive * 100) : 0 } }
+  return { period, timezone, membersByStatus: status.map((row) => ({ status: row.status, total: number(row.total) })), membersByMonth: months.map((row) => ({ month: row.month, total: number(row.total) })), attendance: attendance.map((row) => ({ status: row.status, total: number(row.total) })), teamParticipation: teams.map((row) => ({ teamId: row.team_id, teamName: row.team_name, total: number(row.total) })), volunteerHours: get(hours), filledScales: get(scales), openFollowUps: number(followUps.filter((row) => row.status === "open" || row.status === "in_progress").reduce((sum, row) => sum + number(row.total), 0)), completedFollowUps: number(followUps.filter((row) => row.status === "completed").reduce((sum, row) => sum + number(row.total), 0)), communication: communication.map((row) => ({ status: row.status, total: number(row.total) })), retention: { activeAt30d, currentActive, rate: currentActive ? Math.round(activeAt30d / currentActive * 100) : 0 } }
 }
 
-export async function getMinistryReport(ministryId: string, companyIdInput?: string | null) {
+export async function getMinistryReport(ministryId: string, companyIdInput?: string | null, period?: { from: string; to: string }) {
   const access = await requireMinistryPermission(ministryId, "ministries.reports.view", companyIdInput)
-  return getMinistryReportRows(access.companyId, ministryId)
+  return getMinistryReportRows(access.companyId, access.ministryId, period)
 }
 
 export async function listMinistryMembers(ministryId: string, companyIdInput?: string | null, search = "") {

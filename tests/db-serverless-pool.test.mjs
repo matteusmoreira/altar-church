@@ -27,12 +27,12 @@ test("serverless uses transaction pooling without changing local or direct conne
       const loaded = { exports: {} };
       new Function("require", "module", "exports", source)(() => ({ default: (url, options) => {
         captured = { url, options };
-        return captured;
+        return { ...captured, begin() {}, async end() {} };
       } }), loaded, loaded.exports);
       loaded.exports.getSql();
       assert.equal(new URL(captured.url).port, expectedPort);
       assert.equal(captured.options.prepare, false);
-      assert.equal(captured.options.max_pipeline, 1);
+      assert.equal(captured.options.max_pipeline, 0);
       assert.equal(new URL(process.env.POSTGRES_URL).port, port);
     }
   } finally {
@@ -60,6 +60,10 @@ test("application pool reserves transactions for commit, rollback and concurrent
       postgres(url, { ...options, max: 2 })
     }), loaded, loaded.exports);
     sql = loaded.exports.getSql();
+    // Warm connections previously pipelined autocommit queries and stalled on Supavisor.
+    await sql`select 1`;
+    const parallel = await Promise.all(Array.from({ length: 8 }, (_, value) => sql`select ${value}::int as value`));
+    assert.deepEqual(parallel.map(rows => rows[0].value), [0, 1, 2, 3, 4, 5, 6, 7]);
     const transactions = await Promise.all([1, 2].map((value) => sql.begin(async (tx) => {
       await tx`set transaction read only`;
       const [first] = await tx`select pg_backend_pid() as pid, ${value}::int as value`;
@@ -68,6 +72,16 @@ test("application pool reserves transactions for commit, rollback and concurrent
       return first.value;
     })));
     assert.deepEqual(transactions, [1, 2]);
+    const alongside = await Promise.all([
+      sql.begin(async tx => {
+        await tx`set transaction read only`;
+        const rows = await Promise.all([tx`select 1::int as value`, tx`select 2::int as value`]);
+        return rows.map(r => r[0].value);
+      }),
+      sql`select 3::int as value`,
+    ]);
+    assert.deepEqual(alongside[0], [1, 2]);
+    assert.equal(alongside[1][0].value, 3);
     const rollback = new Error("intentional rollback");
     await assert.rejects(sql.begin(async (tx) => {
       await tx`set transaction read only`;

@@ -3,6 +3,7 @@ import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getCompanyEnabledModuleIds } from "@/lib/admin/data";
 import { getSql } from "@/lib/db/client";
+import type { TransactionSql } from "postgres";
 import { hasPermission, type Permission, type UserRole } from "@/lib/types";
 import { parseStoredFlowDefinition, type AudienceFilter, type FlowDefinition } from "./contract";
 
@@ -82,7 +83,7 @@ export async function selectAudience(
   companyId: string,
   filter: AudienceFilter = {},
   personId?: string | null,
-  sql: ReturnType<typeof getSql> = getSql(),
+  sql: ReturnType<typeof getSql> | TransactionSql = getSql(),
 ) {
   return sql<AudiencePerson[]>`
     select p.id,p.full_name,p.phone,p.person_type,p.status,p.birth_date,p.baptism_date,company.name as company_name,

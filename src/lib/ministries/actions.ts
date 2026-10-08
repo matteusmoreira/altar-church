@@ -629,7 +629,7 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
   const candidates: SchedulerCandidateInput[] = []
   const volunteerIds = people.map((person) => person.volunteer_id).filter((id): id is string => Boolean(id))
   const allHistory = volunteerIds.length
-    ? await sql<Record<string, unknown>[]>`select assignment.volunteer_id, other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = any(${sql.array(volunteerIds)}::uuid[]) and assignment.company_id = ${access.companyId}`
+    ? await sql<Record<string, unknown>[]>`select assignment.volunteer_id, other_shift.event_id, other_shift.starts_at, coalesce(other_shift.ends_at, other_shift.starts_at + interval '2 hours') as ends_at, assignment.status, other_shift.role_name from public.volunteer_assignments assignment join public.volunteer_shifts other_shift on other_shift.id = assignment.shift_id and other_shift.company_id = ${access.companyId} where assignment.volunteer_id = any(${sql.array(volunteerIds)}::uuid[]) and assignment.company_id = ${access.companyId}`
     : []
   const historyByVolunteer = new Map<string, Record<string, unknown>[]>()
   for (const row of allHistory) {
@@ -672,6 +672,8 @@ async function loadMinistryScaleCandidates(access: Awaited<ReturnType<typeof req
       score: manual.score,
       warnings: manual.warnings,
       blockers: manual.blockers,
+      recentScales: new Set((historyByVolunteer.get(candidate.volunteerId) ?? []).filter(row => !["declined", "cancelled"].includes(String(row.status)) && new Date(String(row.starts_at)).getTime() >= Date.now() - 30 * 86400000 && new Date(String(row.starts_at)).getTime() <= Date.now()).map(row => String(row.event_id ?? row.starts_at))).size,
+      lastParticipation: (historyByVolunteer.get(candidate.volunteerId) ?? []).filter(row => !["declined", "cancelled"].includes(String(row.status)) && new Date(String(row.starts_at)).getTime() <= Date.now()).map(row => new Date(String(row.starts_at)).toISOString()).sort().at(-1) ?? null,
     }
   })
 }
