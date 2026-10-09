@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import { randomUUID } from "node:crypto"
+import { createSupabaseAdminClient } from "@/lib/supabase/admin"
+import { FILE_BUCKET } from "@/lib/files/server"
+import { defaultEventTypes, eventTypeLabel, EVENT_COVER_MAX_BYTES, EVENT_COVER_MIME_TYPES } from "./presentation"
 import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
@@ -14,6 +18,70 @@ import { consumePublicRateLimit } from "@/lib/security/public-rate-limit"
 
 const uuid = z.string().uuid()
 const phone = z.string().trim().max(30).default("")
+
+export async function changeEventType(operation: "add" | "delete", valueInput: string, editing = false) {
+  try {
+    const { companyId, user } = await managerContext(editing ? "events.edit" : "events.create")
+    const value = z.string().trim().min(1).max(100).parse(valueInput)
+    if (!["add", "delete"].includes(operation)) throw new Error("Operação inválida")
+    const options = await getSql().begin(async tx => {
+      await tx`insert into public.church_profiles(company_id) values (${companyId}) on conflict (company_id) do nothing`
+      const [row] = await tx<{ event_types: string[] }[]>`select event_types from public.church_profiles where company_id = ${companyId} for update`
+      const current = row.event_types ?? defaultEventTypes
+      if (operation === "add" && current.some(item => eventTypeLabel(item).toLocaleLowerCase("pt-BR") === value.toLocaleLowerCase("pt-BR"))) throw new Error("Este tipo já existe")
+      const next = operation === "add" ? [...current, value] : current.filter(item => item !== value)
+      if (!next.length) throw new Error("Mantenha ao menos um tipo de evento")
+      if (next.length > 100) throw new Error("Limite de 100 tipos atingido")
+      await tx`update public.church_profiles set event_types = ${next}::text[], updated_by = ${user.id} where company_id = ${companyId}`
+      return next
+    })
+    revalidatePath("/eventos", "layout")
+    return { ok: true as const, options }
+  } catch (error) { return result(error) }
+}
+
+export async function prepareEventCoverUpload(input: { name: string; mimeType: string; sizeBytes: number; eventId?: string }) {
+  try {
+    const parsed = z.object({ name: z.string().min(1).max(255), mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]), sizeBytes: z.number().int().positive().max(EVENT_COVER_MAX_BYTES, "A capa deve ter até 20 MB"), eventId: uuid.optional() }).parse(input)
+    const { companyId, user } = await managerContext(parsed.eventId ? "events.edit" : "events.create")
+    if (parsed.eventId) {
+      const [event] = await getSql()`select id from public.events where id = ${parsed.eventId} and company_id = ${companyId} and deleted_at is null`
+      if (!event) throw new Error("Evento não encontrado")
+    }
+    const storage = createSupabaseAdminClient()
+    if (!storage) throw new Error("Armazenamento indisponível")
+    const id = randomUUID()
+    const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[parsed.mimeType]
+    const path = `${companyId}/events/pending/cover/${id}.${extension}`
+    const signed = await storage.storage.from(FILE_BUCKET).createSignedUploadUrl(path, { upsert: false })
+    if (signed.error) throw new Error("Não foi possível preparar a capa")
+    await getSql()`insert into public.app_files(id, company_id, bucket, storage_path, original_name, mime_type, size_bytes, owner_profile_id, entity_table, purpose, is_active)
+      values (${id}, ${companyId}, ${FILE_BUCKET}, ${path}, ${parsed.name}, ${parsed.mimeType}, ${parsed.sizeBytes}, ${user.id}, 'events', 'cover', false)`
+    return { ok: true as const, id, path, token: signed.data.token, bucket: FILE_BUCKET }
+  } catch (error) { return result(error) }
+}
+
+export async function finalizeEventCoverUpload(idInput: string, editing = false) {
+  try {
+    const id = uuid.parse(idInput)
+    const { companyId, user } = await managerContext(editing ? "events.edit" : "events.create")
+    const [file] = await getSql()<{ storage_path: string; original_name: string; mime_type: string; size_bytes: number }[]>`select storage_path, original_name, mime_type, size_bytes from public.app_files where id = ${id} and company_id = ${companyId} and owner_profile_id = ${user.id} and entity_table = 'events' and purpose = 'cover' and entity_id is null and deleted_at is null and created_at > now() - interval '2 hours'`
+    if (!file) throw new Error("Capa não encontrada")
+    const storage = createSupabaseAdminClient()
+    if (!storage) throw new Error("Armazenamento indisponível")
+    const downloaded = await storage.storage.from(FILE_BUCKET).download(file.storage_path)
+    if (downloaded.error || !downloaded.data) throw new Error("Upload incompleto. Tente novamente")
+    const bytes = Buffer.from(await downloaded.data.arrayBuffer())
+    const valid = file.mime_type === "image/jpeg" ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 : file.mime_type === "image/png" ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : file.mime_type === "image/webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
+    if (!valid || bytes.length !== Number(file.size_bytes) || bytes.length > EVENT_COVER_MAX_BYTES) {
+      await storage.storage.from(FILE_BUCKET).remove([file.storage_path])
+      throw new Error("Imagem inválida. Use JPEG, PNG ou WebP de até 20 MB")
+    }
+    await getSql()`update public.app_files set is_active = true where id = ${id} and company_id = ${companyId} and owner_profile_id = ${user.id}`
+    const signed = await storage.storage.from(FILE_BUCKET).createSignedUrl(file.storage_path, 3600)
+    return { ok: true as const, id, name: file.original_name, previewUrl: signed.data?.signedUrl || "" }
+  } catch (error) { return result(error) }
+}
 
 function result(error: unknown) {
   return { ok: false as const, error: error instanceof Error ? error.message : "Não foi possível concluir a operação" }
@@ -384,7 +452,7 @@ export async function uploadEventCover(formData: FormData) {
     const { user, companyId } = await managerContext(eventId ? "events.edit" : "events.create")
     const file = formData.get("file")
     if (!(file instanceof File)) throw new Error("Selecione uma imagem")
-    const saved = await uploadManagedFile({ file, companyId, ownerProfileId: user.id, entityTable: "events", purpose: "cover", allowedMimeTypes: new Set(["image/jpeg", "image/png", "image/webp"]), maxSizeBytes: 5 * 1024 * 1024 })
+    const saved = await uploadManagedFile({ file, companyId, ownerProfileId: user.id, entityTable: "events", purpose: "cover", allowedMimeTypes: new Set(EVENT_COVER_MIME_TYPES), maxSizeBytes: EVENT_COVER_MAX_BYTES })
     return { ok: true as const, id: saved.id, name: saved.originalName }
   } catch (error) { return result(error) }
 }

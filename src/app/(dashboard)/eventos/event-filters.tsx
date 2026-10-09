@@ -1,3 +1,4 @@
+import { eventTypeLabel } from "@/lib/events/presentation"
 import Link from "next/link"
 import { Filter, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -7,14 +8,7 @@ import type { ChurchEvent } from "@/lib/types"
 
 type FilterValues = Required<EventListFilters>
 
-const typeLabels: Record<ChurchEvent["type"], string> = {
-  service: "Culto",
-  prayer: "Oração",
-  youth: "Jovens",
-  children: "Crianças",
-  special: "Especial",
-  meeting: "Reunião",
-}
+
 
 const statusLabels: Record<ChurchEvent["status"], string> = {
   draft: "Rascunho",
@@ -22,7 +16,7 @@ const statusLabels: Record<ChurchEvent["status"], string> = {
   cancelled: "Cancelado",
 }
 
-export function EventFilters({ values, ministries }: { values: FilterValues; ministries: { id: string; name: string }[] }) {
+export function EventFilters({ values, ministries, eventTypes }: { eventTypes: string[]; values: FilterValues; ministries: { id: string; name: string }[] }) {
   return (
     <form method="get" className="rounded-2xl border bg-card/70 p-4 shadow-sm">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -36,7 +30,7 @@ export function EventFilters({ values, ministries }: { values: FilterValues; min
         </div>
         <select name="type" defaultValue={values.type} className="h-10 rounded-md border bg-background px-3 text-sm">
           <option value="">Todos os tipos</option>
-          {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {eventTypes.map(value => <option key={value} value={value}>{eventTypeLabel(value)}</option>)}
         </select>
         <select name="status" defaultValue={values.status} className="h-10 rounded-md border bg-background px-3 text-sm">
           <option value="">Todos os status</option>

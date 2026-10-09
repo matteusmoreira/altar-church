@@ -1,4 +1,6 @@
 "use client"
+
+import { eventTypeLabel } from "@/lib/events/presentation"
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
@@ -14,14 +16,7 @@ import { eventLocalDateTime, eventPriceLabel } from "@/lib/events/contract"
 import type { EventListItem } from "@/lib/operational/data"
 import type { ChurchEvent } from "@/lib/types"
 
-const typeLabels: Record<ChurchEvent["type"], string> = {
-  service: "Culto",
-  prayer: "Oração",
-  youth: "Jovens",
-  children: "Crianças",
-  special: "Especial",
-  meeting: "Reunião",
-}
+
 
 const statusLabels: Record<ChurchEvent["status"], string> = {
   draft: "Rascunho",
@@ -61,7 +56,7 @@ function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListI
               <Button render={<Link href={`/eventos/${event.slug || event.id}`} />} nativeButton={false} variant="link" className="h-auto min-w-0 p-0 text-left whitespace-normal break-words text-base font-semibold text-foreground">
                 {event.title}
               </Button>
-              <Badge variant="outline">{typeLabels[event.type]}</Badge>
+              <Badge variant="outline">{eventTypeLabel(event.type)}</Badge>
               <Badge variant={statusVariant(event.status)}>{statusLabels[event.status]}</Badge>
               {event.isOnline && <Badge variant="outline"><Globe className="mr-1 h-3 w-3" />Online</Badge>}
             </div>

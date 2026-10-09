@@ -363,3 +363,8 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 
 - Modalidade externa usa o evento existente, URL HTTPS independente da transmissao e encaminhamento ao Sympla. Compra, disponibilidade e conferencia de ingressos ficam na plataforma; equipe e escala permanecem no Altar. Evidencias e regras: docs/events/external-registration.md.
 - Migracao aditiva aplicada isoladamente, 34 testes focados e piloto autenticado aprovados. Foram verificados links no celular/portal, criacao/edicao/duplicacao/cancelamento, escala publicada e bloqueio de conversao com inscricoes internas. Fixtures removidas. Aplicacao ainda nao publicada; o piloto nao realiza compra externa nem confirma recebimento de canais reais.
+
+## Memoria na suite de testes - 09/10/2026
+
+- A execucao de `node --test tests/*.test.mjs` com paralelismo automatico encerrou processos com `Fatal process out of memory: Zone` neste Windows. Para manter a cobertura completa, executar a primeira etapa com `node --test --test-concurrency=2 tests/*.test.mjs` e depois os mesmos scripts complementares de `npm test`. O teste de carga de 1.500 conversas pode levar alguns minutos; aguardar seu resultado.
+- A verificacao estatica do formulario de eventos foi atualizada para considerar o bloqueio durante salvamento e upload da capa (`isPending || uploading`).

@@ -336,7 +336,7 @@ export interface ChurchEvent {
   churchId: string
   title: string
   description: string
-  type: "service" | "prayer" | "youth" | "children" | "special" | "meeting"
+  type: string
   startDate: string
   endDate: string
   location: string

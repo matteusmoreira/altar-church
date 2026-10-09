@@ -44,7 +44,7 @@ const eventSchema = z.object({
   id: optionalUuidField,
   title: requiredString("Título"),
   startDate: requiredString("Início"),
-  type: z.enum(["service", "prayer", "youth", "children", "special", "meeting"]).default("service"),
+  type: z.string().trim().min(1).max(100).default("service"),
   status: z.enum(["draft", "published", "cancelled"]).default("draft"),
 })
 const attendanceSchema = z.object({
@@ -387,7 +387,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     const { user, companyId } = await actionContext(formData, id ? "events.edit" : "events.create")
     const sql = getSql()
     const title = requiredText(formData, "title", "Título")
-    const [settings] = await sql<{ timezone: string }[]>`select coalesce(timezone, 'America/Sao_Paulo') as timezone from public.church_profiles where company_id = ${companyId} limit 1`
+    const [settings] = await sql<{ timezone: string; event_types: string[] }[]>`select event_types, coalesce(timezone, 'America/Sao_Paulo') as timezone from public.church_profiles where company_id = ${companyId} limit 1`
     const timezone = settings?.timezone || "America/Sao_Paulo"
     const localStart = requiredText(formData, "startDate", "Início")
     const start = zonedDate(localStart, timezone)
@@ -416,7 +416,8 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     }
     const type = text(formData, "type", "service")
     const status = text(formData, "status", "draft")
-    if (!["service", "prayer", "youth", "children", "special", "meeting"].includes(type)) {
+    const [existingType] = id ? await sql<{ type: string }[]>`select type from public.events where id = ${id} and company_id = ${companyId} and deleted_at is null` : []
+    if (!(settings?.event_types ?? ["service", "prayer", "youth", "children", "special", "meeting"]).includes(type) && existingType?.type !== type) {
       throw new Error("Tipo de evento inválido")
     }
     if (!["draft", "published", "cancelled"].includes(status)) {
@@ -500,6 +501,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
           set title = ${title},
               description = ${text(formData, "description")},
               type = ${type},
+              banner_url = case when ${bool(formData, "removeCover")} then '' else banner_url end,
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               location = ${text(formData, "location")},

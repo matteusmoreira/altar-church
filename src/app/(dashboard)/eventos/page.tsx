@@ -1,3 +1,4 @@
+import { listEventTypes } from "@/lib/events/data"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { CalendarDays, CheckCircle2, Clock3, Users } from "lucide-react"
@@ -26,10 +27,11 @@ export default async function EventsPage({ searchParams }: { searchParams?: Prom
     from: first(params.from),
     to: first(params.to),
   })
-  const [user, events, ministries] = await Promise.all([
+  const [user, events, ministries, eventTypes] = await Promise.all([
     requireUser(),
     listEvents(filters, undefined, Number(first(params.page) || 1)),
     listEventMinistries(),
+    listEventTypes(),
   ])
   const listing = events
   const pageEvents = listing.events
@@ -49,7 +51,7 @@ export default async function EventsPage({ searchParams }: { searchParams?: Prom
         <MetricCard variant="compact" title="Inscrições" value={listing.registrations} icon={Users} tone="info" />
       </MetricGrid>
 
-      <EventFilters values={filters} ministries={ministries} />
+      <EventFilters eventTypes={[...new Set([...eventTypes, ...pageEvents.map(event => event.type)])]} values={filters} ministries={ministries} />
       <EventsListView events={pageEvents} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
       {listing.total > listing.pageSize && <nav aria-label="Paginação dos eventos" className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Página {listing.page} de {Math.ceil(listing.total / listing.pageSize)} · {listing.total} eventos</p><div className="flex gap-2">{listing.page > 1 && <Button variant="outline" render={<Link href={pageHref(listing.page - 1)} />}>Anterior</Button>}{listing.page * listing.pageSize < listing.total && <Button variant="outline" render={<Link href={pageHref(listing.page + 1)} />}>Próxima</Button>}</div></nav>}
     </div>

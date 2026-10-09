@@ -813,7 +813,6 @@ function toDonationRecurrence(row: DonationRecurrenceRow): DonationRecurrence {
   }
 }
 
-const eventTypes: ChurchEvent["type"][] = ["service", "prayer", "youth", "children", "special", "meeting"]
 const eventStatuses: ChurchEvent["status"][] = ["draft", "published", "cancelled"]
 
 function validUuid(value: string | undefined) {
@@ -827,7 +826,7 @@ function validDate(value: string | undefined) {
 export function normalizeEventFilters(filters: EventListFilters = {}): Required<EventListFilters> {
   return {
     query: filters.query?.trim() ?? "",
-    type: filters.type && eventTypes.includes(filters.type) ? filters.type : "",
+    type: filters.type?.trim() && filters.type.trim().length <= 100 ? filters.type.trim() : "",
     status: filters.status && eventStatuses.includes(filters.status) ? filters.status : "",
     location: filters.location?.trim() ?? "",
     ministryId: validUuid(filters.ministryId),

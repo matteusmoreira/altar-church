@@ -31,7 +31,7 @@ test("events creation surfaces server action result to the user", () => {
   assert.match(form, /const result = await saveEvent\(formData\)/)
   assert.match(form, /toast\.error\(result\.error/)
   assert.match(form, /toast\.success\("Evento criado com sucesso"\)/)
-  assert.match(form, /disabled=\{isPending\}/)
+  assert.match(form, /disabled=\{isPending \|\| uploading\}/)
   assert.match(form, /Voluntariado — opcional/)
   assert.match(form, /<SelectItem value="none">Não aplicar modelo<\/SelectItem>/)
   assert.match(actions, /volunteerTemplateValue !== "none"/)

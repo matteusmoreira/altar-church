@@ -9,6 +9,15 @@ import type { EventCheckinPreview, EventCheckinSessionPreview, EventDashboardSum
 
 type DateValue = Date | string | null
 
+export async function listEventTypes() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Acesso negado")
+  const companyId = requireUserCompanyId(user)
+  await requirePermission("events.view", companyId)
+  const [row] = await getSql()<{ event_types: string[] }[]>`select event_types from public.church_profiles where company_id = ${companyId}`
+  return row?.event_types ?? ["service", "prayer", "youth", "children", "special", "meeting"]
+}
+
 function iso(value: DateValue) {
   if (!value) return null
   return value instanceof Date ? value.toISOString() : value

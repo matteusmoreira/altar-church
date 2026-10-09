@@ -87,11 +87,40 @@ test("real event actions and migration on isolated PostgreSQL", async t => {
       export const requirePermission=async()=>{if(!globalThis.__eventTest.allowed)throw new Error('Acesso negado')};
       export const writeAuditLog=async()=>{};export const revalidatePath=()=>{};
       export const consumePublicRateLimit=async()=>true;
-      export const uploadManagedFile=async()=>{throw new Error('Unused')};
+      export const FILE_BUCKET="church-assets"; export const createSupabaseAdminClient=()=>globalThis.__eventTest.storage || null; export const uploadManagedFile=async()=>{throw new Error('Unused')};
       export const getPublicEventByToken=async()=>null;
       export const eventCommunicationTemplates=[];`)
     const helpers = await moduleUrl("src/lib/events/registration-server.ts")
-    const actions = await import(await moduleUrl("src/lib/events/actions.ts", {"next/cache":stub,"@/lib/auth/permissions":stub,"@/lib/auth/server":stub,"@/lib/db/client":stub,"./data":stub,"./types":stub,"@/lib/security/public-rate-limit":stub,"@/lib/files/server":stub,"./registration-server":helpers,"zod":pathToFileURL(resolve("node_modules/zod/index.js")).href}))
+    const actions = await import(await moduleUrl("src/lib/events/actions.ts", {"next/cache":stub,"@/lib/auth/permissions":stub,"@/lib/auth/server":stub,"@/lib/db/client":stub,"./data":stub,"./types":stub,"@/lib/security/public-rate-limit":stub,"@/lib/files/server":stub,"@/lib/supabase/admin":stub,"./presentation":await moduleUrl("src/lib/events/presentation.ts"),"./registration-server":helpers,"zod":pathToFileURL(resolve("node_modules/zod/index.js")).href}))
+    await t.test("church event types preserve history and enforce permissions and upload limits", async () => {
+      await db.exec(`alter table church_profiles add column updated_by uuid;
+        alter table events add column type text default 'service';
+        create unique index church_profiles_company on church_profiles(company_id);
+        create schema storage; create table storage.buckets(id text, file_size_limit bigint);
+        insert into storage.buckets values ('church-assets',10485760),('other',1048576);`)
+      await db.exec(await readFile("supabase/migrations/20261009200013_event_type_catalog.sql", "utf8"))
+      const presentation = await import(await moduleUrl("src/lib/events/presentation.ts"))
+      assert.equal(presentation.EVENT_COVER_MAX_BYTES, 20971520)
+      assert.deepEqual(presentation.templateDisplayOptions([{id:'a',name:'Limpeza · 48f9950e'},{id:'b',name:'Limpeza · 66c0fe9d'}]).map(item=>item.name), ['Limpeza — modelo 1','Limpeza — modelo 2'])
+      assert.deepEqual((await db.query("select file_size_limit from storage.buckets order by id")).rows.map(row=>Number(row.file_size_limit)), [20971520,1048576])
+      await db.query("insert into church_profiles(company_id) values($1)",[id.otherCompany])
+      let added = await actions.changeEventType('add', 'Conferência')
+      assert.equal(added.ok,true,JSON.stringify(added)); assert.ok(added.options.includes('Conferência'))
+      assert.equal((await actions.changeEventType('add',' conferência ')).ok,false)
+      await db.query("update events set type='Conferência' where id=$1",[id.event])
+      assert.equal((await actions.changeEventType('delete','Conferência')).ok,true)
+      assert.equal((await db.query("select type from events where id=$1",[id.event])).rows[0].type,'Conferência')
+      assert.equal((await db.query("select event_types from church_profiles where company_id=$1",[id.otherCompany])).rows[0].event_types.includes('Conferência'),false)
+      globalThis.__eventTest.allowed=false
+      assert.equal((await actions.changeEventType('add','Bloqueado')).ok,false)
+      assert.equal((await actions.prepareEventCoverUpload({name:'cover.png',mimeType:'image/png',sizeBytes:1})).ok,false)
+      globalThis.__eventTest.allowed=true
+      assert.equal((await actions.prepareEventCoverUpload({name:'cover.png',mimeType:'image/png',sizeBytes:20971521})).ok,false)
+      assert.equal((await actions.prepareEventCoverUpload({name:'cover.svg',mimeType:'image/svg+xml',sizeBytes:10})).ok,false)
+      for(const choice of added.options.filter(item=>item!=='Conferência').slice(1)) assert.equal((await actions.changeEventType('delete',choice)).ok,true)
+      assert.equal((await actions.changeEventType('delete','service')).ok,false)
+      await db.exec("update events set type='service'")
+    })
     let memberRegistration, guestRegistration
     await t.test("simultaneous member and guest registrations share the last place",async()=>{
       const responses=await Promise.all([actions.registerEventParticipant({eventId:id.event,personId:id.member}), actions.registerEventParticipant({eventId:id.event,fullName:"Visitante",phone:"11988880000",consent:true})])

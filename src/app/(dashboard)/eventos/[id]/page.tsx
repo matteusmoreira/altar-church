@@ -1,3 +1,4 @@
+import { listEventTypes } from "@/lib/events/data"
 import { resolveEntityRoute, canonicalEntityPath, type RouteSearchParams } from "@/lib/navigation/entity-slugs"
 import { notFound, redirect } from "next/navigation"
 import { getSql } from "@/lib/db/client"
@@ -13,7 +14,7 @@ export default async function EventDetailPage({ params, searchParams }: { params
   const route = await resolveEntityRoute("events", identifier)
   if (!route) notFound()
   const id = route.id
-  const [user, event, volunteerTemplates, ministries, forms, report, resources] = await Promise.all([
+  const [user, event, volunteerTemplates, ministries, forms, report, resources, eventTypes] = await Promise.all([
     requireUser(),
     getEventDetail(id),
     listVolunteerTemplatesForEvents(),
@@ -21,6 +22,7 @@ export default async function EventDetailPage({ params, searchParams }: { params
     listEventForms(),
     getEventReport(id),
     listEventResources(id),
+    listEventTypes(),
   ]).catch((error) => {
     if (error instanceof Error && /não encontrado|nao encontrado|inválido|invalido/i.test(error.message)) notFound()
     throw error
@@ -37,5 +39,5 @@ export default async function EventDetailPage({ params, searchParams }: { params
     else teamData.eventPlans.push({ eventId: id, eventTitle: event.title, startsAt: event.startDate, schedulePublishedAt: publication?.published_at?.toISOString() ?? null, positions, timeline: [], setlistId: null, setlistTitle: "", setlistNotes: "", setlistItems: [] })
   }
   if (identifier !== route.slug) redirect(canonicalEntityPath("/eventos", route.slug, await searchParams))
-  return <EventDetailClient session={session} people={people.map(p => ({ id: p.id, name: p.fullName }))} teamData={teamData} teamPermissions={{ create: hasPermission(user, "schedules.create"), edit: hasPermission(user, "schedules.edit"), publish: hasPermission(user, "schedules.publish") }} event={event} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} report={report} resources={resources} canEdit={hasPermission(user, "events.edit")} canCreate={hasPermission(user, "events.create")} canDelete={hasPermission(user, "events.delete")} canExport={hasPermission(user, "reports.export")} />
+  return <EventDetailClient eventTypes={eventTypes} session={session} people={people.map(p => ({ id: p.id, name: p.fullName }))} teamData={teamData} teamPermissions={{ create: hasPermission(user, "schedules.create"), edit: hasPermission(user, "schedules.edit"), publish: hasPermission(user, "schedules.publish") }} event={event} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} report={report} resources={resources} canEdit={hasPermission(user, "events.edit")} canCreate={hasPermission(user, "events.create")} canDelete={hasPermission(user, "events.delete")} canExport={hasPermission(user, "reports.export")} />
 }
