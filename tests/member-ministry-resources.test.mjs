@@ -74,6 +74,7 @@ test("information dialog renders image previews, documents, external links and e
   })
   const render = () => renderToStaticMarkup(React.createElement(MinistryInformation, { ministryId: 'ministry', name: 'Tecnologia', open: true, onOpenChange() {} }))
   const html = render()
+  assert.ok(html.indexOf('Próximas atividades e escalas</h3>') < html.indexOf('Recursos</h3>'))
   assert.match(html, /<img[^>]+src="https:\/\/example.com\/foto.png"[^>]+alt="Foto do ministério"/)
   assert.match(html, /href="https:\/\/example.com\/manual.pdf"/)
   assert.match(html, /href="https:\/\/example.com\/site"/)
