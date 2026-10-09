@@ -254,13 +254,18 @@ export async function processNotificationOutbox(batchSize = 25, notificationId: 
   let failed = 0
   let dead = 0
 
-  for (const delivery of claimed) {
+  async function processClaimedDelivery(delivery: DeliveryRow) {
     try {
       const activeRows = await sql<{ id: string }[]>`
         select delivery.id from public.notification_deliveries delivery
         join public.notifications campaign on campaign.id = delivery.notification_id and campaign.company_id = delivery.company_id
         where delivery.id = ${delivery.id} and delivery.status = 'processing'
           and campaign.deleted_at is null and campaign.status not in ('canceled', 'draft')
+          and (delivery.channel <> 'push' or exists (
+            select 1 from public.people person
+            where person.id = delivery.person_id and person.company_id = delivery.company_id
+              and person.deleted_at is null and person.is_active = true and person.status <> 'inactive'
+          ))
           and not exists (
             select 1 from public.notification_channel_preferences preference
             where preference.company_id = delivery.company_id and preference.person_id = delivery.person_id
@@ -271,8 +276,7 @@ export async function processNotificationOutbox(batchSize = 25, notificationId: 
       if (!activeRows[0]) {
         await sql`update public.notification_deliveries set status = 'canceled', locked_at = null, updated_at = now()
           where id = ${delivery.id} and status = 'processing'`
-        await refreshCampaignStatus(delivery.notification_id)
-        continue
+        return
       }
       const campaign = await campaignText(delivery.notification_id)
       const result = await sendDelivery(delivery, campaign)
@@ -288,7 +292,18 @@ export async function processNotificationOutbox(batchSize = 25, notificationId: 
       if (state === "dead") dead += 1
       else failed += 1
     }
-    await refreshCampaignStatus(delivery.notification_id)
+  }
+
+  if (claimed.every((delivery) => delivery.channel === "push")) {
+    // Bound concurrency and avoid one slow device delaying every other push.
+    for (let offset = 0; offset < claimed.length; offset += 5) {
+      await Promise.all(claimed.slice(offset, offset + 5).map(processClaimedDelivery))
+    }
+  } else {
+    for (const delivery of claimed) await processClaimedDelivery(delivery)
+  }
+  for (const campaignId of new Set(claimed.map((delivery) => delivery.notification_id))) {
+    await refreshCampaignStatus(campaignId)
   }
 
   return { processed: claimed.length, sent, failed, dead }
@@ -306,4 +321,35 @@ export async function retryNotificationDelivery(deliveryId: string, companyId: s
     returning id, notification_id
   `
   return rows[0] ?? null
+}
+
+export async function prepareImmediatePush(notificationId: string, companyId: string) {
+  return getSql().begin(async (tx) => {
+    const campaigns = await tx<{ id: string; status: string }[]>`
+      select id, status from public.notifications
+      where id = ${notificationId} and company_id = ${companyId}
+        and method = 'push' and deleted_at is null and status not in ('canceled', 'draft')
+      for update
+    `
+    const campaign = campaigns[0]
+    if (!campaign) throw new Error("Campanha push não encontrada ou cancelada")
+    // Only an explicitly repeated, finished campaign may resend successful deliveries.
+    const deliveries = await tx<{ id: string }[]>`
+      update public.notification_deliveries
+      set status = 'pending', attempts = 0, next_attempt_at = now(), last_error = null,
+          provider_id = null, response_status = null, sent_at = null, delivered_at = null,
+          locked_at = null, updated_at = now()
+      where notification_id = ${notificationId} and company_id = ${companyId} and channel = 'push'
+        and (status in ('pending', 'failed', 'dead') or (status = 'sent' and ${campaign.status} = 'completed'))
+      returning id
+    `
+    if (deliveries.length) {
+      await tx`
+        update public.notifications set status = 'queued', scheduled_send = false, scheduled_at = null,
+          completed_at = null, updated_at = now()
+        where id = ${notificationId} and company_id = ${companyId}
+      `
+    }
+    return deliveries.length
+  })
 }

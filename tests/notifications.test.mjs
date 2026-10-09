@@ -26,7 +26,7 @@ async function fixture() {
     create role anon;
     create role authenticated;
     alter default privileges grant execute on functions to anon, authenticated;
-    create table notifications(id uuid primary key,company_id uuid,title text default 'Aviso',content text default 'Mensagem',status text default 'queued',whatsapp_message jsonb,deleted_at timestamptz,completed_at timestamptz,updated_at timestamptz default now());
+    create table notifications(id uuid primary key,company_id uuid,title text default 'Aviso',content text default 'Mensagem',method text default 'push',scheduled_send boolean default false,scheduled_at timestamptz,status text default 'queued',whatsapp_message jsonb,deleted_at timestamptz,completed_at timestamptz,updated_at timestamptz default now());
     create table notification_deliveries(id uuid primary key default gen_random_uuid(),notification_id uuid,company_id uuid,person_id uuid,channel text default 'push',recipient text default 'https://push.test/device',recipient_name text default 'Membro',status text default 'pending',attempts integer default 0,next_attempt_at timestamptz default now(),created_at timestamptz default now(),updated_at timestamptz default now(),locked_at timestamptz,last_error text,provider_id text,response_status integer,sent_at timestamptz,delivered_at timestamptz);
     create table notification_push_subscriptions(id uuid primary key default gen_random_uuid(),company_id uuid,person_id uuid,profile_id uuid,endpoint text unique,p256dh text,auth_key text,user_agent text,is_active boolean,updated_at timestamptz default now());
     create table notification_channel_preferences(company_id uuid,person_id uuid,channel text,opted_out boolean);
@@ -43,6 +43,10 @@ async function fixture() {
   await db.exec(readFileSync("supabase/migrations/20261005185525_notification_worker_execute_permissions.sql", "utf8"))
   const sql = async (strings, ...values) => (await db.query(strings.reduce((query, part, index) => query + part + (index < values.length ? `$${index + 1}` : ""), ""), values)).rows
   sql.array = (values) => values
+  sql.begin = (callback) => db.transaction(async (tx) => {
+    const transactionSql = async (strings, ...values) => (await tx.query(strings.reduce((query, part, index) => query + part + (index < values.length ? `$${index + 1}` : ""), ""), values)).rows
+    return callback(transactionSql)
+  })
   const sent = []
   let providerError = null
   const delivery = load("src/lib/notifications/delivery.ts", {
@@ -187,7 +191,10 @@ test("service worker displays malformed text push instead of losing the notifica
   handlers.push({ data: { json() { throw new SyntaxError("not JSON") }, text: () => "Aviso da igreja" }, waitUntil: (promise) => { work = promise } })
   await work
   assert.equal(notifications[0][1].body, "Aviso da igreja")
-  assert.equal(notifications[0][1].icon, "/icons/icon-192.png")
+  assert.equal(notifications[0][1].icon, "/brand/altar/altar-church_simbolo_escuro_v1.png")
+  assert.equal(notifications[0][1].badge, "/brand/altar/altar-church_simbolo_escuro_v1.png")
+  const badge = readFileSync(`public${notifications[0][1].badge}`)
+  assert.equal(badge[25], 6, "notification mark must be RGBA, with transparency for the Android mask")
 })
 
 test("push registration requires a live person in the authenticated tenant", async () => {
@@ -242,4 +249,82 @@ test("worker diagnostics require authentication and never claim or send deliveri
       if (before[index] === undefined) delete process.env[key]; else process.env[key] = before[index]
     }
   }
+})
+
+test("immediate push anticipates schedules, scopes the campaign and does not duplicate an open dispatch", async () => {
+  const { db, delivery } = await fixture()
+  try {
+    await db.exec(`update notifications set status='scheduled',scheduled_send=true,scheduled_at=now()+interval '1 day';
+      insert into notification_deliveries(notification_id,company_id,person_id,next_attempt_at) values('${campaign}','${tenant}','${person}',now()+interval '1 day');`)
+    assert.equal(await delivery.prepareImmediatePush(campaign, tenant), 1)
+    const ready = (await db.query('select status,scheduled_send,scheduled_at from notifications')).rows[0]
+    assert.equal(ready.status, 'queued')
+    assert.equal(ready.scheduled_send, false)
+    assert.equal(ready.scheduled_at, null)
+    assert.equal((await db.query('select * from claim_notification_delivery_batch(25,$1,$2)', [campaign, tenant])).rows.length, 1)
+    assert.equal(await delivery.prepareImmediatePush(campaign, tenant), 0)
+    await assert.rejects(() => delivery.prepareImmediatePush(campaign, otherTenant), /não encontrada/)
+    await db.exec("update notifications set status='canceled'; update notification_deliveries set status='failed'")
+    await assert.rejects(() => delivery.prepareImmediatePush(campaign, tenant), /cancelada/)
+    assert.equal((await db.query('select status from notification_deliveries')).rows[0].status, 'failed')
+    await db.exec("update notifications set status='queued', method='whatsapp'")
+    await assert.rejects(() => delivery.prepareImmediatePush(campaign, tenant), /não encontrada/)
+  } finally { await db.close() }
+})
+
+test("repeat push resets receipts only after a completed campaign; inactive people are not sent push", async () => {
+  const { db, delivery, sent } = await fixture()
+  const keys = ['VAPID_SUBJECT', 'NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY']
+  const before = keys.map(key => process.env[key])
+  keys.forEach(key => { process.env[key] = 'mock-config' })
+  try {
+    await db.exec(`update notifications set status='completed';
+      insert into notification_deliveries(notification_id,company_id,person_id,status,attempts,provider_id,sent_at) values('${campaign}','${tenant}','${person}','sent',1,'old-receipt',now());
+      insert into notification_push_subscriptions(company_id,person_id,endpoint,p256dh,auth_key,is_active) values('${tenant}','${person}','https://push.test/device','device-key','auth-key',true);`)
+    assert.equal(await delivery.prepareImmediatePush(campaign, tenant), 1)
+    const reset = (await db.query('select status,provider_id,sent_at,attempts from notification_deliveries')).rows[0]
+    assert.equal(reset.provider_id, null)
+    assert.equal(reset.sent_at, null)
+    assert.equal(reset.attempts, 0)
+    assert.equal((await delivery.processNotificationOutbox(25, campaign, tenant)).sent, 1)
+    assert.equal(sent.length, 1)
+    await db.exec("update notifications set status='processing'")
+    assert.equal(await delivery.prepareImmediatePush(campaign, tenant), 0)
+    await db.exec("update notifications set status='completed'; update people set is_active=false")
+    assert.equal(await delivery.prepareImmediatePush(campaign, tenant), 1)
+    assert.equal((await delivery.processNotificationOutbox(25, campaign, tenant)).sent, 0)
+    assert.equal(sent.length, 1)
+    assert.equal((await db.query('select status from notification_deliveries')).rows[0].status, 'canceled')
+  } finally {
+    keys.forEach((key, i) => { if (before[i] === undefined) delete process.env[key]; else process.env[key] = before[i] })
+    await db.close()
+  }
+})
+
+test("manual push action checks permission and reports awaited provider failures", async () => {
+  let authorized = true, prepared = 0, dispatches = 0
+  const keys = ['VAPID_SUBJECT', 'NEXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY']
+  const before = keys.map(key => process.env[key])
+  keys.forEach(key => { process.env[key] = 'mock-config' })
+  const actions = load('src/lib/notifications/actions.ts', {
+    'next/cache': { revalidatePath() {} },
+    '@/lib/auth/server': { getCurrentUser: async () => ({ id: 'profile' }), requireUserCompanyId: () => tenant },
+    '@/lib/auth/permissions': { requirePermission: async (permission, companyId) => { assert.equal(permission, 'notification.send'); assert.equal(companyId, tenant); if (!authorized) throw new Error('Acesso negado') }, writeAuditLog: async () => {} },
+    '@/lib/db/client': {}, '@/lib/performance/after-response': {},
+    './delivery': { prepareImmediatePush: async (id, companyId) => { assert.equal(id, campaign); assert.equal(companyId, tenant); prepared++; return 2 }, processNotificationOutbox: async (batch, id, companyId) => { assert.equal(id, campaign); assert.equal(companyId, tenant); dispatches++; return { processed: 2, sent: 1, failed: 1, dead: 0 } } },
+  })
+  const form = new FormData(); form.set('notificationId', campaign)
+  try {
+    authorized = false
+    assert.equal((await actions.dispatchNotificationPushAction(form)).error, 'Acesso negado')
+    assert.equal(prepared, 0)
+    authorized = true
+    const result = await actions.dispatchNotificationPushAction(form)
+    assert.equal(result.ok, false)
+    assert.match(result.message, /1 push aceito.*1 falha/)
+    assert.equal(dispatches, 1)
+    delete process.env.VAPID_PRIVATE_KEY
+    assert.match((await actions.dispatchNotificationPushAction(form)).error, /VAPID/)
+    assert.equal(prepared, 1)
+  } finally { keys.forEach((key, i) => { if (before[i] === undefined) delete process.env[key]; else process.env[key] = before[i] }) }
 })

@@ -310,3 +310,15 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - Normalizar `due_at::text` para ISO antes de devolver acompanhamentos à interface. A forma textual do PostgreSQL não passa na validação de `datetime({ offset: true })` ao reutilizar o objeto para iniciar/concluir/reabrir um caso. O teste deve salvar novamente o objeto retornado pela consulta real.
 - A cópia reutiliza o calendário mensal compartilhado. Mês publicado não pode receber novos rascunhos: o painel de membros também aceita `schedule.status = published`. Não remover esse bloqueio sem revisar a visibilidade de rascunhos.
 - Para E2E via pooler, usar `max_pipeline: 0` nas consultas e iniciar servidor de produção novo após rebuild. O runner da gestão identifica a igreja pela conta E2E e verifica `status = test`, sem fallback para a primeira igreja.
+
+## Disparo imediato de campanhas push — 09/10/2026
+
+- A captura da campanha "teste 2 de push" mostrava fila sem tentativas, mas a consulta remota confirmou ambas as entregas em sent, com uma tentativa, aproximadamente um segundo após a criação. O diagnóstico publicado respondeu HTTP 200 com pushConfigured=true; aceitação pelo provedor não comprova exibição física no aparelho.
+- O botão manual aguarda uma tentativa de envio de até 25 dispositivos por clique e informa o restante. Antecipação de agenda e repetição de campanha concluída usam bloqueio transacional por campanha; entregas em processamento não são reiniciadas. Pessoas inativas/excluídas e bloqueios do canal são reconferidos antes do envio.
+- Push usa grupos de até cinco envios simultâneos. Consolidar o status da campanha depois do lote evita atualizações concorrentes com contagens intermediárias; os outros canais mantêm processamento sequencial.
+- Onze testes de notificações, typecheck, lint focado e build passaram. Alterações locais sem nova migration; publicação do botão e recebimento físico ainda não foram validados nesta sessão.
+
+## Logo das notificações Android — 09/10/2026
+
+- Recebimento físico confirmado pelo usuário com capturas do aparelho. O quadrado preto vinha de usar o PNG opaco icon-192 como badge: Android usa a transparência como máscara. O service worker agora usa o símbolo oficial transparente no icon e no badge, com cache público do mesmo arquivo. Não trocar o ícone de instalação ou regenerar a marca para corrigir a notificação.
+- Verificados canal alpha RGBA, cantos totalmente transparentes e logo disponível em produção (HTTP 200 image/png). Quinze testes de notificações/PWA, lint do service worker e diff check passaram. A alteração do service worker permanece local; a aparência final precisa ser conferida após publicação e atualização do worker no aparelho.

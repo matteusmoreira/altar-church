@@ -8,7 +8,11 @@ import { QueueRefresh } from "@/components/notifications/queue-refresh"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { getNotificationDetails } from "@/lib/notifications/data"
-import { retryNotificationDeliveryAction } from "@/lib/notifications/actions"
+import { retryNotificationDeliveryAction, dispatchNotificationPushAction } from "@/lib/notifications/actions"
+import { getCurrentUser } from "@/lib/auth/server"
+import { hasPermission } from "@/lib/types"
+
+export const maxDuration = 300
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente", processing: "Processando", sent: "Enviado", failed: "Falhou", canceled: "Cancelado", dead: "Falha permanente",
@@ -35,6 +39,8 @@ export default async function NotificationDetailsPage({ params, searchParams }: 
   if (!route) notFound()
   const id = route.id
   const data = await getNotificationDetails(id)
+  const user = await getCurrentUser()
+  const canDispatch = user && hasPermission(user, "notification.send") && data.method === "push" && !["canceled", "draft"].includes(data.status)
   const sent = data.deliveries.filter((delivery) => delivery.status === "sent").length
   const failed = data.deliveries.filter((delivery) => delivery.status === "failed" || delivery.status === "dead").length
   if (identifier !== route.slug) redirect(canonicalEntityPath("/notificacao", route.slug, await searchParams))
@@ -50,6 +56,12 @@ export default async function NotificationDetailsPage({ params, searchParams }: 
         <Badge>{statusLabels[data.status] ?? data.status}</Badge>
       </div>
       <Card className="glass"><CardContent className="space-y-3 p-5"><p className="whitespace-pre-wrap">{data.content}</p><div className="flex flex-wrap gap-3 text-sm text-muted-foreground"><span>Canal: {data.method}</span><span>Público: {data.audienceKind}</span><span>Snapshot: {data.snapshotCount}</span><span>Enviados: {sent}</span><span>Falhas/dead: {failed}</span></div></CardContent></Card>
+      {canDispatch && <Card><CardContent className="space-y-3 p-5">
+        <p className="text-sm text-muted-foreground">{data.status === "completed" ? "Envia novamente o push aos destinatários desta campanha." : "Dispara os pushes pendentes agora, antecipando o agendamento se houver."} A aceitação pelo provedor não confirma a exibição no aparelho.</p>
+        <NotificationActionForm action={dispatchNotificationPushAction} submitLabel={data.status === "completed" ? "Disparar push novamente" : "Disparar push agora"} pendingLabel="Disparando push…" testId="dispatch-push">
+          <input type="hidden" name="notificationId" value={data.id} />
+        </NotificationActionForm>
+      </CardContent></Card>}
       <Card className="glass overflow-hidden"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><TriangleAlert className="h-4 w-4 text-primary" /> Entregas</CardTitle></CardHeader>
         <Table><TableHeader><TableRow><TableHead>Destinatário</TableHead><TableHead>Canal</TableHead><TableHead>Status</TableHead><TableHead>Tentativas</TableHead><TableHead>Erro</TableHead><TableHead>Ação</TableHead></TableRow></TableHeader><TableBody>
           {data.deliveries.map((delivery) => <TableRow key={delivery.id}><TableCell><span className="font-medium">{delivery.recipientName}</span><span className="block text-xs text-muted-foreground">{maskRecipient(delivery.recipient, delivery.channel)}</span></TableCell><TableCell>{delivery.channel}</TableCell><TableCell><Badge variant={delivery.status === "sent" ? "default" : delivery.status === "dead" || delivery.status === "failed" ? "destructive" : "secondary"}>{statusLabels[delivery.status]}</Badge></TableCell><TableCell>{delivery.attempts}</TableCell><TableCell className="max-w-sm truncate text-xs text-muted-foreground">{delivery.lastError ?? "-"}</TableCell><TableCell>{(delivery.status === "failed" || delivery.status === "dead") && <NotificationActionForm action={retryDeliveryForm} submitLabel="Reenviar"><input type="hidden" name="deliveryId" value={delivery.id} /></NotificationActionForm>}</TableCell></TableRow>)}

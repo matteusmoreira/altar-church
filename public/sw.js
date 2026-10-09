@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
   "/icons/apple-touch-icon.png",
+  "/brand/altar/altar-church_simbolo_escuro_v1.png",
   "/manifest.webmanifest",
 ];
 let activeUserId = null;
@@ -65,7 +66,8 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (
     url.pathname.startsWith("/_next/static/") ||
-    url.pathname.startsWith("/icons/")
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/brand/altar/altar-church_simbolo_escuro_v1.png"
   ) {
     event.respondWith(
       caches.match(request).then(
@@ -127,8 +129,9 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || "Altar Church", {
       body: data.body || "Nova atualização",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "/brand/altar/altar-church_simbolo_escuro_v1.png",
+      // Android masks the alpha channel: use the transparent mark, never the opaque app tile.
+      badge: "/brand/altar/altar-church_simbolo_escuro_v1.png",
       data: { url: data.url || "/voluntariado" },
       tag: data.tag || (data.assignmentId ? `assignment-${data.assignmentId}` : undefined),
     }),
