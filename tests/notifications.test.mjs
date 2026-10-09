@@ -19,6 +19,10 @@ function load(file, mocks) {
   return loadedModule.exports
 }
 
+const notificationContent = load("src/lib/notifications/content.ts", {
+  "@/lib/cells/rich-content": load("src/lib/cells/rich-content.ts", {}),
+})
+
 async function fixture() {
   const db = new PGlite()
   await db.exec(`
@@ -50,6 +54,7 @@ async function fixture() {
   const sent = []
   let providerError = null
   const delivery = load("src/lib/notifications/delivery.ts", {
+    "./content": notificationContent,
     "@/lib/db/client": { getSql: () => sql },
     "@/lib/auth/phone": { toUazapiNumber: (value) => value },
     "@/lib/delivery/retry-policy": { isPermanentProviderError: () => false },
@@ -103,12 +108,14 @@ test("push dispatch sends the registered device, expires invalid endpoints and r
   keys.forEach((key) => { process.env[key] = "mock-config" })
   try {
     await db.query("insert into notification_push_subscriptions(company_id,person_id,endpoint,p256dh,auth_key,is_active) values($1,$2,'https://push.test/device','mock-key','mock-auth',true)", [tenant, person])
+    await db.query("update notifications set content=$1 where id=$2", ['<p>Olá &amp; bem-vindos!</p><strong>Hoje</strong> <a href="https://example.com">Inscrição</a>', campaign])
     const add = () => db.query("insert into notification_deliveries(notification_id,company_id,person_id) values($1,$2,$3)", [campaign, tenant, person])
     await add()
     assert.deepEqual(await delivery.processNotificationOutbox(25, campaign, tenant), { processed: 1, sent: 1, failed: 0, dead: 0 })
     assert.equal(sent[0][2].TTL, 86400)
     assert.equal(sent[0][2].timeout, 15000)
-    assert.equal(JSON.parse(sent[0][1]).url, "/membro")
+    assert.equal(JSON.parse(sent[0][1]).url, `/avisos/${campaign}`)
+    assert.equal(JSON.parse(sent[0][1]).body, "Olá & bem-vindos! Hoje Inscrição")
     await db.query("insert into notification_channel_preferences values($1,$2,'push',true)", [tenant, person])
     await add()
     const skipped = await delivery.processNotificationOutbox(25, campaign, tenant)
@@ -227,9 +234,11 @@ test("worker diagnostics require authentication and never claim or send deliveri
   delete process.env.NOTIFICATION_WORKER_SECRET
   process.env.INTEGRATION_WORKER_SECRET = "mock-worker-secret"
   let dispatched = 0
+  let inboxDispatched = 0
   const route = load("src/app/api/internal/notifications/dispatch/route.ts", {
     "@/lib/db/client": { getSql: () => async () => [] },
     "@/lib/notifications/delivery": { processNotificationOutbox: async () => { dispatched++; return { processed: 0 } } },
+    "@/lib/notifications/inbox-push": { processInboxPush: async () => { inboxDispatched++; return { processed: 0 } } },
   })
   const request = (method, valid, body) => new Request("https://app.test/api/internal/notifications/dispatch", {
     method, headers: { "x-notification-worker-secret": valid ? "mock-worker-secret" : "wrong-secret", "Content-Type": "application/json" },
@@ -242,8 +251,10 @@ test("worker diagnostics require authentication and never claim or send deliveri
     assert.equal((await result.json()).data.dryRun, true)
     assert.equal((await route.POST(request("POST", true, { dryRun: true }))).status, 200)
     assert.equal(dispatched, 0)
+    assert.equal(inboxDispatched, 0)
     assert.equal((await route.POST(request("POST", true, { batchSize: 1 }))).status, 200)
     assert.equal(dispatched, 1)
+    assert.equal(inboxDispatched, 1)
   } finally {
     for (const [index, key] of ["NOTIFICATION_WORKER_SECRET", "INTEGRATION_WORKER_SECRET"].entries()) {
       if (before[index] === undefined) delete process.env[key]; else process.env[key] = before[index]
@@ -327,4 +338,44 @@ test("manual push action checks permission and reports awaited provider failures
     assert.match((await actions.dispatchNotificationPushAction(form)).error, /VAPID/)
     assert.equal(prepared, 1)
   } finally { keys.forEach((key, i) => { if (before[i] === undefined) delete process.env[key]; else process.env[key] = before[i] }) }
+})
+
+test("push rich content keeps safe links and formatting, rejects empty text and produces a plain preview", () => {
+  const raw = '<p>Olá &amp; bem-vindos <strong>hoje</strong>!</p><a href="https://example.com/evento?a=1&amp;b=2" data-cell-button="true" onclick="evil()">Inscrever-se</a><script>alert(1)</script><a href="javascript:alert(1)">Perigo</a><img src=x onerror=evil()>'
+  const html = notificationContent.prepareNotificationContent(raw, 'push')
+  assert.match(html, /<strong>hoje<\/strong>/)
+  assert.match(html, /data-cell-button="true"/)
+  assert.doesNotMatch(html, /script|onclick|onerror|javascript:|<img/)
+  assert.match(html, /target="_blank" rel="noopener noreferrer"/)
+  assert.equal(notificationContent.notificationHtml(html), html, 'rendering must preserve query parameters without double escaping')
+  assert.equal(notificationContent.notificationPlainText(html), 'Olá & bem-vindos hoje ! Inscrever-se Perigo')
+  assert.throws(() => notificationContent.prepareNotificationContent('<p><br></p>', 'push'), /obrigatório/)
+  assert.throws(() => notificationContent.prepareNotificationContent('x'.repeat(20001), 'push'), /muito longo/)
+  assert.equal(notificationContent.prepareNotificationContent('texto simples', 'email'), 'texto simples')
+})
+
+test("push message reader is restricted to live recipients in the signed-in church", async () => {
+  const { db, sql } = await fixture()
+  const profile = '40000000-0000-4000-8000-000000000001'
+  let user = { id: profile, churchId: tenant }
+  const data = load('src/lib/notifications/data.ts', {
+    '@/lib/auth/server': { getCurrentUser: async () => user },
+    '@/lib/auth/permissions': {}, '@/lib/db/client': { getSql: () => sql },
+  })
+  try {
+    await db.query('insert into profiles values($1,$2,$3)', [profile, tenant, person])
+    await db.query('insert into notification_deliveries(notification_id,company_id,person_id,status) values($1,$2,$3,\'sent\')', [campaign, tenant, person])
+    assert.equal((await data.getMyPushNotification(campaign)).id, campaign)
+    user = { id: profile, churchId: otherTenant }
+    assert.equal(await data.getMyPushNotification(campaign), null)
+    user = { id: '40000000-0000-4000-8000-000000000002', churchId: tenant }
+    assert.equal(await data.getMyPushNotification(campaign), null)
+    user = { id: profile, churchId: tenant }
+    await db.exec("update notifications set status='scheduled'")
+    assert.equal(await data.getMyPushNotification(campaign), null)
+    await db.exec("update notifications set status='completed'; update people set deleted_at=now()")
+    assert.equal(await data.getMyPushNotification(campaign), null)
+    user = null
+    assert.equal(await data.getMyPushNotification(campaign), null)
+  } finally { await db.close() }
 })

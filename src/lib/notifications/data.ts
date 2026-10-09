@@ -93,3 +93,26 @@ export async function getNotificationDetails(notificationId: string, companyIdIn
     })),
   }
 }
+
+export async function getMyPushNotification(notificationId: string) {
+  const user = await getCurrentUser()
+  if (!user?.churchId) return null
+  const rows = await getSql()<{ id: string; title: string; content: string }[]>`
+    select campaign.id, campaign.title, campaign.content
+    from public.notifications campaign
+    where campaign.id = ${notificationId} and campaign.company_id = ${user.churchId}
+      and campaign.method = 'push' and campaign.deleted_at is null
+      and campaign.status not in ('draft', 'canceled', 'scheduled')
+      and exists (
+        select 1 from public.notification_deliveries delivery
+        join public.people person on person.id = delivery.person_id and person.company_id = delivery.company_id
+        join public.profiles profile on profile.id = ${user.id} and profile.company_id = person.company_id
+          and (person.profile_id = profile.id or person.id = profile.person_id)
+        where delivery.notification_id = campaign.id and delivery.company_id = campaign.company_id
+          and delivery.channel = 'push' and delivery.status in ('sent', 'processing')
+          and person.deleted_at is null and person.is_active = true and person.status <> 'inactive'
+      )
+    limit 1
+  `
+  return rows[0] ?? null
+}

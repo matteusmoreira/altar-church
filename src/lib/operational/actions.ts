@@ -1,5 +1,9 @@
 "use server"
 
+import { parseEventValue, parseEventRegistrationSettings } from "@/lib/events/contract"
+import { zonedDate } from "@/lib/automations/contract"
+import { attachFileToEntity } from "@/lib/files/server"
+
 import { revalidatePath } from "next/cache"
 import { afterResponse } from "@/lib/performance/after-response"
 import { z } from "zod"
@@ -12,7 +16,8 @@ import { deleteManagedFile, getOptionalFile, uploadManagedFile } from "@/lib/fil
 import { parseMoney } from "./money"
 import { createNotificationCampaignDeliveries } from "@/lib/notifications/campaign"
 import { processNotificationOutbox } from "@/lib/notifications/delivery"
-import type { Permission } from "@/lib/types"
+import { prepareNotificationContent } from "@/lib/notifications/content"
+import { hasAnyRole, type Permission } from "@/lib/types"
 
 type ActionResult = {
   slug?: string
@@ -382,8 +387,25 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     const { user, companyId } = await actionContext(formData, id ? "events.edit" : "events.create")
     const sql = getSql()
     const title = requiredText(formData, "title", "Título")
-    const startsAt = requiredText(formData, "startDate", "Início")
-    const endsAt = optionalText(formData, "endDate") ?? startsAt
+    const [settings] = await sql<{ timezone: string }[]>`select coalesce(timezone, 'America/Sao_Paulo') as timezone from public.church_profiles where company_id = ${companyId} limit 1`
+    const timezone = settings?.timezone || "America/Sao_Paulo"
+    const localStart = requiredText(formData, "startDate", "Início")
+    const start = zonedDate(localStart, timezone)
+    const endInput = optionalText(formData, "endDate")
+    const end = endInput ? zonedDate(endInput, timezone) : new Date(start.getTime() + 3 * 60 * 60 * 1000)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw new Error("Data ou horário inválido")
+    const startsAt = start.toISOString()
+    const endsAt = end.toISOString()
+    const registration = parseEventRegistrationSettings(text(formData, "registrationMode", "internal"), text(formData, "externalPlatform", "Sympla"), text(formData, "externalTicketUrl"))
+    const internalRegistration = registration.registrationMode === "internal"
+    const valueCents = text(formData, "valueMode") === "free" ? 0 : parseEventValue(text(formData, "eventValue"))
+    const valueInstructions = text(formData, "valueInstructions")
+    if (valueInstructions.length > 2000) throw new Error("Orientações muito longas")
+    const coverFileId = uuid(formData, "coverFileId")
+    if (coverFileId) {
+      const [cover] = await sql`select id from public.app_files where id = ${coverFileId} and company_id = ${companyId} and entity_table = 'events' and purpose = 'cover' and is_active and deleted_at is null`
+      if (!cover) throw new Error("Capa inválida")
+    }
     const startsAtDate = new Date(startsAt)
     const endsAtDate = new Date(endsAt)
     if (Number.isNaN(startsAtDate.getTime()) || Number.isNaN(endsAtDate.getTime())) {
@@ -458,11 +480,19 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
     if (recurrenceUntil && recurrenceUntil < startsAt.slice(0, 10)) throw new Error("Término da recorrência deve ser posterior ao início")
     const recurring = recurrenceFrequency !== "none" || bool(formData, "recurring")
     const previousEventRows = id
-      ? await sql<{ status: string; title: string; starts_at: Date; ends_at: Date | null; location: string; programming_id: string | null }[]>`
-          select status, title, starts_at, ends_at, location, programming_id from public.events where id = ${id} and company_id = ${companyId} and deleted_at is null limit 1
+      ? await sql<{ status: string; title: string; starts_at: Date; ends_at: Date | null; location: string; programming_id: string | null; volunteer_template_id: string | null }[]>`
+          select status, title, starts_at, ends_at, location, programming_id, volunteer_template_id from public.events where id = ${id} and company_id = ${companyId} and deleted_at is null limit 1
         `
       : []
 
+    if (volunteerTemplateId && previousEventRows[0]?.volunteer_template_id !== volunteerTemplateId) {
+      await requirePermission("schedules.edit", companyId)
+      const scopes = await sql<{ department_id: string }[]>`select distinct department_id from public.volunteer_schedule_template_slots where company_id = ${companyId} and template_id = ${volunteerTemplateId}`
+      if (!hasAnyRole(user, ["admin", "pastor", "superadmin"])) {
+        const access = await sql<{ department_id: string }[]>`select department_id from public.volunteer_department_access where company_id = ${companyId} and profile_id = ${user.id}`
+        if (scopes.some(scope => !access.some(row => row.department_id === scope.department_id))) throw new Error("Acesso negado à equipe do modelo")
+      }
+    }
     stage = "persistence"
     const rows = id
       ? await sql<{ id: string }[]>`
@@ -473,8 +503,10 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               location = ${text(formData, "location")},
+              value_cents = ${valueCents}, value_instructions = ${valueInstructions}, allow_walk_ins = ${internalRegistration && bool(formData, "allowWalkIns")}, cover_file_id = ${coverFileId},
               max_capacity = ${maxCapacity},
-              registration_enabled = ${bool(formData, "registrationEnabled")},
+              registration_enabled = ${internalRegistration && bool(formData, "registrationEnabled")},
+              registration_mode = ${registration.registrationMode}, external_platform = ${registration.externalPlatform}, external_ticket_url = ${registration.externalTicketUrl},
               is_public = ${bool(formData, "isPublic", true)},
               is_online = ${isOnline},
               online_link = ${onlineLink},
@@ -491,15 +523,16 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         `
       : await sql<{ id: string }[]>`
           insert into public.events (
-            company_id, title, description, type, starts_at, ends_at, location,
+            company_id, title, description, type, starts_at, ends_at, location, value_cents, value_instructions, allow_walk_ins, cover_file_id,
             max_capacity, registration_enabled, is_public, is_online, online_link, volunteer_template_id, ministry_id, registration_form_id,
-            status, recurring, created_by, updated_by
+            status, recurring, registration_mode, external_platform, external_ticket_url, created_by, updated_by
           )
           values (
             ${companyId}, ${title}, ${text(formData, "description")}, ${type},
-            ${startsAt}, ${endsAt}, ${text(formData, "location")}, ${maxCapacity},
-            ${bool(formData, "registrationEnabled")}, ${bool(formData, "isPublic", true)}, ${isOnline},
+            ${startsAt}, ${endsAt}, ${text(formData, "location")}, ${valueCents}, ${valueInstructions}, ${internalRegistration && bool(formData, "allowWalkIns")}, ${coverFileId}, ${maxCapacity},
+            ${internalRegistration && bool(formData, "registrationEnabled")}, ${bool(formData, "isPublic", true)}, ${isOnline},
             ${onlineLink}, ${volunteerTemplateId}, ${ministryId}, ${registrationFormId}, ${status}, ${recurring},
+            ${registration.registrationMode}, ${registration.externalPlatform}, ${registration.externalTicketUrl},
             ${user.id}, ${user.id}
           )
           returning id
@@ -507,6 +540,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
 
     const savedId = rows[0]?.id
     if (!savedId) throw new Error("Evento não foi salvo")
+    if (coverFileId) await attachFileToEntity({ fileId: coverFileId, companyId, entityTable: "events", entityId: savedId, ownerProfileId: user.id })
 
     const previousProgrammingId = previousEventRows[0]?.programming_id ?? null
     const programmingRows = await sql<{ id: string | null }[]>`select programming_id as id from public.events where id = ${savedId} and company_id = ${companyId} limit 1`
@@ -523,7 +557,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         if (recurrenceEditScope === "following" && oldProgrammingId) {
           const createdProgramming = await tx<{ id: string }[]>`
             insert into public.programmings(company_id, title, description, starts_at, duration_minutes, is_recurring, recurrence_rule, kind, location, timezone, recurrence_frequency, recurrence_weekdays, recurrence_until, recurrence_needs_review, volunteer_template_id, source_event_id, is_active, created_by, updated_by)
-            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, 'America/Sao_Paulo', ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
+            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, ${timezone}, ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
             returning id
           `
           programmingId = createdProgramming[0]?.id ?? null
@@ -533,13 +567,13 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
         } else if (programmingId) {
           await tx`delete from public.events where programming_id = ${programmingId} and company_id = ${companyId} and id <> ${savedId} and starts_at >= ${startsAt} and volunteer_schedule_published_at is null and deleted_at is null`
           await tx`
-            update public.programmings set title = ${title}, description = ${text(formData, "description")}, starts_at = ${startsAt}, duration_minutes = ${durationMinutes}, kind = ${programmingKind}, location = ${text(formData, "location")}, timezone = 'America/Sao_Paulo', recurrence_frequency = ${recurrenceFrequency}, recurrence_weekdays = ${recurrenceWeekdays}::smallint[], recurrence_until = ${recurrenceUntil}::date, recurrence_needs_review = false, is_recurring = true, recurrence_rule = ${recurrenceFrequency}, is_active = true, volunteer_template_id = ${volunteerTemplateId}, updated_by = ${user.id}, updated_at = now()
+            update public.programmings set title = ${title}, description = ${text(formData, "description")}, starts_at = ${startsAt}, duration_minutes = ${durationMinutes}, kind = ${programmingKind}, location = ${text(formData, "location")}, timezone = ${timezone}, recurrence_frequency = ${recurrenceFrequency}, recurrence_weekdays = ${recurrenceWeekdays}::smallint[], recurrence_until = ${recurrenceUntil}::date, recurrence_needs_review = false, is_recurring = true, recurrence_rule = ${recurrenceFrequency}, is_active = true, volunteer_template_id = ${volunteerTemplateId}, updated_by = ${user.id}, updated_at = now()
             where id = ${programmingId} and company_id = ${companyId} and deleted_at is null
           `
         } else {
           const createdProgramming = await tx<{ id: string }[]>`
             insert into public.programmings(company_id, title, description, starts_at, duration_minutes, is_recurring, recurrence_rule, kind, location, timezone, recurrence_frequency, recurrence_weekdays, recurrence_until, recurrence_needs_review, volunteer_template_id, source_event_id, is_active, created_by, updated_by)
-            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, 'America/Sao_Paulo', ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
+            values (${companyId}, ${title}, ${text(formData, "description")}, ${startsAt}, ${durationMinutes}, true, ${recurrenceFrequency}, ${programmingKind}, ${text(formData, "location")}, ${timezone}, ${recurrenceFrequency}, ${recurrenceWeekdays}::smallint[], ${recurrenceUntil}::date, false, ${volunteerTemplateId}, ${savedId}, true, ${user.id}, ${user.id})
             returning id
           `
           programmingId = createdProgramming[0]?.id ?? null
@@ -576,7 +610,7 @@ export async function saveEvent(formData: FormData): Promise<ActionResult> {
       await sql`update public.programmings set recurrence_frequency = 'none', recurrence_weekdays = '{}', recurrence_until = null, is_recurring = false, recurrence_rule = '', is_active = false, updated_by = ${user.id}, updated_at = now() where id = ${programmingId} and company_id = ${companyId}`
     }
 
-    if (volunteerTemplateId) {
+    if (volunteerTemplateId && previousEventRows[0]?.volunteer_template_id !== volunteerTemplateId) {
       const publishedRows = await sql<{ volunteer_schedule_published_at: Date | null }[]>`select volunteer_schedule_published_at from public.events where id = ${savedId} and company_id = ${companyId} limit 1`
       if (!publishedRows[0]?.volunteer_schedule_published_at) {
         await sql.begin(async (tx) => {
@@ -656,13 +690,13 @@ export async function duplicateEvent(formData: FormData): Promise<ActionResult> 
     const { user, companyId } = await actionContext(formData, "events.create")
     const rows = await getSql()<{ id: string; slug: string }[]>`
       insert into public.events (
-        company_id, title, description, type, starts_at, ends_at, location, banner_url,
+        company_id, title, description, type, starts_at, ends_at, location, banner_url, value_cents, value_instructions, allow_walk_ins, cover_file_id,
         max_capacity, registration_enabled, is_public, is_online, online_link,
-        volunteer_template_id, ministry_id, registration_form_id, status, recurring, created_by, updated_by
+        volunteer_template_id, ministry_id, registration_form_id, status, recurring, registration_mode, external_platform, external_ticket_url, created_by, updated_by
       )
-      select company_id, left(title || ' (cópia)', 255), description, type, starts_at, ends_at, location, banner_url,
+      select company_id, left(title || ' (cópia)', 255), description, type, starts_at, ends_at, location, banner_url, value_cents, value_instructions, allow_walk_ins, cover_file_id,
              max_capacity, registration_enabled, is_public, is_online, online_link,
-             volunteer_template_id, ministry_id, registration_form_id, 'draft', false, ${user.id}, ${user.id}
+             volunteer_template_id, ministry_id, registration_form_id, 'draft', false, registration_mode, external_platform, external_ticket_url, ${user.id}, ${user.id}
       from public.events
       where id = ${sourceId} and company_id = ${companyId} and deleted_at is null
       returning id, slug
@@ -1073,8 +1107,8 @@ export async function saveNotification(formData: FormData): Promise<ActionResult
     validateActionForm(formData, notificationSchema)
     const { user, companyId } = await actionContext(formData, "notification.create")
     const title = requiredText(formData, "title", "Título")
-    const content = requiredText(formData, "content", "Conteúdo")
     const method = text(formData, "method", "push") as "push" | "email" | "whatsapp"
+    const content = prepareNotificationContent(requiredText(formData, "content", "Conteúdo"), method)
     const audience = text(formData, "audience", "all") as "all" | "cell" | "ministry" | "visitors" | "birthdays" | "manual"
     const audienceRefId = optionalText(formData, "audienceRefId")
     const personIds = list(formData, "audiencePersonIds")

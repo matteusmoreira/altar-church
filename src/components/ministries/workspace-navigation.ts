@@ -21,7 +21,7 @@ export function useWorkspaceNavigation(initialTab: string) {
     window.dispatchEvent(new Event(eventName))
   }
   const tab = query.get("tab") || initialTab
-  const valid = ["visao-geral", "pessoas", "equipes", "agenda", "escalas", "acompanhamentos", "comunicacao", "chat", "recursos", "relatorios", "configuracoes"].includes(tab)
+  const valid = ["visao-geral", "pessoas", "equipes", "agenda", "escalas", "comunicacao", "chat", "recursos", "relatorios", "configuracoes"].includes(tab)
   return { query, activeTab: valid ? tab : "visao-geral", update,
     navigate: (tab: string, filters: Record<string,string> = {}) => update({ tab, event: "", team: "", person: "", detail: "", task: "", scaleStatus: "", ...filters }) }
 }

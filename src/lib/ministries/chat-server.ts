@@ -267,9 +267,10 @@ export async function commandMinistryChat(identifier: string, input: unknown) {
   }
   if (data.action === "preferences") {
     const defaultPush = !["superadmin", "admin", "pastor"].includes(access.user.role)
-    await sql`insert into public.ministry_chat_reads(company_id, ministry_id, profile_id, muted, push_enabled)
-      values (${access.companyId}, ${access.ministryId}, ${access.user.id}, ${data.muted ?? false}, ${data.pushEnabled ?? defaultPush})
-      on conflict(ministry_id, profile_id) do update set muted = coalesce(${data.muted ?? null}::boolean, ministry_chat_reads.muted), push_enabled = coalesce(${data.pushEnabled ?? null}::boolean, ministry_chat_reads.push_enabled)`
+    await sql`insert into public.ministry_chat_reads(company_id, ministry_id, profile_id, muted, push_enabled, push_opted_out)
+      values (${access.companyId}, ${access.ministryId}, ${access.user.id}, ${data.muted ?? false}, ${data.pushEnabled ?? defaultPush}, ${data.pushEnabled === false})
+      on conflict(ministry_id, profile_id) do update set muted = coalesce(${data.muted ?? null}::boolean, ministry_chat_reads.muted), push_enabled = coalesce(${data.pushEnabled ?? null}::boolean, ministry_chat_reads.push_enabled),
+        push_opted_out = case when ${data.pushEnabled ?? null}::boolean is null then ministry_chat_reads.push_opted_out else not ${data.pushEnabled ?? null}::boolean end`
     return { ok: true }
   }
   await sql.begin(async tx => {

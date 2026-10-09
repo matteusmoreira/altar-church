@@ -537,7 +537,11 @@ export async function getVolunteerPortalData(): Promise<VolunteerPortalData> {
       join public.volunteer_departments department on department.id = shift.department_id
       left join public.events event on event.id = shift.event_id
        where assignment.volunteer_id = ${volunteerId}
-        and assignment.status not in ('proposed', 'declined', 'cancelled')
+        and assignment.status not in ('proposed', 'cancelled')
+        and assignment.company_id = ${companyId} and shift.company_id = ${companyId}
+        and exists(select 1 from public.volunteer_schedules published where published.id=shift.schedule_id and published.company_id=${companyId}
+          and ((published.status='published' and shift.created_at <= published.published_at) or event.volunteer_schedule_published_at is not null))
+        and (shift.event_id is null or (event.deleted_at is null and event.status not in ('draft','canceled','cancelled')))
         and shift.starts_at >= now() - interval '1 day'
       order by shift.starts_at
       limit 40

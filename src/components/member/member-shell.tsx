@@ -13,6 +13,7 @@ import { ChurchLogo } from "@/components/layout/church-logo"
 import { KidsAlertListener } from "@/components/kids/kids-alert-listener"
 import { MinistryChatBadge } from "@/components/ministries/ministry-chat"
 import { MinistryChatSummaryProvider } from "@/components/ministries/chat-client"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 
 const baseNavigation = [
   { href: "/membro", label: "Início", icon: Home },
@@ -66,6 +67,7 @@ export function MemberShell({
             <p className="truncate text-xs text-muted-foreground">Portal do Membro · {memberName}</p>
           </div>
           <PwaInstallButton iconOnly variant="ghost" />
+          <NotificationBell />
           <Button render={<Link href="/membro/preferencias" />} nativeButton={false} variant="ghost" size="icon" aria-label="Preferências de comunicação">
             <Settings2 className="h-4 w-4" />
           </Button>

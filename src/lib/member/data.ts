@@ -177,9 +177,9 @@ export async function getMemberPortalSummary(): Promise<MemberPortalSummary> {
         and department.company_id = ${companyId} and department.deleted_at is null
       join public.volunteer_schedules schedule on schedule.id = shift.schedule_id and schedule.company_id = ${companyId}
       where assignment.company_id = ${companyId}
-        and (shift.event_id is null or (event.id is not null and event.deleted_at is null and event.status <> 'cancelled'))
+        and (shift.event_id is null or (event.id is not null and event.deleted_at is null and event.status = 'published'))
         and assignment.status not in ('proposed', 'declined', 'cancelled', 'no_show')
-        and (event.volunteer_schedule_published_at is not null or schedule.status = 'published')
+        and (event.volunteer_schedule_published_at is not null or (schedule.status = 'published' and shift.created_at <= schedule.published_at))
         and coalesce(shift.ends_at, shift.starts_at + interval '2 hours') >= now()
       order by shift.starts_at, assignment.id
       limit 10
@@ -243,6 +243,10 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     waitlisted_count: number
     confirmed_people: string[]
     my_status: MemberAgendaEvent["myStatus"]
+    registration_mode: "internal" | "external"
+    external_platform: string
+    external_ticket_url: string
+    value_cents: number
     registration_enabled: boolean
   }[]>`
     select event.id, event.title, event.description, event.type, ministry.name as ministry_name,
@@ -256,21 +260,24 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
       coalesce((
         select jsonb_agg(jsonb_build_object(
           'id', shift.id::text || ':' || coalesce(assignment.id::text, 'vacant'),
+          'assignmentId', assignment.id,
           'role', shift.role_name, 'instructions', coalesce(position.instructions, ''),
           'startsAt', shift.starts_at, 'endsAt', shift.ends_at,
           'personName', assigned_person.full_name, 'status', assignment.status,
-          'isMine', coalesce(volunteer.person_id = ${personId}, false)
+          'isMine', coalesce(volunteer.person_id = ${personId}, false),
+          'declineReason', case when volunteer.person_id = ${personId} then assignment.decline_reason else null end,
+          'canDecline', coalesce(volunteer.person_id = ${personId} and shift.starts_at > now() and assignment.status in ('notified','confirmed'), false)
         ) order by shift.starts_at, shift.role_name, assigned_person.full_name)
         from public.volunteer_shifts shift
         join public.volunteer_schedules schedule on schedule.id = shift.schedule_id and schedule.company_id = ${companyId}
         left join public.volunteer_event_positions position on position.id = shift.event_position_id and position.company_id = ${companyId}
         left join public.volunteer_assignments assignment on assignment.shift_id = shift.id
-          and assignment.company_id = ${companyId} and assignment.status not in ('cancelled', 'declined')
+          and assignment.company_id = ${companyId} and assignment.status <> 'cancelled'
         left join public.volunteer_profiles volunteer on volunteer.id = assignment.volunteer_id and volunteer.company_id = ${companyId}
         left join public.people assigned_person on assigned_person.id = volunteer.person_id
           and assigned_person.company_id = ${companyId} and assigned_person.deleted_at is null
         where shift.event_id = event.id and shift.company_id = ${companyId}
-          and (event.volunteer_schedule_published_at is not null or schedule.status = 'published')
+          and (event.volunteer_schedule_published_at is not null or (schedule.status = 'published' and shift.created_at <= schedule.published_at))
       ), '[]'::jsonb) as scale,
       event.starts_at, event.ends_at,
       event.location, event.online_link, event.max_capacity,
@@ -281,7 +288,7 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
           filter (where rsvp.status = 'going' and person.id is not null),
         '{}'::text[]
       ) as confirmed_people,
-      own.status as my_status, event.registration_enabled
+      own.status as my_status, event.registration_mode, event.external_platform, event.external_ticket_url, event.value_cents, event.registration_enabled
     from public.events event
     left join public.ministries ministry
       on ministry.id = event.ministry_id and ministry.company_id = ${companyId} and ministry.deleted_at is null
@@ -325,7 +332,8 @@ export async function listMemberAgenda(): Promise<MemberAgendaEvent[]> {
     waitlistedCount: Number(row.waitlisted_count ?? 0),
     confirmedPeople: row.confirmed_people ?? [],
     myStatus: row.my_status,
-    canRsvp: row.registration_enabled,
+    canRsvp: row.registration_mode !== "external" && row.registration_enabled,
+    registrationMode: row.registration_mode, externalPlatform: row.external_platform, externalTicketUrl: row.external_ticket_url, valueCents: row.value_cents,
   }))
 }
 

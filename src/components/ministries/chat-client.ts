@@ -18,7 +18,16 @@ export async function chatRequest<T>(url: string, method = "GET", body?: unknown
     if (error instanceof Error && error.name === "AbortError") throw error
     throw new ChatRequestError("Conexão interrompida. Tente novamente", 0)
   }
-  const result = await response.json()
+  const unavailable = "Serviço temporariamente indisponível. Tente novamente"
+  if (!response.headers.get("content-type")?.includes("application/json")) {
+    throw new ChatRequestError(unavailable, response.status)
+  }
+  let result
+  try { result = await response.json() }
+  catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error
+    throw new ChatRequestError(unavailable, response.status)
+  }
   if (!response.ok) throw new ChatRequestError(result.error?.message ?? "Não foi possível concluir. Tente novamente", response.status)
   return result.data as T
 }

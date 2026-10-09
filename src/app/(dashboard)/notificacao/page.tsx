@@ -9,7 +9,8 @@ import { NotificationActionForm } from "@/components/notifications/action-form"
 import { PushActivation } from "@/components/notifications/push-activation"
 import { QueueRefresh } from "@/components/notifications/queue-refresh"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
+import { NotificationMessageFields } from "@/components/notifications/message-fields"
+import { notificationPlainText } from "@/lib/notifications/content"
 import { EmptyState, PageHeader } from "@/components/shared"
 import { saveNotification, saveNotificationGroup } from "@/lib/operational/actions"
 import { listNotificationAudienceOptions, listNotificationGroups, listNotifications } from "@/lib/operational/data"
@@ -88,13 +89,7 @@ export default async function NotificationsPage() {
                 <Label htmlFor="title">Título *</Label>
                 <Input id="title" name="title" required />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="notificationMethod">Canal *</Label>
-                <select id="notificationMethod" name="method" defaultValue="push" className="h-10 rounded-md border bg-background px-3 text-sm">
-                  <option value="push">Push</option><option value="email">E-mail</option><option value="whatsapp">WhatsApp</option>
-                </select>
-                <p className="text-xs text-muted-foreground">Push exige que cada destinatário ative os avisos no próprio dispositivo, em Preferências de comunicação.</p>
-              </div>
+              <NotificationMessageFields>
               <div className="grid gap-2">
                 <Label htmlFor="notificationAudience">Público *</Label>
                 <select id="notificationAudience" name="audience" defaultValue="all" className="h-10 rounded-md border bg-background px-3 text-sm">
@@ -119,10 +114,7 @@ export default async function NotificationsPage() {
                   {audiences.people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
                 </select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="content">Conteúdo *</Label>
-                <Textarea id="content" name="content" rows={4} required />
-              </div>
+              </NotificationMessageFields>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="scheduledAt">Agendar envio (opcional)</Label>
@@ -180,7 +172,7 @@ export default async function NotificationsPage() {
                 </TableCell>
                 <TableCell className="font-medium"><Link href={`/notificacao/${notification.slug || notification.id}`} className="hover:underline">{notification.title}</Link></TableCell>
                 <TableCell>{methodLabels[notification.method as keyof typeof methodLabels] ?? notification.method}</TableCell>
-                <TableCell className="max-w-sm truncate">{notification.content}</TableCell>
+                <TableCell className="max-w-sm truncate">{notification.method === "push" ? notificationPlainText(notification.content) : notification.content}</TableCell>
                 <TableCell>{notification.audienceKind ? audienceLabels[notification.audienceKind] : notification.type}</TableCell>
                 <TableCell>
                   <span>{notification.deliverySent ?? 0}/{notification.deliveryTotal ?? notification.snapshotCount ?? 0}</span>

@@ -323,6 +323,14 @@ export interface Group {
 }
 
 export interface ChurchEvent {
+  registrationMode?: "internal" | "external"
+  externalPlatform?: string
+  externalTicketUrl?: string
+  timezone?: string
+  valueCents?: number
+  valueInstructions?: string
+  allowWalkIns?: boolean
+  coverFileId?: string | null
   id: string
   slug?: string
   churchId: string

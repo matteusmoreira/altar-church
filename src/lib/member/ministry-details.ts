@@ -30,7 +30,7 @@ export async function getMemberMinistryDetails(identifier: string, cursorInput?:
         left join public.volunteer_assignments a on a.shift_id=s.id and a.company_id=${access.companyId} and a.status <> 'cancelled'
         left join public.volunteer_profiles v on v.id=a.volunteer_id and v.company_id=${access.companyId}
         left join public.people person on person.id=v.person_id and person.company_id=${access.companyId} and person.deleted_at is null
-        where s.event_id=e.id and s.company_id=${access.companyId} and (e.volunteer_schedule_published_at is not null or schedule.status='published')),'[]'::jsonb) as scale
+        where s.event_id=e.id and s.company_id=${access.companyId} and (e.volunteer_schedule_published_at is not null or (schedule.status='published' and s.created_at <= schedule.published_at))),'[]'::jsonb) as scale
       from public.events e where e.company_id=${access.companyId} and e.ministry_id=${access.ministryId} and e.deleted_at is null
         and e.status not in ('draft','canceled','cancelled') and coalesce(e.ends_at,e.starts_at+interval '2 hours')>=now()
         and (${cursor?.id ?? null}::uuid is null or (e.starts_at,e.id)>(${cursor?.startsAt ?? null}::timestamptz,${cursor?.id ?? null}::uuid))

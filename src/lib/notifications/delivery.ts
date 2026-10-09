@@ -5,6 +5,7 @@ import { createSignedUrlsByStoragePath } from "@/lib/files/server"
 import { isPermanentProviderError } from "@/lib/delivery/retry-policy"
 import { buildUazapiPayload, parseDirectMessageConfig, renderDirectMessage } from "@/lib/forms/direct-message"
 import type { FormDirectMessage } from "@/lib/forms/types"
+import { notificationPlainText } from "./content"
 
 type DeliveryRow = {
   id: string
@@ -162,7 +163,7 @@ async function sendPush(delivery: DeliveryRow, title: string, content: string): 
   webpush.setVapidDetails(subject, publicKey, privateKey)
   await webpush.sendNotification(
     { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth_key } },
-    JSON.stringify({ title, body: content, url: "/membro" }),
+    JSON.stringify({ title, body: notificationPlainText(content).slice(0, 500), url: `/avisos/${delivery.notification_id}` }),
     { TTL: 86400, urgency: "normal", timeout: FETCH_TIMEOUT_MS },
   )
   return { providerId: `webpush:${delivery.recipient}`, responseStatus: 201 }

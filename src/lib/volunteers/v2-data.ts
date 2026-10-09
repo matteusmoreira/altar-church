@@ -334,7 +334,7 @@ export async function listVolunteerShiftMessages(
           and assignment.status not in ('declined','cancelled'))
         or exists(select 1 from public.volunteer_department_access access join public.volunteer_shifts shift on shift.department_id = access.department_id
           where shift.id = conversation.shift_id and access.profile_id = ${user.id})
-        or ${user.role === "superadmin" || user.role === "admin" || user.role === "pastor"}::boolean)
+        or private.notification_recipient_access(${user.id}::uuid,${companyId}::uuid,'shift',conversation.shift_id,'managers',null))
     group by message.id, profile.name order by message.created_at
   `;
   const rawFiles = rows.flatMap(

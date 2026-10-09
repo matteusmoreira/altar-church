@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server"
 import { processNotificationOutbox } from "@/lib/notifications/delivery"
 import { getSql } from "@/lib/db/client"
+import { processInboxPush } from "@/lib/notifications/inbox-push"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 function authorizationError(request: Request) {
   const expected = process.env.NOTIFICATION_WORKER_SECRET || process.env.INTEGRATION_WORKER_SECRET
@@ -18,7 +20,8 @@ function authorizationError(request: Request) {
 
 async function diagnostic() {
   const rows = await getSql()`select channel, status, count(*)::int as count from public.notification_deliveries group by channel, status`
-  return NextResponse.json({ data: { dryRun: true, queue: rows, pushConfigured: Boolean(process.env.VAPID_SUBJECT && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) } })
+  const inbox = await getSql()`select status,count(*)::int as count from private.notification_inbox_push group by status`
+  return NextResponse.json({ data: { dryRun: true, queue: rows, inbox, pushConfigured: Boolean(process.env.VAPID_SUBJECT && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) } })
 }
 
 export async function GET(request: Request) {
@@ -39,7 +42,12 @@ export async function POST(request: Request) {
     }
     const batchSize = Number(body.batchSize ?? 25)
     const safeBatchSize = Number.isFinite(batchSize) ? Math.min(Math.max(batchSize, 1), 100) : 25
-    return NextResponse.json({ data: await processNotificationOutbox(safeBatchSize) })
+    // Operational notices must still run when a campaign provider is unavailable.
+    const [campaignResult, inboxResult] = await Promise.allSettled([processNotificationOutbox(safeBatchSize), processInboxPush(safeBatchSize)])
+    if (inboxResult.status === "rejected") throw inboxResult.reason
+    const inbox = inboxResult.value
+    const campaign = campaignResult.status === "fulfilled" ? campaignResult.value : { error: "Não foi possível processar campanhas nesta execução" }
+    return NextResponse.json({ data: { ...campaign, inbox } })
   } catch (error) {
     return NextResponse.json(
       { error: { code: "INTERNAL", message: error instanceof Error ? error.message : "Erro no dispatch" } },

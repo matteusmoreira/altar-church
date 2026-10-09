@@ -1,7 +1,11 @@
 "use client"
 
+import { ExternalEventRegistration } from "@/components/events/external-event-registration"
+import { eventPriceLabel } from "@/lib/events/contract"
+
 import * as React from "react"
 import Link from "next/link"
+import { AssignmentAbsence } from "./assignment-absence"
 import { useState, useMemo } from "react"
 import {
   addDays,
@@ -198,7 +202,7 @@ function useIsMounted() {
   )
 }
 
-export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
+export function MemberAgenda({ events, initialEventId }: { events: MemberAgendaEvent[]; initialEventId?: string }) {
   const isMounted = useIsMounted()
 
   // Estados de navegação e filtros
@@ -331,6 +335,7 @@ export function MemberAgenda({ events }: { events: MemberAgendaEvent[] }) {
 
   return (
     <div className="space-y-6">
+      {initialEventId && events.find(event => event.id === initialEventId) && <MemberAgendaCard key={initialEventId} event={events.find(event => event.id === initialEventId)!} initialOpen />}
       {/* Cabeçalho da Página Canônico com Seletor de Visão */}
       <PageHeader
         title="Agenda"
@@ -1056,10 +1061,11 @@ function AgendaEventFlame({ count }: { count: number }) {
 // =============================================================================
 interface MemberAgendaCardProps {
   event: MemberAgendaEvent
+  initialOpen?: boolean
 }
 
-function MemberAgendaCard({ event }: MemberAgendaCardProps) {
-  const [detailsOpen, setDetailsOpen] = useState(false)
+function MemberAgendaCard({ event, initialOpen = false }: MemberAgendaCardProps) {
+  const [detailsOpen, setDetailsOpen] = useState(initialOpen)
   const eventStyle = getEventStyle(event)
   const startDate = new Date(event.startsAt)
   const formattedDate = formatFullDate(startDate)
@@ -1190,6 +1196,10 @@ function MemberAgendaCard({ event }: MemberAgendaCardProps) {
           </DialogHeader>
           <div className="space-y-4 break-words">
             <p className="whitespace-pre-wrap text-sm">{event.description || "Nenhuma descrição informada."}</p>
+            {event.registrationMode === "external" && <ExternalEventRegistration event={event} />}
+            {event.registrationMode === "external" && <p className="text-sm font-medium">{eventPriceLabel(event)}{event.valueCents ? " · Valor de referência" : ""}</p>}
+            {event.registrationMode !== "external" && (event.canRsvp || event.myStatus) && <Button variant="outline" render={<Link href={`/membro/eventos/${event.id}`} />}>Inscrição e comprovante</Button>}
+            {event.registrationMode !== "external" && !!event.confirmedPeople.length && <p className="text-sm"><strong>Presenças confirmadas:</strong> {event.confirmedPeople.join(", ")}</p>}
             <div className="space-y-2 rounded-xl bg-muted/40 p-3 text-sm">
               <p className="flex items-start gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />{formattedDate} às {startTime}{endTime ? ` – ${endTime}` : ""}</p>
               <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0" />{event.location || "Local não informado"}</p>
@@ -1201,9 +1211,10 @@ function MemberAgendaCard({ event }: MemberAgendaCardProps) {
                 <div key={item.id} className={cn("space-y-1 rounded-xl border p-3 text-sm", item.isMine && "border-primary bg-primary/5")}>
                   <p className="font-semibold">{item.role}{item.isMine ? " · Sua função" : ""}</p>
                   <p>{item.personName || "Vaga ainda sem pessoa definida"}</p>
-                  {item.status && <p className="text-xs text-muted-foreground">{({ proposed: "Escalado", notified: "Aguardando resposta", confirmed: "Confirmado na escala", checked_in: "Check-in realizado", checked_out: "Serviço concluído", no_show: "Ausência registrada" } as Record<string, string>)[item.status] || "Escalado"}</p>}
+                  {item.status && <p className="text-xs text-muted-foreground">{({ proposed: "Escalado", notified: "Aguardando resposta", confirmed: "Confirmado na escala", declined: "Ausência avisada", checked_in: "Check-in realizado", checked_out: "Serviço concluído", no_show: "Ausência registrada" } as Record<string, string>)[item.status] || "Escalado"}</p>}
                   <p className="text-xs text-muted-foreground">{formatTimeOnly(item.startsAt)}{item.endsAt ? ` – ${formatTimeOnly(item.endsAt)}` : ""}</p>
                   {item.instructions && <p className="whitespace-pre-wrap">{item.instructions}</p>}
+                  {item.isMine && item.assignmentId && <AssignmentAbsence key={`${item.assignmentId}:${item.status}`} assignmentId={item.assignmentId} status={item.status} reason={item.declineReason} canDecline={!!item.canDecline} />}
                 </div>
               )) : <p className="text-sm text-muted-foreground">Nenhuma escala publicada para esta atividade.</p>}
             </section>

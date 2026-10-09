@@ -3,6 +3,8 @@ import "server-only"
 import { requirePermission } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
+import { createSignedUrlsByStoragePath } from "@/lib/files/server"
+import { eventRegistrationOpen } from "./contract"
 import type { EventCheckinPreview, EventCheckinSessionPreview, EventDashboardSummary, EventPublicData, EventPublicRegistration, EventReport, EventResourceItem } from "./types"
 
 type DateValue = Date | string | null
@@ -23,6 +25,7 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
     token: string
     company_slug: string
     public_slug: string
+    event_timezone: string
     church_name: string
     title: string
     description: string
@@ -30,9 +33,15 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
     starts_at: DateValue
     ends_at: DateValue
     location: string
+    cover_path: string | null
+    value_cents: number
+    value_instructions: string
     banner_url: string
     is_online: boolean
     online_link: string
+    registration_mode: "internal" | "external"
+    external_platform: string
+    external_ticket_url: string
     registration_enabled: boolean
     registration_form_slug: string | null
     registration_form_title: string | null
@@ -40,9 +49,9 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
     going_count: number | string
     waitlisted_count: number | string
   }[]>`
-    select event.public_token as token, event.public_slug, company.slug as company_slug, company.name as church_name,
+    select (select timezone from public.church_profiles where company_id = event.company_id) as event_timezone, event.public_token as token, event.public_slug, company.slug as company_slug, company.name as church_name,
       event.title, event.description, event.type, event.starts_at, event.ends_at, event.location,
-      event.banner_url, event.is_online, event.online_link, event.registration_enabled, event.max_capacity,
+      cover.storage_path as cover_path, event.value_cents, event.value_instructions, event.banner_url, event.is_online, event.online_link, event.registration_mode, event.external_platform, event.external_ticket_url, event.registration_enabled, event.max_capacity,
       registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
       (select count(*)::integer from public.member_event_rsvps rsvp
         where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
@@ -53,7 +62,8 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
       + (select count(*)::integer from public.event_guest_registrations guest
         where guest.company_id = event.company_id and guest.event_id = event.id and guest.status = 'waitlisted') as waitlisted_count
     from public.events event
-    join public.companies company on company.id = event.company_id and company.active and company.status = 'active'
+    left join public.app_files cover on cover.id = event.cover_file_id and cover.company_id = event.company_id and cover.is_active and cover.deleted_at is null
+    join public.companies company on company.id = event.company_id and company.active and (company.status = 'active' or (company.status = 'test' and company.legacy_id = ${process.env.E2E_COMPANY_LEGACY_ID || ''}))
     left join public.forms registration_form on registration_form.id = event.registration_form_id and registration_form.company_id = event.company_id and registration_form.status = 'published' and registration_form.is_active and registration_form.deleted_at is null
     where event.public_token = ${token}::uuid
       and event.is_public and event.status = 'published' and event.deleted_at is null
@@ -69,13 +79,17 @@ export async function getPublicEventByToken(tokenInput: string): Promise<EventPu
     publicPath: `/eventos/publico/${row.company_slug}/${row.public_slug}`,
     companySlug: row.company_slug,
     churchName: row.church_name,
+    timezone: row.event_timezone || "America/Sao_Paulo",
     title: row.title,
     description: row.description,
     type: row.type,
     startsAt: iso(row.starts_at) ?? "",
     endsAt: iso(row.ends_at),
     location: row.location,
-    bannerUrl: row.banner_url,
+    valueCents: row.value_cents, valueInstructions: row.value_instructions,
+    registrationMode: row.registration_mode, externalPlatform: row.external_platform, externalTicketUrl: row.external_ticket_url,
+    registrationOpen: eventRegistrationOpen({ registrationMode: row.registration_mode, startsAt: iso(row.starts_at)!, endsAt: iso(row.ends_at), registrationEnabled: row.registration_enabled }),
+    bannerUrl: row.cover_path ? (await createSignedUrlsByStoragePath([row.cover_path])).get(row.cover_path) || row.banner_url : row.banner_url,
     isOnline: row.is_online,
     onlineLink: row.online_link,
     registrationEnabled: row.registration_enabled,
@@ -92,7 +106,7 @@ export async function getPublicEventBySlug(companySlug: string, eventSlug: strin
   if (![companySlug, eventSlug].every(value => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value))) return null
   const rows = await getSql()<{ public_token: string }[]>`
     select event.public_token from public.events event
-    join public.companies company on company.id = event.company_id and company.active and company.status = 'active'
+    join public.companies company on company.id = event.company_id and company.active and (company.status = 'active' or (company.status = 'test' and company.legacy_id = ${process.env.E2E_COMPANY_LEGACY_ID || ''}))
     where company.slug = ${companySlug} and event.public_slug = ${eventSlug}
       and event.is_public and event.status = 'published' and event.deleted_at is null limit 1
   `
@@ -107,6 +121,9 @@ export async function getPublicEventRegistration(tokenInput: string): Promise<Ev
     confirmation_token: string
     event_token: string
     event_title: string
+    value_cents: number
+    value_instructions: string
+    attendee_token: string | null
     company_slug: string
     public_slug: string
     full_name: string
@@ -114,11 +131,12 @@ export async function getPublicEventRegistration(tokenInput: string): Promise<Ev
     phone: string
     status: EventPublicRegistration["status"]
   }[]>`
-    select guest.id, guest.confirmation_token, event.public_token as event_token, event.title as event_title,
+    select guest.id, guest.confirmation_token, event.public_token as event_token, event.title as event_title, event.value_cents, event.value_instructions,
+      (select token from public.event_attendee_tokens where guest_registration_id = guest.id and company_id = guest.company_id) as attendee_token,
       (select slug from public.companies where id = event.company_id) as company_slug, event.public_slug,
       guest.full_name, guest.email, guest.phone, guest.status
     from public.event_guest_registrations guest
-    join public.events event on event.id = guest.event_id and event.deleted_at is null
+    join public.events event on event.id = guest.event_id and event.registration_mode = 'internal' and event.deleted_at is null
     where guest.confirmation_token = ${token}::uuid
     limit 1
   `
@@ -128,7 +146,7 @@ export async function getPublicEventRegistration(tokenInput: string): Promise<Ev
     token: row.confirmation_token,
     eventToken: row.event_token,
     eventPublicPath: `/eventos/publico/${row.company_slug}/${row.public_slug}`,
-    eventTitle: row.event_title,
+    eventTitle: row.event_title, valueCents: row.value_cents, valueInstructions: row.value_instructions, attendeeToken: row.attendee_token,
     fullName: row.full_name,
     email: row.email,
     phone: row.phone,
@@ -166,11 +184,11 @@ export async function getEventCheckinPreview(tokenInput: string): Promise<EventC
           and session.closed_at is null and now() between session.opens_at and session.expires_at
       ) as session_open
     from public.event_attendee_tokens attendee
-    join public.events event on event.id = attendee.event_id and event.status = 'published' and event.deleted_at is null
+    join public.events event on event.id = attendee.event_id and event.status = 'published' and event.registration_mode = 'internal' and event.deleted_at is null
     left join public.member_event_rsvps rsvp on rsvp.id = attendee.member_rsvp_id
     left join public.people person on person.id = rsvp.person_id
     left join public.event_guest_registrations guest on guest.id = attendee.guest_registration_id
-    where attendee.token = ${token}::uuid
+    where attendee.token = ${token}::uuid and (attendee.expires_at is null or attendee.expires_at > now()) and coalesce(rsvp.status, guest.status) = 'going'
     limit 1
   `
   const row = rows[0]
@@ -197,7 +215,7 @@ export async function getEventCheckinSessionPreview(tokenInput: string): Promise
       event.starts_at as event_starts_at,
       session.closed_at is null and now() between session.opens_at and session.expires_at as available
     from public.event_checkin_sessions session
-    join public.events event on event.id = session.event_id and event.status = 'published' and event.deleted_at is null
+    join public.events event on event.id = session.event_id and event.status = 'published' and event.registration_mode = 'internal' and event.deleted_at is null
     where session.token = ${token}::uuid
     limit 1
   `
@@ -329,4 +347,14 @@ export async function getEventDashboardSummary(companyIdInput?: string | null): 
     attendanceRate: registrations > 0 ? Math.round((Number(summary?.present ?? 0) / registrations) * 1000) / 10 : null,
     byType: typeRows.map((row) => ({ label: row.type, value: Number(row.value ?? 0) })),
   }
+}
+
+export async function getEventActiveCheckinSession(eventId: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("Acesso negado")
+  const companyId = requireUserCompanyId(user)
+  await requirePermission("events.view", companyId)
+  const [session] = await getSql()<{ token: string; expires_at: Date }[]>`select session.token, session.expires_at from public.event_checkin_sessions session join public.events event on event.id = session.event_id and event.company_id = session.company_id
+    where session.event_id = ${eventId} and session.company_id = ${companyId} and event.status = 'published' and event.registration_mode = 'internal' and event.deleted_at is null and closed_at is null and now() between opens_at and expires_at order by opens_at desc limit 1`
+  return session ? { token: session.token, expiresAt: session.expires_at.toISOString() } : null
 }

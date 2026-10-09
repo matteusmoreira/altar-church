@@ -5,7 +5,8 @@ import { getKidsSecurityStatus } from "@/lib/kids/security"
 import { hasPermission } from "@/lib/types"
 import type { KidsCapabilities } from "@/lib/kids/types"
 
-export default async function KidsPage() {
+export default async function KidsPage({ searchParams }: { searchParams: Promise<{ tab?: string; conversation?: string }> }) {
+  const query = await searchParams
   const user = await requireDashboardModuleAccess({ moduleId: "kids", permission: "kids.view" })
   const data = await getKidsDashboardData()
   const capabilities: KidsCapabilities = {
@@ -19,5 +20,5 @@ export default async function KidsPage() {
     viewReports: hasPermission(user, "kids.reports.view"),
     manageSettings: hasPermission(user, "kids.settings.manage"),
   }
-  return <KidsClient data={data} capabilities={capabilities} securityStatus={getKidsSecurityStatus()} />
+  return <KidsClient key={`${query.tab || "overview"}:${query.conversation || ""}`} data={data} capabilities={capabilities} securityStatus={getKidsSecurityStatus()} initialTab={query.tab} initialConversationId={query.conversation} />
 }

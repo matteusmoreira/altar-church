@@ -1,13 +1,16 @@
 "use client"
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock, Globe, List, MapPin, Users } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { CalendarDays, LayoutGrid, CalendarRange, ChevronLeft, ChevronRight, Clock, Globe, List, MapPin, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { EmptyState, ViewToggle } from "@/components/shared"
 import { EventActions } from "./event-actions"
+import { eventLocalDateTime, eventPriceLabel } from "@/lib/events/contract"
 import type { EventListItem } from "@/lib/operational/data"
 import type { ChurchEvent } from "@/lib/types"
 
@@ -28,8 +31,8 @@ const statusLabels: Record<ChurchEvent["status"], string> = {
 
 const weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
-function dateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+function dateTime(value: string, timeZone = "America/Sao_Paulo") {
+  return new Intl.DateTimeFormat("pt-BR", { timeZone, day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
 }
 
 function dateKey(value: Date) {
@@ -37,7 +40,7 @@ function dateKey(value: Date) {
 }
 
 function eventDay(event: EventListItem) {
-  return dateKey(new Date(event.startDate))
+  return eventLocalDateTime(event.startDate, event.timezone).slice(0, 10)
 }
 
 function statusVariant(status: ChurchEvent["status"]): "default" | "secondary" | "outline" {
@@ -47,6 +50,7 @@ function statusVariant(status: ChurchEvent["status"]): "default" | "secondary" |
 function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListItem; canEdit: boolean; canCreate: boolean; canDelete: boolean }) {
   return (
     <Card className="glass overflow-hidden transition-colors hover:border-primary/40">
+      {event.banner && <div className="h-36 overflow-hidden bg-muted"><img src={event.banner} alt="" className="h-full w-full object-cover" /></div>}
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:flex">
@@ -54,7 +58,7 @@ function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListI
           </div>
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button render={<Link href={`/eventos/${event.slug || event.id}`} />} nativeButton={false} variant="link" className="h-auto min-w-0 p-0 text-left text-base font-semibold text-foreground">
+              <Button render={<Link href={`/eventos/${event.slug || event.id}`} />} nativeButton={false} variant="link" className="h-auto min-w-0 p-0 text-left whitespace-normal break-words text-base font-semibold text-foreground">
                 {event.title}
               </Button>
               <Badge variant="outline">{typeLabels[event.type]}</Badge>
@@ -63,11 +67,12 @@ function EventCard({ event, canEdit, canCreate, canDelete }: { event: EventListI
             </div>
             <p className="line-clamp-2 text-sm text-muted-foreground">{event.description || "Sem descrição"}</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{dateTime(event.startDate)}</span>
+              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{dateTime(event.startDate, event.timezone)}</span>
               <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{event.location || "Sem local"}</span>
-              <span className="flex items-center gap-1"><Users className="h-3 w-3" />{event.goingCount} inscritos · {event.attendance} presentes</span>
-              {event.maxCapacity > 0 && <span>Limite {event.maxCapacity}</span>}
+              {event.registrationMode === "external" ? <span>Inscrições pelo {event.externalPlatform}</span> : <span className="flex items-center gap-1"><Users className="h-3 w-3" />{event.goingCount} inscritos · {event.attendance} presentes</span>}
+              {event.registrationMode !== "external" && event.maxCapacity > 0 && <span>Limite {event.maxCapacity}</span>}
             </div>
+            <p className="text-sm font-semibold">{eventPriceLabel(event)}</p>
             {event.ministryName && <p className="text-xs text-primary">Ministério: {event.ministryName}</p>}
           </div>
           <EventActions eventId={event.id} eventSlug={event.slug} eventTitle={event.title} status={event.status} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
@@ -120,17 +125,38 @@ function WeekView({ events, cursor, onCursorChange, canEdit, canCreate, canDelet
 }
 
 export function EventsListView({ events, canEdit, canCreate, canDelete }: { events: EventListItem[]; canEdit: boolean; canCreate: boolean; canDelete: boolean }) {
-  const [view, setView] = useState<"list" | "month" | "week">("list")
+  const savedView = useSyncExternalStore<"list" | "grid">(listener => { window.addEventListener("events-view-change", listener); return () => window.removeEventListener("events-view-change", listener) }, () => localStorage.getItem("events-view") === "grid" ? "grid" : "list", () => "list")
+  const [calendar, setCalendar] = useState<"month" | "week" | null>(null)
+  const view = calendar || savedView
+  const setView = (value: "list" | "grid" | "month" | "week") => { if (value === "month" || value === "week") setCalendar(value); else { setCalendar(null); localStorage.setItem("events-view", value); window.dispatchEvent(new Event("events-view-change")) } }
   const [cursor, setCursor] = useState(() => new Date(events[0]?.startDate ?? Date.now()))
-  const monthEvents = useMemo(() => events.filter((event) => new Date(event.startDate).getMonth() === cursor.getMonth() && new Date(event.startDate).getFullYear() === cursor.getFullYear()), [cursor, events])
-  if (!events.length) return <EmptyState variant="card" icon={CalendarDays} title="Nenhum evento encontrado com esses filtros." />
+  const [calendarEvents, setCalendarEvents] = useState<EventListItem[]>([])
+  const [calendarError, setCalendarError] = useState("")
+  const filtersKey = useSearchParams().toString()
+  useEffect(() => {
+    if (!calendar) return
+    const abort = new AbortController()
+    const from = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
+    const to = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)
+    if (calendar === "week") { from.setTime(cursor.getTime()); from.setDate(from.getDate() - ((from.getDay() + 6) % 7)); to.setTime(from.getTime()); to.setDate(to.getDate() + 6) }
+    const params = new URLSearchParams(filtersKey)
+    params.delete("page")
+    params.set("from", dateKey(from)); params.set("to", dateKey(to))
+    fetch(`/api/v1/events/calendar?${params}`, { signal: abort.signal }).then(async response => { if (!response.ok) throw new Error("Não foi possível carregar o calendário"); return response.json() }).then(result => { setCalendarEvents(result.events); setCalendarError("") }).catch(error => { if (!abort.signal.aborted) setCalendarError(error.message) })
+    return () => abort.abort()
+  }, [calendar, cursor, filtersKey])
+  const monthEvents = useMemo(() => (calendar ? calendarEvents : events).filter((event) => new Date(`${eventDay(event)}T12:00:00`).getMonth() === cursor.getMonth() && new Date(`${eventDay(event)}T12:00:00`).getFullYear() === cursor.getFullYear()), [cursor, events, calendar, calendarEvents])
+
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{view === "month" ? `${monthEvents.length} evento(s) no mês` : `${events.length} evento(s) encontrado(s)`}</p><ViewToggle showLabel value={view} onChange={setView} ariaLabel="Modo de visualização" options={[{ value: "list", label: "Lista", icon: List }, { value: "month", label: "Mês", icon: CalendarDays }, { value: "week", label: "Semana", icon: CalendarRange }]} /></div>
-      {view === "list" && <div className="space-y-3">{events.map((event) => <EventCard key={event.id} event={event} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />)}</div>}
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">{view === "month" ? `${monthEvents.length} evento(s) no mês` : `${events.length} evento(s) encontrado(s)`}</p><ViewToggle showLabel value={view} onChange={setView} ariaLabel="Modo de visualização" options={[{ value: "list", label: "Lista", icon: List }, { value: "grid", label: "Grade", icon: LayoutGrid }, { value: "month", label: "Calendário", icon: CalendarDays }]} /></div>
+      {calendar && <div className="flex gap-2"><Button variant={calendar === "month" ? "default" : "outline"} onClick={() => setCalendar("month")}>Mês</Button><Button variant={calendar === "week" ? "default" : "outline"} onClick={() => setCalendar("week")}><CalendarRange className="h-4 w-4" />Semana</Button></div>}
+      {(view === "list" || view === "grid") && <div className={view === "grid" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>{events.map((event) => <EventCard key={event.id} event={event} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />)}</div>}
+      {calendarError && <p role="alert" className="text-sm text-destructive">{calendarError}</p>}
+      {!calendar && !events.length && <EmptyState variant="card" icon={CalendarDays} title="Nenhum evento encontrado com esses filtros." />}
       {view === "month" && <MonthView events={monthEvents} cursor={cursor} onCursorChange={setCursor} />}
-      {view === "week" && <WeekView events={events} cursor={cursor} onCursorChange={setCursor} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />}
+      {view === "week" && <WeekView events={calendarEvents} cursor={cursor} onCursorChange={setCursor} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />}
     </section>
   )
 }

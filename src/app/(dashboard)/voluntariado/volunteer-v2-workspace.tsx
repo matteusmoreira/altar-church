@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AssignmentAbsence } from "@/components/member/assignment-absence";
 import {
   Award,
   Bell,
@@ -371,12 +372,14 @@ export function CandidatePanel({
 export function ShiftChat({
   shiftId,
   unreadCount,
+  initialOpen = false,
 }: {
   shiftId: string;
   unreadCount: number;
+  initialOpen?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [body, setBody] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
@@ -392,6 +395,13 @@ export function ShiftChat({
   useEffect(() => {
     if (!open) return;
     if (isVolunteerPreview()) return;
+    let active = true;
+    void fetch(`/api/v1/volunteers/shifts/${shiftId}/chat/messages`, { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error("Não foi possível carregar o chat");
+      const payload = await response.json() as { data: typeof messages };
+      if (active) setMessages(payload.data);
+      await markVolunteerShiftConversationRead(shiftId);
+    }).catch(() => { if (active) toast.error("Não foi possível carregar o chat") });
     const client = createClient();
     const channel = client
       .channel(`volunteer-shift-${shiftId}`)
@@ -416,6 +426,7 @@ export function ShiftChat({
       )
       .subscribe();
     return () => {
+      active = false;
       void client.removeChannel(channel);
     };
   }, [open, router, shiftId]);
@@ -2886,6 +2897,7 @@ export function VolunteerPortalV2({ data }: { data: VolunteerPortalData }) {
             <CardContent className="space-y-2">
               <p className="text-sm font-medium">Sua função: {shift.roleName}</p>
               {shift.instructions && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{shift.instructions}</p>}
+              {shift.assignments.map(assignment => <AssignmentAbsence key={`${assignment.id}:${assignment.status}`} assignmentId={assignment.id} status={assignment.status} reason={assignment.declineReason} canDecline={new Date(shift.startsAt).getTime() > Date.now() && ["notified","confirmed"].includes(assignment.status)} />)}
             </CardContent>
           </Card>
         ))}

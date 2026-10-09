@@ -719,7 +719,8 @@ export async function saveMinistryScaleAssignment(input: z.input<typeof scaleAss
     const parsed = scaleAssignmentSchema.parse(input)
     const access = await requireMinistryPermission(parsed.ministryId, "ministries.agenda.manage", parsed.companyId, { manage: true })
     const shift = await getMinistryShift(access, parsed.shiftId)
-    const sql = getSql()
+    return await getSql().begin(async sql => {
+    await sql`select id from public.volunteer_shifts where id=${shift.id} and company_id=${access.companyId} for update`
     const memberRows = await sql<{ person_id: string }[]>`
       select person_id from public.ministry_memberships
       where company_id = ${access.companyId} and ministry_id = ${access.ministryId}
@@ -773,15 +774,18 @@ export async function saveMinistryScaleAssignment(input: z.input<typeof scaleAss
       insert into public.volunteer_assignments (
         company_id, shift_id, volunteer_id, status, score, score_reasons, is_locked, created_by, updated_by
       ) values (
-        ${access.companyId}, ${shift.id}, ${volunteerId}, 'proposed', ${candidate.score},
+        ${access.companyId}, ${shift.id}, ${volunteerId},
+        (select case when e.volunteer_schedule_published_at is not null then 'confirmed' else 'proposed' end from public.events e where e.id=${shift.event_id} and e.company_id=${access.companyId}), ${candidate.score},
         ${JSON.stringify([{ code: "manual", label: "Escolha manual do líder", points: 0 }])}::jsonb,
         true, ${access.user.id}, ${access.user.id}
-      ) returning id
+      ) on conflict (shift_id,volunteer_id) do update set status=excluded.status,decline_reason=null,responded_at=null,updated_by=excluded.updated_by,updated_at=now()
+      where public.volunteer_assignments.status in ('declined','cancelled') returning id
     `
     if (!rows[0]) throw new Error("Pessoa não foi adicionada à escala")
     await writeAuditLog({ action: "ministry.scale.assignment.save", entityTable: "volunteer_assignments", entityId: rows[0].id, companyId: access.companyId, metadata: { ministryId: access.ministryId, shiftId: shift.id, personId: parsed.personId } })
     refresh(access.ministryId)
     return { ok: true, id: rows[0].id }
+    })
   } catch (error) { return result(error) }
 }
 

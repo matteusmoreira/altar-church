@@ -23,7 +23,7 @@ test("operational dashboard pages do not import mock data", () => {
 })
 
 test("events creation surfaces server action result to the user", () => {
-  const page = readFileSync("src/app/(dashboard)/eventos/page.tsx", "utf8")
+  const page = readFileSync("src/app/(dashboard)/eventos/novo/page.tsx", "utf8")
   const form = readFileSync("src/app/(dashboard)/eventos/event-create-form.tsx", "utf8")
   const actions = readFileSync("src/lib/operational/actions.ts", "utf8")
 

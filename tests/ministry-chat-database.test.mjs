@@ -45,6 +45,7 @@ test("ministry chat: real database RLS and backend messaging/permissions/history
       create table app_files(id uuid primary key,company_id uuid,storage_path text,is_active boolean,deleted_at timestamptz);
     `)
     await db.exec(await readFile(new URL("../supabase/migrations/20261006225520_ministry_internal_chat.sql", import.meta.url), "utf8"))
+    await db.exec("alter table ministry_chat_reads add column push_opted_out boolean not null default false")
     await db.query("insert into companies values($1),($2)", [ids.church, ids.otherChurch])
     for (const [key, company] of [["ministry", ids.church], ["otherMinistry", ids.church], ["foreignMinistry", ids.otherChurch]]) await db.query("insert into ministries(id,company_id,name,slug) values($1,$2,$3,$3)", [ids[key], company, key])
     for (const key of ["member", "peer", "leader", "admin", "outsider", "foreign", "pending", "inactive"]) {

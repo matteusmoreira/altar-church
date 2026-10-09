@@ -22,6 +22,7 @@ import { afterResponse } from "@/lib/performance/after-response";
 import { processVolunteerChatPushOutbox } from "./chat-delivery";
 import { toUserFriendlyError } from "@/lib/errors/user-friendly-error";
 import { saveMyNotificationPushSubscription } from "@/lib/notifications/preferences";
+import { declineMyPublishedAssignment } from "@/lib/member/assignment-actions";
 
 const uuid = z.string().uuid();
 const optionalUuid = z
@@ -40,6 +41,7 @@ function resultError(error: unknown): VolunteerActionResult {
 }
 
 function refreshVolunteerPaths() {
+  revalidatePath("/eventos/[id]", "page");
   revalidatePath("/voluntariado");
   revalidatePath("/membro");
   revalidatePath("/membro/voluntariado");
@@ -61,6 +63,11 @@ async function managerContext(
   if (!user) throw new Error("Acesso negado");
   const companyId = requireUserCompanyId(user);
   if (expectedCompanyId) assertCompanyScope(companyId, expectedCompanyId);
+  if (permission === "volunteer_chat.manage" && departmentId) {
+    const scoped = await getSql()<{ allowed: boolean }[]>`select exists(select 1 from public.volunteer_shifts s where s.company_id=${companyId} and s.department_id=${departmentId}
+      and private.notification_recipient_access(${user.id}::uuid,${companyId}::uuid,'shift',s.id,'managers',null)) as allowed`;
+    if (scoped[0]?.allowed) return { user, companyId };
+  }
   await requirePermission(permission, companyId);
   if (
     user.role === "superadmin" ||
@@ -435,12 +442,13 @@ export async function respondVolunteerAssignment(
 ): Promise<VolunteerActionResult> {
   try {
     const parsed = responseSchema.parse(input);
+    if (parsed.response === "declined") return await declineMyPublishedAssignment({ assignmentId: parsed.assignmentId, reason: parsed.reason });
     const { companyId, volunteerId } = await volunteerContext(
       "volunteer.self.respond",
     );
     const rows = await getSql()<{ id: string }[]>`
       update public.volunteer_assignments set status = ${parsed.response}, responded_at = now(),
-        decline_reason = ${parsed.response === "declined" ? parsed.reason : null}, updated_at = now()
+        decline_reason = null, updated_at = now()
       where id = ${parsed.assignmentId} and company_id = ${companyId} and volunteer_id = ${volunteerId}
         and status = 'notified' returning id
     `;
@@ -860,16 +868,7 @@ export async function markVolunteerShiftConversationRead(
     `;
     if (!rows[0]) return { ok: true, id: shiftId };
     if (!rows[0].is_participant) {
-      await requirePermission("volunteer_chat.manage", companyId);
-      if (!hasAnyRole(user, ["superadmin", "admin", "pastor"])) {
-        const access = await sql<{ allowed: boolean }[]>`
-          select exists(select 1 from public.volunteer_department_access
-            where company_id = ${companyId}::uuid
-              and department_id = ${rows[0].department_id}::uuid
-              and profile_id = ${user.id}::uuid) as allowed
-        `;
-        if (!access[0]?.allowed) throw new Error("Acesso negado");
-      }
+      await managerContext("volunteer_chat.manage", rows[0].department_id);
     }
     await sql`
       insert into public.volunteer_shift_conversation_reads(conversation_id, profile_id, company_id, last_read_at)
@@ -1111,6 +1110,10 @@ export async function saveVolunteerServicePlan(
     const parsed = servicePlanSchema.parse(input);
     const { user, companyId } = await managerContext("schedules.edit");
     const sql = getSql();
+    if (input.timeline === undefined) {
+      const currentTimeline = await sql<{ title: string; planned_at: Date; duration_minutes: number; responsible_profile_id: string | null; instructions: string }[]>`select title, planned_at, duration_minutes, responsible_profile_id, instructions from public.volunteer_event_timeline_items where event_id = ${parsed.eventId} and company_id = ${companyId} order by sort_order`;
+      parsed.timeline = currentTimeline.map(item => ({ title: item.title, plannedAt: item.planned_at.toISOString(), durationMinutes: item.duration_minutes, responsibleProfileId: item.responsible_profile_id, instructions: item.instructions }));
+    }
     const events = await sql<
       { id: string; volunteer_schedule_published_at: Date | null }[]
     >`
@@ -1141,6 +1144,8 @@ export async function saveVolunteerServicePlan(
       await managerContext("schedules.edit", position.departmentId);
     }
 
+    const previousDepartments = await sql<{ department_id: string }[]>`select distinct department_id from public.volunteer_event_positions where company_id = ${companyId} and event_id = ${parsed.eventId}`;
+    for (const previous of previousDepartments) await managerContext("schedules.edit", previous.department_id);
     let modelId: string | null = null;
     await sql.begin(async (tx) => {
       const keptPositionIds: string[] = [];
@@ -1272,8 +1277,8 @@ export async function generateVolunteerScheduleForEvent(
     `;
     const event = events[0];
     if (!event) throw new Error("Culto não encontrado");
-    if (event.status !== "published")
-      throw new Error("Publique o culto em Eventos antes de gerar a escala");
+    if (event.status === "cancelled")
+      throw new Error("Evento cancelado não permite gerar escala");
     if (event.volunteer_schedule_published_at)
       throw new Error("Escala deste culto já foi publicada");
     const positions = await sql<
@@ -1382,16 +1387,17 @@ export async function publishVolunteerEventSchedule(
     const { user, companyId } = await managerContext("schedules.publish");
     const sql = getSql();
     const events = await sql<
-      { id: string; volunteer_schedule_published_at: Date | null }[]
+      { id: string; status: string; volunteer_schedule_published_at: Date | null }[]
     >`
-      select id, volunteer_schedule_published_at
+      select id, status, volunteer_schedule_published_at
       from public.events
       where id = ${eventId}
         and company_id = ${companyId}
         and deleted_at is null
     `;
     const event = events[0];
-    if (!event) throw new Error("Culto não encontrado");
+    if (!event) throw new Error("Evento não encontrado");
+    if (event.status !== "published") throw new Error("Publique o evento antes de publicar a escala");
     const departments = await sql<{ department_id: string }[]>`
       select distinct department_id
       from public.volunteer_shifts

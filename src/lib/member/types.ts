@@ -58,6 +58,10 @@ export interface MemberPortalCapabilities {
 }
 
 export interface MemberAgendaEvent {
+  registrationMode?: "internal" | "external"
+  externalPlatform?: string
+  externalTicketUrl?: string
+  valueCents?: number
   id: string
   title: string
   description: string

@@ -42,6 +42,7 @@ import { useAuth } from "@/lib/auth/context"
 import { dashboardRoutes, isDashboardRouteActive, type DashboardRouteId } from "@/lib/navigation/routes"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 import { ChurchLogo } from "@/components/layout/church-logo"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -349,6 +350,7 @@ function Topbar({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        <NotificationBell />
         <ThemeToggle className="text-muted-foreground hover:text-foreground hover:bg-muted/60" />
         <Separator orientation="vertical" className="mx-1 h-6" />
         <div className="text-right">
@@ -496,6 +498,7 @@ export function DashboardLayout({
             <span className="truncate text-sm font-semibold">{churchName}</span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <NotificationBell />
             <ThemeToggle />
           </div>
         </header>

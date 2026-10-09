@@ -6,6 +6,8 @@ import { requirePermission, writeAuditLog } from "@/lib/auth/permissions"
 import { getCurrentUser, requireUserCompanyId } from "@/lib/auth/server"
 import { getSql } from "@/lib/db/client"
 import { getPublicEventByToken } from "./data"
+import { recordEventEntrance, promoteEventWaitlist } from "./registration-server"
+import { uploadManagedFile } from "@/lib/files/server"
 import { eventCommunicationTemplates } from "./types"
 import type { EventPublicRegistration } from "./types"
 import { consumePublicRateLimit } from "@/lib/security/public-rate-limit"
@@ -30,6 +32,8 @@ async function publicAudit(companyId: string, action: string, entityId: string, 
 
 async function queueGuestConfirmation(input: { companyId: string; eventId: string; guestId: string; eventTitle: string; eventToken: string; status: EventPublicRegistration["status"] }) {
   const sql = getSql()
+  const [company] = await sql<{ status: string }[]>`select status from public.companies where id = ${input.companyId}`
+  if (company?.status === "test") return
   await sql.begin(async (tx) => {
     const guests = await tx<{ email: string; phone: string; full_name: string }[]>`
       select email, phone, full_name from public.event_guest_registrations
@@ -47,7 +51,9 @@ async function queueGuestConfirmation(input: { companyId: string; eventId: strin
       where event.id = ${input.eventId} and event.company_id = ${input.companyId}
     `
     const publicPath = `/eventos/publico/${eventRoute.company_slug}/${eventRoute.public_slug}`
-    const content = `${guest.full_name}, sua inscrição foi registrada como ${input.status === "waitlisted" ? "lista de espera" : "confirmada"}.\nAcesse: ${publicPath}`
+    const [receipt] = await tx<{ confirmation_token: string }[]>`select confirmation_token from public.event_guest_registrations where id = ${input.guestId} and company_id = ${input.companyId}`
+    const origin = process.env.NEXT_PUBLIC_APP_URL || "https://altarchurch.com.br"
+    const content = `${guest.full_name}, sua inscrição foi registrada como ${input.status === "waitlisted" ? "lista de espera" : "confirmada"}.\nComprovante: ${origin}/eventos/inscricao/${receipt.confirmation_token}\nEvento: ${origin}${publicPath}`
     const notifications = await tx<{ id: string }[]>`
       insert into public.notifications(company_id, title, content, method, type, target_group, scheduled_send, audience_kind, audience_ref_id, audience_person_ids, snapshot_at, snapshot_count, status, event_id, event_template_key)
       values (${input.companyId}, ${title}, ${content}, ${channel}, 'group', 'guests', false, 'event_guests', ${input.eventId}, '[]'::jsonb, now(), 1, 'queued', ${input.eventId}, ${`confirmation:${channel}:guest:${input.guestId}`})
@@ -88,12 +94,12 @@ export async function registerGuestForEvent(input: {
     const eventRows = await getSql()<{ id: string; company_id: string; title: string; public_token: string; max_capacity: number; starts_at: Date; status: string }[]>`
       select id, company_id, title, public_token, max_capacity, starts_at, status
       from public.events
-      where public_token = ${parsed.eventToken}::uuid and is_public and status = 'published' and deleted_at is null
+      where public_token = ${parsed.eventToken}::uuid and is_public and status = 'published' and registration_mode = 'internal' and registration_enabled and now() < coalesce(ends_at, starts_at + interval '3 hours') and deleted_at is null
       limit 1
     `
     const event = eventRows[0]
     if (!event) throw new Error("Evento não encontrado")
-    if (new Date(event.starts_at).getTime() < Date.now() - 24 * 60 * 60 * 1000) throw new Error("As inscrições deste evento foram encerradas")
+
 
     const allowed = await consumePublicRateLimit({
       companyId: event.company_id,
@@ -108,7 +114,7 @@ export async function registerGuestForEvent(input: {
       const lockedRows = await tx<{ id: string; company_id: string; title: string; public_token: string; max_capacity: number; starts_at: Date; status: string }[]>`
         select id, company_id, title, public_token, max_capacity, starts_at, status
         from public.events
-        where public_token = ${parsed.eventToken}::uuid and is_public and status = 'published' and deleted_at is null
+        where public_token = ${parsed.eventToken}::uuid and is_public and status = 'published' and registration_mode = 'internal' and registration_enabled and now() < coalesce(ends_at, starts_at + interval '3 hours') and deleted_at is null
         limit 1 for update
       `
       const locked = lockedRows[0]
@@ -144,6 +150,7 @@ export async function registerGuestForEvent(input: {
         ) returning id, confirmation_token, status
       `
       if (!rows[0]) throw new Error("Inscrição não foi criada")
+      if (status === "going") await tx`insert into public.event_attendee_tokens(company_id, event_id, guest_registration_id) values (${lockedEvent.company_id}, ${lockedEvent.id}, ${rows[0].id}) on conflict do nothing`
       return rows[0]
     })
     await publicAudit(lockedEvent.company_id, "event.guest.register", registration.id, { eventId: lockedEvent.id, status: registration.status })
@@ -175,7 +182,7 @@ export async function cancelGuestEventRegistration(tokenInput: string) {
         where confirmation_token = ${token}::uuid and status in ('going', 'waitlisted')
       `
       if (!registration[0]) throw new Error("Inscrição não encontrada ou já cancelada")
-      const eventRows = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${registration[0].event_id} and company_id = ${registration[0].company_id} for update`
+      await tx`select id from public.events where id = ${registration[0].event_id} and company_id = ${registration[0].company_id} for update`
       const rows = await tx<{ id: string; company_id: string; event_id: string; status: string }[]>`
         update public.event_guest_registrations
         set status = 'canceled', canceled_at = now(), updated_at = now()
@@ -183,19 +190,7 @@ export async function cancelGuestEventRegistration(tokenInput: string) {
         returning id, company_id, event_id, status
       `
       if (!rows[0]) throw new Error("Inscrição não encontrada ou já cancelada")
-      const capacity = Number(eventRows[0]?.max_capacity ?? 0)
-      if (capacity > 0) {
-        const goingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.member_event_rsvps where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'going'`
-        const guestGoingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.event_guest_registrations where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'going'`
-        if (Number(goingRows[0]?.count ?? 0) + Number(guestGoingRows[0]?.count ?? 0) < capacity) {
-          const promotedMember = await tx<{ id: string }[]>`select id from public.member_event_rsvps where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'waitlisted' order by created_at, id limit 1 for update skip locked`
-          if (promotedMember[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promotedMember[0].id} and company_id = ${rows[0].company_id}`
-          else {
-            const promotedGuest = await tx<{ id: string }[]>`select id from public.event_guest_registrations where event_id = ${rows[0].event_id} and company_id = ${rows[0].company_id} and status = 'waitlisted' order by created_at, id limit 1 for update skip locked`
-            if (promotedGuest[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${promotedGuest[0].id} and company_id = ${rows[0].company_id}`
-          }
-        }
-      }
+      await promoteEventWaitlist(tx, rows[0].event_id, rows[0].company_id)
       return rows[0]
     })
     await publicAudit(row.company_id, "event.guest.cancel", row.id, { eventId: row.event_id })
@@ -218,21 +213,18 @@ export async function createEventCheckinSession(eventIdInput: string) {
     const eventId = uuid.parse(eventIdInput)
     const { user, companyId } = await managerContext("events.edit")
     const sql = getSql()
-    const events = await sql<{ id: string; title: string; starts_at: Date; ends_at: Date | null }[]>`
-      select id, title, starts_at, ends_at from public.events
-      where id = ${eventId} and company_id = ${companyId} and status = 'published' and deleted_at is null limit 1
-    `
-    const event = events[0]
-    if (!event) throw new Error("Evento publicado não encontrado")
-    const endsAt = event.ends_at ? new Date(event.ends_at) : new Date(new Date(event.starts_at).getTime() + 3 * 60 * 60 * 1000)
-    const expiresAt = new Date(endsAt.getTime() + 2 * 60 * 60 * 1000)
-    await sql`update public.event_checkin_sessions set closed_at = now() where event_id = ${eventId} and company_id = ${companyId} and closed_at is null`
-    const rows = await sql<{ token: string; expires_at: Date }[]>`
-      insert into public.event_checkin_sessions(company_id, event_id, opens_at, expires_at, created_by)
-      values (${companyId}, ${eventId}, now(), ${expiresAt}, ${user.id})
-      returning token, expires_at
-    `
-    if (!rows[0]) throw new Error("Sessão de check-in não foi criada")
+    const session = await sql.begin(async tx => {
+      const [event] = await tx<{ starts_at: Date; ends_at: Date | null }[]>`select starts_at, ends_at from public.events where id = ${eventId} and company_id = ${companyId} and status = 'published' and registration_mode = 'internal' and deleted_at is null for update`
+      if (!event) throw new Error("Evento publicado não encontrado")
+      const [active] = await tx<{ token: string; expires_at: Date }[]>`select token, expires_at from public.event_checkin_sessions where company_id = ${companyId} and event_id = ${eventId} and closed_at is null and now() between opens_at and expires_at limit 1`
+      if (active) return active
+      const expiresAt = new Date((event.ends_at ?? new Date(event.starts_at.getTime() + 3 * 60 * 60 * 1000)).getTime() + 2 * 60 * 60 * 1000)
+      if (expiresAt.getTime() <= Date.now()) throw new Error("O período de check-in deste evento já terminou")
+      await tx`update public.event_checkin_sessions set closed_at = now() where company_id = ${companyId} and event_id = ${eventId} and closed_at is null`
+      const [created] = await tx<{ token: string; expires_at: Date }[]>`insert into public.event_checkin_sessions(company_id, event_id, opens_at, expires_at, created_by) values (${companyId}, ${eventId}, now(), ${expiresAt}, ${user.id}) returning token, expires_at`
+      return created
+    })
+    const rows = [session]
     await writeAuditLog({ action: "event.checkin.session.open", entityTable: "event_checkin_sessions", entityId: rows[0].token, companyId, metadata: { eventId } })
     revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
@@ -246,11 +238,10 @@ export async function closeEventCheckinSession(eventIdInput: string) {
   try {
     const eventId = uuid.parse(eventIdInput)
     const { companyId } = await managerContext("events.edit")
-    const rows = await getSql()<{ token: string }[]>`
-      update public.event_checkin_sessions set closed_at = now()
-      where event_id = ${eventId} and company_id = ${companyId} and closed_at is null
-      returning token
-    `
+    const rows = await getSql().begin(async tx => {
+      await tx`select id from public.events where id = ${eventId} and company_id = ${companyId} for update`
+      return tx<{ token: string }[]>`update public.event_checkin_sessions set closed_at = now() where event_id = ${eventId} and company_id = ${companyId} and closed_at is null returning token`
+    })
     await writeAuditLog({ action: "event.checkin.session.close", entityTable: "event_checkin_sessions", entityId: rows[0]?.token, companyId, metadata: { eventId } })
     revalidatePath("/eventos/[id]", "page")
     revalidatePath(`/eventos/${eventId}`)
@@ -289,20 +280,22 @@ export async function issueEventAttendeeToken(input: { eventId: string; kind: "m
     const attendeeId = uuid.parse(input.attendeeId)
     const { user, companyId } = await managerContext("events.edit")
     const sql = getSql()
+    const [event] = await sql`select id from public.events where id = ${eventId} and company_id = ${companyId} and registration_mode = 'internal' and deleted_at is null`
+    if (!event) throw new Error("Os ingressos deste evento são gerenciados na plataforma externa")
     let existing: { token: string }[] = []
     if (input.kind === "member") {
       const rows = await sql<{ id: string }[]>`select id from public.member_event_rsvps where id = ${attendeeId} and company_id = ${companyId} and event_id = ${eventId} and status = 'going' limit 1`
       if (!rows[0]) throw new Error("Inscrito não encontrado")
       existing = await sql<{ token: string }[]>`select token from public.event_attendee_tokens where member_rsvp_id = ${attendeeId} and company_id = ${companyId} limit 1`
       if (!existing[0]) {
-        existing = await sql<{ token: string }[]>`insert into public.event_attendee_tokens(company_id, event_id, member_rsvp_id, created_by) values (${companyId}, ${eventId}, ${attendeeId}, ${user.id}) returning token`
+        existing = await sql<{ token: string }[]>`insert into public.event_attendee_tokens(company_id, event_id, member_rsvp_id, created_by) values (${companyId}, ${eventId}, ${attendeeId}, ${user.id}) on conflict (member_rsvp_id) where member_rsvp_id is not null do update set member_rsvp_id = excluded.member_rsvp_id returning token`
       }
     } else {
       const rows = await sql<{ id: string }[]>`select id from public.event_guest_registrations where id = ${attendeeId} and company_id = ${companyId} and event_id = ${eventId} and status = 'going' limit 1`
       if (!rows[0]) throw new Error("Visitante inscrito não encontrado")
       existing = await sql<{ token: string }[]>`select token from public.event_attendee_tokens where guest_registration_id = ${attendeeId} and company_id = ${companyId} limit 1`
       if (!existing[0]) {
-        existing = await sql<{ token: string }[]>`insert into public.event_attendee_tokens(company_id, event_id, guest_registration_id, created_by) values (${companyId}, ${eventId}, ${attendeeId}, ${user.id}) returning token`
+        existing = await sql<{ token: string }[]>`insert into public.event_attendee_tokens(company_id, event_id, guest_registration_id, created_by) values (${companyId}, ${eventId}, ${attendeeId}, ${user.id}) on conflict (guest_registration_id) where guest_registration_id is not null do update set guest_registration_id = excluded.guest_registration_id returning token`
       }
     }
     if (!existing[0]) throw new Error("QR não foi criado")
@@ -316,201 +309,84 @@ export async function issueEventAttendeeToken(input: { eventId: string; kind: "m
 export async function checkInEventAttendee(tokenInput: string) {
   try {
     const token = uuid.parse(tokenInput)
-    const sql = getSql()
-    const resultRow = await sql.begin(async (tx) => {
-      const rows = await tx<{
-        token: string; company_id: string; event_id: string; event_title: string; session_token: string;
-        member_rsvp_id: string | null; guest_registration_id: string | null; person_id: string | null;
-        person_name: string | null; guest_name: string | null; status: string
-      }[]>`
-        select attendee.token, attendee.company_id, attendee.event_id, event.title as event_title,
-          session.token as session_token, attendee.member_rsvp_id, attendee.guest_registration_id,
-          rsvp.person_id, person.full_name as person_name, guest.full_name as guest_name,
-          coalesce(rsvp.status, guest.status) as status
-        from public.event_attendee_tokens attendee
-        join public.events event on event.id = attendee.event_id and event.status = 'published' and event.deleted_at is null
-        join public.event_checkin_sessions session on session.event_id = event.id and session.company_id = attendee.company_id
-          and session.closed_at is null and now() between session.opens_at and session.expires_at
-        left join public.member_event_rsvps rsvp on rsvp.id = attendee.member_rsvp_id
-        left join public.people person on person.id = rsvp.person_id
-        left join public.event_guest_registrations guest on guest.id = attendee.guest_registration_id
-        where attendee.token = ${token}::uuid
-        limit 1
-        for update of attendee
-      `
-      const row = rows[0]
-      if (!row) throw new Error("QR inválido, expirado ou check-in fechado")
-      if (row.status !== "going") throw new Error("Esta inscrição não está ativa")
-      const personName = row.person_name ?? row.guest_name ?? ""
-      let attendanceId: string | undefined
-      if (row.member_rsvp_id && row.person_id) {
-        const saved = await tx<{ id: string }[]>`
-          insert into public.attendance_records(
-            company_id, person_id, person_name, event_type, event_ref_id, event_ref_name,
-            occurred_on, occurred_time, status, registered_by_name, checkin_source, event_checkin_session_token, checkin_at
-          ) values (
-            ${row.company_id}, ${row.person_id}, ${personName}, 'event', ${row.event_id}, ${row.event_title},
-            current_date, localtime, 'present', 'QR do participante', 'qr', ${row.session_token}::uuid, now()
-          ) on conflict (company_id, event_ref_id, person_id)
-          where event_type = 'event' and person_id is not null and deleted_at is null
-          do update set status = 'present', occurred_on = current_date, occurred_time = localtime,
-            registered_by_name = 'QR do participante', checkin_source = 'qr', event_checkin_session_token = excluded.event_checkin_session_token,
-            checkin_at = now(), updated_at = now()
-          returning id
-        `
-        attendanceId = saved[0]?.id
-      } else if (row.guest_registration_id) {
-        const saved = await tx<{ id: string }[]>`
-          insert into public.attendance_records(
-            company_id, person_name, event_type, event_ref_id, event_ref_name,
-            occurred_on, occurred_time, status, registered_by_name, guest_registration_id,
-            checkin_source, event_checkin_session_token, checkin_at
-          ) values (
-            ${row.company_id}, ${personName}, 'event', ${row.event_id}, ${row.event_title},
-            current_date, localtime, 'present', 'QR do participante', ${row.guest_registration_id},
-            'qr', ${row.session_token}::uuid, now()
-          ) on conflict (company_id, event_ref_id, guest_registration_id)
-          where event_type = 'event' and guest_registration_id is not null and deleted_at is null
-          do update set status = 'present', occurred_on = current_date, occurred_time = localtime,
-            registered_by_name = 'QR do participante', checkin_source = 'qr', event_checkin_session_token = excluded.event_checkin_session_token,
-            checkin_at = now(), updated_at = now()
-          returning id
-        `
-        attendanceId = saved[0]?.id
-        await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${row.guest_registration_id} and company_id = ${row.company_id}`
-      }
-      await tx`update public.event_attendee_tokens set last_used_at = now() where token = ${row.token} and company_id = ${row.company_id}`
-      return { id: attendanceId, name: personName, eventTitle: row.event_title, companyId: row.company_id }
-    })
-    await publicAudit(resultRow.companyId, "event.checkin.qr", resultRow.id ?? token, { eventTitle: resultRow.eventTitle })
-    return { ok: true as const, name: resultRow.name, eventTitle: resultRow.eventTitle }
-  } catch (error) {
-    return result(error)
-  }
+    const [attendee] = await getSql()<{ company_id: string; event_id: string; member_rsvp_id: string | null; guest_registration_id: string | null }[]>`select company_id, event_id, member_rsvp_id, guest_registration_id from public.event_attendee_tokens where token = ${token}::uuid and (expires_at is null or expires_at > now())`
+    if (!attendee) throw new Error("QR inválido")
+    const entered = await getSql().begin(tx => recordEventEntrance(tx, { companyId: attendee.company_id, eventId: attendee.event_id, kind: attendee.member_rsvp_id ? "member" : "guest", attendeeId: attendee.member_rsvp_id || attendee.guest_registration_id!, source: "qr", registeredByName: "QR do participante" }))
+    await publicAudit(attendee.company_id, "event.checkin.qr", entered.id, { eventId: attendee.event_id })
+    revalidatePath("/eventos/[id]", "page")
+    return { ok: true as const, ...entered }
+  } catch (error) { return result(error) }
 }
 
-export async function checkInEventSession(input: { sessionToken: string; fullName: string; phone: string }) {
+export async function checkInEventSession(input: { sessionToken: string; fullName: string; phone: string; consent?: boolean }) {
   try {
-    const parsed = z.object({ sessionToken: uuid, fullName: z.string().trim().min(2, "Informe o nome").max(200), phone: z.string().trim().min(8, "Informe um telefone").max(30) }).parse(input)
+    const parsed = z.object({ sessionToken: uuid, fullName: z.string().trim().min(2).max(200), phone, consent: z.literal(true, "Aceite o uso dos dados para registrar sua entrada") }).parse(input)
     const normalizedPhone = normalizePhone(parsed.phone)
     if (normalizedPhone.length < 8) throw new Error("Telefone inválido")
-    const sql = getSql()
-    const sessionScope = await sql<{ company_id: string; event_id: string }[]>`
-      select company_id, event_id
-      from public.event_checkin_sessions
-      where token = ${parsed.sessionToken}::uuid
-        and closed_at is null
-        and now() between opens_at and expires_at
-      limit 1
-    `
-    const scope = sessionScope[0]
-    if (!scope) throw new Error("QR do evento inválido, expirado ou encerrado")
-    const allowed = await consumePublicRateLimit({
-      companyId: scope.company_id,
-      scope: "event-checkin",
-      resourceId: scope.event_id,
-      limit: 60,
-    })
-    if (!allowed) throw new Error("Muitas tentativas. Aguarde uma hora e tente novamente.")
-
-    const resultRow = await sql.begin(async (tx) => {
-      const sessions = await tx<{ token: string; company_id: string; event_id: string; event_title: string }[]>`
-        select session.token, session.company_id, session.event_id, event.title as event_title
-        from public.event_checkin_sessions session join public.events event on event.id = session.event_id and event.status = 'published' and event.deleted_at is null
-        where session.token = ${parsed.sessionToken}::uuid and session.closed_at is null and now() between session.opens_at and session.expires_at
-        limit 1 for update of session
-      `
-      const session = sessions[0]
-      if (!session) throw new Error("QR do evento inválido, expirado ou encerrado")
-      const member = await tx<{ person_id: string; person_name: string }[]>`
-        select person.id as person_id, person.full_name as person_name
-        from public.people person
-        join public.member_event_rsvps rsvp on rsvp.person_id = person.id and rsvp.event_id = ${session.event_id} and rsvp.company_id = ${session.company_id} and rsvp.status = 'going'
-        where person.company_id = ${session.company_id} and person.deleted_at is null and regexp_replace(person.phone, '\\D', '', 'g') = ${normalizedPhone}
-        limit 1
-      `
-      if (member[0]) {
-        const saved = await tx<{ id: string }[]>`
-          insert into public.attendance_records(company_id, person_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by_name, checkin_source, event_checkin_session_token, checkin_at)
-          values (${session.company_id}, ${member[0].person_id}, ${member[0].person_name}, 'event', ${session.event_id}, ${session.event_title}, current_date, localtime, 'present', 'QR do evento', 'qr', ${session.token}::uuid, now())
-          on conflict (company_id, event_ref_id, person_id) where event_type = 'event' and person_id is not null and deleted_at is null
-          do update set status = 'present', person_name = excluded.person_name, occurred_on = current_date, occurred_time = localtime, registered_by_name = 'QR do evento', checkin_source = 'qr', event_checkin_session_token = excluded.event_checkin_session_token, checkin_at = now(), updated_at = now()
-          returning id
-        `
-        return { companyId: session.company_id, eventId: session.event_id, eventTitle: session.event_title, name: member[0].person_name, id: saved[0]?.id }
+    const [scope] = await getSql()<{ event_id: string; company_id: string }[]>`select event_id, company_id from public.event_checkin_sessions where token = ${parsed.sessionToken}::uuid`
+    if (!scope) throw new Error("QR inválido")
+    if (!await consumePublicRateLimit({ companyId: scope.company_id, scope: "event-session-checkin", resourceId: scope.event_id, limit: 60 })) throw new Error("Muitas tentativas. Aguarde e tente novamente.")
+    const entered = await getSql().begin(async tx => {
+      const [event] = await tx<{ allow_walk_ins: boolean; max_capacity: number }[]>`select allow_walk_ins, max_capacity from public.events where id = ${scope.event_id} and company_id = ${scope.company_id} and status = 'published' and registration_mode = 'internal' and deleted_at is null for update`
+      if (!event) throw new Error("Evento indisponível")
+      const [session] = await tx`select token from public.event_checkin_sessions where token = ${parsed.sessionToken}::uuid and closed_at is null and now() between opens_at and expires_at for update`
+      if (!session) throw new Error("Check-in fechado ou expirado")
+      const matches = await tx<{ id: string; kind: "member" | "guest"; status: string }[]>`select rsvp.id, 'member' as kind, rsvp.status from public.member_event_rsvps rsvp
+        join public.people person on person.id = rsvp.person_id and person.company_id = rsvp.company_id and person.deleted_at is null
+        where rsvp.company_id = ${scope.company_id} and rsvp.event_id = ${scope.event_id} and rsvp.status <> 'canceled' and regexp_replace(person.phone, '\D', '', 'g') = ${normalizedPhone}
+        union all select id, 'guest', status from public.event_guest_registrations where company_id = ${scope.company_id} and event_id = ${scope.event_id} and phone = ${normalizedPhone} and status <> 'canceled'`
+      if (matches.length > 1) throw new Error("Mais de uma inscrição encontrada. Procure a recepção.")
+      let attendee = matches[0]
+      if (attendee?.status === "waitlisted") throw new Error("Você está na lista de espera. Procure a recepção.")
+      if (!attendee) {
+        if (!event.allow_walk_ins) throw new Error("Este evento exige inscrição prévia")
+        const [count] = await tx<{ total: number }[]>`select (select count(*) from public.member_event_rsvps where company_id = ${scope.company_id} and event_id = ${scope.event_id} and status = 'going') + (select count(*) from public.event_guest_registrations where company_id = ${scope.company_id} and event_id = ${scope.event_id} and status = 'going') as total`
+        if (event.max_capacity > 0 && Number(count.total) >= event.max_capacity) throw new Error("Evento lotado. Procure a recepção.")
+        const [guest] = await tx<{ id: string }[]>`insert into public.event_guest_registrations(company_id, event_id, full_name, phone, consent_at, status) values (${scope.company_id}, ${scope.event_id}, ${parsed.fullName}, ${normalizedPhone}, now(), 'going') returning id`
+        attendee = { id: guest.id, kind: "guest", status: "going" }
       }
-      const existingGuest = await tx<{ id: string; full_name: string }[]>`
-        select id, full_name from public.event_guest_registrations
-        where company_id = ${session.company_id} and event_id = ${session.event_id} and phone = ${normalizedPhone} and status <> 'canceled'
-        order by created_at desc limit 1 for update
-      `
-      const guest = existingGuest[0] ?? (await tx<{ id: string; full_name: string }[]>`
-        insert into public.event_guest_registrations(company_id, event_id, full_name, phone, consent_at, status)
-        values (${session.company_id}, ${session.event_id}, ${parsed.fullName}, ${normalizedPhone}, now(), 'going') returning id, full_name
-      `)[0]
-      if (!guest) throw new Error("Visitante não foi registrado")
-      const saved = await tx<{ id: string }[]>`
-        insert into public.attendance_records(company_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by_name, guest_registration_id, checkin_source, event_checkin_session_token, checkin_at)
-        values (${session.company_id}, ${guest.full_name}, 'event', ${session.event_id}, ${session.event_title}, current_date, localtime, 'present', 'QR do evento', ${guest.id}, 'qr', ${session.token}::uuid, now())
-        on conflict (company_id, event_ref_id, guest_registration_id) where event_type = 'event' and guest_registration_id is not null and deleted_at is null
-        do update set status = 'present', person_name = excluded.person_name, occurred_on = current_date, occurred_time = localtime, registered_by_name = 'QR do evento', checkin_source = 'qr', event_checkin_session_token = excluded.event_checkin_session_token, checkin_at = now(), updated_at = now()
-        returning id
-      `
-      await tx`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${guest.id} and company_id = ${session.company_id}`
-      return { companyId: session.company_id, eventId: session.event_id, eventTitle: session.event_title, name: guest.full_name, id: saved[0]?.id }
+      return recordEventEntrance(tx, { companyId: scope.company_id, eventId: scope.event_id, kind: attendee.kind, attendeeId: attendee.id, source: "qr", sessionToken: parsed.sessionToken, registeredByName: "QR do evento" })
     })
-    await publicAudit(resultRow.companyId, "event.checkin.event_qr", resultRow.id ?? parsed.sessionToken, { eventId: resultRow.eventId, name: resultRow.name })
-    return { ok: true as const, name: resultRow.name, eventTitle: resultRow.eventTitle }
-  } catch (error) {
-    return result(error)
-  }
+    await publicAudit(scope.company_id, "event.checkin.event_qr", entered.id, { eventId: scope.event_id })
+    revalidatePath("/eventos/[id]", "page")
+    return { ok: true as const, ...entered }
+  } catch (error) { return result(error) }
 }
 
 export async function manualCheckInEventParticipant(input: { eventId: string; kind: "member" | "guest"; attendeeId: string }) {
   try {
-    const eventId = uuid.parse(input.eventId)
-    const attendeeId = uuid.parse(input.attendeeId)
+    const parsed = z.object({ eventId: uuid, kind: z.enum(["member", "guest"]), attendeeId: uuid }).parse(input)
     const { user, companyId } = await managerContext("events.edit")
-    const sql = getSql()
-    const eventRows = await sql<{ title: string }[]>`select title from public.events where id = ${eventId} and company_id = ${companyId} and deleted_at is null limit 1`
-    if (!eventRows[0]) throw new Error("Evento não encontrado")
-    if (input.kind === "member") {
-      const rows = await sql<{ person_id: string; person_name: string }[]>`
-        select rsvp.person_id, person.full_name as person_name from public.member_event_rsvps rsvp
-        join public.people person on person.id = rsvp.person_id
-        where rsvp.id = ${attendeeId} and rsvp.company_id = ${companyId} and rsvp.event_id = ${eventId} and rsvp.status = 'going' limit 1
-      `
-      const participant = rows[0]
-      if (!participant) throw new Error("Inscrito não encontrado")
-      const saved = await sql<{ id: string }[]>`
-        insert into public.attendance_records(company_id, person_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by, registered_by_name, checkin_source, checkin_at)
-        values (${companyId}, ${participant.person_id}, ${participant.person_name}, 'event', ${eventId}, ${eventRows[0].title}, current_date, localtime, 'present', ${user.id}, ${user.name}, 'manual', now())
-        on conflict (company_id, event_ref_id, person_id) where event_type = 'event' and person_id is not null and deleted_at is null
-        do update set status = 'present', occurred_on = current_date, occurred_time = localtime, registered_by = excluded.registered_by, registered_by_name = excluded.registered_by_name, checkin_source = 'manual', checkin_at = now(), updated_at = now()
-        returning id
-      `
-      await writeAuditLog({ action: "event.checkin.manual", entityTable: "attendance_records", entityId: saved[0]?.id, companyId, metadata: { eventId, kind: input.kind, attendeeId } })
-      revalidatePath("/eventos/[id]", "page")
-    revalidatePath(`/eventos/${eventId}`)
-      return { ok: true as const, id: saved[0]?.id }
-    }
-    const rows = await sql<{ full_name: string }[]>`select full_name from public.event_guest_registrations where id = ${attendeeId} and company_id = ${companyId} and event_id = ${eventId} and status = 'going' limit 1`
-    if (!rows[0]) throw new Error("Visitante inscrito não encontrado")
-    const saved = await sql<{ id: string }[]>`
-      insert into public.attendance_records(company_id, person_name, event_type, event_ref_id, event_ref_name, occurred_on, occurred_time, status, registered_by, registered_by_name, guest_registration_id, checkin_source, checkin_at)
-      values (${companyId}, ${rows[0].full_name}, 'event', ${eventId}, ${eventRows[0].title}, current_date, localtime, 'present', ${user.id}, ${user.name}, ${attendeeId}, 'manual', now())
-      on conflict (company_id, event_ref_id, guest_registration_id) where event_type = 'event' and guest_registration_id is not null and deleted_at is null
-      do update set status = 'present', occurred_on = current_date, occurred_time = localtime, registered_by = excluded.registered_by, registered_by_name = excluded.registered_by_name, checkin_source = 'manual', checkin_at = now(), updated_at = now()
-      returning id
-    `
-    await sql`update public.event_guest_registrations set checked_in_at = now(), updated_at = now() where id = ${attendeeId} and company_id = ${companyId}`
-    await writeAuditLog({ action: "event.checkin.manual", entityTable: "attendance_records", entityId: saved[0]?.id, companyId, metadata: { eventId, kind: input.kind, attendeeId } })
+    const entered = await getSql().begin(tx => recordEventEntrance(tx, { ...parsed, companyId, source: "manual", registeredBy: user.id, registeredByName: user.name }))
+    await writeAuditLog({ action: "event.checkin.manual", entityTable: "attendance_records", entityId: entered.id, companyId, metadata: parsed })
     revalidatePath("/eventos/[id]", "page")
-    revalidatePath(`/eventos/${eventId}`)
-    return { ok: true as const, id: saved[0]?.id }
-  } catch (error) {
-    return result(error)
-  }
+    return { ok: true as const, ...entered }
+  } catch (error) { return result(error) }
+}
+
+export async function receptionEventQr(input: { eventId: string; token: string }) {
+  try {
+    const eventId = uuid.parse(input.eventId)
+    const token = uuid.parse(input.token)
+    const { user, companyId } = await managerContext("events.edit")
+    const [attendee] = await getSql()<{ member_rsvp_id: string | null; guest_registration_id: string | null }[]>`select member_rsvp_id, guest_registration_id from public.event_attendee_tokens where token = ${token}::uuid and company_id = ${companyId} and event_id = ${eventId} and (expires_at is null or expires_at > now())`
+    if (!attendee) throw new Error("QR inválido ou pertence a outro evento")
+    const entered = await getSql().begin(tx => recordEventEntrance(tx, { eventId, companyId, kind: attendee.member_rsvp_id ? "member" : "guest", attendeeId: attendee.member_rsvp_id || attendee.guest_registration_id!, source: "qr", registeredBy: user.id, registeredByName: user.name }))
+    await writeAuditLog({ action: "event.checkin.qr", entityTable: "attendance_records", entityId: entered.id, companyId, metadata: { eventId } })
+    revalidatePath("/eventos/[id]", "page")
+    return { ok: true as const, ...entered }
+  } catch (error) { return result(error) }
+}
+
+export async function uploadEventCover(formData: FormData) {
+  try {
+    const eventId = formData.get("eventId")
+    const { user, companyId } = await managerContext(eventId ? "events.edit" : "events.create")
+    const file = formData.get("file")
+    if (!(file instanceof File)) throw new Error("Selecione uma imagem")
+    const saved = await uploadManagedFile({ file, companyId, ownerProfileId: user.id, entityTable: "events", purpose: "cover", allowedMimeTypes: new Set(["image/jpeg", "image/png", "image/webp"]), maxSizeBytes: 5 * 1024 * 1024 })
+    return { ok: true as const, id: saved.id, name: saved.originalName }
+  } catch (error) { return result(error) }
 }
 
 export async function linkEventGuestToPerson(input: { eventId: string; guestId: string; personId: string }) {
@@ -808,4 +684,57 @@ export async function scheduleEventCommunication(input: {
   } catch (error) {
     return result(error)
   }
+}
+
+export async function registerEventParticipant(input: { eventId: string; personId?: string; fullName?: string; email?: string; phone?: string; consent?: boolean }) {
+  try {
+    const parsed = z.object({ eventId: uuid, personId: uuid.optional(), fullName: z.string().trim().min(2).max(200).optional(), email: z.string().trim().email().or(z.literal("")).default(""), phone, consent: z.boolean().optional() }).parse(input)
+    const { companyId } = await managerContext("events.edit")
+    const saved = await getSql().begin(async tx => {
+      const [event] = await tx<{ max_capacity: number }[]>`select max_capacity from public.events where id = ${parsed.eventId} and company_id = ${companyId} and status = 'published' and registration_mode = 'internal' and registration_enabled and deleted_at is null and now() < coalesce(ends_at, starts_at + interval '3 hours') for update`
+      if (!event) throw new Error("Este evento não aceita inscrições")
+      const [count] = await tx<{ total: number }[]>`select (select count(*) from public.member_event_rsvps where company_id = ${companyId} and event_id = ${parsed.eventId} and status = 'going') + (select count(*) from public.event_guest_registrations where company_id = ${companyId} and event_id = ${parsed.eventId} and status = 'going') as total`
+      const status = event.max_capacity > 0 && Number(count.total) >= event.max_capacity ? "waitlisted" : "going"
+      if (parsed.personId) {
+        const [person] = await tx`select id from public.people where id = ${parsed.personId} and company_id = ${companyId} and deleted_at is null and is_active`
+        if (!person) throw new Error("Pessoa não encontrada")
+        const [existing] = await tx`select id from public.member_event_rsvps where person_id = ${parsed.personId} and event_id = ${parsed.eventId} and company_id = ${companyId} and status <> 'canceled'`
+        if (existing) throw new Error("Pessoa já inscrita")
+        const [row] = await tx<{ id: string }[]>`insert into public.member_event_rsvps(company_id, event_id, person_id, status) values (${companyId}, ${parsed.eventId}, ${parsed.personId}, ${status}) returning id`
+        if (status === "going") await tx`insert into public.event_attendee_tokens(company_id, event_id, member_rsvp_id) values (${companyId}, ${parsed.eventId}, ${row.id}) on conflict do nothing`
+        return { id: row.id, status }
+      }
+      if (!parsed.fullName || !parsed.consent) throw new Error("Informe o nome e confirme o consentimento do visitante")
+      const phone = normalizePhone(parsed.phone)
+      if (!parsed.email && phone.length < 8) throw new Error("Informe e-mail ou telefone")
+      const [duplicate] = await tx`select id from public.event_guest_registrations where company_id = ${companyId} and event_id = ${parsed.eventId} and status <> 'canceled' and ((${parsed.email} <> '' and lower(email) = lower(${parsed.email})) or (${phone} <> '' and phone = ${phone}))`
+      if (duplicate) throw new Error("Visitante já inscrito")
+      const [row] = await tx<{ id: string }[]>`insert into public.event_guest_registrations(company_id, event_id, full_name, email, phone, consent_at, status) values (${companyId}, ${parsed.eventId}, ${parsed.fullName}, ${parsed.email}, ${phone}, now(), ${status}) returning id`
+      if (status === "going") await tx`insert into public.event_attendee_tokens(company_id, event_id, guest_registration_id) values (${companyId}, ${parsed.eventId}, ${row.id}) on conflict do nothing`
+      return { id: row.id, status }
+    })
+    await writeAuditLog({ action: "event.participant.register", entityTable: parsed.personId ? "member_event_rsvps" : "event_guest_registrations", entityId: saved.id, companyId, metadata: { eventId: parsed.eventId } })
+    revalidatePath("/eventos/[id]", "page")
+    revalidatePath("/membro/agenda")
+    return { ok: true as const, ...saved }
+  } catch (error) { return result(error) }
+}
+
+export async function cancelEventParticipant(input: { eventId: string; kind: "member" | "guest"; attendeeId: string }) {
+  try {
+    const parsed = z.object({ eventId: uuid, kind: z.enum(["member", "guest"]), attendeeId: uuid }).parse(input)
+    const { companyId } = await managerContext("events.edit")
+    await getSql().begin(async tx => {
+      const [event] = await tx`select id from public.events where id = ${parsed.eventId} and company_id = ${companyId} and deleted_at is null for update`
+      if (!event) throw new Error("Evento não encontrado")
+      const rows = parsed.kind === "member" ? await tx`update public.member_event_rsvps set status = 'canceled', updated_at = now() where id = ${parsed.attendeeId} and company_id = ${companyId} and event_id = ${parsed.eventId} returning id`
+        : await tx`update public.event_guest_registrations set status = 'canceled', canceled_at = now(), updated_at = now() where id = ${parsed.attendeeId} and company_id = ${companyId} and event_id = ${parsed.eventId} returning id`
+      if (!rows[0]) throw new Error("Inscrição não encontrada")
+      await promoteEventWaitlist(tx, parsed.eventId, companyId)
+    })
+    await writeAuditLog({ action: "event.participant.cancel", entityTable: parsed.kind === "member" ? "member_event_rsvps" : "event_guest_registrations", entityId: parsed.attendeeId, companyId, metadata: { eventId: parsed.eventId } })
+    revalidatePath("/eventos/[id]", "page")
+    revalidatePath("/membro/agenda")
+    return { ok: true as const }
+  } catch (error) { return result(error) }
 }

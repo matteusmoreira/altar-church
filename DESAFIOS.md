@@ -1,5 +1,10 @@
 # Desafios conhecidos
 
+## Regressão antes do commit — 09/10/2026
+
+- A criação de eventos está em `/eventos/novo`; a fixture de escalas precisa de `created_at`, `published_at` e eventos publicados. O leitor de informações do ministério também consulta recursos e arquivos e exige o mock de URLs assinadas. O diagnóstico de notificações usa ambos os workers. Esses contratos de teste foram atualizados antes do commit.
+- A suíte geral inclui um piloto de carga local com 1.500 conversas, com provedores simulados. Os testes remotos de conexão do pool e resolução dos slugs precisam carregar `.env.local` explicitamente; ambos passaram na verificação separada, sem escrever dados no banco.
+
 ## Avatar em seleção de pessoas — 08/10/2026
 
 - O Avatar do Base UI pode manter o estado de imagem carregada ao trocar a pessoa selecionada por outra sem foto. Usar `key={person.id}` no Avatar para remontá-lo e exibir as iniciais; validar a troca de uma pessoa com foto para outra sem foto.
@@ -323,7 +328,38 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 - Recebimento físico confirmado pelo usuário com capturas do aparelho. O quadrado preto vinha de usar o PNG opaco icon-192 como badge: Android usa a transparência como máscara. O service worker agora usa o símbolo oficial transparente no icon e no badge, com cache público do mesmo arquivo. Não trocar o ícone de instalação ou regenerar a marca para corrigir a notificação.
 - Verificados canal alpha RGBA, cantos totalmente transparentes e logo disponível em produção (HTTP 200 image/png). Quinze testes de notificações/PWA, lint do service worker e diff check passaram. A alteração do service worker permanece local; a aparência final precisa ser conferida após publicação e atualização do worker no aparelho.
 
+## Mensagem rica de campanhas push — 09/10/2026
+
+- O corpo nativo da notificação é texto simples. A campanha push guarda HTML sanitizado no campo content existente e envia prévia de até 500 caracteres, com destino /avisos/[id]. A nova tela exige login, mesma igreja, pessoa ativa e entrega push sent/processing destinada à pessoa do perfil; campanhas canceladas, rascunhos e agendadas não são abertas. Administradores destinatários também podem ler, sem exigir perfil de membro.
+- Reutilizado o editor rico de avisos com negrito, itálico, sublinhado, listas, links HTTP/HTTPS e botões. Os outros canais continuam com texto simples. Vínculos externos recebem noopener/noreferrer; normalizar &amp; antes de validar href impede dupla codificação dos parâmetros quando o conteúdo é sanitizado novamente para exibição.
+- Validação: 25 testes focados de notificações/células, TypeScript, lint e build; E2E isolado em Chromium desktop/mobile verificou edição real, links com parâmetros, botões, leitura, troca de canal e ausência de overflow. Não houve disparo real ou publicação dessa alteração nesta sessão.
+
+## Portal e caixa pessoal de notificações — 09/10/2026
+
+- Ao publicar uma caixa pessoal por triggers, validar também cada link com o papel do destinatário. Liderança e equipe podem receber avisos sem permissão para entrar no dashboard; os assuntos Kids, inscrições/cancelamentos e voluntariado agora têm tela autenticada própria, com revalidação da origem.
+- Next 16.3.8 propaga execArgv ao worker de build: iniciar o Next diretamente com node --env-file causa ERR_WORKER_INVALID_EXEC_ARGV. Carregar o ambiente no processo pai e iniciar o filho com env herdado e argumentos limpos resolveu sem copiar segredos.
+- Pilotos de escala exigem checkin_opens_at/checkin_closes_at no schema real, além de limpar aliases reservados exclusivamente dos dados fictícios removidos. A fixture isolada não substitui o piloto: 33 testes passaram, assim como modal/sininho em sessões reais, recuperação sem Realtime e concorrência com substituição.
+
 ## Recursos nas informações do membro — 09/10/2026
 
 - O modal Informações consultava descrição e escalas sem carregar ministry_resources. Agora retorna todos os recursos permitidos, com isolamento por igreja/ministério e URLs assinadas apenas de arquivos ativos da mesma igreja; recursos de liderança continuam restritos.
 - Imagens têm prévia; arquivos e links têm abertura em nova aba. Dois testes de regressão validam a consulta em PostgreSQL isolado e a renderização real do componente, incluindo mais de 20 recursos, exclusões e arquivo de outra igreja. TypeScript e lint focado passaram. Alteração local; publicação e imagem real em produção não verificadas.
+
+## Caixa de notificações ausente na publicação — 09/10/2026
+
+- O alias de produção em dpl_5QPpYZj1voT7BmoAFyjcdQQUwd6N não incluía /api/v1/notifications/inbox e retornava 404 text/html. O navegador tentava interpretar a página como JSON. Conferir a rota no manifesto do build e no endereço oficial; ter o arquivo no checkout local não comprova que foi publicado.
+- Publicação isolada dpl_9v3uvpThh38LVHHjnmK6tf49HGDw restaurou a API, os sininhos e a tela autenticada dos assuntos, partindo do HEAD 471ebc6 e incluindo os arquivos necessários. Nenhuma migration foi necessária. As alterações locais de eventos foram preservadas fora do pacote.
+- O cliente agora converte HTML/JSON inválido em erro legível e o modal deixa de indicar carregamento quando a consulta falha. Três regressões, lint focado, TypeScript/build Vercel e E2E autenticado em desktop/mobile passaram no deploy e em altarchurch.com.br; requisição anônima retorna 401 application/json.
+- A suíte antiga notification-inbox-database.test.mjs falha antes das asserções por falta do mock de @/lib/files/server ao carregar ministry-details.ts via data URL, após a inclusão de recursos. É uma lacuna da fixture; não alterar o acesso aos arquivos para contornar o teste. Nesta correção, o funcionamento da rota foi validado com sessão real do tenant de teste.
+- Os arquivos da caixa ainda aparecem como não versionados na árvore principal; um novo deploy baseado somente no Git precisa incluí-los para não remover novamente a rota. O pacote publicado está em .codex-local/notification-inbox-release; não publicar toda a árvore suja para preservar trabalhos paralelos.
+
+## Eventos profissionais - 09/10/2026
+
+- Piloto autenticado e banco isolado verificaram os fluxos de eventos, incluindo capa, valor, escala, portal, inscricoes, promocao, QR e sessao persistida. Dados ficticios e arquivos do piloto foram removidos. Evidencias: docs/events/professional-events.md.
+- Camera negada no Chromium comprova a alternativa de recepcao; leitura fisica requer aparelho autorizado. Confirmacoes do visitante sao suprimidas em igrejas de teste para nao disparar canais reais. Recebimento efetivo e publicacao da aplicacao continuam pendentes.
+- A fixture PGlite serializa transacoes. O piloto complementou essa cobertura com membro e visitante disputando simultaneamente uma vaga no PostgreSQL remoto: uma confirmacao, uma espera e promocao apos cancelamento.
+
+## Eventos com plataforma externa - 09/10/2026
+
+- Modalidade externa usa o evento existente, URL HTTPS independente da transmissao e encaminhamento ao Sympla. Compra, disponibilidade e conferencia de ingressos ficam na plataforma; equipe e escala permanecem no Altar. Evidencias e regras: docs/events/external-registration.md.
+- Migracao aditiva aplicada isoladamente, 34 testes focados e piloto autenticado aprovados. Foram verificados links no celular/portal, criacao/edicao/duplicacao/cancelamento, escala publicada e bloqueio de conversao com inscricoes internas. Fixtures removidas. Aplicacao ainda nao publicada; o piloto nao realiza compra externa nem confirma recebimento de canais reais.

@@ -5,6 +5,7 @@ import { z } from "zod"
 import { getSql } from "@/lib/db/client"
 import { writeAuditLog } from "@/lib/auth/permissions"
 import { normalizeBrazilianWhatsapp } from "@/lib/auth/phone"
+import { promoteEventWaitlist } from "@/lib/events/registration-server"
 import { requireMemberContext } from "./access"
 
 const uuid = z.string().uuid()
@@ -22,7 +23,7 @@ export async function rsvpMemberEvent(formData: FormData) {
       const events = await tx<{ id: string; ministry_id: string | null; registration_enabled: boolean; max_capacity: number | null; status: string }[]>`
         select id, ministry_id, registration_enabled, max_capacity, status
         from public.events
-        where id = ${eventId} and company_id = ${companyId} and deleted_at is null
+        where id = ${eventId} and company_id = ${companyId} and registration_mode = 'internal' and deleted_at is null and now() < coalesce(ends_at, starts_at + interval '3 hours')
         for update
       `
       const event = events[0]
@@ -66,6 +67,7 @@ export async function rsvpMemberEvent(formData: FormData) {
             values (${companyId}, ${eventId}, ${personId}, ${nextStatus})
             returning id, status
           `
+      if (rows[0]?.status === "going") await tx`insert into public.event_attendee_tokens(company_id, event_id, member_rsvp_id) values (${companyId}, ${eventId}, ${rows[0].id}) on conflict do nothing`
       return rows[0]
     })
     if (!result) throw new Error("RSVP não foi salvo")
@@ -91,27 +93,7 @@ export async function cancelMemberEventRsvp(formData: FormData) {
         returning id, event_id, status
       `
       if (!canceled[0]) throw new Error("RSVP não encontrado")
-      const capacity = Number(eventRows[0]?.max_capacity ?? 0)
-      if (capacity > 0) {
-        const goingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.member_event_rsvps where event_id = ${eventId} and company_id = ${companyId} and status = 'going'`
-        const guestGoingRows = await tx<{ count: number }[]>`select count(*)::integer as count from public.event_guest_registrations where event_id = ${eventId} and company_id = ${companyId} and status = 'going'`
-        if (Number(goingRows[0]?.count ?? 0) + Number(guestGoingRows[0]?.count ?? 0) < capacity) {
-          const promoted = await tx<{ id: string }[]>`
-            select id from public.member_event_rsvps
-            where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
-            order by created_at, id limit 1 for update skip locked
-          `
-          if (promoted[0]) await tx`update public.member_event_rsvps set status = 'going', updated_at = now() where id = ${promoted[0].id} and company_id = ${companyId}`
-          else {
-            const guestPromoted = await tx<{ id: string }[]>`
-              select id from public.event_guest_registrations
-              where event_id = ${eventId} and company_id = ${companyId} and status = 'waitlisted'
-              order by created_at, id limit 1 for update skip locked
-            `
-            if (guestPromoted[0]) await tx`update public.event_guest_registrations set status = 'going', updated_at = now() where id = ${guestPromoted[0].id} and company_id = ${companyId}`
-          }
-        }
-      }
+      await promoteEventWaitlist(tx, eventId, companyId)
       return canceled[0]
     })
     await writeAuditLog({ action: "member.event.rsvp.cancel", entityTable: "member_event_rsvps", entityId: rows.id, companyId, metadata: { eventId, personId, profileId: user.id } })

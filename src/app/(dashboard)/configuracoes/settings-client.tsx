@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { FileText, Plug, Search, ShieldCheck, Plus, Pencil, Trash2 } from "lucide-react"
@@ -63,6 +64,7 @@ export function SettingsClient({
   uazapiData: UazapiInstancesData | null
 }) {
   const [accessSearch, setAccessSearch] = useState("")
+  const tab = useSearchParams().get("tab")
   const [editing, setEditing] = useState<SettingsProfile | null | undefined>(undefined)
   const [deleting, setDeleting] = useState<SettingsProfile | null>(null)
   const query = accessSearch.trim().toLowerCase()
@@ -82,7 +84,7 @@ export function SettingsClient({
     <div className="space-y-6">
       <PageHeader title="Configurações" description="Conta, acessos e integrações externas (API / webhooks)." />
 
-      <Tabs defaultValue="conta" className="space-y-6">
+      <Tabs defaultValue={tab === "integracoes" ? "integracoes" : "conta"} className="space-y-6">
         <TabsList>
           <TabsTrigger value="conta">
             <FileText className="h-4 w-4" />

@@ -65,7 +65,7 @@ async function getChurchMetadata(companyId?: string | null) {
 
 export default async function DashboardRootLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser()
-  if (isPortalRole(user.role)) redirect("/membro")
+  if (isPortalRole(user.role) && !(user.roles ?? [user.role]).some(role => !isPortalRole(role))) redirect("/membro")
   const [initialEnabledModuleIds, churchMeta, whatsappStatus] = await Promise.all([
     user.role === "superadmin"
       ? Promise.resolve(null)

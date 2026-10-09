@@ -20,12 +20,10 @@ export function MinistryOverview({ data, management, error, navigate, action, ed
   const format = (value: string) => new Date(value).toLocaleString("pt-BR", { timeZone: timezone, dateStyle: "short", timeStyle: "short" })
   const upcoming = data.scales.filter(scale => new Date(scale.startsAt).getTime() >= now)
   const pending = data.members.filter(member => member.status === "pending")
-  const overdue = management?.followUps.filter(task => ["open", "in_progress"].includes(task.status) && task.dueAt && new Date(task.dueAt).getTime() < now) ?? []
   const incomplete = upcoming.filter(scale => scale.status === "incomplete")
   const totals = management?.attendance.reduce((sum, row) => ({ present: sum.present+row.present, absent: sum.absent+row.absent, justified: sum.justified+row.justified }), { present: 0, absent: 0, justified: 0 })
   const rate = totals ? attendanceRate(totals.present, totals.absent, totals.justified) : null
   const needs = [
-    ...overdue.map(task => ({ key: task.id, text: `${task.title} — ${task.personName}`, detail: `Prazo vencido: ${format(task.dueAt!)}`, label: "Abrir acompanhamento", click: () => navigate("acompanhamentos", { task: task.id, late: "true" }) })),
     ...incomplete.map(scale => ({ key: scale.eventId, text: `${scale.eventTitle}: faltam ${scale.positions.reduce((sum, position) => sum+position.missingVolunteers,0)} pessoas`, detail: format(scale.startsAt), label: "Completar escala", click: () => navigate("escalas", { event: scale.eventId }) })),
     ...pending.map(member => ({ key: member.id, text: `${member.personName} aguarda aprovação`, detail: "Solicitação de participação", label: "Revisar pessoa", click: () => navigate("pessoas", { peopleStatus: "pending", person: member.personId }) })),
     ...data.teams.filter(team => team.isActive && !team.leaderPersonId).map(team => ({ key: team.id, text: `${team.name} está sem responsável`, detail: "Equipe do ministério", label: "Definir responsável", click: () => { navigate("equipes", { team: team.id }); editTeam(team) } })),

@@ -7,7 +7,7 @@ const read = (path) => readFileSync(path, "utf8")
 test("Release 1 exposes event list and operational detail route", () => {
   assert.equal(existsSync("src/app/(dashboard)/eventos/[id]/page.tsx"), true)
   assert.match(read("src/app/(dashboard)/eventos/page.tsx"), /EventFilters/)
-  assert.match(read("src/app/(dashboard)/eventos/events-list-view.tsx"), /"list".*"month".*"week"/s)
+  assert.match(read("src/app/(dashboard)/eventos/events-list-view.tsx"), /"list".*"grid".*"month".*"week"|"month".*"week".*"list".*"grid"/s)
   assert.match(read("src/app/(dashboard)/eventos/event-detail-client.tsx"), /participants|attendance|volunteer|communication|files/)
 })
 

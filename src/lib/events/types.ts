@@ -1,4 +1,11 @@
 export type EventPublicData = {
+  registrationMode?: "internal" | "external"
+  externalPlatform?: string
+  externalTicketUrl?: string
+  timezone?: string
+  valueCents?: number
+  valueInstructions?: string
+  registrationOpen?: boolean
   publicPath: string
   token: string
   companySlug: string
@@ -22,6 +29,9 @@ export type EventPublicData = {
 }
 
 export type EventPublicRegistration = {
+  valueCents?: number
+  valueInstructions?: string
+  attendeeToken?: string | null
   id: string
   token: string
   eventToken: string

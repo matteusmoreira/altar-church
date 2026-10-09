@@ -11,7 +11,7 @@ function escapeHtml(value: string) {
 
 function safeHref(value: string) {
   try {
-    const url = new URL(value)
+    const url = new URL(value.replace(/&amp;/gi, "&"))
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : null
   } catch {
     return null

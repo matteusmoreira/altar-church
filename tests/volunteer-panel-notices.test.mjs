@@ -42,23 +42,23 @@ test("member dashboard shows only their published upcoming scales in their churc
       create table volunteer_assignments(id text, volunteer_id text, shift_id text, company_id text, status text);
       create table volunteer_profiles(id text, company_id text, person_id text, deleted_at timestamptz);
       create table volunteer_shifts(id text, event_id text, company_id text, department_id text, schedule_id text,
-        role_name text, starts_at timestamptz, ends_at timestamptz, instructions text);
+        role_name text, starts_at timestamptz, ends_at timestamptz, instructions text, created_at timestamptz default now());
       create table events(id text, company_id text, title text, deleted_at timestamptz, status text, volunteer_schedule_published_at timestamptz);
       create table volunteer_departments(id text, company_id text, name text, deleted_at timestamptz);
-      create table volunteer_schedules(id text, company_id text, status text);
+      create table volunteer_schedules(id text, company_id text, status text, published_at timestamptz);
       insert into volunteer_profiles values ('v1','a','p1',null),('v2','a','p2',null),('v3','b','p1',null);
       insert into volunteer_departments values ('d1','a','Recepção',null),('d2','b','Recepção',null);
-      insert into volunteer_schedules values ('s1','a','draft'),('s2','b','published');`);
+      insert into volunteer_schedules(id,company_id,status,published_at) values ('s1','a','draft',null),('s2','b','published',now());`);
     for (const [id, company, volunteer, status, published, ended, eventStatus, deleted] of [
-      ["own", "a", "v1", "confirmed", true, false, "scheduled", false],
-      ["other-person", "a", "v2", "confirmed", true, false, "scheduled", false],
-      ["other-church", "b", "v3", "confirmed", true, false, "scheduled", false],
-      ["draft", "a", "v1", "confirmed", false, false, "scheduled", false],
-      ["proposed", "a", "v1", "proposed", true, false, "scheduled", false],
-      ["removed", "a", "v1", "cancelled", true, false, "scheduled", false],
-      ["ended", "a", "v1", "confirmed", true, true, "scheduled", false],
+      ["own", "a", "v1", "confirmed", true, false, "published", false],
+      ["other-person", "a", "v2", "confirmed", true, false, "published", false],
+      ["other-church", "b", "v3", "confirmed", true, false, "published", false],
+      ["draft", "a", "v1", "confirmed", false, false, "draft", false],
+      ["proposed", "a", "v1", "proposed", true, false, "published", false],
+      ["removed", "a", "v1", "cancelled", true, false, "published", false],
+      ["ended", "a", "v1", "confirmed", true, true, "published", false],
       ["cancelled-event", "a", "v1", "confirmed", true, false, "cancelled", false],
-      ["deleted-event", "a", "v1", "confirmed", true, false, "scheduled", true],
+      ["deleted-event", "a", "v1", "confirmed", true, false, "published", true],
     ]) {
       await db.query("insert into events values($1,$2,'Atividade',case when $3 then now() end,$4,case when $5 then now() end)", [id, company, deleted, eventStatus, published]);
       await db.query(`insert into volunteer_shifts values($1,$1,$2,$3,$4,'Limpeza',
@@ -75,7 +75,7 @@ test("member dashboard shows only their published upcoming scales in their churc
     assert.equal(notice.instructions, "Chegar 10 min antes");
     await db.exec(`insert into volunteer_shifts values ('standalone',null,'a','d1','s1','Recepção',now()+interval '1 day',null,'');
       insert into volunteer_assignments values ('standalone','v1','standalone','a','confirmed');
-      update volunteer_schedules set status = 'published' where id = 's1';`);
+      update volunteer_schedules set status = 'published', published_at = now() where id = 's1';`);
     const monthlyNotices = (await db.query(query, ["a", "p1"])).rows;
     assert.ok(monthlyNotices.some((row) => row.id === "standalone" && row.event_title === "Escala"));
     assert.ok(!monthlyNotices.some((row) => row.id === "cancelled-event" || row.id === "deleted-event"));

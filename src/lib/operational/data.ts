@@ -25,6 +25,19 @@ import type {
 } from "@/lib/types"
 
 interface EventRow {
+  registration_mode: "internal" | "external"
+  external_platform: string
+  external_ticket_url: string
+  event_timezone?: string
+  value_cents: number
+  value_instructions: string
+  allow_walk_ins: boolean
+  cover_file_id: string | null
+  cover_path?: string | null
+  total_count?: number
+  published_count?: number
+  upcoming_count?: number
+  registrations_count?: number
   id: string
   slug: string
   public_slug: string
@@ -449,6 +462,9 @@ function toStringRecord(value: unknown): Record<string, string> {
 
 function toEvent(row: EventRow): ChurchEvent {
   return {
+    registrationMode: row.registration_mode ?? "internal", externalPlatform: row.external_platform ?? "Sympla", externalTicketUrl: row.external_ticket_url ?? "",
+    timezone: row.event_timezone ?? "America/Sao_Paulo",
+    valueCents: row.value_cents ?? 0, valueInstructions: row.value_instructions ?? "", allowWalkIns: row.allow_walk_ins ?? true, coverFileId: row.cover_file_id,
     id: row.id,
     slug: row.slug,
     churchId: row.company_id,
@@ -823,18 +839,21 @@ export function normalizeEventFilters(filters: EventListFilters = {}): Required<
 export async function listEvents(
   filtersInput: EventListFilters | string | null = {},
   companyIdInput?: string | null,
-): Promise<EventListItem[]> {
+  pageInput = 1,
+): Promise<{ events: EventListItem[]; total: number; page: number; pageSize: number; published: number; upcoming: number; registrations: number }> {
   const legacyCompanyId = typeof filtersInput === "string" || filtersInput === null ? filtersInput : companyIdInput
   const filters = filtersInput && typeof filtersInput === "object" ? filtersInput : {}
   const companyId = await resolveCompanyId(legacyCompanyId)
   await requirePermission("events.view", companyId)
   const normalizedFilters = normalizeEventFilters(filters)
+  const page = Math.max(1, Math.floor(Number(pageInput) || 1))
+  const pageSize = 24
 
   const sql = getSql()
   // Agregacoes via LEFT JOIN + GROUP BY em vez de 7 subselects correlacionados
   // por linha (auditoria 29/09/2026: 6 subselects x 500 eventos).
   const rows = await sql<EventRow[]>`
-    select event.*, (select slug from public.companies where id = event.company_id) as company_slug,
+    select event.*, (select timezone from public.church_profiles where company_id = event.company_id) as event_timezone, cover.storage_path as cover_path, count(*) over()::integer as total_count, count(*) filter(where event.status = 'published') over()::integer as published_count, count(*) filter(where event.status = 'published' and event.starts_at >= now()) over()::integer as upcoming_count, sum(coalesce(member_counts.going, 0) + coalesce(guest_counts.going, 0)) over()::integer as registrations_count, (select slug from public.companies where id = event.company_id) as company_slug,
            programming.recurrence_frequency,
            programming.recurrence_weekdays,
            programming.recurrence_until,
@@ -848,6 +867,7 @@ export async function listEvents(
            coalesce(member_counts.canceled, 0) + coalesce(guest_counts.canceled, 0) as cancelled_count,
            coalesce(present_counts.present, 0) as present_count
     from public.events event
+    left join public.app_files cover on cover.id = event.cover_file_id and cover.company_id = event.company_id and cover.is_active and cover.deleted_at is null
     left join public.programmings programming on programming.id = event.programming_id and programming.company_id = event.company_id and programming.deleted_at is null
     left join public.ministries ministry on ministry.id = event.ministry_id and ministry.company_id = event.company_id
     left join public.volunteer_schedule_templates volunteer_template on volunteer_template.id = event.volunteer_template_id
@@ -884,13 +904,14 @@ export async function listEvents(
       and (${normalizedFilters.status} = '' or event.status = ${normalizedFilters.status})
       and (${normalizedFilters.location} = '' or event.location ilike ${`%${normalizedFilters.location}%`})
       and (${normalizedFilters.ministryId} = '' or event.ministry_id = nullif(${normalizedFilters.ministryId}, '')::uuid)
-      and (${normalizedFilters.from} = '' or event.starts_at >= nullif(${normalizedFilters.from}, '')::date)
-      and (${normalizedFilters.to} = '' or event.starts_at < (nullif(${normalizedFilters.to}, '')::date + interval '1 day'))
-    order by event.starts_at desc
-    limit 500
+      and (${normalizedFilters.from} = '' or event.starts_at >= (nullif(${normalizedFilters.from}, '')::date::timestamp at time zone coalesce((select timezone from public.church_profiles where company_id = event.company_id), 'America/Sao_Paulo')))
+      and (${normalizedFilters.to} = '' or event.starts_at < ((nullif(${normalizedFilters.to}, '')::date + interval '1 day') at time zone coalesce((select timezone from public.church_profiles where company_id = event.company_id), 'America/Sao_Paulo')))
+    order by event.starts_at desc, event.id
+    limit ${pageSize} offset ${(page - 1) * pageSize}
   `
-
-  return rows.map(toEventListItem)
+  if (!rows.length && page > 1) return listEvents(filtersInput, companyIdInput, 1)
+  const covers = await createSignedUrlsByStoragePath(rows.map(row => row.cover_path ?? "").filter(Boolean))
+  return { events: rows.map(row => ({ ...toEventListItem(row), banner: covers.get(row.cover_path ?? "") || row.banner_url })), total: Number(rows[0]?.total_count ?? 0), page, pageSize, published: Number(rows[0]?.published_count ?? 0), upcoming: Number(rows[0]?.upcoming_count ?? 0), registrations: Number(rows[0]?.registrations_count ?? 0) }
 }
 
 export async function listEventMinistries(companyIdInput?: string | null) {
@@ -927,7 +948,7 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
   await requirePermission("events.view", companyId)
   const sql = getSql()
   const eventRows = await sql<EventRow[]>`
-    select event.*, (select slug from public.companies where id = event.company_id) as company_slug, registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
+    select event.*, (select timezone from public.church_profiles where company_id = event.company_id) as event_timezone, (select slug from public.companies where id = event.company_id) as company_slug, registration_form.slug as registration_form_slug, registration_form.title as registration_form_title,
            programming.recurrence_frequency, programming.recurrence_weekdays, programming.recurrence_until, programming.recurrence_needs_review,
            ministry.name as ministry_name, volunteer_template.name as volunteer_template_name,
            (select count(*)::integer from public.member_event_rsvps rsvp where rsvp.company_id = event.company_id and rsvp.event_id = event.id and rsvp.status = 'going')
@@ -975,7 +996,6 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
       left join public.event_attendee_tokens attendee on attendee.guest_registration_id = guest.id
       where guest.company_id = ${companyId} and guest.event_id = ${eventId}
       order by status, person_name
-      limit 1000
     `,
     sql<{
       id: string; person_id: string | null; person_name: string; status: AttendanceRecord["status"];
@@ -987,7 +1007,6 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
       where company_id = ${companyId} and event_ref_id = ${eventId}
         and event_type in ('event', 'service') and deleted_at is null
       order by occurred_on desc, occurred_time desc nulls last, created_at desc
-      limit 500
     `,
     sql<{ shift_count: number | string; required_volunteers: number | string; assigned_volunteers: number | string }[]>`
       select count(*)::integer as shift_count,
@@ -1001,6 +1020,7 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
 
   return {
     ...toEventListItem(event),
+    banner: event.cover_file_id ? await resolveEventCover(event.cover_file_id, companyId, event.banner_url) : event.banner_url,
     participants: participantRows.map((row) => ({
       id: row.id,
       kind: row.kind,
@@ -1021,7 +1041,7 @@ export async function getEventDetail(eventId: string, companyIdInput?: string | 
       personId: row.person_id,
       personName: row.person_name,
       status: row.status,
-      occurredOn: toIso(row.occurred_on) ?? "",
+      occurredOn: toDate(row.occurred_on),
       occurredTime: row.occurred_time ?? "",
       registeredByName: row.registered_by_name,
       createdAt: toIso(row.created_at) ?? "",
@@ -1216,7 +1236,6 @@ export async function listReadingPlans(companyIdInput?: string | null): Promise<
       where company_id = ${companyId}
         and deleted_at is null
       order by day_number asc
-      limit 1000
     `,
   ])
 
@@ -1424,4 +1443,9 @@ export async function getDonationData(companyIdInput?: string | null): Promise<D
     donations: donations.map(toDonation),
     recurrences: recurrences.map(toDonationRecurrence),
   }
+}
+
+async function resolveEventCover(fileId: string, companyId: string, fallback: string) {
+  const [cover] = await getSql()<{ storage_path: string }[]>`select storage_path from public.app_files where id = ${fileId} and company_id = ${companyId} and is_active and deleted_at is null`
+  return cover ? (await createSignedUrlsByStoragePath([cover.storage_path])).get(cover.storage_path) || fallback : fallback
 }

@@ -118,6 +118,7 @@ function getChannelBadge(channel: "whatsapp" | "email" | "internal") {
 }
 
 interface KidsCommunicationTabProps {
+  initialConversationId?: string
   data: KidsCommunicationData
   activeClassrooms?: import("@/lib/kids/types").KidClassroomItem[]
   congregations?: Array<{ id: string; name: string }>
@@ -129,6 +130,7 @@ export function KidsCommunicationTab({
   activeClassrooms,
   congregations,
   onReload,
+  initialConversationId,
 }: KidsCommunicationTabProps) {
   const [data, setData] = useState(initialData)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -137,7 +139,8 @@ export function KidsCommunicationTab({
   const [channelFilter, setChannelFilter] = useState<"all" | "whatsapp" | "email" | "internal">("all")
   const [searchQuery, setSearchQuery] = useState("")
 
-  const [channel, setChannel] = useState<"whatsapp" | "email" | "internal">("whatsapp")
+  const initialConversation = initialData.conversations.find(item => item.id === initialConversationId)
+  const [channel, setChannel] = useState<"whatsapp" | "email" | "internal">(initialConversation ? "internal" : "whatsapp")
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
   const [segmentKind, setSegmentKind] = useState<SegmentKind>("all")
@@ -147,8 +150,8 @@ export function KidsCommunicationTab({
   const [maxAge, setMaxAge] = useState("")
   const [kidId, setKidId] = useState("")
   const [pending, setPending] = useState(false)
-  const [guardianPersonId, setGuardianPersonId] = useState("")
-  const [conversationId, setConversationId] = useState("")
+  const [guardianPersonId, setGuardianPersonId] = useState(initialConversation?.guardianPersonId || "")
+  const [conversationId, setConversationId] = useState(initialConversation?.id || "")
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; kind: "message" | "conversation"; title: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)

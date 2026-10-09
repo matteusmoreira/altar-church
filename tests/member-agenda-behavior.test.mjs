@@ -30,23 +30,24 @@ test("agenda shows published roles and instructions, highlights own assignment a
     create table ministry_memberships(company_id uuid,ministry_id uuid,person_id uuid,status text,role text,left_at timestamptz);
     create table member_event_rsvps(id uuid,company_id uuid,event_id uuid,person_id uuid,status text,updated_at timestamptz);
     create table people(id uuid,company_id uuid,full_name text,deleted_at timestamptz);
-    create table volunteer_schedules(id uuid,company_id uuid,status text);
-    create table volunteer_shifts(id uuid,company_id uuid,schedule_id uuid,event_id uuid,event_position_id uuid,role_name text,starts_at timestamptz,ends_at timestamptz);
+    create table volunteer_schedules(id uuid,company_id uuid,status text,published_at timestamptz);
+    create table volunteer_shifts(id uuid,company_id uuid,schedule_id uuid,event_id uuid,event_position_id uuid,role_name text,starts_at timestamptz,ends_at timestamptz,created_at timestamptz default now());
     create table volunteer_event_positions(id uuid,company_id uuid,instructions text);
     create table volunteer_profiles(id uuid,company_id uuid,person_id uuid);
-    create table volunteer_assignments(id uuid,company_id uuid,shift_id uuid,volunteer_id uuid,status text);
+    create table volunteer_assignments(id uuid,company_id uuid,shift_id uuid,volunteer_id uuid,status text,decline_reason text,responded_at timestamptz);
   `)
+  await db.exec("alter table events add column registration_mode text default 'internal', add column external_platform text default 'Sympla', add column external_ticket_url text default '', add column value_cents int default 0")
   const companyId = randomUUID(), personId = randomUUID(), eventId = randomUUID(), ministryId = randomUUID()
   const shift = randomUUID(), schedule = randomUUID(), position = randomUUID(), volunteer = randomUUID()
   await db.query("insert into ministries values($1,$2,'Tecnologia',$3,null,'tecnologia')", [ministryId,companyId,personId])
   await db.query("insert into ministry_memberships values($1,$2,$3,'active','leader',null)", [companyId,ministryId,personId])
-  await db.query("insert into events values($1,$2,$3,'Palestra','Descrição completa','meeting',now(),now()+interval '1 hour','Sala 1','',0,'published',null,true,null)", [eventId,companyId,ministryId])
+  await db.query("insert into events(id,company_id,ministry_id,title,description,type,starts_at,ends_at,location,online_link,max_capacity,status,deleted_at,registration_enabled,volunteer_schedule_published_at) values($1,$2,$3,'Palestra','Descrição completa','meeting',now(),now()+interval '1 hour','Sala 1','',0,'published',null,true,null)", [eventId,companyId,ministryId])
   await db.query("insert into people values($1,$2,'Maria',null)", [personId,companyId])
-  await db.query("insert into volunteer_schedules values($1,$2,'draft')", [schedule,companyId])
+  await db.query("insert into volunteer_schedules(id,company_id,status) values($1,$2,'draft')", [schedule,companyId])
   await db.query("insert into volunteer_event_positions values($1,$2,'Chegar 30 minutos antes')", [position,companyId])
-  await db.query("insert into volunteer_shifts values($1,$2,$3,$4,$5,'Projeção',now(),now()+interval '1 hour')", [shift,companyId,schedule,eventId,position])
+  await db.query("insert into volunteer_shifts(id,company_id,schedule_id,event_id,event_position_id,role_name,starts_at,ends_at) values($1,$2,$3,$4,$5,'Projeção',now(),now()+interval '1 hour')", [shift,companyId,schedule,eventId,position])
   await db.query("insert into volunteer_profiles values($1,$2,$3)", [volunteer,companyId,personId])
-  await db.query("insert into volunteer_assignments values($1,$2,$3,$4,'confirmed')", [randomUUID(),companyId,shift,volunteer])
+  await db.query("insert into volunteer_assignments(id,company_id,shift_id,volunteer_id,status) values($1,$2,$3,$4,'confirmed')", [randomUUID(),companyId,shift,volunteer])
   for (const status of ['canceled','going']) await db.query("insert into member_event_rsvps values($1,$2,$3,$4,$5,now())", [randomUUID(),companyId,eventId,personId,status])
   const data = load("src/lib/member/data.ts", {
     'server-only': {}, '@/lib/db/client': { getSql: () => tag(db) },
@@ -56,6 +57,8 @@ test("agenda shows published roles and instructions, highlights own assignment a
   assert.equal(events.length, 1); assert.equal(events[0].myStatus, 'going'); assert.equal(events[0].goingCount, 1)
   assert.equal(events[0].ministrySlug, 'tecnologia')
   assert.equal(events[0].maxCapacity, null); assert.deepEqual(events[0].scale, [])
+  await db.query("update volunteer_schedules set status='published',published_at=now()-interval '1 day' where id=$1", [schedule])
+  events = await data.listMemberAgenda(); assert.deepEqual(events[0].scale, [], "New event scale stays draft inside an already published month")
   await db.query("update events set volunteer_schedule_published_at=now() where id=$1", [eventId])
   events = await data.listMemberAgenda()
   assert.equal(events[0].canManageMinistry, true)
@@ -68,21 +71,24 @@ test("RSVP confirms, waits, cancels, promotes and reconfirms with canceled histo
   t.after(() => db.close())
   await db.exec(`
     create table events(id uuid primary key, company_id uuid, ministry_id uuid, registration_enabled boolean,
-      max_capacity int, status text, deleted_at timestamptz);
+      max_capacity int, status text, deleted_at timestamptz, starts_at timestamptz default now(), ends_at timestamptz default now()+interval '3 hours');
     create table ministry_memberships(company_id uuid, ministry_id uuid, person_id uuid, status text, left_at timestamptz);
     create table member_event_rsvps(id uuid primary key default gen_random_uuid(), company_id uuid, event_id uuid,
       person_id uuid, status text, created_at timestamptz default now(), updated_at timestamptz default now());
     create unique index active_rsvp on member_event_rsvps(event_id, person_id) where status <> 'canceled';
-    create table event_guest_registrations(id uuid, company_id uuid, event_id uuid, status text, created_at timestamptz);
+    create table event_guest_registrations(id uuid, company_id uuid, event_id uuid, status text, created_at timestamptz, updated_at timestamptz);
+    create table event_attendee_tokens(token uuid default gen_random_uuid(),company_id uuid,event_id uuid,member_rsvp_id uuid unique,guest_registration_id uuid unique);
   `)
   const company = randomUUID(), otherCompany = randomUUID(), ministry = randomUUID(), event = randomUUID()
   const first = randomUUID(), second = randomUUID(), outsider = randomUUID()
   let personId = first, companyId = company
-  await db.query("insert into events values($1,$2,$3,true,1,'published',null)", [event, company, ministry])
+  await db.query("insert into events(id,company_id,ministry_id,registration_enabled,max_capacity,status,deleted_at) values($1,$2,$3,true,1,'published',null)", [event, company, ministry])
   for (const person of [first, second]) await db.query("insert into ministry_memberships values($1,$2,$3,'active',null)", [company, ministry, person])
   const sql = tag(db)
   sql.begin = (callback) => db.transaction((tx) => callback(tag(tx)))
+  await db.exec("alter table events add column registration_mode text default 'internal'")
   const actions = load("src/lib/member/portal-actions.ts", {
+    "@/lib/events/registration-server": load("src/lib/events/registration-server.ts", { "server-only": {} }),
     "next/cache": { revalidatePath() {} },
     "@/lib/db/client": { getSql: () => sql },
     "@/lib/auth/permissions": { writeAuditLog: async () => {} },
@@ -109,6 +115,8 @@ test("RSVP confirms, waits, cancels, promotes and reconfirms with canceled histo
   companyId = company
   await db.query("update events set max_capacity=0 where id=$1", [event])
   assert.equal((await actions.rsvpMemberEvent(form)).status, "going", "zero means unlimited capacity")
+  await db.query("update events set registration_mode='external',registration_enabled=true where id=$1", [event])
+  assert.equal((await actions.rsvpMemberEvent(form)).ok, false, "external mode rejects enrollment even with a stale enabled flag")
 })
 
 test("ministry managers use scoped permissions without granting access to other ministries", async () => {

@@ -95,6 +95,8 @@ function mapScaleRows(rows: Record<string, unknown>[], photoUrls: Map<string, st
         personName: String(row.assignment_person_name ?? "Pessoa"),
         volunteerId: String(row.assignment_volunteer_id),
         status: String(row.assignment_status ?? "proposed"),
+        declineReason: row.assignment_decline_reason ? String(row.assignment_decline_reason) : null,
+        respondedAt: iso(row.assignment_responded_at as Date | string | null),
         photoUrl: row.assignment_photo_path ? photoUrls.get(String(row.assignment_photo_path)) ?? null : null,
       }
       if (!position.assignments.some((item) => item.id === assignment.id)) position.assignments.push(assignment)
@@ -248,6 +250,7 @@ export async function getMinistryWorkspaceData(ministryIdOrSlug: string, company
         shift.id as shift_id, shift.role_name as shift_role_name, shift.required_volunteers as shift_required,
         assignment.id as assignment_id, assigned_volunteer.person_id as assignment_person_id,
         assignment.volunteer_id as assignment_volunteer_id, assignment.status as assignment_status,
+        assignment.decline_reason as assignment_decline_reason, assignment.responded_at as assignment_responded_at,
         assigned_person.full_name as assignment_person_name, assignment_photo.storage_path as assignment_photo_path
       from public.events event
       left join public.volunteer_event_positions position

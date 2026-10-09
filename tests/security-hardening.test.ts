@@ -57,7 +57,7 @@ test("fluxos corrigidos mantêm invariantes de tenant e rate limit público", ()
   assert.match(v2, /assignment\.company_id = swap\.company_id/)
   assert.match(v2, /shift\.company_id = assignment\.company_id/)
   assert.match(forms, /consumePublicRateLimit/)
-  assert.match(events, /event-checkin/)
+  assert.match(events, /consumePublicRateLimit\(\{ companyId: scope\.company_id, scope: "event-session-checkin", resourceId: scope\.event_id, limit: 60 \}\)/)
   assert.match(authRateLimit, /AUTH_RATE_LIMIT_FAIL_OPEN/)
   assert.match(authRateLimit, /allowed: false/)
   assert.match(authServer, /p\.role in \('member', 'visitor', 'attendee'\)/)
@@ -120,4 +120,3 @@ test("writes finais repetem o filtro company_id (regressão auditoria 29/09/2026
     }
   }
 })
-

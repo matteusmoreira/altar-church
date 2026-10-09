@@ -24,7 +24,7 @@ import type { MinistryScaleCandidate, MinistryWorkspaceData } from "@/lib/minist
 import { MessageEditor } from "@/components/automations/message-editor"
 import type { AutomationMessage } from "@/lib/automations/contract"
 import { MinistryOverview } from "./ministry-overview"
-import { MinistryFollowUps, MinistryPersonDetails, MinistryReports } from "./ministry-management-panels"
+import { MinistryPersonDetails, MinistryReports } from "./ministry-management-panels"
 import { useWorkspaceNavigation } from "./workspace-navigation"
 import { loadMinistryManagement, loadMinistryScaleSources, copyMinistryScale } from "@/lib/ministries/management-actions"
 import type { MinistryManagementData } from "@/lib/ministries/management-contract"
@@ -248,7 +248,7 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
 
   const navigation = useWorkspaceNavigation(initialTab)
   const { query, update, navigate } = navigation
-  const activeTab = navigation.activeTab === "acompanhamentos" && !canManage ? "visao-geral" : navigation.activeTab
+  const activeTab = navigation.activeTab
   const setActiveTab = (tab: string) => navigate(tab)
   const peopleSearch = query.get("peopleSearch") || ""
   const setPeopleSearch = (value: string) => update({ peopleSearch: value }, true)
@@ -507,7 +507,6 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
             <ClipboardCheck />
             Escalas
           </TabsTrigger>
-          {canManage && <TabsTrigger value="acompanhamentos"><HeartHandshake />Acompanhamentos</TabsTrigger>}
           <TabsTrigger value="comunicacao">
             <Megaphone />
             Comunicação
@@ -531,9 +530,6 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
         <TabsContent value="visao-geral" className="space-y-4">
           <MinistryOverview data={data} management={management} error={managementError} navigate={navigate} action={dialog => { const tab = { person: "pessoas", activity: "agenda", scale: "escalas", communication: "comunicacao" }[dialog]; if (tab) navigate(tab); if (dialog === "activity") setActivityForm({ id: "", title: "", description: "", startsAt: "", durationMinutes: "60", kind: "meeting", location: "", recurrenceFrequency: "none", recurrenceWeekdays: [] }); setDialog(dialog) }} editTeam={editTeam} retry={() => setManagementVersion(value => value + 1)} />
         </TabsContent>
-        {canManage && <TabsContent value="acompanhamentos" className="space-y-4">
-          {managementError ? <div role="alert"><p>{managementError}</p><Button variant="outline" onClick={() => setManagementVersion(value => value + 1)}>Tentar novamente</Button></div> : management ? <MinistryFollowUps ministryId={profile.id} members={data.members} management={management} query={query} update={update} refresh={() => { setManagementVersion(value => value + 1); router.refresh() }} /> : <p role="status">Carregando acompanhamentos…</p>}
-        </TabsContent>}
         {canManage && query.get("detail") && data.members.find(member => member.personId === query.get("detail")) && <MinistryPersonDetails key={query.get("detail")} ministryId={profile.id} member={data.members.find(member => member.personId === query.get("detail"))!} management={management} close={() => update({ detail: "" })} />}
 
         <TabsContent value="pessoas" className="space-y-4">
@@ -1556,8 +1552,9 @@ export function MinistryWorkspace({ data, initialTab = "visao-geral", memberPort
                                         {position.assignedVolunteers}/{position.requiredVolunteers} pessoas {position.missingVolunteers ? `· faltam ${position.missingVolunteers}` : "· preenchida"}
                                       </p>
                                       {position.instructions && <p className="mt-1 text-xs text-muted-foreground">Instrução: {position.instructions}</p>}
+                                      {position.assignments.filter(assignment => assignment.status === "declined").map(assignment => <div key={assignment.id} className="mt-2 rounded-lg bg-amber-500/10 p-2 text-sm"><p className="font-medium">{assignment.personName} · Ausência avisada</p><p className="whitespace-pre-wrap">{assignment.declineReason || "Sem justificativa informada."}</p>{assignment.respondedAt && <p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(assignment.respondedAt))}</p>}</div>)}
                                     </div>
-                                    {position.shiftId && scale.status !== "published" && (
+                                    {position.shiftId && (scale.status !== "published" || position.missingVolunteers > 0) && (
                                       <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={pending} onClick={() => loadScaleCandidates(position.shiftId!)}>
                                         {candidateState?.loading ? "Carregando..." : "Escolher pessoas"}
                                       </Button>

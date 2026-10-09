@@ -38,12 +38,12 @@ test("Eventos full workflow exposes privacy-safe public routes and authorized ex
 
 test("Eventos full workflow keeps mixed capacity, idempotent check-in and recurring series linked", () => {
   const portalActions = read("src/lib/member/portal-actions.ts")
-  const eventActions = read("src/lib/events/actions.ts")
+  const eventActions = read("src/lib/events/registration-server.ts")
   const operationalActions = read("src/lib/operational/actions.ts")
   assert.match(portalActions, /event_guest_registrations/)
   assert.match(portalActions, /for update/)
-  assert.match(eventActions, /on conflict \(company_id, event_ref_id, person_id\)/)
-  assert.match(eventActions, /on conflict \(company_id, event_ref_id, guest_registration_id\)/)
+  assert.match(eventActions, /\(company_id, event_ref_id, person_id\)/)
+  assert.match(eventActions, /\(company_id, event_ref_id, guest_registration_id\)/)
   assert.match(operationalActions, /materialize_volunteer_programmings/)
   assert.match(operationalActions, /registration_form_id/)
 })

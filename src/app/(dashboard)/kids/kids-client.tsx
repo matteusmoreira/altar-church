@@ -299,10 +299,14 @@ export function KidsClient({
   data,
   capabilities,
   securityStatus,
+  initialTab,
+  initialConversationId,
 }: {
   data: KidsDashboardData
   capabilities: KidsCapabilities
   securityStatus: { pinConfigured: boolean; healthConfigured: boolean }
+  initialTab?: string
+  initialConversationId?: string
 }) {
   const router = useRouter()
   const canManageSettings = capabilities.manageSettings
@@ -330,9 +334,21 @@ export function KidsClient({
   const [childSuggestions, setChildSuggestions] = useState<KidPersonSuggestion[]>([])
   const [guardianSuggestions, setGuardianSuggestions] = useState<KidPersonSuggestion[]>([])
   const [activeGuardianIndex, setActiveGuardianIndex] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState("visao-geral")
+  const [activeTab, setActiveTab] = useState(initialTab && ["visao-geral","sessoes","comunicacao","relatorios"].includes(initialTab) ? initialTab : "visao-geral")
   const [sessionsData, setSessionsData] = useState<KidsSessionsData | null>(null)
   const [communicationData, setCommunicationData] = useState<KidsCommunicationData | null>(null)
+  useEffect(() => {
+    let active = true
+    if (initialTab === "comunicacao" && capabilities.communicate) void loadKidsCommunicationData().then(result => {
+      if (active && result.ok && result.data) setCommunicationData(result.data)
+      else if (active && !result.ok) toast.error(result.error || "Não foi possível carregar comunicação")
+    })
+    if (initialTab === "sessoes" && capabilities.view) void loadKidsSessionsData().then(result => {
+      if (active && result.ok && result.data) setSessionsData(result.data)
+      else if (active && !result.ok) toast.error(result.error || "Não foi possível carregar sessões")
+    })
+    return () => { active = false }
+  }, [initialTab, capabilities.communicate, capabilities.view])
   const [reportsData, setReportsData] = useState<KidsReportsData | null>(null)
   const [loadingTab, setLoadingTab] = useState<string | null>(null)
   const [familyPageData, setFamilyPageData] = useState<{ children: KidListItem[]; page: number } | null>(null)
@@ -1579,6 +1595,7 @@ export function KidsClient({
           <TabsContent value="comunicacao" className="mt-0 space-y-6">
             {communicationData ? (
               <KidsCommunicationTab
+                initialConversationId={initialConversationId}
                 data={communicationData}
                 activeClassrooms={data.classrooms.filter((c) => c.isActive)}
                 congregations={data.congregations}

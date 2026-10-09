@@ -75,7 +75,7 @@ test("member ministry agenda exposes description, confirmed people and tenant-sc
   assert.match(data, /membership\.company_id = \$\{companyId\}/)
   assert.match(portal, /event\.description/)
   assert.match(portal, /event\.confirmedPeople\.join/)
-  assert.match(portal, /Aceitar e confirmar presença/)
+  assert.match(portal, /AssignmentAbsence/)
   assert.match(actions, /membership\.ministry_id = \$\{event\.ministry_id\}/)
   assert.match(actions, /membership\.person_id = \$\{personId\}/)
   assert.match(actions, /membership\.status = 'active'/)

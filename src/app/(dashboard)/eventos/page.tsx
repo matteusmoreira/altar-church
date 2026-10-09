@@ -1,11 +1,11 @@
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 import { CalendarDays, CheckCircle2, Clock3, Users } from "lucide-react"
 import { MetricCard, MetricGrid, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { requireUser } from "@/lib/auth/server"
 import { hasPermission } from "@/lib/types"
-import { listEventForms, listEventMinistries, listEvents, normalizeEventFilters } from "@/lib/operational/data"
-import { listVolunteerTemplatesForEvents } from "@/lib/volunteers/data"
-import { EventCreateForm } from "./event-create-form"
+import { listEventMinistries, listEvents, normalizeEventFilters } from "@/lib/operational/data"
 import { EventFilters } from "./event-filters"
 import { EventsListView } from "./events-list-view"
 
@@ -26,34 +26,32 @@ export default async function EventsPage({ searchParams }: { searchParams?: Prom
     from: first(params.from),
     to: first(params.to),
   })
-  const [user, events, ministries, forms, volunteerTemplates] = await Promise.all([
+  const [user, events, ministries] = await Promise.all([
     requireUser(),
-    listEvents(filters),
+    listEvents(filters, undefined, Number(first(params.page) || 1)),
     listEventMinistries(),
-    listEventForms(),
-    listVolunteerTemplatesForEvents(),
   ])
+  const listing = events
+  const pageEvents = listing.events
+  const pageHref = (page: number) => { const query = new URLSearchParams(); for (const [key, value] of Object.entries(params)) { const item = first(value); if (item) query.set(key, item) }; query.set("page", String(page)); return `/eventos?${query}` }
   const canCreate = hasPermission(user, "events.create")
   const canEdit = hasPermission(user, "events.edit")
   const canDelete = hasPermission(user, "events.delete")
-  const published = events.filter((event) => event.status === "published").length
-  const upcoming = events.filter((event) => event.status === "published" && new Date(event.startDate) >= new Date()).length
-  const registrations = events.reduce((total, event) => total + event.goingCount, 0)
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Eventos" description="Crie, organize e acompanhe cada evento sem perder histórico." badge={<><Badge variant="outline">Central operacional</Badge><span className="text-xs text-muted-foreground">Release 1</span></>} actions={<div className="text-sm text-muted-foreground">{events.length} resultado(s) filtrado(s)</div>} />
+      <PageHeader title="Eventos" description="Crie, organize e acompanhe cada evento sem perder histórico." badge={<Badge variant="outline">Organização de eventos</Badge>} actions={canCreate ? <Button render={<Link href="/eventos/novo" />} nativeButton={false}>Novo evento</Button> : undefined} />
 
       <MetricGrid columns={4}>
-        <MetricCard variant="compact" title="Eventos carregados" value={events.length} icon={CalendarDays} tone="primary" />
-        <MetricCard variant="compact" title="Publicados" value={published} icon={CheckCircle2} tone="success" />
-        <MetricCard variant="compact" title="Próximos" value={upcoming} icon={Clock3} tone="warning" />
-        <MetricCard variant="compact" title="Inscrições" value={registrations} icon={Users} tone="info" />
+        <MetricCard variant="compact" title="Eventos encontrados" value={listing.total} icon={CalendarDays} tone="primary" />
+        <MetricCard variant="compact" title="Publicados" value={listing.published} icon={CheckCircle2} tone="success" />
+        <MetricCard variant="compact" title="Próximos" value={listing.upcoming} icon={Clock3} tone="warning" />
+        <MetricCard variant="compact" title="Inscrições" value={listing.registrations} icon={Users} tone="info" />
       </MetricGrid>
 
       <EventFilters values={filters} ministries={ministries} />
-      <EventCreateForm canCreate={canCreate} volunteerTemplates={volunteerTemplates} ministries={ministries} forms={forms} />
-      <EventsListView events={events} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
+      <EventsListView events={pageEvents} canEdit={canEdit} canCreate={canCreate} canDelete={canDelete} />
+      {listing.total > listing.pageSize && <nav aria-label="Paginação dos eventos" className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-muted-foreground">Página {listing.page} de {Math.ceil(listing.total / listing.pageSize)} · {listing.total} eventos</p><div className="flex gap-2">{listing.page > 1 && <Button variant="outline" render={<Link href={pageHref(listing.page - 1)} />}>Anterior</Button>}{listing.page * listing.pageSize < listing.total && <Button variant="outline" render={<Link href={pageHref(listing.page + 1)} />}>Próxima</Button>}</div></nav>}
     </div>
   )
 }

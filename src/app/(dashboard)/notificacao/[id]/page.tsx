@@ -11,6 +11,7 @@ import { getNotificationDetails } from "@/lib/notifications/data"
 import { retryNotificationDeliveryAction, dispatchNotificationPushAction } from "@/lib/notifications/actions"
 import { getCurrentUser } from "@/lib/auth/server"
 import { hasPermission } from "@/lib/types"
+import { NotificationRichContent } from "@/components/notifications/rich-content"
 
 export const maxDuration = 300
 
@@ -55,7 +56,7 @@ export default async function NotificationDetailsPage({ params, searchParams }: 
         </div>
         <Badge>{statusLabels[data.status] ?? data.status}</Badge>
       </div>
-      <Card className="glass"><CardContent className="space-y-3 p-5"><p className="whitespace-pre-wrap">{data.content}</p><div className="flex flex-wrap gap-3 text-sm text-muted-foreground"><span>Canal: {data.method}</span><span>Público: {data.audienceKind}</span><span>Snapshot: {data.snapshotCount}</span><span>Enviados: {sent}</span><span>Falhas/dead: {failed}</span></div></CardContent></Card>
+      <Card className="glass"><CardContent className="space-y-3 p-5">{data.method === "push" ? <NotificationRichContent content={data.content} /> : <p className="whitespace-pre-wrap">{data.content}</p>}<div className="flex flex-wrap gap-3 text-sm text-muted-foreground"><span>Canal: {data.method}</span><span>Público: {data.audienceKind}</span><span>Snapshot: {data.snapshotCount}</span><span>Enviados: {sent}</span><span>Falhas/dead: {failed}</span></div></CardContent></Card>
       {canDispatch && <Card><CardContent className="space-y-3 p-5">
         <p className="text-sm text-muted-foreground">{data.status === "completed" ? "Envia novamente o push aos destinatários desta campanha." : "Dispara os pushes pendentes agora, antecipando o agendamento se houver."} A aceitação pelo provedor não confirma a exibição no aparelho.</p>
         <NotificationActionForm action={dispatchNotificationPushAction} submitLabel={data.status === "completed" ? "Disparar push novamente" : "Disparar push agora"} pendingLabel="Disparando push…" testId="dispatch-push">

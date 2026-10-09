@@ -105,6 +105,8 @@ export interface MinistryScaleAssignment {
   personName: string
   volunteerId: string
   status: string
+  declineReason?: string | null
+  respondedAt?: string | null
   photoUrl: string | null
 }
 

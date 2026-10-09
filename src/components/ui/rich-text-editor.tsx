@@ -60,6 +60,7 @@ export function RichTextEditor({ name, label, placeholder, maxLength }: RichText
           ref={editorRef}
           contentEditable
           role="textbox"
+          aria-label={label ?? "Conteúdo"}
           aria-multiline="true"
           data-placeholder={placeholder}
           className="min-h-36 p-3 text-sm outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] [&_a[data-cell-button=true]]:inline-flex [&_a[data-cell-button=true]]:items-center [&_a[data-cell-button=true]]:rounded-lg [&_a[data-cell-button=true]]:bg-primary [&_a[data-cell-button=true]]:px-3 [&_a[data-cell-button=true]]:py-2 [&_a[data-cell-button=true]]:font-semibold [&_a[data-cell-button=true]]:text-primary-foreground"

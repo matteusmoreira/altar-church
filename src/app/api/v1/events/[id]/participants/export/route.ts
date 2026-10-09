@@ -26,11 +26,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       where guest.company_id = ${companyId} and guest.event_id = ${id}
       order by name
     `
+    const query = (request.nextUrl.searchParams.get("query") || "").toLocaleLowerCase("pt-BR")
+    const status = request.nextUrl.searchParams.get("status") || ""
+    const filtered = rows.filter(row => (!status || row.status === status) && `${row.name} ${row.email} ${row.phone}`.toLocaleLowerCase("pt-BR").includes(query))
+    const labels: Record<string, string> = { going: "Confirmado", waitlisted: "Lista de espera", canceled: "Cancelado" }
     const cells: XlsCell[][] = [
       ["Evento", eventRows[0].title],
       [],
       ["Tipo", "Nome", "E-mail", "Telefone", "Status", "Presença", "Inscrito em"],
-      ...rows.map((row) => [row.kind, row.name, row.email, row.phone, row.status, row.checked_in ? "Presente" : "Pendente", new Date(row.created_at).toLocaleString("pt-BR")] as XlsCell[]),
+      ...filtered.map((row) => [row.kind, row.name, row.email, row.phone, labels[row.status] || row.status, row.checked_in ? "Presente" : "Pendente", new Date(row.created_at).toLocaleString("pt-BR")] as XlsCell[]),
     ]
     await auditExport("events.participants.export", "member_event_rsvps", companyId, "xls")
     const safeTitle = eventRows[0].title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "evento"
