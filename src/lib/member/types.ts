@@ -66,7 +66,7 @@ export interface MemberAgendaEvent {
   ministryId: string | null
   ministrySlug?: string | null
   canManageMinistry: boolean
-  scale: { id: string; role: string; instructions: string; startsAt: string; endsAt: string | null; personName: string | null; status: string | null; isMine: boolean }[]
+  scale: MemberScaleItem[]
   startsAt: string
   endsAt: string | null
   location: string
@@ -77,6 +77,28 @@ export interface MemberAgendaEvent {
   confirmedPeople: string[]
   myStatus: "going" | "waitlisted" | "canceled" | null
   canRsvp: boolean
+}
+
+export interface MemberScaleItem {
+  id: string
+  assignmentId?: string | null
+  role: string
+  instructions: string
+  startsAt: string
+  endsAt: string | null
+  personName: string | null
+  status: string | null
+  isMine: boolean
+  declineReason?: string | null
+  canDecline?: boolean
+}
+export interface MemberMinistryActivity {
+  id: string; title: string; description: string; startsAt: string; endsAt: string | null; location: string; recurring: boolean; scale: MemberScaleItem[]
+}
+export interface MemberMinistryDetails {
+  id: string; name: string; description: string; leaderName: string | null; contact: string; meetingDay: number | null; meetingTime: string | null; meetingLocation: string
+  resources: { id: string; title: string; description: string; category: string; fileName: string | null; mimeType: string | null; fileUrl: string | null; externalUrl: string | null }[]
+  activities: MemberMinistryActivity[]; nextCursor: string | null
 }
 
 export interface MemberProfile {

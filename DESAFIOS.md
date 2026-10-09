@@ -322,3 +322,8 @@ Com o lockfile e o seed consertados, o job `E2E (tenant de teste)` rodou o suite
 
 - Recebimento físico confirmado pelo usuário com capturas do aparelho. O quadrado preto vinha de usar o PNG opaco icon-192 como badge: Android usa a transparência como máscara. O service worker agora usa o símbolo oficial transparente no icon e no badge, com cache público do mesmo arquivo. Não trocar o ícone de instalação ou regenerar a marca para corrigir a notificação.
 - Verificados canal alpha RGBA, cantos totalmente transparentes e logo disponível em produção (HTTP 200 image/png). Quinze testes de notificações/PWA, lint do service worker e diff check passaram. A alteração do service worker permanece local; a aparência final precisa ser conferida após publicação e atualização do worker no aparelho.
+
+## Recursos nas informações do membro — 09/10/2026
+
+- O modal Informações consultava descrição e escalas sem carregar ministry_resources. Agora retorna todos os recursos permitidos, com isolamento por igreja/ministério e URLs assinadas apenas de arquivos ativos da mesma igreja; recursos de liderança continuam restritos.
+- Imagens têm prévia; arquivos e links têm abertura em nova aba. Dois testes de regressão validam a consulta em PostgreSQL isolado e a renderização real do componente, incluindo mais de 20 recursos, exclusões e arquivo de outra igreja. TypeScript e lint focado passaram. Alteração local; publicação e imagem real em produção não verificadas.

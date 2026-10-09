@@ -14,6 +14,7 @@ import { EmptyState, PageHeader } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { MinistryInformation } from "./ministry-information"
 
 const statusLabel = {
   active: "Participando",
@@ -22,9 +23,10 @@ const statusLabel = {
   inactive: "Não participante",
 }
 
-export function MemberMinistries({ ministries }: { ministries: MemberMinistryItem[] }) {
+export function MemberMinistries({ ministries, initialInformationId }: { ministries: MemberMinistryItem[]; initialInformationId?: string }) {
   const router = useRouter()
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [informationId, setInformationId] = useState<string | null>(() => ministries.some(item => item.id === initialInformationId && item.membershipStatus === "active") ? initialInformationId! : null)
   const [isPending, startTransition] = useTransition()
 
   function run(ministryId: string, cancel = false) {
@@ -85,7 +87,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${ministry.onboardingPercent}%` }} /></div>
                   </div>
                 ) : null}
-                {ministry.membershipStatus === "active" && <Button render={<Link href={`/membro/chats?ministry=${ministry.id}`} />} nativeButton={false} variant="outline" className="w-full">Abrir chat</Button>}
+                {ministry.membershipStatus === "active" && <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" className="flex-1" onClick={() => setInformationId(ministry.id)}>Informações</Button><Button render={<Link href={`/membro/chats?ministry=${ministry.id}`} />} nativeButton={false} variant="outline" className="flex-1">Abrir chat</Button></div>}
                 {ministry.membershipRole === "leader" || ministry.membershipStatus === "active" ? null : ministry.membershipStatus === "pending" ? (
                   <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={() => run(ministry.id, true)}>
                     Cancelar solicitação
@@ -116,6 +118,7 @@ export function MemberMinistries({ ministries }: { ministries: MemberMinistryIte
       {ministries.length === 0 && (
         <EmptyState variant="card" icon={HeartHandshake} title="Nenhum ministério ativo no momento." />
       )}
+      {informationId && <MinistryInformation key={informationId} ministryId={informationId} name={ministries.find(item => item.id===informationId)?.name || "Ministério"} open onOpenChange={value => { if (!value) setInformationId(null) }} />}
 
     </div>
   )
